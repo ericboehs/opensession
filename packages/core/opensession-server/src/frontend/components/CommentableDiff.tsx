@@ -54,7 +54,10 @@ const FILE_ROW =
   "isolate min-w-0 max-w-full overflow-clip rounded-lg border border-line bg-bg";
 const FILE_HEADER =
   "group relative flex min-h-9 w-full min-w-0 items-center gap-1.5 overflow-clip px-2 text-left text-fg hover:bg-hover phone:min-h-11 phone:px-2.5";
-const FILE_BODY = "relative z-0 max-w-full overflow-clip";
+// Clip the scrolling diff at its own lower corners. The parent keeps sticky
+// headers working with `overflow-clip`, but a positioned body needs to own the
+// bottom radius so its painted code surface can never square off the file row.
+const FILE_BODY = "relative z-0 max-w-full overflow-clip rounded-b-lg";
 const STICKY_FILE_HEADER =
   "sticky top-[var(--review-file-header-top,0px)] z-[6] rounded-t-lg bg-bg data-[stuck]:overflow-visible";
 const FILE_TOGGLE =

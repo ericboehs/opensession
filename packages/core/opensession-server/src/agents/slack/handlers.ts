@@ -958,7 +958,10 @@ export async function processMessage(
   };
   registerSessionMcpServers(bksId, inProcessMcp);
 
-  const onAbort = () => cancelAgentRun(resultSessionId, bksId);
+  const onAbort = () => {
+    void cancelAgentRun(resultSessionId, bksId);
+    return true;
+  };
   abortController.signal.addEventListener("abort", onAbort, { once: true });
 
   // Vercel-preview detection (was a Claude PostToolUse hook): track bash

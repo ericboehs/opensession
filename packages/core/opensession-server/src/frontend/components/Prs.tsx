@@ -4,6 +4,12 @@ import type { Workspace, UnifiedSession } from "../lib/types";
 import { fetchHomeStats, fetchRecentPrs, type HomeStats, type RecentPr } from "../lib/api";
 import { prStatusMark } from "../lib/pr-status";
 import {
+  expandPrRenderWindow,
+  INITIAL_PR_ROWS,
+  PR_ROWS_PAGE,
+  visiblePrRowLimit,
+} from "../lib/pr-render-window";
+import {
   buildWorktreeRows,
   compactAge,
   compactDiff,
@@ -107,35 +113,75 @@ function runningLabel(running: number): string {
 // the field that answers "how much did we get through" without needing a
 // second number beside it. Under 5% is noise at this scale, so it says so
 // rather than reporting a 2% week as movement.
-function weekTrend(stats: HomeStats | null): string | null {
+interface WeekTrend {
+  value: string;
+  detail: string;
+  summary: string;
+}
+
+function weekTrend(stats: HomeStats | null): WeekTrend | null {
   const now = stats?.completeWeek?.durationMs ?? 0;
   const before = stats?.priorWeek?.durationMs ?? 0;
   if (!now || !before) return null;
   const pct = Math.round(((now - before) / before) * 100);
-  if (Math.abs(pct) < 5) return "level with last week";
-  return `${Math.abs(pct)}% ${pct > 0 ? "busier" : "quieter"} than last week`;
+  if (Math.abs(pct) < 5) {
+    return {
+      value: "Level",
+      detail: "with last week",
+      summary: "level with last week",
+    };
+  }
+  const direction = pct > 0 ? "busier" : "quieter";
+  return {
+    value: `${Math.abs(pct)}%`,
+    detail: `${direction} than last week`,
+    summary: `${Math.abs(pct)}% ${direction} than last week`,
+  };
 }
 
-function Separator() {
-  // A space of its own rather than a margin: the dot costs the line as little
-  // as it can, and the clauses stay on one row a little longer for it.
+function OverviewTile({
+  label,
+  value,
+  detail,
+  live,
+  loading,
+}: {
+  label: string;
+  value?: string;
+  detail?: string;
+  live?: boolean;
+  loading?: boolean;
+}) {
   return (
-    <span aria-hidden="true" className="text-faint">
-      {" ·"}
+    <span className="min-w-0 rounded-xl bg-panel px-5 py-4">
+      <span className="flex items-center gap-2 text-label font-medium text-dim">
+        {live !== undefined ? (
+          <span
+            aria-hidden="true"
+            className={
+              live
+                ? "size-1.5 shrink-0 rounded-full bg-green motion-safe:animate-pulse"
+                : "size-1.5 shrink-0 rounded-full bg-line"
+            }
+          />
+        ) : null}
+        {label}
+      </span>
+      {loading ? (
+        <span className="mt-2 block h-6 w-16 rounded-sm bg-line motion-safe:animate-pulse" />
+      ) : (
+        <span className="mt-1 block truncate text-stat font-semibold text-fg">{value}</span>
+      )}
+      {detail ? <span className="mt-1 block truncate text-meta text-faint">{detail}</span> : null}
     </span>
   );
 }
 
-// The page is about its list, so the day rides under the title as one line
-// instead of a slab of five figures with a second week-long tier under each.
-// The three kept are the ones you act on: what is live now, and how much
-// happened today. Turns, tokens, errors and the week are a click away in
-// Analytics, which this line opens and the sidebar also lists.
-//
-// One figure per clause. Sessions and agent time used to share one, joined by
-// a comma, which made the line read as a sentence with a list in the middle of
-// it rather than as four numbers.
-function OverviewLine({
+// A compact version of Analytics' stat grid. These are the four figures that
+// orient the pull-request list: what is live, what happened today, and how the
+// last complete week compares. The whole row remains one route to the deeper
+// breakdown rather than adding four identical stops to the tab order.
+function OverviewStats({
   running,
   stats,
   onOpenAnalytics,
@@ -154,52 +200,38 @@ function OverviewLine({
         today
           ? `Open Analytics · ${today.turns.toLocaleString()} turns and ${fmtCompact(today.outputTokens)} tokens out today${
               trend
-                ? ` · ${fmtAgentTime(stats!.completeWeek.durationMs)} of agent time over the last 7 whole days against ${fmtAgentTime(stats!.priorWeek.durationMs)} the week before`
+                ? ` · ${fmtAgentTime(stats!.completeWeek.durationMs)} of agent time over the last 7 whole days, ${trend.summary}`
                 : ""
             }`
           : "Analytics are loading"
       }
+      aria-label="Open Analytics"
       aria-busy={!stats}
-      // The clauses wrap rather than truncate: a narrow window should cost the
-      // line a second row, not hide the trend behind an ellipsis that gives no
-      // hint of what it swallowed.
-      className="focus-ring group -mx-1 flex max-w-full cursor-pointer flex-wrap items-center gap-x-1.5 gap-y-0.5 rounded-sm px-1 text-left text-supporting tabular-nums text-dim transition-colors hover:text-fg"
+      className="focus-ring grid w-full cursor-pointer grid-cols-2 gap-3 rounded-xl text-left tabular-nums desktop:grid-cols-4"
     >
-      <span className="flex items-center gap-2">
-        <span
-          aria-hidden="true"
-          className={
-            running > 0
-              ? "h-1.5 w-1.5 shrink-0 rounded-full bg-green motion-safe:animate-pulse"
-              : "h-1.5 w-1.5 shrink-0 rounded-full bg-line"
-          }
-        />
-        {runningLabel(running)}
-        {/* Every separator trails the clause it follows, so a wrap leaves it at
-            the end of the line it finished. Led, it would orphan a dot at the
-            start of the next line, which reads as a bullet. */}
-        {today ? <Separator /> : null}
-      </span>
-      {today ? (
-        <>
-          <span>
-            {fmtCompact(today.sessions)} sessions today
-            <Separator />
-          </span>
-          <span>
-            {fmtAgentTime(today.durationMs)} of agent time
-            {trend ? <Separator /> : null}
-          </span>
-        </>
-      ) : null}
-      {trend ? (
-        <span className="text-faint transition-colors group-hover:text-dim">
-          {trend}
-        </span>
-      ) : null}
-      {!stats && (
-        <span className="h-2.5 w-40 shrink rounded-sm bg-line motion-safe:animate-pulse" />
-      )}
+      <OverviewTile
+        label="Agents running"
+        value={String(running)}
+        detail={runningLabel(running)}
+        live={running > 0}
+      />
+      <OverviewTile
+        label="Sessions today"
+        value={today ? fmtCompact(today.sessions) : undefined}
+        detail={today ? `${today.turns.toLocaleString()} turns` : undefined}
+        loading={!today}
+      />
+      <OverviewTile
+        label="Agent time today"
+        value={today ? fmtAgentTime(today.durationMs) : undefined}
+        loading={!today}
+      />
+      <OverviewTile
+        label="Weekly activity"
+        value={trend?.value}
+        detail={trend?.detail}
+        loading={!stats}
+      />
     </button>
   );
 }
@@ -244,6 +276,12 @@ export function Prs({
   const [personPrs, setPersonPrs] = useState<RecentPr[]>([]);
   const [stats, setStats] = useState<HomeStats | null>(readCachedHomeStats);
   const [preview, setPreview] = useState<PrPreviewTarget | null>(null);
+  const renderScope = [query, workspaceId, repo, person, String(showArchived)].join("\0");
+  const [renderWindow, setRenderWindow] = useState(() => ({
+    scope: renderScope,
+    limit: INITIAL_PR_ROWS,
+  }));
+  const rowLimit = visiblePrRowLimit(renderWindow, renderScope);
   const [addingToSidebar, setAddingToSidebar] = useState(false);
 
   function openPreviewTarget(repo: string, branch: string) {
@@ -337,6 +375,9 @@ setAddingToSidebar(false);
       });
   })();
 
+  const visibleWorktrees = worktrees.slice(0, rowLimit);
+  const remainingRows = Math.max(0, worktrees.length - visibleWorktrees.length);
+
   const sections = (() => {
     const definitions: Array<{ state: WorktreeRow["state"]; label: string }> = [
       { state: "OPEN", label: "Open" },
@@ -344,14 +385,15 @@ setAddingToSidebar(false);
       { state: "CLOSED", label: "Closed" },
     ];
     return definitions.flatMap((definition) => {
-      const rows = worktrees.filter((row) => row.state === definition.state);
+      const total = worktrees.filter((row) => row.state === definition.state).length;
+      const rows = visibleWorktrees.filter((row) => row.state === definition.state);
       if (!rows.length) return [];
       const groups = new Map<string, WorktreeRow[]>();
       for (const row of rows) {
         const label = dateGroup(row.updatedAt);
         groups.set(label, [...(groups.get(label) || []), row]);
       }
-      return [{ ...definition, rows, groups: [...groups.entries()] }];
+      return [{ ...definition, rows, total, groups: [...groups.entries()] }];
     });
   })();
 
@@ -401,6 +443,10 @@ setAddingToSidebar(false);
         spellCheck={false}
       />
 
+      {/* Search sits with the page name. The scopes and CTA remain a trailing
+          group, so widening the pane grows the quiet space between the two
+          jobs instead of separating the field from its heading. */}
+      <div className="ml-auto flex min-w-0 items-center gap-2">
       {people.length > 0 && (
         <Menu.Root>
           <Menu.Trigger
@@ -556,6 +602,7 @@ setAddingToSidebar(false);
       >
         New session
       </Button>
+      </div>
     </>
   );
 
@@ -565,17 +612,11 @@ setAddingToSidebar(false);
     <div data-page-scroll className="min-h-0 w-full flex-1 overflow-y-auto bg-surface">
       {topbarActionsEl ? createPortal(actions, topbarActionsEl) : null}
       <div className="mx-auto w-full max-w-[920px] px-6 pb-15 pt-7 max-[560px]:px-4 max-[560px]:pb-12 max-[560px]:pt-[18px]">
-        {/* The page's name is the top bar's now. With no `PageTitle` under it
-            the large-title handoff never has a heading to defer to, so the bar
-            holds "Pull requests" in its left corner for good rather than
-            fading it in on scroll (hooks/useLargeTitle.ts). That buys the body
-            its first screen back: the day's numbers take a row of their own,
-            and the list starts on Open instead of a third row of chrome.
-
-            `min-w-0` because the line wraps, and a flex child asked for its
-            content size takes the width of one clause rather than of the row. */}
-        <div className="mb-[18px] flex min-w-0 max-[560px]:mb-3.5">
-          <OverviewLine
+        {/* The page name and search live together in the top bar. The day's
+            orientation figures take the same card row Analytics uses, while
+            the pull-request sections remain the page's primary content. */}
+        <div className="mb-6 max-[560px]:mb-4">
+          <OverviewStats
             running={running}
             stats={stats}
             onOpenAnalytics={onOpenAnalytics}
@@ -603,7 +644,7 @@ setAddingToSidebar(false);
               <section key={section.state} className="mb-8">
                 <h2 className={PR_SECTION_LABEL}>
                   {section.label}
-                  <span className="text-label font-medium text-faint">{section.rows.length}</span>
+                  <span className="text-label font-medium text-faint">{section.total}</span>
                 </h2>
                 {section.groups.map(([label, rows]) => (
                   <div key={label} className="mb-5">
@@ -674,6 +715,18 @@ setAddingToSidebar(false);
                 ))}
               </section>
             ))}
+            {remainingRows > 0 && (
+              <div className="flex justify-center pb-4">
+                <Button
+                  variant="ghost"
+                  onClick={() =>
+                    setRenderWindow(expandPrRenderWindow(renderScope, rowLimit))
+                  }
+                >
+                  Show {Math.min(remainingRows, PR_ROWS_PAGE)} more
+                </Button>
+              </div>
+            )}
           </div>
         )}
       </div>

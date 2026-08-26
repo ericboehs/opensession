@@ -1,15 +1,14 @@
 /**
  * Analytics: what happened on/because of Open Session, aggregated for the
- * Analytics view (sidebar → Analytics). Three sources, all read-only:
+ * Analytics view (sidebar → Analytics). Four sources, all read-only:
  *
- * - The audit log (~/.opensession-audit/audit-YYYY-MM-DD.jsonl) for per-turn
- *   facts: turns, tokens, cost, models, run kinds, errors, cancellations. Cost
- *   is the engine's own `total_cost_usd`, which is 0 for models billed against
- *   a subscription pool — hence the parallel `costedTurns` count, so a summary
- *   can say what share of its turns the price actually covers. Day files
- *   are 10-20MB, so each day is parsed once into a compact rollup and disk-
- *   cached (keyed by source size — today's growing file recomputes, past days
- *   never do).
+ * - The audit log (~/.opensession-audit/audit-YYYY-MM-DD.jsonl) for logical
+ *   turn facts: active sessions, duration, run kinds, errors and cancellations.
+ *   Day files are 10-20MB, so each day is parsed once into a compact rollup and
+ *   disk-cached (keyed by source size — today's growing file recomputes, past
+ *   days never do).
+ * - Pi's native session JSONL for per-request model, token and list-price usage,
+ *   including retries, tool rounds, failed attempts and cache writes.
  * - The session store (~/.opensession-sessions) for who created what: person,
  *   automation, mode, branch, repo.
  * - `gh pr list` for PRs opened/merged in the range, attributed to Open Session
@@ -26,11 +25,12 @@ import { readFeedback } from "../agents/github/feedback";
 import type { FeedbackRecord } from "../agents/github/feedback-gates";
 import { gitIdentityFor } from "./shared/user-mappings";
 import { delegatedActorParent, isMachineActor, machineActorLabel } from "./session-actors";
+import { PI_USAGE_CUTOVER_MS, piUsageForDates } from "./pi-usage";
 
 const AUDIT_DIR = stateDir("audit");
 const CACHE_DIR = stateDir("analytics-cache");
 // Bump when the rollup shape changes — stale disk caches recompute.
-const ROLLUP_VERSION = 8;
+const ROLLUP_VERSION = 10;
 
 interface TokenTotals {
 	input: number;
@@ -117,7 +117,7 @@ interface DayRollup {
 
 /** Strip an engine and upstream-provider prefix for aggregation. */
 function shortModel(model: string): string {
-	return model.replace(/^(?:pi|claude|codex)\/[^/]+\//, "") || "unknown";
+	return model.replace(/^(?:pi|claude|codex|opencode)\/[^/]+\//, "") || "unknown";
 }
 
 function emptyTokens(): TokenTotals {
@@ -134,7 +134,7 @@ function round2(n: number): number {
 	return Math.round(n * 100) / 100;
 }
 
-function rollupAuditDay(date: string): DayRollup {
+export function rollupAuditContents(date: string, contents: string): DayRollup {
 	const rollup: DayRollup = {
 		date,
 		turns: 0,
@@ -151,12 +151,11 @@ function rollupAuditDay(date: string): DayRollup {
 		bySession: {},
 		review: emptyReviewAgg(),
 	};
-	const path = `${AUDIT_DIR}/audit-${date}.jsonl`;
-	if (!existsSync(path)) return rollup;
-
 	const promptModel = new Map<string, string>();
+	const eventSessionId = (e: Record<string, unknown>): string =>
+		String(e.session_id || e.bks_session_id || (e.msg === "pi_turn" ? e.session : "") || "");
 	const sessionOf = (e: Record<string, unknown>): SessionAgg | null => {
-		const id = String(e.session_id || e.bks_session_id || "");
+		const id = eventSessionId(e);
 		if (!id) return null;
 		return (rollup.bySession[id] ||= {
 			// A restart-reattached turn is still its base kind for analytics.
@@ -169,27 +168,91 @@ function rollupAuditDay(date: string): DayRollup {
 		});
 	};
 
-	for (const line of readFileSync(path, "utf-8").split("\n")) {
+	const events: Record<string, unknown>[] = [];
+	for (const line of contents.split("\n")) {
 		if (!line) continue;
-		// Cheap pre-filter: the firehose kinds (tool_use/result/thinking/text)
-		// are ~95% of lines and irrelevant here — skip them without parsing.
-		const isResult = line.includes('"kind":"result"');
-		const isPrompt = line.includes('"kind":"user_prompt"');
-		const isError = line.includes('"kind":"error"');
-		const isCancelled = line.includes('"kind":"cancelled"');
-		const isOneshot = line.includes('"msg":"pi_oneshot"');
-		// Engine-run end events carry the turn's wall-clock duration (the
-		// per-turn "result" events don't on Pi).
-		const isRunEnd =
-			line.includes('"direction":"out"') && line.includes('"msg":"pi_turn"');
-		const isReviewEvt = line.includes('"msg":"review_');
-		if (!isResult && !isPrompt && !isError && !isCancelled && !isOneshot && !isRunEnd && !isReviewEvt) continue;
-		let e: Record<string, unknown>;
+		const relevant =
+			line.includes('"kind":"result"') ||
+			line.includes('"kind":"user_prompt"') ||
+			line.includes('"kind":"error"') ||
+			line.includes('"kind":"cancelled"') ||
+			line.includes('"kind":"session_turn_metric"') ||
+			line.includes('"msg":"pi_turn"') ||
+			line.includes('"msg":"pi_oneshot"') ||
+			line.includes('"msg":"opencode_oneshot"') ||
+			line.includes('"msg":"opencode_meridian_run"') ||
+			line.includes('"msg":"opencode_openai_run"') ||
+			line.includes('"msg":"review_');
+		if (!relevant) continue;
 		try {
-			e = JSON.parse(line);
-		} catch {
-			continue;
+			events.push(JSON.parse(line));
+		} catch {}
+	}
+
+	// Before the Pi-only cutover, the outer runner mirrored a generic terminal
+	// beside Pi's own attempt event. Pair attempts with the one logical turn
+	// metric and suppress those mirrors so mixed-format days do not double count.
+	const pendingPi = new Map<string, Record<string, unknown>[]>();
+	const pendingGeneric = new Map<string, Record<string, unknown>[]>();
+	const piLogicalMetrics = new Map<Record<string, unknown>, Record<string, unknown>[]>();
+	const genericTerminalsToSkip = new Set<Record<string, unknown>>();
+	for (const e of events) {
+		const id = eventSessionId(e);
+		if (!id) continue;
+		if (e.msg === "pi_turn" && e.direction === "out" && !e.kind) {
+			const attempts = pendingPi.get(id) || [];
+			attempts.push(e);
+			pendingPi.set(id, attempts);
 		}
+		if ((e.kind === "result" || e.kind === "error") && pendingPi.has(id)) {
+			const terminals = pendingGeneric.get(id) || [];
+			terminals.push(e);
+			pendingGeneric.set(id, terminals);
+		}
+		if (e.kind === "session_turn_metric") {
+			const attempts = pendingPi.get(id) || [];
+			if (attempts.length) {
+				piLogicalMetrics.set(e, attempts);
+				for (const terminal of pendingGeneric.get(id) || []) genericTerminalsToSkip.add(terminal);
+			}
+			pendingPi.delete(id);
+			pendingGeneric.delete(id);
+		}
+	}
+
+	const addUsage = (e: Record<string, unknown>, countAsTurn: boolean) => {
+		const input = Number(e.input_tokens) || 0;
+		const output = Number(e.output_tokens) || 0;
+		const cacheRead = Number(e.cache_read_input_tokens) || 0;
+		const cacheWrite = Number(e.cache_creation_input_tokens) || 0;
+		const cost = Number(e.total_cost_usd) || 0;
+		rollup.tokens.input += input;
+		rollup.tokens.output += output;
+		rollup.tokens.cacheRead += cacheRead;
+		rollup.tokens.cacheWrite += cacheWrite;
+		rollup.costUsd += cost;
+		if (cost > 0) rollup.costedTurns++;
+		const model = e.model ? shortModel(String(e.model)) : promptModel.get(eventSessionId(e)) || "";
+		const m = model
+			? (rollup.byModel[model] ||= emptyModelAgg())
+			: (rollup.unknownModel[eventSessionId(e)] ||= emptyModelAgg());
+		if (countAsTurn) m.turns++;
+		m.input += input;
+		m.output += output;
+		m.cacheRead += cacheRead;
+		m.cacheWrite += cacheWrite;
+		m.costUsd += cost;
+		if (cost > 0) m.costedTurns++;
+		const s = sessionOf(e);
+		if (s) {
+			s.output += output;
+			s.tokens += input + output + cacheRead + cacheWrite;
+			s.costUsd += cost;
+		}
+	};
+
+	for (const e of events) {
+		const isReviewEvt = String(e.msg || "").startsWith("review_");
 		if (isReviewEvt) {
 			const rv = rollup.review;
 			switch (String(e.msg || "")) {
@@ -219,14 +282,44 @@ function rollupAuditDay(date: string): DayRollup {
 			}
 			continue;
 		}
-		if (e.msg === "pi_oneshot") {
+		if (e.msg === "pi_oneshot" || e.msg === "opencode_oneshot") {
 			rollup.oneshots++;
 			continue;
 		}
-		if (e.msg === "pi_turn" && e.direction === "out") {
+		if (
+			(e.msg === "opencode_meridian_run" || e.msg === "opencode_openai_run") &&
+			e.phase === "end"
+		) {
 			rollup.durationMs += Number(e.duration_ms) || 0;
 			continue;
 		}
+		if (e.msg === "pi_turn" && e.direction === "out") {
+			// Every Pi attempt owns its model usage, including retries and utility
+			// calls. Only session_turn_metric below owns logical turn activity.
+			if (
+				e.input_tokens !== undefined ||
+				e.output_tokens !== undefined ||
+				e.cache_read_input_tokens !== undefined ||
+				e.cache_creation_input_tokens !== undefined
+			) addUsage(e, true);
+			if (e.status === "cancelled") rollup.cancelled++;
+			continue;
+		}
+		const attempts = piLogicalMetrics.get(e);
+		const metricTime = e.kind === "session_turn_metric" ? Date.parse(String(e.time || "")) : 0;
+		if (attempts || metricTime >= PI_USAGE_CUTOVER_MS) {
+			rollup.turns++;
+			rollup.durationMs += Number(e.duration_ms) || 0;
+			const terminalAttempt = attempts?.[attempts.length - 1] || e;
+			const s = sessionOf(terminalAttempt);
+			if (s) {
+				s.turns++;
+				if (e.outcome === "failed") s.errors++;
+			}
+			if (e.outcome === "failed") rollup.errors++;
+			continue;
+		}
+		if (genericTerminalsToSkip.has(e)) continue;
 		const s = sessionOf(e);
 		switch (String(e.kind || "")) {
 			// Some engines' result events carry no model — remember the turn's
@@ -236,41 +329,12 @@ function rollupAuditDay(date: string): DayRollup {
 					promptModel.set(String(e.session_id || e.bks_session_id), shortModel(String(e.model)));
 				}
 				break;
-			case "result": {
+			case "result":
 				rollup.turns++;
-				const input = Number(e.input_tokens) || 0;
-				const output = Number(e.output_tokens) || 0;
-				const cacheRead = Number(e.cache_read_input_tokens) || 0;
-				const cacheWrite = Number(e.cache_creation_input_tokens) || 0;
-				const cost = Number(e.total_cost_usd) || 0;
-				rollup.tokens.input += input;
-				rollup.tokens.output += output;
-				rollup.tokens.cacheRead += cacheRead;
-				rollup.tokens.cacheWrite += cacheWrite;
-				rollup.costUsd += cost;
-				if (cost > 0) rollup.costedTurns++;
 				if (e.steps === undefined) rollup.legacyUsageTurns++;
-				const model = e.model
-					? shortModel(String(e.model))
-					: promptModel.get(String(e.session_id || e.bks_session_id || "")) || "";
-				const m = model
-					? (rollup.byModel[model] ||= emptyModelAgg())
-					: (rollup.unknownModel[String(e.session_id || e.bks_session_id || "")] ||= emptyModelAgg());
-				m.turns++;
-				m.input += input;
-				m.output += output;
-				m.cacheRead += cacheRead;
-				m.cacheWrite += cacheWrite;
-				m.costUsd += cost;
-				if (cost > 0) m.costedTurns++;
-				if (s) {
-					s.turns++;
-					s.output += output;
-					s.tokens += input + output + cacheRead + cacheWrite;
-					s.costUsd += cost;
-				}
+				addUsage(e, true);
+				if (s) s.turns++;
 				break;
-			}
 			case "error":
 				rollup.errors++;
 				if (s) s.errors++;
@@ -281,6 +345,11 @@ function rollupAuditDay(date: string): DayRollup {
 		}
 	}
 	return rollup;
+}
+
+function rollupAuditDay(date: string): DayRollup {
+	const path = `${AUDIT_DIR}/audit-${date}.jsonl`;
+	return rollupAuditContents(date, existsSync(path) ? readFileSync(path, "utf8") : "");
 }
 
 /** Rollup with a per-day disk cache keyed on the source file's size. */
@@ -1096,35 +1165,9 @@ export async function buildAnalytics(from: string, to: string): Promise<Analytic
 	}
 
 	const engineModels = new Map<string, { requests: number; costUsd: number } & TokenTotals>();
-	// Pi reports every request through the audit rollup, including tool rounds.
-	const engineDays = new Map(dates.map((date) => {
-		const rollup = cachedRollup(date);
-		const byModel = Object.entries(rollup.byModel).map(([model, usage]) => ({
-			model,
-			requests: usage.turns,
-			input: usage.input,
-			output: usage.output,
-			cacheRead: usage.cacheRead,
-			cacheWrite: usage.cacheWrite,
-			costUsd: usage.costUsd,
-		}));
-		const costUsd = byModel.reduce((sum, usage) => sum + usage.costUsd, 0);
-		return [date, {
-			byModel,
-			bySession: Object.fromEntries(Object.entries(rollup.bySession).map(([id, usage]) => [id, { requests: usage.turns, output: usage.output }])),
-			sessionAttribution: "measured" as const,
-			coverage: { pi: "measured" as const },
-			input: rollup.tokens.input,
-			output: rollup.tokens.output,
-			cacheRead: rollup.tokens.cacheRead,
-			cacheWrite: rollup.tokens.cacheWrite,
-			totalTokens: rollup.tokens.input + rollup.tokens.output + rollup.tokens.cacheRead + rollup.tokens.cacheWrite,
-			costUsd,
-			requests: byModel.reduce((sum, usage) => sum + usage.requests, 0),
-			unpricedRequests: 0,
-			unmeasured: false,
-		}] as const;
-	}));
+	// Pi's native session JSONL records every assistant request, including tool
+	// rounds, failed attempts and cache writes that older audit terminals omit.
+	const engineDays = await piUsageForDates(dates);
 
 	const reviewByDate = new Map<string, ReviewDayAgg>();
 	for (const date of dates) {
@@ -1225,7 +1268,11 @@ export async function buildAnalytics(from: string, to: string): Promise<Analytic
 		const dayPrs = allPrs.filter((pr) => pr.byOpensession);
 		const prsOpened = dayPrs.filter((pr) => pr.createdAt.slice(0, 10) === date).length;
 		const prsMerged = dayPrs.filter((pr) => pr.mergedAt?.slice(0, 10) === date).length;
-		const unmeasuredSources: string[] = [];
+		const unmeasuredSources = engine
+			? Object.entries(engine.coverage)
+					.filter(([, coverage]) => coverage === "unmeasured")
+					.map(([source]) => source)
+			: [];
 		days.push({
 			date,
 			sessions: sessionIds.size,
@@ -1437,7 +1484,7 @@ const SUMMARY_FRESH_MS = 5 * 60 * 1000;
 const SUMMARY_STALE_SERVE_MS = 24 * 60 * 60 * 1000;
 // Bump when composition semantics change so a restart cannot serve a fresh but
 // obsolete disk summary before the background prewarm replaces it.
-const SUMMARY_VERSION = 8;
+const SUMMARY_VERSION = 10;
 const summaryCache = new Map<string, { at: number; summary: AnalyticsSummary }>();
 const summaryInflight = new Map<string, Promise<AnalyticsSummary>>();
 
@@ -1528,10 +1575,7 @@ export interface HomeStatsBucket {
  *  engine usage supplies tokens. This avoids the session-store and gh scans. */
 export async function buildHomeStats(
 	now = Date.now(),
-	loadEngineUsage: (dates: string[]) => Promise<Map<string, { input: number; output: number; cacheRead: number; cacheWrite: number }>> = async (dates) => new Map(dates.map((date) => {
-		const usage = cachedRollup(date).tokens;
-		return [date, usage];
-	})),
+	loadEngineUsage: (dates: string[]) => Promise<Map<string, { input: number; output: number; cacheRead: number; cacheWrite: number }>> = piUsageForDates,
 ): Promise<{
 	today: HomeStatsBucket;
 	week: HomeStatsBucket;

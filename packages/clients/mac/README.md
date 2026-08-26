@@ -45,8 +45,7 @@ built-in retry screen.
 ### Iterating on the frontend before it ships
 
 The shell renders whatever the server serves. To test unmerged Open Session
-frontend changes against **live production data**, run this from the
-repository root:
+frontend changes, run this from the repository root:
 
 ```sh
 bun app:dev
@@ -58,22 +57,33 @@ Session Dock name/icon, and stops both processes together on `Ctrl+C`. Fully
 quit an already-running Open Session first (`⌘Q`); closing its window only
 hides it and the single-instance lock would otherwise reuse that older process.
 
-Edits hot-reload in place (React Fast Refresh + CSS hot-swap; Tailwind output
-refreshes within ~3s). ⚠️ Writes are real — prompts/steers/archives hit
-production. For a fully isolated sandbox instead, run the whole server locally
-(`mkdir -p ~/.opensession-sessions && bun --hot run opensession.ts`, port 3850) —
-empty local state, optionally rsync'd from prod.
+`bun app:dev` defaults to the backend at `http://127.0.0.1:3850`. To use a
+remote production backend, set `OS1_UPSTREAM` and either `OS1_TOKEN` or
+`OS1_SSH_HOST`. Writes go to whichever upstream you configure.
+
+Edits are rebuilt by the local proxy. JavaScript entry-bundle changes trigger
+a full page reload; it does not provide React Fast Refresh or CSS hot-swap.
+Refresh manually after stylesheet-only edits. For an empty, isolated server
+state instead, run:
+
+```sh
+OPENSESSION_DEV=1 OPENSESSION_STATE_DIR="$(mktemp -d)" bun run dev
+```
+
+This starts the server on port 3850 by default without using normal Open
+Session state.
+
 ## Which server
 
 The app asks the first time it opens and keeps an account list plus its active
 organization in `server.json`, so a build is not tied to one address. A bare
-host resolves to `https`, except on this machine, and the answer is checked
-against `/api/health` before it is saved. **Add organization** opens that
-address check in an in-app modal. The organization row above Feed and **OS →
-Organizations** both switch accounts; ⌘⇧1…9 remains available from the keyboard.
-Inactive organizations stay loaded in hidden sandboxed windows so
-WebSockets and notifications remain live; unread counts aggregate into the Dock
-badge and menu labels.
+host is tried over HTTPS first, except localhost and loopback addresses use
+HTTP. If HTTPS does not answer, the shell retries a bare host over HTTP. Both
+setup flows probe `/api/health` by default but allow the normalized address to
+be saved with **Use anyway** or **Add anyway**. The organization row above Feed
+and **OS → Organizations** both switch accounts; ⌘⇧1…9 remains available from
+the keyboard. Inactive organizations stay loaded in hidden sandboxed windows
+so WebSockets and notifications remain live.
 
 `OS1_URL` overrides the stored answer for one run. Distributions set the address
 the first-run screen offers with `opensession.defaultServer` in `package.json`
@@ -89,11 +99,11 @@ asked.
   everything else opens in the default browser. Additional windows close
   normally; closing the last one hides it to the Dock so its route and drafts
   stay intact. Window state persists across launches.
-- `src/preload.js`: exposes `window.os1` (`desktop`, `setBadge`, `clearBadge`,
-  `updates`, `dictation`) for the frontend to feature-detect and mirror its app
-  badge to the dock, plus `server` for the two shell pages below. The main
-  process refuses `server` calls from anything but a `file://` page, so the app
-  a server serves cannot repoint the shell.
+- `src/preload.js`: exposes `window.os1` with `desktop`, `materialBackdrop`,
+  `setBadge`, `clearBadge`, `focusWindow`, `organizations`, `updates`,
+  `dictation`, and `server`. The main process refuses `server` calls from
+  anything but a `file://` page, so the app a server serves cannot repoint the
+  shell.
 - Native dictation: Electron exposes Chromium's speech-recognition API without
   connecting it to a working service. The renderer therefore streams mono PCM
   through the preload bridge to `native/DictationHelper.swift`, a signed helper
@@ -103,8 +113,8 @@ asked.
   local or release package.
 - `src/setup.html`: the server prompt, shown when nothing is stored yet and
   when adding from the native app menu or editing an organization. The in-app
-  organization menu uses its own modal instead. Both check the address before
-  saving it.
+  organization menu uses its own modal instead. Both probe the address by
+  default and offer to save its normalized form when it is unreachable.
 - `src/offline.html` — retry screen for when the configured server is
   unreachable, with a way back to that prompt, since a stored address that is
   wrong looks exactly like a server that is down.
@@ -134,16 +144,16 @@ persists in Electron's default session.
 
 - `os1://…` opens the app and maps to the active server
   (e.g. `os1://session/abc` → `/session/abc`). Shared session, workspace and
-  PR pages show a dismissible **Open app** card at the bottom of the sidebar in
-  a Mac browser. The click opens this protocol while leaving the web page in
-  place when the app is not installed.
+  PR pages show a dismissible **View in the app** card with an **Open** button
+  at the bottom of the sidebar in an eligible Mac browser. The click opens this
+  protocol while leaving the web page in place when the app is not installed.
 - **Universal links** (plain `https://os.tella.dev/…` links opening the app,
   e.g. from Slack — Tella's host; see the rebrand note under Signing & release):
-  the server side is done — Open Session serves
-  `/.well-known/apple-app-site-association` for app IDs
-  `6GUXT43C8B.dev.tella.os1` (the iOS + Mac App Store pair) and
-  `6GUXT43C8B.dev.tella.os1.shell` (this shell). Signed CI
-  builds install the
+  Open Session exposes `/.well-known/apple-app-site-association` from the
+  server's `integrations.clients.appleAppIds` setting. Tella uses
+  `["6GUXT43C8B.dev.tella.os1", "6GUXT43C8B.dev.tella.os1.shell"]` for the iOS
+  and Mac App Store pair plus this shell. Without that setting, the route
+  returns an empty app-ID list. Signed CI builds install the
   Developer ID profile from the `OS1_PROVISIONING_PROFILE_BASE64` repository
   secret and sign the top-level app with `build/entitlements.mac.applinks.plist`;
   the release fails if either the signed entitlement or embedded profile is
@@ -157,18 +167,18 @@ persists in Electron's default session.
   fetch the association file. The entitlement therefore also lists the
   `?mode=developer` alternate, which fetches directly — each team device must
   enable Associated Domains development mode for native Universal Links. The
-  **Open app** action above is the fallback on Macs without that setting.
+  **Open** action above is the fallback on Macs without that setting.
 
 ## Signing & release
 
 This section (and the universal-links app IDs above) documents **Tella's own
 release setup** — Apple team `6GUXT43C8B` and the `dev.tella.os1.*` bundle ids.
-If you fork, rebrand those identifiers to your own namespace (your Apple team
-id, your bundle id prefix, your server URL) and supply your own signing
-secrets; nothing in the shell depends on Tella's values.
+Forks must rebrand the package metadata, entitlements, workflow checks, server
+URL and `integrations.clients.appleAppIds`, then supply their own signing
+secrets.
 
 CI (`../../../.github/workflows/os1-mac-release.yml`) builds, signs, notarizes and
-publishes a GitHub Release on every `v*` tag. Manual "Run workflow" does a dry
+publishes a GitHub Release for matching version tags. Manual "Run workflow" does a dry
 run with artifacts attached to the run. Repository secrets (the values below
 are Tella's — supply your own):
 
@@ -176,10 +186,13 @@ are Tella's — supply your own):
 |---|---|
 | `APPLE_CERTIFICATES_P12` | "Developer ID Application: Tella HQ Inc. (6GUXT43C8B)" as base64 .p12 |
 | `APPLE_CERTIFICATES_PASSWORD` | password of that .p12 export |
+| `OS1_PROVISIONING_PROFILE_BASE64` | Developer ID provisioning profile for `dev.tella.os1.shell`, including Associated Domains, encoded as base64 |
 | `APPLE_ID` | Apple ID with app access |
 | `APPLE_APP_PASSWORD` | app-specific password for that Apple ID |
 
-Releasing: `git tag v0.1.0 && git push origin v0.1.0`.
+Set `version` in `packages/clients/mac/package.json` to the intended `X.Y.Z`
+and commit it, then run `git tag vX.Y.Z && git push origin vX.Y.Z`. The package
+version and tag must match.
 
 Local `bun run dist` produces an unsigned build when signing credentials are
 absent. Release builds package the Electron shell and its icon resources. The
@@ -199,15 +212,21 @@ package opensession". The empty list stops the search at this directory.
 ## Auto-update
 
 The packaged app keeps itself current via Electron's built-in Squirrel.Mac
-updater. It polls `<cloud server>/api/packages/clients/mac/update?version=<installed>`
-on launch and every 4 hours — served by `packages/core/opensession-server/src/server/routes/os1-update.ts` in
-this repository, which serves the latest GitHub release in Squirrel's static
-JSON feed format and proxies the signed arm64 zip out of it (Squirrel can't
-reach a private GitHub repo itself). When an update is found Squirrel downloads it
-in the background; the web frontend shows a persistent bottom-right toast
-(`DesktopUpdateToast`, driven by `window.os1.updates` from `src/preload.js`)
-that flips to "Restart to update" once the download is staged, and restarting
-installs + relaunches.
+updater. It points to
+`/api/packages/clients/mac/update?version=<installed>` on the server selected
+when the updater initializes, then checks after 15 seconds and every 4 hours.
+The route lives in
+`packages/core/opensession-server/src/server/routes/os1-update.ts` and returns a
+Squirrel static JSON feed, proxying its signed arm64 ZIP because Squirrel cannot
+read a private GitHub repository itself. The server must set
+`integrations.updates.releaseRepo` to the GitHub `owner/repo` containing the Mac
+releases, and its `gh` CLI credentials must be able to read the release and its
+assets. Without that configuration the feed contains no updates.
+
+The frontend stays quiet while Squirrel downloads. Once the update is staged,
+`UpdatePill`, driven by `window.os1.updates`, shows a persistent bottom-left
+**Update ready** card with a **Restart** action. Restarting installs and
+relaunches the app.
 
 Shipping an update is unchanged: bump `version` in `package.json`, tag, push
 the tag. Installed apps (≥ 0.2.0) pick it up on their next check. Dev runs
@@ -216,8 +235,9 @@ the tag. Installed apps (≥ 0.2.0) pick it up on their next check. Dev runs
 ## Follow-ups tracked
 
 - **Dock badge**: the web app sets its badge via `navigator.setAppBadge` in the
-  service worker, which doesn't reach Electron's dock. Frontend change in the
-  Open Session repo: when `window.os1` exists, also call `window.os1.setBadge(n)`.
+  service worker, which doesn't reach Electron's Dock. The shell can aggregate
+  per-organization counts, but the frontend does not yet call the bridge. When
+  `window.os1` exists, it must also call `window.os1.setBadge(n)`.
 - **Universal links**: see above.
 - **Web Push**: push events don't arrive in Electron (no FCM); notifications
   while the app is running come through the page's WebSocket + Notification

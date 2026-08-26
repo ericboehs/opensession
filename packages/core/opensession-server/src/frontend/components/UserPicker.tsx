@@ -4,7 +4,7 @@ import { UserAvatar } from "./UserAvatar";
 import { IconArrowUpRight } from "./icons";
 import { BASE_PATH } from "../lib/base";
 import { PRODUCT_NAME } from "../lib/brand";
-import { usePeople } from "../lib/people";
+import { ensurePeople, getPeople, usePeople } from "../lib/people";
 import { effectiveTheme, onThemeChanged } from "../lib/theme";
 import { Button } from "../ui/button";
 import { cn } from "../ui/cn";
@@ -69,6 +69,13 @@ export interface AuthStatus {
   required: boolean;
   authenticated: boolean;
   admin?: boolean;
+  /** The server's own name, answered pre-auth so the sign-in card can say
+   *  whose server this is (every other source sits behind the gate). */
+  organizationName?: string;
+  /** The organization's configured icon, revisioned; null when the server
+   *  still wears the bundled app mark. The image itself is served pre-auth
+   *  as a static asset — only the URL needs this response to travel. */
+  organizationIconUrl?: string | null;
   /** Signed out because GitHub permanently rejected this person's grant, not
    *  because they never signed in: `login` is still theirs, and the way back
    *  in is the same authorize. */
@@ -186,9 +193,10 @@ function AuthBackdrop() {
  * earned. Over the charcoal cut there is nothing for a cast to fall on, so it
  * takes a hairline instead.
  *
- * Every screen opens on the product's own icon, the same one the loading
- * splash shows (index.html), so the app you are signing in to is what you land
- * on. GitHub is the method, and it is named on the button.
+ * Every screen opens on the organization's own mark when one is configured,
+ * else the product icon — the same one the loading splash shows (index.html),
+ * so the app you are signing in to is what you land on. GitHub is the method,
+ * and it is named on the button.
  */
 function AuthCard({
 	title,
@@ -205,13 +213,7 @@ function AuthCard({
 		<div className="relative flex h-screen items-center justify-center overflow-hidden p-6 [html.wco_&]:[-webkit-app-region:drag] [html.wco_&]:[app-region:drag] [html.desktop-shell_&]:[-webkit-app-region:drag] [html.desktop-shell_&]:[app-region:drag]">
 			<AuthBackdrop />
 			<div className="relative w-[400px] max-w-full rounded-2xl bg-surface p-8 text-center shadow-(--auth-card-edge) phone:p-6 [html.wco_&]:[-webkit-app-region:no-drag] [html.wco_&]:[app-region:no-drag] [html.desktop-shell_&]:[-webkit-app-region:no-drag] [html.desktop-shell_&]:[app-region:no-drag]">
-				<img
-					src={`${BASE_PATH}/mac-app-icon.png?v=7`}
-					alt=""
-					width={56}
-					height={56}
-					className="mx-auto mb-5 block size-14"
-				/>
+				<AuthMark />
 				{/* Medium, not semibold: at 19px on the card's own paper the heavier
 				    step read as a slab rather than a heading. */}
 				<h1 className="m-0 text-section-title font-title text-fg">{title}</h1>
@@ -221,13 +223,42 @@ function AuthCard({
 	);
 }
 
+/** The card's mark: the organization's configured icon when one exists (its
+ *  URL arrives pre-auth on /api/auth/status), else the bundled app mark. A
+ *  configured icon that fails to load falls back rather than leaving a hole. */
+function AuthMark() {
+	const fallback = `${BASE_PATH}/mac-app-icon.png?v=7`;
+	const configured = useAuthStatus()?.organizationIconUrl || null;
+	const [failedSrc, setFailedSrc] = useState<string | null>(null);
+	const custom = configured !== null && configured !== failedSrc;
+	const src = custom ? configured : fallback;
+	return (
+		<img
+			src={src}
+			alt=""
+			width={56}
+			height={56}
+			// The bundled mark is drawn to the tile's edge; an uploaded org icon is
+			// a full-bleed square (Settings → General crops it to one), so it rounds
+			// like it does in the OrganizationSwitcher.
+			className={cn(
+				"mx-auto mb-5 block size-14",
+				custom ? "rounded-control object-cover" : "",
+			)}
+			onError={() => {
+				if (custom) setFailedSrc(src);
+			}}
+		/>
+	);
+}
+
 /** The sentence under an AuthCard's title. */
 function AuthCopy({ children }: { children: React.ReactNode }) {
 	return (
 		// `last:mb-0` for the cards whose sentence IS the card (the expired
 		// notice): the margin is air before whatever follows, and with nothing
 		// following it just lands the card off-centre.
-		<p className="mx-auto mt-2 mb-6 max-w-[32ch] text-supporting leading-relaxed text-dim last:mb-0">
+		<p className="mx-auto mt-2 mb-6 max-w-[32ch] text-supporting leading-normal text-dim last:mb-0">
 			{children}
 		</p>
 	);
@@ -254,15 +285,22 @@ export function UserGate({ children }: { children: React.ReactNode }) {
 				if (!r.ok) throw new Error(`Authentication status failed: ${r.status}`);
 				return r.json();
 			})
-			.then((body: AuthStatus | null) => {
+			.then(async (body: AuthStatus | null) => {
 				if (!body) throw new Error("Authentication status was empty");
-				setAuth(body);
 				if (body.required && body.authenticated && body.name) {
 					const user = body.name.split(" ")[0];
 					setStoredUser(user);
+				} else if (!body.required && getCurrentUser() === "Anonymous") {
+					// A fresh local instance has nobody to choose between. Wait for the
+					// roster so a configured team still gets its picker, then enter an
+					// empty or single-person instance directly into first-mile setup.
+					await ensurePeople();
+					const people = getPeople();
+					if (people.length <= 1) setStoredUser(people[0]?.name ?? "Local User");
 				}
-				// Publish readiness after localStorage carries the verified name so
-				// deferred per-user stores hydrate the authenticated account.
+				setAuth(body);
+				// Publish readiness after localStorage carries the verified or local
+				// name so deferred per-user stores hydrate the right account.
 				setAuthStatusCache(body);
 			})
 			.catch(() => setAuthFailed(true));
@@ -332,10 +370,8 @@ export function UserGate({ children }: { children: React.ReactNode }) {
 
   if (user !== "Anonymous") return <>{children}</>;
 
-  // No sign-in configured, which is the default for a fresh instance: the
-  // server cannot verify anyone, so this name is a label rather than an
-  // identity. It is also the bootstrap path, since an admin has to get in
-  // here before there is a GitHub app to sign in with.
+  // No sign-in configured with more than one rostered person. Fresh and
+  // single-person instances are assigned above and skip this choice entirely.
   return (
     <AuthCard title="Who are you?">
       <AuthCopy>
@@ -399,6 +435,7 @@ function GithubSignIn({
   } | null>(null);
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const serverName = useAuthStatus()?.organizationName || PRODUCT_NAME;
 
   // Poll GitHub (via the server) until the device code is authorized.
   useEffect(() => {
@@ -459,7 +496,7 @@ setError(e.message);
           ? "Enter this code"
           : reconnect
             ? "Reconnect GitHub"
-            : `Sign in to ${PRODUCT_NAME}`
+            : `Sign in to ${serverName}`
       }
     >
       {!flow ? (
@@ -472,10 +509,7 @@ setError(e.message);
                 continue.
               </>
             ) : (
-              <>
-                Sessions act as your own GitHub account, so pull requests are
-                authored by you.
-              </>
+              "Open Session is your team’s control room for coding agents. Sign in with GitHub so pull requests from your sessions are authored by you."
             )}
           </AuthCopy>
           <Button

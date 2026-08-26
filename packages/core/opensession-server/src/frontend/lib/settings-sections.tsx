@@ -1,6 +1,7 @@
 import React from "react";
 import {
 	IconArchive,
+	IconArrowDown,
 	IconBandAid,
 	IconBell,
 	IconBolt,
@@ -13,6 +14,7 @@ import {
 	IconDatabase,
 	IconFileText2,
 	IconHome,
+	IconGlobe,
 	IconKeyboard,
 	IconPeople,
 	IconPlug,
@@ -54,10 +56,12 @@ export type SettingsSectionKey =
 	| "connections"
 	| "memory"
 	| "storage"
+	| "ingress"
 	| "prewarming"
 	| "deploys"
 	| "papercuts"
 	| "audit"
+	| "downloads"
 	| ToolSectionKey;
 
 export const TOOL_SECTIONS = new Set<SettingsSectionKey>([
@@ -195,6 +199,13 @@ export const SECTIONS: {
 		icon: <IconShieldCheck />,
 	},
 	{
+		key: "ingress",
+		label: "Domains and ingress",
+		group: "Infrastructure",
+		adminOnly: true,
+		icon: <IconGlobe />,
+	},
+	{
 		key: "storage",
 		label: "Storage",
 		group: "Infrastructure",
@@ -224,6 +235,12 @@ export const SECTIONS: {
 		label: "Audit log",
 		group: "Activity",
 		icon: <IconFileText2 />,
+	},
+	{
+		key: "downloads",
+		label: "Downloads",
+		group: "Activity",
+		icon: <IconArrowDown />,
 	},
 ];
 

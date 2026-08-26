@@ -20,6 +20,36 @@ export interface PendingPrompt {
 	content: string;
 	user?: string;
 	sentAt: number;
+	/** The delivery response says this prompt started a turn. A transient queue
+	 *  receipt must not retire its transcript bubble before the real entry lands. */
+	serverStarted?: true;
+}
+
+export interface OptimisticPendingPrompt extends PendingPrompt {
+	images?: string[];
+	busyMode?: "queue" | "steer";
+}
+
+/**
+ * The composer places a new optimistic prompt from its last-known running
+ * state. The server can make the opposite decision in the send race: a run
+ * that looked busy may finish before intake, so the authoritative result is
+ * `started`. Move that prompt back to the transcript surface. If a transient
+ * queue echo already claimed and removed it, restore the bubble until its real
+ * transcript entry arrives.
+ */
+export function markPendingStarted(
+	pending: OptimisticPendingPrompt[],
+	started: OptimisticPendingPrompt,
+): OptimisticPendingPrompt[] {
+	const index = pending.findIndex((item) => item.id === started.id);
+	if (index < 0) return [...pending, { ...started, serverStarted: true }];
+	if (pending[index].serverStarted && !pending[index].busyMode) return pending;
+	const next = pending.slice();
+	const transcriptBubble = { ...pending[index], serverStarted: true as const };
+	delete transcriptBubble.busyMode;
+	next[index] = transcriptBubble;
+	return next;
 }
 
 export interface ReconcileResult {
@@ -49,11 +79,18 @@ export function reconcilePending(
 	const echoPool = echoes.map((q) => q.content.trim());
 	for (const p of pending) {
 		const c = p.content.trim();
-		const qi = echoPool.indexOf(c);
-		if (qi >= 0) {
-			echoPool.splice(qi, 1);
-			landed.add(p.id);
-			continue;
+		// An idle send is briefly queue-owned while the server dispatches it. The
+		// queue_update can arrive before the HTTP `started` response and its empty
+		// successor can arrive before the transcript watcher echoes the user row.
+		// Once the response confirms `started`, only that transcript row may retire
+		// the bubble; otherwise the running dot appears beside a blank conversation.
+		if (!p.serverStarted) {
+			const qi = echoPool.indexOf(c);
+			if (qi >= 0) {
+				echoPool.splice(qi, 1);
+				landed.add(p.id);
+				continue;
+			}
 		}
 		// Interrupt/steer-path sends land in the transcript with a "[user] "
 		// attribution prefix (added server-side), while the optimistic bubble

@@ -17,24 +17,24 @@ import {
 } from "./plugins";
 
 const VALID = {
-	name: "loom",
+	name: "video-library",
 	version: "1.0.0",
-	description: "Your Loom videos as a project.",
+	description: "Your team's videos as a project.",
 	mcpServers: {
-		loom: {
+		"video-library": {
 			type: "http",
-			url: "https://mcp.loom.example/mcp",
-			headers: { Authorization: "${LOOM_TOKEN}" },
+			url: "https://mcp.video-library.example/mcp",
+			headers: { Authorization: "${VIDEO_LIBRARY_TOKEN}" },
 		},
 	},
 	feeds: [
 		{
-			id: "loom",
-			title: "Loom",
-			refKind: "loom",
-			mcpServers: ["loom"],
+			id: "video-library",
+			title: "Video library",
+			refKind: "video-library",
+			mcpServers: ["video-library"],
 			items: {
-				server: "loom",
+				server: "video-library",
 				tool: "list_videos",
 				map: { id: "id", title: "name" },
 			},
@@ -44,15 +44,15 @@ const VALID = {
 		{
 			id: "weekly",
 			label: "Weekly digest",
-			automation: { name: "Loom weekly digest", prompt: "Summarise last week.", schedule: "0 9 * * 1" },
+			automation: { name: "Video library weekly digest", prompt: "Summarise last week.", schedule: "0 9 * * 1" },
 		},
 	],
-	skills: ["skills/loom-editing"],
+	skills: ["skills/video-library-editing"],
 };
 
 /** A manifest with one field changed, so each case says only what it tests. */
 function withServer(server: Record<string, unknown>) {
-	return { ...VALID, mcpServers: { loom: server } };
+	return { ...VALID, mcpServers: { "video-library": server } };
 }
 
 function errorsOf(input: unknown): string[] {
@@ -67,7 +67,7 @@ describe("validateManifest", () => {
 	});
 
 	test("name, version and description are required and shaped", () => {
-		expect(errorsOf({ ...VALID, name: "Loom Videos" })).toContainEqual(
+		expect(errorsOf({ ...VALID, name: "Video library Videos" })).toContainEqual(
 			expect.stringContaining("name must be a short slug"),
 		);
 		expect(errorsOf({ ...VALID, version: "v1" })).toContainEqual(
@@ -139,7 +139,7 @@ describe("validateManifest", () => {
 	});
 
 	test("a feed needs an id, a title and a source tool", () => {
-		const feeds = [{ id: "loom", title: "Loom", items: { server: "loom" } }];
+		const feeds = [{ id: "video-library", title: "Video library", items: { server: "video-library" } }];
 		const errors = errorsOf({ ...VALID, feeds });
 		expect(errors).toContainEqual(expect.stringContaining("items.tool is required"));
 		expect(errors).toContainEqual(expect.stringContaining("items.map needs id and title"));
@@ -156,8 +156,8 @@ describe("validateManifest", () => {
 	});
 
 	test("skillName is the last segment", () => {
-		expect(skillName("skills/loom-editing")).toBe("loom-editing");
-		expect(skillName("skills/loom-editing/")).toBe("loom-editing");
+		expect(skillName("skills/video-library-editing")).toBe("video-library-editing");
+		expect(skillName("skills/video-library-editing/")).toBe("video-library-editing");
 	});
 
 	test("a syntax error reads like one", () => {
@@ -177,15 +177,15 @@ describe("the ledger", () => {
 	});
 
 	const entry = (over: Partial<InstalledPackage> = {}): InstalledPackage => ({
-		name: "loom",
+		name: "video-library",
 		version: "1.0.0",
-		description: "Loom",
-		source: "acme/opensession-loom",
-		dir: `${root}/.opensession-plugins/loom`,
+		description: "Video library",
+		source: "acme/opensession-video-library",
+		dir: `${root}/.opensession-plugins/video-library`,
 		installedAt: "2026-08-16T00:00:00.000Z",
 		artifacts: [
-			{ kind: "mcp", ref: "loom" },
-			{ kind: "skill", ref: "loom-editing", hash: "abc" },
+			{ kind: "mcp", ref: "video-library" },
+			{ kind: "skill", ref: "video-library-editing", hash: "abc" },
 		],
 		...over,
 	});
@@ -197,7 +197,7 @@ describe("the ledger", () => {
 
 	test("an absent ledger reads as empty rather than throwing", () => {
 		expect(listInstalledPackages(root)).toEqual([]);
-		expect(readInstalledPackage("loom", root)).toBeUndefined();
+		expect(readInstalledPackage("video-library", root)).toBeUndefined();
 	});
 
 	test("recording twice replaces rather than duplicates", () => {
@@ -212,8 +212,8 @@ describe("the ledger", () => {
 	test("forget is idempotent and leaves other packages alone", () => {
 		recordInstalledPackage(entry(), root);
 		recordInstalledPackage(entry({ name: "other" }), root);
-		expect(forgetInstalledPackage("loom", root)).toBe(true);
-		expect(forgetInstalledPackage("loom", root)).toBe(false);
+		expect(forgetInstalledPackage("video-library", root)).toBe(true);
+		expect(forgetInstalledPackage("video-library", root)).toBe(false);
 		expect(listInstalledPackages(root).map((p) => p.name)).toEqual(["other"]);
 	});
 });

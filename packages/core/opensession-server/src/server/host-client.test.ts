@@ -6,9 +6,11 @@ import {
   HostHandle,
   localRunHostsSupported,
   reconcileUncertainHostEvents,
+  retryHostedKernelCall,
   resolveInactiveHostRecovery,
   type HostLauncher,
 } from "./host-client";
+import { SessionKernelActorError } from "./session-kernel/actor-client";
 import type { RunHostMeta, RunHostSpec } from "../runner-host/protocol";
 import {
   TranscriptStore,
@@ -57,6 +59,47 @@ function makeHandle(spec: RunHostSpec) {
   };
   return new HostHandle(dir, spec, {}, launcher);
 }
+
+describe("hosted kernel retry", () => {
+  test("waits out retryable lane failures before succeeding", async () => {
+    let calls = 0;
+    const waits: number[] = [];
+    const result = await retryHostedKernelCall(
+      () => {
+        calls++;
+        if (calls < 3) throw new SessionKernelActorError("lane timed out", true);
+        return "ok";
+      },
+      {
+        attempts: 3,
+        delayMs: 10_100,
+        sleep: async (ms) => { waits.push(ms); },
+      },
+    );
+
+    expect(result).toBe("ok");
+    expect(calls).toBe(3);
+    expect(waits).toEqual([10_100, 10_100]);
+  });
+
+  test("does not retry non-retryable authority failures", async () => {
+    let calls = 0;
+    let waits = 0;
+    const error = new SessionKernelActorError("authority lost", false);
+
+    await expect(
+      retryHostedKernelCall(
+        () => {
+          calls++;
+          throw error;
+        },
+        { sleep: async () => { waits++; } },
+      ),
+    ).rejects.toBe(error);
+    expect(calls).toBe(1);
+    expect(waits).toBe(0);
+  });
+});
 
 describe("uncertain host reconciliation", () => {
   test("delivers an offline terminal result before destructive stop", async () => {
@@ -155,7 +198,7 @@ describe("local run-host capability", () => {
     expect(localRunHostsSupported("linux", true, () => null)).toBe(false);
   });
 
-  test("keeps a fresh host out of the boot recovery claim", () => {
+  test("keeps a fresh host out of the boot recovery claim", async () => {
     const hostId = `rh-${crypto.randomUUID()}`;
     const osSessionId = `os-${crypto.randomUUID()}`;
     const spec: RunHostSpec = {
@@ -182,7 +225,7 @@ describe("local run-host capability", () => {
 
     try {
       expect(hostRunBusy(hostId)).toBe(true);
-      expect(takeInterruptedRuns()).toEqual([]);
+      expect(await takeInterruptedRuns()).toEqual([]);
     } finally {
       handle.abandon();
       __setActiveRunsPathForTest(previousJournal);
@@ -348,10 +391,10 @@ describe("HostHandle model recovery", () => {
 		expect(handle.ended).toBe(true);
 	});
 
-	test("applies proxied transcript frames in the server store", () => {
+	test("applies proxied transcript frames in the server store", async () => {
 		const root = mkdtempSync(join(tmpdir(), "host-client-transcript-test-"));
 		roots.push(root);
-		const store = new TranscriptStore(join(root, "transcripts.db"));
+		const store = new TranscriptStore(join(root, "transcripts.db"), { actorOwned: true });
 		const previous = __setTranscriptStoreForTest(store);
 		const kernelStore = new SessionKernelStore(join(root, "kernel.db"));
 		const previousKernel = __setSessionKernelStoreForTest(kernelStore);
@@ -369,6 +412,7 @@ describe("HostHandle model recovery", () => {
 				engineSessionId: spec.osSessionId,
 				lines: [transcriptLineUser("hello", "prompt-1")],
 			});
+      await handle.waitForPendingProjections();
 
 			expect(store.readTail(spec.osSessionId, 10).entries).toMatchObject([
 				{ id: "prompt-1", type: "user", content: "hello" },
@@ -381,10 +425,106 @@ describe("HostHandle model recovery", () => {
 		}
 	});
 
-	test("applies transcript frames after the run settled (reattach backfill)", () => {
+  test("closes after an end frame that follows a failed transcript projection", async () => {
+    const root = mkdtempSync(join(tmpdir(), "host-client-projection-failure-test-"));
+    roots.push(root);
+    const store = new TranscriptStore(join(root, "transcripts.db"), { actorOwned: true });
+    (store as any).appendTranscriptEvents = async () => {
+      throw new Error("projection rejected");
+    };
+    const previous = __setTranscriptStoreForTest(store);
+    const kernelStore = new SessionKernelStore(join(root, "kernel.db"));
+    const previousKernel = __setSessionKernelStoreForTest(kernelStore);
+    const spec: RunHostSpec = {
+      hostId: "rh-projection-failure",
+      osSessionId: "os-projection-failure",
+      prompt: "test",
+      cwd: "/tmp",
+    };
+    registerTestRun(spec.osSessionId, spec.hostId);
+    const handle = makeHandle(spec);
+    const events = handle.events();
+    let steerFailures = 0;
+    (handle as any).cb.onSteerFailed = () => steerFailures++;
+    try {
+      (handle as any).handleMsg({
+        t: "transcript",
+        engineSessionId: spec.osSessionId,
+        lines: [transcriptLineUser("hello", "prompt-1")],
+      });
+      await (handle as any).projectionTail;
+      expect((handle as any).projectionTail).toBeUndefined();
+
+      // The failure is permanent even after the active tail has drained.
+      (handle as any).handleMsg({ t: "steer_failed", text: "late frame" });
+      await (handle as any).projectionTail;
+      expect(steerFailures).toBe(0);
+
+      // Terminal cleanup still runs through the permanent failed fence.
+      (handle as any).handleMsg({
+        t: "end",
+        done: { type: "done", result: "finished" },
+      });
+
+      expect((await events.next()).value).toMatchObject({
+        type: "error",
+        content: "Run host projection failed: projection rejected",
+      });
+      expect((await events.next()).value).toMatchObject({
+        type: "done",
+        result: "finished",
+      });
+      expect((await events.next()).done).toBe(true);
+      await expect(handle.waitForPendingProjections()).rejects.toThrow("projection rejected");
+      expect(handle.ended).toBe(true);
+    } finally {
+      (handle as any).finish();
+      __setTranscriptStoreForTest(previous);
+      __setSessionKernelStoreForTest(previousKernel);
+      kernelStore.close();
+    }
+  });
+
+  test("serializes consecutive transcript frames through exact actor receipts", async () => {
+    const root = mkdtempSync(join(tmpdir(), "host-client-transcript-order-test-"));
+    roots.push(root);
+    const store = new TranscriptStore(join(root, "transcripts.db"), { actorOwned: true });
+    const previous = __setTranscriptStoreForTest(store);
+    const kernelStore = new SessionKernelStore(join(root, "kernel.db"));
+    const previousKernel = __setSessionKernelStoreForTest(kernelStore);
+    const spec: RunHostSpec = {
+      hostId: "rh-transcript-order",
+      osSessionId: "os-transcript-order",
+      prompt: "test",
+      cwd: "/tmp",
+    };
+    registerTestRun(spec.osSessionId, spec.hostId);
+    const handle = makeHandle(spec);
+    try {
+      for (const [id, content] of [["prompt-1", "first"], ["prompt-2", "second"]]) {
+        (handle as any).handleMsg({
+          t: "transcript",
+          engineSessionId: spec.osSessionId,
+          lines: [transcriptLineUser(content, id)],
+        });
+      }
+      await handle.waitForPendingProjections();
+      expect(store.readTail(spec.osSessionId, 10).entries).toMatchObject([
+        { id: "prompt-1", content: "first" },
+        { id: "prompt-2", content: "second" },
+      ]);
+    } finally {
+      (handle as any).finish();
+      __setTranscriptStoreForTest(previous);
+      __setSessionKernelStoreForTest(previousKernel);
+      kernelStore.close();
+    }
+  });
+
+	test("applies transcript frames after the run settled (reattach backfill)", async () => {
 		const root = mkdtempSync(join(tmpdir(), "host-client-settled-transcript-test-"));
 		roots.push(root);
-		const store = new TranscriptStore(join(root, "transcripts.db"));
+		const store = new TranscriptStore(join(root, "transcripts.db"), { actorOwned: true });
 		const previous = __setTranscriptStoreForTest(store);
 		const kernelStore = new SessionKernelStore(join(root, "kernel.db"));
 		const previousKernel = __setSessionKernelStoreForTest(kernelStore);
@@ -406,6 +546,7 @@ describe("HostHandle model recovery", () => {
 				engineSessionId: spec.osSessionId,
 				lines: [transcriptLineUser("late summary", "prompt-late")],
 			});
+      await handle.waitForPendingProjections();
 			expect(store.readTail(spec.osSessionId, 10).entries).toMatchObject([
 				{ id: "prompt-late", type: "user", content: "late summary" },
 			]);
@@ -420,7 +561,7 @@ describe("HostHandle model recovery", () => {
 	test("rejects transcript frames while a different live run owns the session", () => {
 		const root = mkdtempSync(join(tmpdir(), "host-client-superseded-transcript-test-"));
 		roots.push(root);
-		const store = new TranscriptStore(join(root, "transcripts.db"));
+		const store = new TranscriptStore(join(root, "transcripts.db"), { actorOwned: true });
 		const previous = __setTranscriptStoreForTest(store);
 		const kernelStore = new SessionKernelStore(join(root, "kernel.db"));
 		const previousKernel = __setSessionKernelStoreForTest(kernelStore);
@@ -450,7 +591,7 @@ describe("HostHandle model recovery", () => {
 	test("rejects transcript frames from a stale host generation", () => {
 		const root = mkdtempSync(join(tmpdir(), "host-client-stale-transcript-test-"));
 		roots.push(root);
-		const store = new TranscriptStore(join(root, "transcripts.db"));
+		const store = new TranscriptStore(join(root, "transcripts.db"), { actorOwned: true });
 		const previous = __setTranscriptStoreForTest(store);
 		const kernelStore = new SessionKernelStore(join(root, "kernel.db"));
 		const previousKernel = __setSessionKernelStoreForTest(kernelStore);
@@ -648,7 +789,7 @@ describe("HostHandle model recovery", () => {
         },
       }),
     };
-    const transcriptStore = new TranscriptStore(join(root, "transcripts.db"));
+    const transcriptStore = new TranscriptStore(join(root, "transcripts.db"), { actorOwned: true });
     const previousTranscript = __setTranscriptStoreForTest(transcriptStore);
     const kernelStore = new SessionKernelStore(join(root, "kernel.db"));
     const previousKernel = __setSessionKernelStoreForTest(kernelStore);
@@ -674,6 +815,7 @@ describe("HostHandle model recovery", () => {
       engineSessionId: spec.osSessionId,
       lines: [transcriptLineUser("after respawn", "prompt-respawn")],
     });
+    await handle.waitForPendingProjections();
     expect(transcriptStore.readTail(spec.osSessionId, 10).entries).toMatchObject([
       { id: "prompt-respawn", content: "after respawn" },
     ]);

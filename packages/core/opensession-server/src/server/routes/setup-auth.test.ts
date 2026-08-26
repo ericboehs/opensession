@@ -92,6 +92,7 @@ describe("GitHub App onboarding link", () => {
 			buildOnboardingGithubAppCreateUrl(
 				"acme inc",
 				"https://os.acme.test/",
+				"https://ingress.acme.test/",
 				"Acme Session App",
 			),
 		);
@@ -102,7 +103,8 @@ describe("GitHub App onboarding link", () => {
 			name: "Acme Session App",
 			url: "https://os.acme.test/",
 			public: "false",
-			webhook_active: "false",
+			webhook_url: "https://ingress.acme.test/github/webhook",
+			webhook_active: "true",
 			// The canonical grant set — checks + statuses (the App-only CI rollup)
 			// and issues (PR/issue comments) included, so a created App holds every
 			// scope the installation-token mints request.
@@ -117,6 +119,19 @@ describe("GitHub App onboarding link", () => {
 			metadata: "read",
 			device_flow_enabled: "true",
 		});
+	});
+
+	test("does not point a webhook at the private app when ingress is absent", () => {
+		const url = new URL(
+			buildOnboardingGithubAppCreateUrl(
+				undefined,
+				"https://private.example.test",
+				"",
+				"Open Session",
+			),
+		);
+		expect(url.searchParams.has("webhook_url")).toBe(false);
+		expect(url.searchParams.has("webhook_active")).toBe(false);
 	});
 });
 

@@ -22,10 +22,10 @@ enum SupportLocation: String, CaseIterable, Identifiable {
     static func current(hiddenTools: String, hiddenFeeds: String) -> Self {
         let toolShown = !SidebarTools.isHidden(SidebarTools.plain, in: hiddenTools)
         let bandShown = !SidebarFeeds.isHidden(SidebarFeeds.plain, in: hiddenFeeds)
-        // Older independent switches can still say both. The sidebar is what
-        // those accounts had before the page existed, so it wins.
-        if bandShown { return .sidebar }
+        // The independent preferences can still say both. Support is a default
+        // tool, so it wins over the alternate sidebar placement.
         if toolShown { return .page }
+        if bandShown { return .sidebar }
         return .off
     }
 

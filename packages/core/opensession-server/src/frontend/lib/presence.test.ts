@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { dedupeViewers, otherViewers } from "./presence";
+import { dedupeViewers, facepileAvatarStyle, otherViewers } from "./presence";
 
 describe("otherViewers", () => {
 	test("your own devices come out: all of them, not just the first", () => {
@@ -29,5 +29,15 @@ describe("dedupeViewers", () => {
 			{ name: "Michiel", count: 2 },
 			{ name: "Johnny", count: 1 },
 		]);
+	});
+});
+
+describe("facepileAvatarStyle", () => {
+	test("keeps the leftmost face on top and rings the full avatar", () => {
+		expect(facepileAvatarStyle(0, 3, "var(--bg)")).toEqual({
+			zIndex: 3,
+			boxShadow: "var(--avatar-edge), 0 0 0 2px var(--bg)",
+		});
+		expect(facepileAvatarStyle(2, 3, "var(--bg)").zIndex).toBe(1);
 	});
 });

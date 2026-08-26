@@ -27,6 +27,11 @@ surface, not a full Open Session client. Never distributed via the Web Store.
 
 ## Install
 
+The extension requires per-user GitHub sign-in and has no unauthenticated mode.
+Before using it, enable `integrations.github.userPrAuth` on the server and add
+each user's GitHub login to `identity.team`. Authentication is off by default.
+See [Per-user GitHub auth](../../../docs/setup/github.md#per-user-github-auth-prs-as-the-session-owner).
+
 **Managed.** A deployment may force-install the extension through Chrome policy
 and point it at its own Open Session update feed
 (`https://<your-server>/api/packages/clients/chrome/updates.xml`). `deployment.json` supplies
@@ -58,8 +63,10 @@ server anyway).
 **Unpacked (development).** `chrome://extensions` → Developer mode → "Load
 unpacked" → this `packages/clients/chrome/` directory. No build step; edit and hit reload.
 
-Either way: click the toolbar icon → side panel → Settings → **Sign in with
-GitHub** (device flow; team members only).
+Either way, open the toolbar icon → side panel → Settings. For a non-loopback
+server, add or remove a trailing slash in the **Server** field, leave the field,
+and accept Chrome's host-access request; a packaged default does not request
+access by itself. Then click **Sign in with GitHub**.
 
 ## Releases (CI)
 
@@ -70,9 +77,19 @@ bumps), packs a signed .crx with the `OS1_CHROME_CRX_KEY` repo secret (base64
 of the RSA pem; keep a backup of the pem outside CI — the key determines the
 extension ID, lose it and every install orphans), and publishes it as a GitHub
 **prerelease** tagged `os1-chrome-v<version>` (prerelease so the os1-mac
-Squirrel feed's `releases/latest` never sees it). The server proxies the feed
-and artifact — `packages/core/opensession-server/src/server/routes/os1-update.ts` — since Chrome's updater
-can't reach a private GitHub repo.
+Squirrel feed's `releases/latest` never sees it). Before packing, CI rewrites
+`deployment.json` from the `OS1_SERVER_URL` repository variable, falling back
+to `https://os.tella.dev`; the committed file remains the portable loopback
+default.
+
+The server generates the Omaha feed and proxies the selected `.crx` artifact
+from GitHub in
+`packages/core/opensession-server/src/server/routes/os1-update.ts`. Configure
+`integrations.updates.releaseRepo` and
+`integrations.updates.chromeExtensionId` to match the release repository and
+signing-key-derived extension ID. Also set the public base URL through
+`server.publicBaseUrl` or `OPENSESSION_UI_BASE`, and ensure the server's `gh`
+CLI can read that repository's releases and assets.
 
 ## How it talks to the server
 
@@ -80,8 +97,12 @@ Per-organization bearer tokens (from the device flow's `native: true` poll,
 same as os1-ios) against the REST surface. Existing single-server `cfg` storage
 migrates into the account list on first load:
 
-- `POST /api/sessions` — create with `{ prompt, repo, mode, model, images }`
-- `POST /api/sessions/:id/prompt` — follow-up via `deliverToSession`
+- `POST /api/sessions` — create with
+  `{ prompt, repo?, mode, model?, images?, requestId }`; `requestId` is stored
+  locally and reused as the durable retry key until acknowledgment.
+- `POST /api/sessions/:id/prompt` — follow up with `{ content, clientId }`;
+  `clientId` is the durable delivery key, and the response reports `started`,
+  `steered`, `queued`, or `handled`.
 - `GET /api/sessions`, `GET /api/sessions/:id/transcript`
 - `GET /api/repos`, `GET /api/models`
 - `POST /api/auth/device` + `/auth/device/poll` — sign-in

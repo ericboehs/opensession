@@ -28,7 +28,7 @@ test("team note mode stays compact at rest and names itself when expanded", asyn
 	expect(composer).toContain('noteMode && "before:opacity-100"');
 });
 
-test("the installed phone composer keeps its add menu and hides only auxiliary controls", async () => {
+test("the installed phone composer restores model selection when expanded", async () => {
 	const css = await Bun.file(CSS).text();
 	const shipped = await Bun.file(SHIPPED).text();
 	const composer = await Bun.file(COMPOSER).text();
@@ -45,10 +45,13 @@ test("the installed phone composer keeps its add menu and hides only auxiliary c
 	expect(standalonePhone).toContain(
 		"border-color: color-mix(in srgb, var(--composer-border) 35%, transparent)",
 	);
-	expect(standalonePhone).toContain(".app .pwa-composer-auxiliary");
+	expect(standalonePhone).toContain(".app .pwa-composer-dictation");
 	expect(standalonePhone).toContain("display: none");
-	expect(composer.match(/pwa-composer-auxiliary/g)).toHaveLength(2);
+	expect(composer.match(/pwa-composer-dictation/g)).toHaveLength(1);
+	expect(composer).not.toContain("pwa-composer-auxiliary");
 	expect(composer).not.toContain("pwa-note-option");
+	expect(composer).toContain("className={composerToolbarSelect}");
+	expect(composer).toContain("{!minimized && (");
 	expect(composer).toContain(
 		'"composer-pop-wrap relative inline-flex shrink-0"',
 	);

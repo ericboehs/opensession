@@ -17,6 +17,7 @@
 
 import { existsSync, mkdirSync, readFileSync } from "fs";
 import { dirname } from "path";
+import { configuredIngress } from "../config";
 import { getDefaultModel, providerFor, resolveModel } from "../models";
 import { OPENSESSION_SESSIONS_DIR } from "../paths";
 import { stateDir } from "../paths";
@@ -92,11 +93,8 @@ const SNAPSHOT_DEFAULTS: SandboxSnapshotsConfig = {
   quickSyncOnRestore: true,
 };
 
-/** The isolated public dial-back listener (src/server/public-ingress.ts):
- *  a SECOND Bun.serve that exposes ONLY the run-ws/rpc-ws upgrade routes (+ a
- *  bare health check) so remote sandboxes on the public internet can dial
- *  back without the rest of the app ever being reachable. Front it with a
- *  TLS terminator (Caddy/tunnel) — it binds loopback by default. */
+/** Advanced internal bind override for the unified public gateway. The
+ * canonical public URL lives only in config.json's ingress section. */
 export interface SandboxPublicIngressConfig {
   /** Master switch. The listener only starts (at boot — needs a restart) when true. */
   enabled: boolean;
@@ -104,10 +102,6 @@ export interface SandboxPublicIngressConfig {
   port: number;
   /** Bind host (default "127.0.0.1" — a reverse proxy/tunnel fronts it). */
   host: string;
-  /** The base URL remote sandboxes dial, e.g. "wss://sessions.example.com"
-   *  (http(s) is normalized to ws(s)). When set, remote-provider launches use
-   *  it as their callback base instead of callbackBaseUrl. */
-  publicBaseUrl?: string;
 }
 
 const PUBLIC_INGRESS_DEFAULT_PORT = 3860;
@@ -361,7 +355,6 @@ export function sandboxConfig(): SandboxConfig {
                     ? raw.publicIngress.port
                     : PUBLIC_INGRESS_DEFAULT_PORT,
                 host: str(raw.publicIngress.host) || "127.0.0.1",
-                publicBaseUrl: str(raw.publicIngress.publicBaseUrl),
               }
             : undefined,
         e2b:
@@ -653,39 +646,6 @@ export function setWorkspaceSandboxDefault(
   return normalized as RunnableSandboxProviderId | "none";
 }
 
-/** Store the operator-approved public callback origin without touching
- * provider credentials or requiring a server restart (3860 already listens). */
-export function setSandboxPublicIngressUrl(value: string): string {
-  const url = new URL(value.trim());
-  if (url.protocol !== "https:" && url.protocol !== "wss:") {
-    throw new Error("Sandbox ingress URL must use HTTPS or WSS");
-  }
-  url.protocol = "https:";
-  url.pathname = url.pathname.replace(/\/$/, "");
-  url.search = "";
-  url.hash = "";
-  const publicBaseUrl = url.toString().replace(/\/$/, "");
-  let raw: Record<string, unknown> = {};
-  try {
-    const parsed = JSON.parse(readFileSync(configPath(), "utf-8"));
-    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) raw = parsed;
-  } catch {}
-  const previous =
-    raw.publicIngress && typeof raw.publicIngress === "object"
-      ? (raw.publicIngress as Record<string, unknown>)
-      : {};
-  raw.publicIngress = {
-    ...previous,
-    enabled: true,
-    port: PUBLIC_INGRESS_DEFAULT_PORT,
-    host: typeof previous.host === "string" ? previous.host : "127.0.0.1",
-    publicBaseUrl,
-  };
-  mkdirSync(dirname(configPath()), { recursive: true });
-  writeJsonAtomic(configPath(), raw);
-  return publicBaseUrl;
-}
-
 export function isRunnableSandboxProvider(v: unknown): v is RunnableSandboxProviderId {
   return (
     typeof v === "string" &&
@@ -945,13 +905,12 @@ export function sandboxCapabilityStatus(): SandboxCapabilityStatus {
   // Only an actually-missing dial-back URL surfaces a caveat (no static
   // "unverified" scare-copy — dial-back is proven in production).
   const remoteDialBackConfigured = Boolean(
-    (cfg.publicIngress?.enabled && cfg.publicIngress.publicBaseUrl) ||
-      cfg.callbackBaseUrl,
+    configuredIngress().publicBaseUrl || cfg.callbackBaseUrl,
   );
   const remoteNote = remoteDialBackConfigured
     ? {}
     : {
-        note: "no dial-back URL configured — set publicIngress.publicBaseUrl (or callbackBaseUrl) so sandboxes can reach this server; see docs/self-hosting-sandboxes.md",
+        note: "no public ingress configured — choose an exposure method in Settings so remote sandboxes can reach this server",
       };
   const providersWithoutCertification: Array<
     Omit<SandboxProviderStatusEntry, "certified" | "lastPassedAt" | "usability">
@@ -1102,7 +1061,7 @@ export function publicIngressConfig(): SandboxPublicIngressConfig | null {
  * use this — they stay on sandboxCallbackBaseUrl (the internal bridge path).
  */
 export function remoteSandboxCallbackBaseUrl(): string {
-  const pi = publicIngressConfig();
-  if (pi?.publicBaseUrl) return normalizeWsBase(pi.publicBaseUrl);
+  const ingress = configuredIngress().publicBaseUrl;
+  if (ingress) return normalizeWsBase(ingress);
   return sandboxCallbackBaseUrl();
 }

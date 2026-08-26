@@ -680,14 +680,14 @@ export function createSessionsMcpServer(
           const current = getSessionControl().getSession(sessionId);
           const result =
             args.kind === "timer"
-              ? registerTimerAgentWait({
+              ? await registerTimerAgentWait({
                   sessionId,
                   user: ctx.createdBy,
                   seconds: args.seconds ?? Number.NaN,
                   prompt: args.prompt,
                   waitId,
                 })
-              : registerPrChecksAgentWait({
+              : await registerPrChecksAgentWait({
                   sessionId,
                   user: ctx.createdBy,
                   repo: args.repo || current?.repo || "",
@@ -738,7 +738,7 @@ export function createSessionsMcpServer(
         async () => {
           const sessionId = ctx.currentSessionId;
           if (!sessionId) return text("This run has no Open Session id.");
-          const cancelled = cancelAgentWait(sessionId);
+          const cancelled = await cancelAgentWait(sessionId);
           if (cancelled)
             audit({ msg: "agent_wait_cancelled", session_id: sessionId });
           return text(
@@ -1028,7 +1028,7 @@ export function createSessionsMcpServer(
       ),
       tool(
         "migrate_session_engine",
-        "Migrate an existing session onto the Pi engine by flipping its model to an pi/* id (e.g. pi/anthropic/claude-sonnet-5). Does NOT start a run: the session's NEXT prompt builds a transcript handoff from its claude/codex history and continues on a fresh Pi session — file, workspace, branch, title and UI history all stay. Refuses automation-owned sessions (the pi engine hard-gates automations off) and sessions that are mid-run.",
+        "Migrate an existing session onto the Pi engine by flipping its model to a pi/* id (e.g. pi/anthropic/claude-sonnet-5). Does NOT start a run: the session's NEXT prompt builds a transcript handoff from its claude/codex history and continues on a fresh Pi session — file, workspace, branch, title and UI history all stay. Automation-owned sessions may migrate to Pi but not to a non-Pi engine; sessions with an in-flight run are refused.",
         {
           sessionId: z.string().describe("The opensession session id to migrate, e.g. 'bks-…'."),
           model: z
@@ -1047,7 +1047,7 @@ export function createSessionsMcpServer(
               );
             }
           } catch {}
-          const res = migrateSessionEngine(args.sessionId, args.model, ctx.createdBy);
+          const res = await migrateSessionEngine(args.sessionId, args.model, ctx.createdBy);
           if (!res.ok) return text(res.error);
           return text(
             `Migrated \`${res.sessionId}\` to ${res.to}` +

@@ -289,7 +289,12 @@ export function SettingRowTitle({
 	className,
 	...props
 }: React.ComponentPropsWithoutRef<"div">) {
-	return <div className={cn("text-item-title font-medium text-fg", className)} {...props} />;
+	// data-setting-title mirrors data-setting-description below: a hook a
+	// surface can scale from outside (FirstMile promotes these one heading
+	// step) without the primitive knowing who is hosting it.
+	return (
+		<div data-setting-title="" className={cn("text-item-title font-medium text-fg", className)} {...props} />
+	);
 }
 
 export function SettingRowDescription({
@@ -381,7 +386,9 @@ export function SettingsFormTitle({
 	className,
 	...props
 }: React.ComponentPropsWithoutRef<"div">) {
-	return <div className={cn("mb-4 text-item-title font-semibold text-fg", className)} {...props} />;
+	return (
+		<div data-setting-title="" className={cn("mb-4 text-item-title font-semibold text-fg", className)} {...props} />
+	);
 }
 
 export function SettingsFormRow({

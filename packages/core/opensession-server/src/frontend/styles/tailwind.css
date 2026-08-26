@@ -241,6 +241,7 @@
 	--radius-lg: calc(14px * var(--rf));
 	--radius-xl: calc(18px * var(--rf));
 	--radius-2xl: calc(22px * var(--rf));
+	--radius-3xl: calc(26px * var(--rf));
 	/* The person tile: a face, a photo or an initial, at every size from the
 	   14px chip to the 26px people row. It is the one corner in the app
 	   written as a share of its box rather than in px, because it has to hold

@@ -20,6 +20,7 @@
  *         node_modules/               sharp + @img/sharp-<target> sidecar
  *         opensession*.service        system service templates
  *         deploy/                     fixed executor credential/helper policy
+ *         LICENSE + notices + SBOM    project and third-party licensing
  *         release.json                version, commit, target, kind
  *       `bun build --compile --target=bun-<os>-<arch>` cross-compiles from any
  *       host, so one runner builds every target.
@@ -31,6 +32,7 @@
 
 import { chmodSync, cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "fs";
 import { dirname, join, relative, resolve } from "path";
+import { generateReleaseMetadata } from "./generate-release-metadata";
 
 const REPO_ROOT = resolve(import.meta.dir, "..");
 const EMBED_MODULE = join(REPO_ROOT, "packages", "core", "opensession-server", "src", "server", "embedded-frontend.ts");
@@ -337,6 +339,18 @@ async function main(): Promise<void> {
 	await buildWorkerSidecars(stage);
 	console.log("\n== sharp sidecar");
 	await buildSharpSidecar(stage, sharpVersion);
+
+	console.log("\n== licenses and SBOM");
+	for (const rel of ["LICENSE", "THIRD-PARTY-NOTICES.md", "THIRD-PARTY-LICENSES"]) {
+		cpSync(join(REPO_ROOT, rel), join(stage, rel), { recursive: true });
+	}
+	generateReleaseMetadata({
+		lockPath: join(REPO_ROOT, "bun.lock"),
+		nodeModules: join(REPO_ROOT, "node_modules"),
+		outDir: stage,
+		name: "opensession",
+		version,
+	});
 
 	writeFileSync(
 		join(stage, "release.json"),

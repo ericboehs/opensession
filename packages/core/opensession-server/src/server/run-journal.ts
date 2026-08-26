@@ -9,7 +9,7 @@ import { existsSync, readFileSync } from "fs";
 import { OPENSESSION_SESSIONS_DIR } from "./paths";
 import { } from "./paths";
 import { transitionRunState } from "./run-state";
-import { sessionDelivery, sessionTurn } from "./session-kernel/kernel";
+import { sessionDelivery, sessionKernelStore, sessionTurn } from "./session-kernel/kernel";
 import { writeJsonAtomic } from "./shared/atomic-write";
 
 // Overridable so a detached run host (src/runner-host/host.ts) journals to its
@@ -20,12 +20,14 @@ let ACTIVE_RUNS_PATH =
   `${OPENSESSION_SESSIONS_DIR}/active-runs.json`;
 let activeRunAliases = new Set<string>();
 let activeRunAliasesInitialized = false;
-let onJournalSet: ((record: ActiveRunRecord) => void) | undefined;
+let onJournalSet:
+  | ((record: ActiveRunRecord) => void | Promise<void>)
+  | undefined;
 
 /** Register the in-process acknowledgement for a prompt intake record. Kept as
  * a callback so this low-level journal stays independent of queue state. */
 export function setJournalSetListener(
-	listener: ((record: ActiveRunRecord) => void) | undefined,
+	listener: ((record: ActiveRunRecord) => void | Promise<void>) | undefined,
 ): void {
 	onJournalSet = listener;
 }
@@ -217,7 +219,16 @@ export function buildRunJournalRecord(
   };
 }
 
-export function journalSet(record: ActiveRunRecord): void {
+type JournalRunStateTransition = (
+  sessionId: string,
+  event: Parameters<typeof transitionRunState>[1],
+  meta?: Parameters<typeof transitionRunState>[2],
+) => Promise<unknown>;
+
+export async function journalSet(
+  record: ActiveRunRecord,
+  transition: JournalRunStateTransition = transitionRunState,
+): Promise<void> {
   const journal = readRunJournal();
   const prior = journal[record.runKey];
   const rejournal = !!prior;
@@ -233,14 +244,14 @@ export function journalSet(record: ActiveRunRecord): void {
   };
   writeRunJournal(journal);
   try {
-    onJournalSet?.(journal[record.runKey] || record);
+    await onJournalSet?.(journal[record.runKey] || record);
   } catch (e) {
     console.error("[runner] Failed to acknowledge prompt dispatch:", e);
   }
   // A fallback hop re-journals the same runKey mid-run — that's the running
   // self-edge, not a new registration, so keep the event but tag it.
   if (record.osSessionId)
-    transitionRunState(record.osSessionId, "run_registered", {
+    await transition(record.osSessionId, "run_registered", {
       run_key: record.runKey,
       kind: record.kind,
       rejournal: rejournal || undefined,
@@ -344,10 +355,10 @@ export function journalMarkRecoveryAttached(record: ActiveRunRecord): ActiveRunR
   return returned;
 }
 
-export function journalRecordAbnormalCompletion(
+export async function journalRecordAbnormalCompletion(
   record: ActiveRunRecord,
   content = "Physical run ended without a terminal event",
-): ActiveRunRecord {
+): Promise<ActiveRunRecord> {
   const failed: ActiveRunRecord = {
     ...record,
     terminalFailure: {
@@ -356,7 +367,7 @@ export function journalRecordAbnormalCompletion(
       at: new Date().toISOString(),
     },
   };
-  journalSet(failed);
+  await journalSet(failed);
   journalRetireSettledCancelAbnormal(failed.osSessionId, failed.runKey);
   return failed;
 }
@@ -383,14 +394,14 @@ export function journalRetireSettledCancelAbnormal(
 ): boolean {
   if (process.env.OPENSESSION_RUN_JOURNAL || !sessionId) return false;
   try {
-    const cancel = sessionTurn({ op: "snapshot", sessionId }).cancel;
+    const cancel = sessionKernelStore().turnSnapshot(sessionId).cancel;
     if (cancel?.runId === runKey && cancel.phase === "settled")
       return retireCancelAbnormalEvidence(sessionId, runKey);
   } catch {
     // The independent interrupt owner may still positively prove settlement.
   }
   try {
-    const delivery = sessionDelivery({ op: "snapshot", sessionId });
+    const delivery = sessionKernelStore().deliverySnapshot(sessionId);
     const dispatchedInterrupt = (
       delivery.dispatch as { interrupt?: typeof delivery.interrupt } | undefined
     )?.interrupt;
@@ -492,7 +503,11 @@ const takenRunKeys: Set<string> = ((globalThis as any).__runJournalTakenKeys ??=
  * losing them. Returned records have claimedAt stripped so a reattach's
  * re-record doesn't persist a stale claim.
  */
-export function takeInterruptedRuns(seedRecords: ActiveRunRecord[] = []): ActiveRunRecord[] {
+export async function takeInterruptedRuns(
+  seedRecords: ActiveRunRecord[] = [],
+  shouldTake: (record: ActiveRunRecord) => boolean = () => true,
+  transition: JournalRunStateTransition = transitionRunState,
+): Promise<ActiveRunRecord[]> {
   const journal = readRunJournal();
   // A graceful-shutdown snapshot can retain a detached local host after its
   // shared record disappeared during process teardown. Fold those records
@@ -507,7 +522,10 @@ export function takeInterruptedRuns(seedRecords: ActiveRunRecord[] = []): Active
     };
   }
   const entries = Object.values(journal).filter(
-    (r) => !isRunActiveInProcess(r.runKey) && !takenRunKeys.has(r.runKey)
+    (r) =>
+      !isRunActiveInProcess(r.runKey) &&
+      !takenRunKeys.has(r.runKey) &&
+      shouldTake(r),
   );
   if (entries.length > 0) {
     const now = new Date().toISOString();
@@ -519,7 +537,7 @@ export function takeInterruptedRuns(seedRecords: ActiveRunRecord[] = []): Active
   }
   for (const r of entries) {
     if (r.osSessionId)
-      transitionRunState(r.osSessionId, "boot_journal_found", {
+      await transition(r.osSessionId, "boot_journal_found", {
         run_key: r.runKey,
         kind: r.kind,
       });

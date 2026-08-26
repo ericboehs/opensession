@@ -33,6 +33,8 @@ export interface SetupController {
 	refetch: () => Promise<void>;
 	restartNeeded: boolean;
 	restartState: RestartState;
+	/** Mark a boot-time setting as saved so its surface offers a restart. */
+	requireRestart: () => void;
 	/** Restart the server, then poll until it answers. `post: false` only
 	 *  polls — the "Check again" path after a timeout. */
 	restartServer: (post?: boolean) => Promise<void>;
@@ -107,6 +109,8 @@ const body = await setupRequest<SetupStatus>("/api/setup/status");
 			);
 		};
 
+	const requireRestart = () => setRestartNeeded(true);
+
 	const restartServer = async (post = true) => {
 			setRestartState("working");
 			if (post) {
@@ -155,6 +159,7 @@ const res = await fetch(`${BASE_PATH}/api/health`, {
 		refetch,
 		restartNeeded,
 		restartState,
+		requireRestart,
 		restartServer,
 		applyIntegration,
 		applyGithub,

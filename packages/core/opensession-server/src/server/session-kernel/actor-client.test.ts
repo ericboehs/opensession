@@ -1,10 +1,18 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { SessionKernelActorClient } from "./actor-client";
+import {
+  SessionKernelActorClient,
+  SessionKernelActorError,
+  SessionKernelQuarantinedError,
+  isFatalSessionKernelAsyncTimeout,
+} from "./actor-client";
+import { SESSION_KERNEL_ACTOR_VERSION } from "./actor-protocol";
 import {
   __setSessionKernelStoreForTest,
   installSessionKernelActor,
   sessionDelivery,
+  sessionIsQuarantined,
   sessionKernel,
+  sessionProjectionOr,
 } from "./kernel";
 
 let client: SessionKernelActorClient | undefined;
@@ -26,6 +34,54 @@ async function actor(): Promise<SessionKernelActorClient> {
 }
 
 describe("session kernel actor boundary", () => {
+	test("degrades optional projections only for retryable kernel failures", () => {
+		expect(
+			sessionProjectionOr(() => {
+				throw new SessionKernelActorError("temporarily slow", true);
+			}, "fallback"),
+		).toBe("fallback");
+		expect(() =>
+			sessionProjectionOr(() => {
+				throw new SessionKernelActorError("authority lost", false);
+			}, "fallback")
+		).toThrow("authority lost");
+	});
+
+  test("keeps polling timeouts retryable while fencing handshake ambiguity", () => {
+    expect(isFatalSessionKernelAsyncTimeout({
+      t: "runtime_work",
+      rpcId: "runtime",
+      now: 0,
+      timerKinds: [],
+      effectKinds: [],
+      limit: 1,
+    })).toBe(false);
+    expect(isFatalSessionKernelAsyncTimeout({ t: "stats", rpcId: "stats" }))
+      .toBe(false);
+    expect(isFatalSessionKernelAsyncTimeout({ t: "maintain", rpcId: "maintain" }))
+      .toBe(false);
+    expect(isFatalSessionKernelAsyncTimeout({
+      t: "hello",
+      rpcId: "hello",
+      version: SESSION_KERNEL_ACTOR_VERSION,
+    })).toBe(true);
+    expect(isFatalSessionKernelAsyncTimeout({
+      t: "acknowledge",
+      rpcId: "ack",
+      sessionId: "session",
+      requestId: "request",
+    })).toBe(true);
+  });
+
+  test("reads per-session quarantine state through the actor", async () => {
+    const host = await actor();
+    installSessionKernelActor(host);
+
+    expect(sessionIsQuarantined("quarantine-read")).toBe(false);
+    host.store.quarantineSession("quarantine-read", "ambiguous", "test");
+    expect(sessionIsQuarantined("quarantine-read")).toBe(true);
+  });
+
   test("reconciles compatible branch dead letters inside the actor store", async () => {
     const host = await actor();
     const id = host.store.enqueueOutbox(
@@ -345,6 +401,53 @@ describe("session kernel actor boundary", () => {
     });
   });
 
+  test("does not replay a mutation whose committed response exceeds the buffer", async () => {
+    const host = await actor();
+    const sessionId = "large-async-dispatch";
+    const content = "x".repeat(300 * 1024);
+    await host.decideDeliveryAsync({
+      op: "set",
+      sessionId,
+      slot: "queued",
+      value: [{ id: "large", content }],
+    });
+    const claimed = await host.decideDeliveryAsync({
+      op: "claim_next_dispatch",
+      sessionId,
+      promptEntryId: "large-entry",
+    });
+    expect(claimed).toMatchObject({
+      kind: "deliver",
+      promptEntryId: "large-entry",
+      items: [{ id: "large", content }],
+    });
+    expect(host.store.deliverySnapshot(sessionId)).toMatchObject({
+      queued: [],
+      dispatch: {
+        promptEntryId: "large-entry",
+        items: [{ id: "large", content }],
+      },
+    });
+  });
+
+  test("atomically preserves concurrent queue enqueues", async () => {
+    const host = await actor();
+    const sessionId = "concurrent-enqueues";
+    await Promise.all(
+      Array.from({ length: 20 }, (_, index) =>
+        host.decideDeliveryAsync({
+          op: "enqueue",
+          sessionId,
+          item: { id: `item-${index}`, content: `prompt-${index}` },
+        })
+      ),
+    );
+    const snapshot = await host.decideDeliveryAsync({ op: "snapshot", sessionId });
+    expect(snapshot.queued).toHaveLength(20);
+    expect(new Set((snapshot.queued as Array<{ id: string }>).map((item) => item.id)).size)
+      .toBe(20);
+  });
+
   test("hydrates persisted run state into the gateway projection", async () => {
     const host = await actor();
     host.callStore("setRunState", [
@@ -364,6 +467,92 @@ describe("session kernel actor boundary", () => {
     });
   });
 
+  test("isolates an unresponsive session behind its own sync breaker", () => {
+    class SelectivelyRespondingWorker {
+      listeners = new Map<string, (event: never) => void>();
+      postCount = 0;
+      addEventListener(type: string, listener: (event: never) => void) {
+        this.listeners.set(type, listener);
+      }
+      removeEventListener() {}
+      postMessage(message: {
+        t: string;
+        command?: { request?: { sessionId?: string } };
+        args?: unknown[];
+        control: SharedArrayBuffer;
+        output: SharedArrayBuffer;
+      }) {
+        this.postCount += 1;
+        const sessionId = message.t === "reduce"
+          ? message.command?.request?.sessionId
+          : message.args?.[0];
+        if (sessionId === "slow-actor") return;
+        const response = new TextEncoder().encode(JSON.stringify({ ok: true }));
+        new Uint8Array(message.output, 0, response.length).set(response);
+        const control = new Int32Array(message.control);
+        Atomics.store(control, 1, response.length);
+        Atomics.store(control, 0, 1);
+        Atomics.notify(control, 0);
+      }
+      terminate() {}
+    }
+    const worker = new SelectivelyRespondingWorker();
+    const onFatal: Array<Error> = [];
+    const previousTimeout = process.env.OPENSESSION_SYNC_KERNEL_TIMEOUT_MS;
+    process.env.OPENSESSION_SYNC_KERNEL_TIMEOUT_MS = "50";
+    try {
+      const host = new SessionKernelActorClient(
+        worker as unknown as Worker,
+        (error) => onFatal.push(error),
+      );
+      client = host;
+
+      const first = (() => {
+        try {
+          host.decideGateway({
+            op: "request",
+            sessionId: "slow-actor",
+            requestId: "one",
+            operation: "websocket_command",
+          });
+          return undefined;
+        } catch (error) {
+          return error;
+        }
+      })();
+      expect(first).toBeInstanceOf(SessionKernelActorError);
+      expect((first as SessionKernelActorError).retryable).toBe(true);
+      expect(worker.postCount).toBe(1);
+
+      // One event-loop-blocking timeout opens the breaker. The refused call
+      // must never add more work to the already degraded actor lane.
+      const startedAt = Date.now();
+      expect(() =>
+        host.decideGateway({
+          op: "request",
+          sessionId: "slow-actor",
+          requestId: "two",
+          operation: "websocket_command",
+        }),
+      ).toThrow("breaker");
+      expect(Date.now() - startedAt).toBeLessThan(40);
+      expect(worker.postCount).toBe(1);
+
+      // The kernel service has independent session lanes. A timeout in one
+      // lane must not refuse work for an unrelated healthy session.
+      expect(host.store.creationState("healthy-session")).toBeUndefined();
+      expect(worker.postCount).toBe(2);
+
+      // A slow actor is degradation, not a lost authority: the client stays
+      // alive and no fatal handler fired.
+      expect(onFatal).toEqual([]);
+    } finally {
+      if (previousTimeout === undefined)
+        delete process.env.OPENSESSION_SYNC_KERNEL_TIMEOUT_MS;
+      else process.env.OPENSESSION_SYNC_KERNEL_TIMEOUT_MS = previousTimeout;
+    }
+  });
+
   test("fails new requests immediately after the actor stops", async () => {
     const host = await actor();
     host.terminate();
@@ -376,7 +565,93 @@ describe("session kernel actor boundary", () => {
     })).toThrow("actor stopped");
   });
 
-  test("fail-stops the actor client after ambiguous typed settlement", async () => {
+  test("classifies structured quarantine failures on the async path", async () => {
+    class StructuredErrorWorker {
+      listeners = new Map<string, (event: MessageEvent) => void>();
+      addEventListener(type: string, listener: (event: MessageEvent) => void) {
+        this.listeners.set(type, listener);
+      }
+      removeEventListener() {}
+      postMessage(message: { rpcId: string }) {
+        const body = JSON.stringify({
+          ok: false,
+          code: "session_quarantined",
+          sessionId: "async-quarantine",
+          error: "settlement is quarantined",
+        });
+        queueMicrotask(() => this.listeners.get("message")?.({
+          data: {
+            t: "call_result",
+            rpcId: message.rpcId,
+            status: -1,
+            length: body.length,
+            body,
+          },
+        } as MessageEvent));
+      }
+      terminate() {}
+    }
+    const host = new SessionKernelActorClient(
+      new StructuredErrorWorker() as unknown as Worker,
+    );
+    client = host;
+
+    await expect(host.decideGatewayAsync({
+      op: "request",
+      sessionId: "async-quarantine",
+      requestId: "request",
+      operation: "websocket_command",
+    })).rejects.toBeInstanceOf(SessionKernelQuarantinedError);
+  });
+
+  test("marks structured actor-fatal failures dead on the async path", async () => {
+    class StructuredErrorWorker {
+      listeners = new Map<string, (event: MessageEvent) => void>();
+      addEventListener(type: string, listener: (event: MessageEvent) => void) {
+        this.listeners.set(type, listener);
+      }
+      removeEventListener() {}
+      postMessage(message: { rpcId: string }) {
+        const body = JSON.stringify({
+          ok: false,
+          code: "actor_fatal",
+          error: "actor authority failed",
+        });
+        queueMicrotask(() => this.listeners.get("message")?.({
+          data: {
+            t: "call_result",
+            rpcId: message.rpcId,
+            status: -1,
+            length: body.length,
+            body,
+          },
+        } as MessageEvent));
+      }
+      terminate() {}
+    }
+    const fatal: Error[] = [];
+    const host = new SessionKernelActorClient(
+      new StructuredErrorWorker() as unknown as Worker,
+      (error) => fatal.push(error),
+    );
+    client = host;
+
+    await expect(host.decideGatewayAsync({
+      op: "request",
+      sessionId: "async-fatal",
+      requestId: "request",
+      operation: "websocket_command",
+    })).rejects.toThrow("actor authority failed");
+    expect(fatal).toHaveLength(1);
+    await expect(host.decideGatewayAsync({
+      op: "request",
+      sessionId: "async-fatal",
+      requestId: "later",
+      operation: "websocket_command",
+    })).rejects.toThrow("actor authority failed");
+  });
+
+  test("quarantines one session after ambiguous typed settlement", async () => {
     const host = await actor();
     host.decideGateway({
       op: "request",
@@ -390,17 +665,45 @@ describe("session kernel actor boundary", () => {
       "receipt changed",
       false,
     ]);
-    expect(() => host.decideGateway({
-      op: "complete",
+    let settlementError: unknown;
+    try {
+      host.decideGateway({
+        op: "complete",
+        sessionId: "ambiguous-settlement",
+        requestId: "one",
+        operation: "websocket_command",
+        result: "done",
+      });
+    } catch (error) {
+      settlementError = error;
+    }
+    expect(settlementError).toBeInstanceOf(SessionKernelQuarantinedError);
+    expect(host.store.quarantinedSession("ambiguous-settlement")).toMatchObject({
+      reason: "receipt changed",
+      commandKind: "gateway:complete",
+    });
+
+    expect(host.decideDelivery({
+      op: "snapshot",
       sessionId: "ambiguous-settlement",
-      requestId: "one",
-      operation: "websocket_command",
-      result: "done",
-    })).toThrow("receipt changed");
+    })).toMatchObject({ revision: 0, queued: [] });
     expect(() => host.decideDelivery({
+      op: "set",
+      sessionId: "ambiguous-settlement",
+      slot: "queued",
+      value: [],
+    })).toThrow(SessionKernelQuarantinedError);
+
+    expect(host.decideDelivery({
+      op: "set",
+      sessionId: "other-session",
+      slot: "queued",
+      value: [{ id: "still-live" }],
+    })).toBeUndefined();
+    expect(host.decideDelivery({
       op: "snapshot",
       sessionId: "other-session",
-    })).toThrow("receipt changed");
+    })).toMatchObject({ queued: [{ id: "still-live" }] });
   });
 
   test("returns a terminal failure instead of re-executing it", async () => {
@@ -424,6 +727,74 @@ describe("session kernel actor boundary", () => {
     expect(() => host.decideGateway(input)).toThrow("not allowed");
   });
 
+  test("admits gateway and delivery commands without blocking the gateway thread", async () => {
+    const messageListeners: Array<(event: MessageEvent) => void> = [];
+    const worker = {
+      addEventListener(type: string, listener: (event: MessageEvent) => void) {
+        if (type === "message") messageListeners.push(listener);
+      },
+      postMessage(request: {
+        t: string;
+        rpcId?: string;
+        command?: { kind?: string; request?: { op?: string } };
+      }) {
+        const result = request.command?.request?.op === "request" ||
+          request.command?.request?.op === "request_submit_command"
+          ? { status: "execute" }
+          : { status: "completed" };
+        setTimeout(() => {
+          const body = JSON.stringify({
+            ok: true,
+            result: request.command?.kind === "delivery"
+              ? { result, revision: 1 }
+              : result,
+          });
+          for (const listener of messageListeners)
+            listener({
+              data: {
+                t: "call_result",
+                rpcId: request.rpcId,
+                status: 1,
+                length: body.length,
+                body,
+              },
+            } as MessageEvent);
+        }, 0);
+      },
+      terminate() {},
+    };
+    const host = new SessionKernelActorClient(worker as unknown as Worker);
+    client = host;
+    const input = {
+      op: "request" as const,
+      sessionId: "async-gateway",
+      requestId: "one",
+      operation: "session_file_updated" as const,
+    };
+    let timerFired = false;
+    const admission = host.decideGatewayAsync(input);
+    setTimeout(() => {
+      timerFired = true;
+    }, 0);
+
+    expect(await admission).toEqual({ status: "execute" });
+    await Bun.sleep(0);
+    expect(timerFired).toBe(true);
+    expect(await host.decideGatewayAsync({
+      op: "complete",
+      sessionId: input.sessionId,
+      requestId: input.requestId,
+      operation: input.operation,
+      result: null,
+    })).toEqual({ status: "completed" });
+    expect(await host.decideDeliveryAsync({
+      op: "request_submit_command",
+      sessionId: "async-delivery",
+      requestId: "one",
+      identity: { prompt: "hello" },
+    })).toEqual({ status: "execute" });
+  });
+
   test("acknowledges replay results through async IPC", async () => {
     const host = await actor();
     host.decideGateway({
@@ -441,6 +812,29 @@ describe("session kernel actor boundary", () => {
     });
     await host.acknowledgeCommand("ack", "one");
     expect(host.store.command("ack", "one")?.acknowledgedAt).toBeNumber();
+  });
+
+  test("does not dispatch runtime work for a quarantined session", async () => {
+    const host = await actor();
+    host.store.scheduleTimer({
+      sessionId: "quarantined-work",
+      timerId: "wake",
+      kind: "known_timer",
+      dueAt: Date.now() - 1,
+      payload: null,
+    });
+    host.store.enqueueOutbox("quarantined-work", "known_effect", null, "known");
+    host.store.quarantineSession("quarantined-work", "settlement failed", "timer:complete");
+
+    const work = await host.runtimeWork(["known_timer"], ["known_effect"]);
+    expect(work).toEqual({ timers: [], outbox: [] });
+    expect(host.store.stats().quarantinedSessions).toBe(1);
+    expect(host.store.deadLetters().quarantines).toHaveLength(1);
+
+    expect(host.store.releaseQuarantine("quarantined-work")).toBe(true);
+    const released = await host.runtimeWork(["known_timer"], ["known_effect"]);
+    expect(released.timers).toHaveLength(1);
+    expect(released.outbox).toHaveLength(1);
   });
 
   test("loads registered runtime work through async IPC", async () => {
@@ -519,15 +913,15 @@ describe("session kernel actor boundary", () => {
 
   test("delivery mutations invalidate projections without fetching a snapshot", async () => {
     const host = await actor();
-    const original = host.decideDelivery.bind(host);
+    const original = host.decideDeliveryAsync.bind(host);
     let snapshotCalls = 0;
-    host.decideDelivery = ((request) => {
+    host.decideDeliveryAsync = (async (request) => {
       if (request.op === "snapshot") snapshotCalls += 1;
       return original(request);
-    }) as typeof host.decideDelivery;
+    }) as typeof host.decideDeliveryAsync;
     installSessionKernelActor(host);
 
-    sessionDelivery({
+    await sessionDelivery({
       op: "set",
       sessionId: "small-mutation-reply",
       slot: "queued",
@@ -535,7 +929,7 @@ describe("session kernel actor boundary", () => {
     });
     expect(snapshotCalls).toBe(0);
     expect(
-      sessionDelivery({ op: "snapshot", sessionId: "small-mutation-reply" })
+      (await sessionDelivery({ op: "snapshot", sessionId: "small-mutation-reply" }))
         .revision,
     ).toBe(1);
     expect(snapshotCalls).toBe(1);

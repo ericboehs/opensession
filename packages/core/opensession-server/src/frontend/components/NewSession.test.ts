@@ -156,7 +156,9 @@ test("dismissing a nonempty composer parks it without an explicit draft action",
   const createStart = source.indexOf("function handleCreate()");
   const sendStart = source.indexOf("send({", createStart);
   const createHandler = source.slice(createStart, sendStart);
-  expect(createHandler).toContain("consumePendingDraftParks(prompt, workspaceId);");
+  expect(createHandler).toContain(
+    "consumePendingDraftParks(prompt, workspaceId, createWorkspaceId);",
+  );
   expect(source).not.toContain('action: "draft"');
   expect(source).not.toContain("Save as draft");
 });
@@ -186,4 +188,34 @@ test("a parked draft keeps the composer copy and carries its attachments", async
   // Closing twice updates the workspace the first close made.
   expect(park).toContain("parkedWorkspaceId");
   expect(source).toContain("let parkedWorkspaceId: string | null = null;");
+});
+
+test("creating a reopened composer consumes its parked draft workspace", async () => {
+  const source = await Bun.file(new URL("./NewSession.tsx", import.meta.url)).text();
+  const createStart = source.indexOf("function handleCreate()");
+  const createEnd = source.indexOf("const canCreate =", createStart);
+  const createHandler = source.slice(createStart, createEnd);
+  const successStart = source.indexOf("const handleCreationMessage");
+  const successEnd = source.indexOf("// Re-send the same client-minted id", successStart);
+  const successHandler = source.slice(successStart, successEnd);
+
+  expect(createHandler).toContain(
+    "const createWorkspaceId = workspaceId || parkedWorkspaceId || undefined;",
+  );
+  expect(createHandler).toContain("{ workspaceId: createWorkspaceId, worktreeMode }");
+  expect(createHandler).toContain("{ workspaceId: createWorkspaceId }");
+  expect(successHandler).toContain("workspaceDraftKey(consumedWorkspaceId)");
+  expect(successHandler).toContain("clearDraft(consumedDraftKey)");
+});
+
+test("a late re-park clears rather than deletes an adopted workspace", async () => {
+  const source = await Bun.file(new URL("./NewSession.tsx", import.meta.url)).text();
+  const parkStart = source.indexOf("async function parkDraftOnExit()");
+  const parkEnd = source.indexOf("function handleCreate()", parkStart);
+  const park = source.slice(parkStart, parkEnd);
+
+  expect(park).toContain("operation.consumedIntoWorkspaceId === workspace.id");
+  expect(park.indexOf("updateWorkspaceApi(workspace.id, { draft: null })")).toBeLessThan(
+    park.indexOf("deleteWorkspaceApi(workspace.id)"),
+  );
 });

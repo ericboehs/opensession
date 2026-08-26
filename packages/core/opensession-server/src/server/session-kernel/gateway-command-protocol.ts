@@ -11,6 +11,7 @@ export type GatewayCommandOperation =
   | "model_migration"
   | "session_delete"
   | "transcript_append"
+  | "transcript_destination_append"
   | "transcript_import"
   | "transcript_replace"
   | "transcript_delete";
@@ -19,6 +20,7 @@ export type GatewayCommandOperation =
 export const DESTINATION_IDEMPOTENT_GATEWAY_OPERATIONS = new Set<GatewayCommandOperation>([
   "websocket_command",
   "delete_session",
+  "transcript_destination_append",
 ]);
 
 

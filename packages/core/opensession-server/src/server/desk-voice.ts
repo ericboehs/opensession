@@ -506,7 +506,9 @@ export function mirrorVoiceEntries(
 		content: e.text,
 		timestamp: now,
 	}));
-	transcriptStore().appendTranscriptEvents(sessionId, tes);
+	void transcriptStore().appendTranscriptEvents(sessionId, tes).catch((error) => {
+    console.error(`[desk-voice] Failed to mirror voice entries for ${sessionId}:`, error);
+  });
 	appendHandoff(
 		sessionId,
 		entries.map((e) => ({
@@ -525,10 +527,12 @@ export function mirrorVoiceToolCall(
 	result: unknown,
 ): void {
 	const { sessionId } = ensureDeskSession(user);
-	transcriptStore().appendTranscriptEvents(
+	void transcriptStore().appendTranscriptEvents(
 		sessionId,
 		voiceToolTranscriptEntries(callId, name, args, result),
-	);
+	).catch((error) => {
+    console.error(`[desk-voice] Failed to mirror tool call for ${sessionId}:`, error);
+  });
 	appendHandoff(sessionId, [
 		{
 			id: `voice-act-${callId}`,

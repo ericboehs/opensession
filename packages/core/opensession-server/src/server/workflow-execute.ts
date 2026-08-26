@@ -132,7 +132,7 @@ export async function runAgentCollect(
 			if (next === "aborted") {
 				if (engineSessionId) {
 					try {
-						cancelAgentRun(engineSessionId);
+						await cancelAgentRun(engineSessionId);
 					} catch {}
 				}
 				void it.return?.(undefined)?.catch?.(() => {});

@@ -281,8 +281,8 @@ function ToastCard({ toast: item }: { toast: BaseToast.Root.ToastObject<ToastDat
 			swipeDirection={data.ongoing ? [] : ["down", "right"]}
 			onClick={data.ongoing ? undefined : () => dismissToast(data.id)}
 			className={[
-				`${data.ongoing ? "pointer-events-none" : "pointer-events-auto"} absolute bottom-0 left-1/2 w-max max-w-full outline-none phone:max-w-[calc(100vw-24px)]`,
-				data.ongoing ? ONGOING_TOAST_POSITION : "",
+				`${data.ongoing ? "pointer-events-none" : "pointer-events-auto"} left-1/2 w-max max-w-full outline-none phone:max-w-[calc(100vw-24px)]`,
+				data.ongoing ? ONGOING_TOAST_POSITION : "absolute bottom-0",
 				"[z-index:calc(100-var(--toast-index))] [transform-origin:center_bottom]",
 				"[transform:translateX(calc(-50%+var(--toast-swipe-movement-x)))_translateY(calc(var(--toast-swipe-movement-y)-var(--toast-index)*8px))_scale(calc(1-(var(--toast-index)*0.04)))]",
 				"data-[expanded]:[transform:translateX(calc(-50%+var(--toast-swipe-movement-x)))_translateY(calc(var(--toast-swipe-movement-y)-var(--toast-offset-y)-var(--toast-index)*8px))_scale(1)]",

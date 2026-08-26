@@ -92,6 +92,7 @@ import {
 import { transcriptStore } from "./transcript-store";
 import { transcriptForwarder } from "./transcript-forward";
 import { gitIdentityEnv } from "./shared/user-mappings";
+import { providerAccountUser } from "./session-actors";
 import {
   GITHUB_RUN_AUTH_FILE_ENV,
   githubRunEnv,
@@ -475,6 +476,38 @@ export function piToolNames(
   return customTools.map((tool) => tool.name);
 }
 
+export const PI_STEER_TOOL_SKIP =
+  "Skipped because new steering instructions arrived. Read them before choosing the next tool.";
+
+/**
+ * Pi polls its steer queue after an assistant message's whole tool batch. That
+ * is too late for Open Session's step-boundary contract: a model can emit a
+ * long batch, leaving a steer parked behind several not-yet-started tools.
+ *
+ * Force each batch to execute sequentially and turn every not-yet-started call
+ * into a cheap result once a steer is waiting. Pi can then satisfy the model
+ * protocol's one-result-per-call requirement and inject the steer without
+ * starting stale work.
+ */
+export function piSteeringBoundaryTools(
+  tools: readonly ToolDefinition<any, any, any>[],
+  steeringPending: () => boolean,
+): ToolDefinition<any, any, any>[] {
+  return tools.map((tool) => ({
+    ...tool,
+    executionMode: "sequential",
+    async execute(toolCallId, params, signal, onUpdate, ctx) {
+      if (steeringPending()) {
+        return {
+          content: [{ type: "text", text: PI_STEER_TOOL_SKIP }],
+          details: {},
+        };
+      }
+      return tool.execute(toolCallId, params, signal, onUpdate, ctx);
+    },
+  }));
+}
+
 export function cancelPiRun(id: string): boolean {
   const handle = activeRuns.get(id);
   if (!handle) return false;
@@ -482,8 +515,8 @@ export function cancelPiRun(id: string): boolean {
   return true;
 }
 
-/** Native mid-turn steer: session.steer() queues the text for delivery after
- *  the current assistant step's in-flight tool calls, before the next LLM
+/** Native mid-turn steer: session.steer() queues the text for delivery at the
+ *  next completed tool or assistant-message boundary, before the next LLM
  *  call. True = a live run accepted it; false = nothing steerable (caller
  *  queues for the next turn instead). */
 export function acceptSteerOnce(
@@ -689,7 +722,9 @@ function piAppend(engineSessionId: string, lines: Record<string, unknown>[]): vo
     forward(engineSessionId, lines);
     return;
   }
-  appendTranscriptEntries(engineSessionId, lines);
+  void appendTranscriptEntries(engineSessionId, lines).catch((error) => {
+    console.error(`[pi] Transcript append failed for ${engineSessionId}:`, error);
+  });
 }
 
 /** Store one batch of normalized entries under the pi session id. Requires
@@ -938,11 +973,11 @@ export function makeGuardedGrepExecute(
     const pattern = String(params?.pattern ?? "");
     if (!pattern) throw new Error("grep: pattern is required");
     if (signal?.aborted) throw new Error("Operation aborted");
-    const rgPath = Bun.which("rg");
-    if (!rgPath) throw new Error("ripgrep (rg) is not available on this host");
     const rawPath = typeof params?.path === "string" && params.path ? params.path : ".";
     const searchPath = resolve(cwd, rawPath);
     guard(searchPath);
+    const rgPath = Bun.which("rg");
+    if (!rgPath) throw new Error("ripgrep (rg) is not available on this host");
     const st = await fsStat(searchPath).catch(() => null);
     if (!st) throw new Error(`Path not found: ${searchPath}`);
     const isDir = st.isDirectory();
@@ -1133,6 +1168,9 @@ export function makePiBashTool(input: {
   unattended: boolean;
   sessionId?: string;
   runKind?: string;
+  /** Immutable Open Session run cancellation. Kept separate from Pi's tool
+   * signal because AgentSession.abort() can leave an active tool signal live. */
+  runSignal?: AbortSignal;
   onAudit?: (event: PiBashAuditEvent) => void;
 }): ToolDefinition<any, any, any> {
   return {
@@ -1182,7 +1220,8 @@ export function makePiBashTool(input: {
           ? Math.min(rawTimeout, BASH_MAX_TIMEOUT_S)
           : BASH_DEFAULT_TIMEOUT_S;
 
-      if (signal?.aborted) throw new Error("Command aborted");
+      const aborted = () => Boolean(signal?.aborted || input.runSignal?.aborted);
+      if (aborted()) throw new Error("Command aborted");
       const commandAudit = summarizeBashAuditCommand(command);
       const commandStartedAt = Date.now();
       input.onAudit?.({ phase: "start", ...commandAudit, timeout_s: timeoutS });
@@ -1263,7 +1302,14 @@ export function makePiBashTool(input: {
           killTree();
         }, timeoutS * 1000);
         const onAbort = () => killTree();
-        signal?.addEventListener("abort", onAbort, { once: true });
+        const abortSignals = [...new Set([signal, input.runSignal].filter(
+          (candidate): candidate is AbortSignal => !!candidate,
+        ))];
+        for (const abortSignal of abortSignals)
+          abortSignal.addEventListener("abort", onAbort, { once: true });
+        // addEventListener does not replay an abort that raced spawn/listener
+        // installation, so close that window before awaiting process exit.
+        if (aborted()) killTree();
         try {
           // Exit-gated completion: the drains alone can outlive bash forever
           // when a backgrounded child inherited the pipes, so wait for exit
@@ -1273,7 +1319,8 @@ export function makePiBashTool(input: {
           await Promise.race([drains, Bun.sleep(250)]);
         } finally {
           clearTimeout(timer);
-          signal?.removeEventListener("abort", onAbort);
+          for (const abortSignal of abortSignals)
+            abortSignal.removeEventListener("abort", onAbort);
           for (const reader of readers) {
             // cancel() rejects (async) when the drain already released the
             // reader — swallow both the sync throw and the rejection.
@@ -1287,7 +1334,7 @@ export function makePiBashTool(input: {
           (droppedChars > 0
             ? `[output truncated: first ${droppedChars} characters dropped]\n`
             : "") + out;
-        if (signal?.aborted) throw new Error("Command aborted");
+        if (aborted()) throw new Error("Command aborted");
         if (timedOut)
           throw new Error(`${text}\nCommand timed out after ${timeoutS}s`.trim());
         if (exitCode !== 0)
@@ -1297,7 +1344,7 @@ export function makePiBashTool(input: {
           details: { exitCode, truncatedChars: droppedChars || undefined },
         };
       } finally {
-        const cancelled = Boolean(signal?.aborted);
+        const cancelled = Boolean(signal?.aborted || input.runSignal?.aborted);
         input.onAudit?.({
           phase: "finish",
           ...commandAudit,
@@ -1438,6 +1485,10 @@ async function* runPiAttempt(
   }
 
   const { prompt, cwd, mode, mcpServers, confirmTools, journal, user, author } = opts;
+  // `user` remains the exact prompt sender for MCP/GitHub policy and audit.
+  // Provider accounts are different: synthetic continuation senders inherit
+  // the interactive session owner's personal subscription.
+  const accountUser = providerAccountUser(user, opts.mcpGrantUser);
   const isAsk = mode === "ask";
   const isScratch = mode === "scratch";
 
@@ -1483,6 +1534,30 @@ async function* runPiAttempt(
   };
 
   let piSessionId: string | undefined;
+  // Cumulative usage across every assistant request in this attempt. Keep it
+  // outside the run body so failures and cancellations retain the work they
+  // completed before their terminal path.
+  const usageTotal: TurnUsage = {
+    costUsd: 0,
+    inputTokens: 0,
+    outputTokens: 0,
+    cacheReadTokens: 0,
+    cacheCreationTokens: 0,
+    contextTokens: 0,
+  };
+  let usageRequests = 0;
+  let sawUsage = false;
+  const usageAuditFields = () =>
+    sawUsage
+      ? {
+          input_tokens: usageTotal.inputTokens,
+          output_tokens: usageTotal.outputTokens,
+          cache_read_input_tokens: usageTotal.cacheReadTokens,
+          cache_creation_input_tokens: usageTotal.cacheCreationTokens,
+          total_cost_usd: usageTotal.costUsd,
+          steps: usageRequests,
+        }
+      : {};
   // Utility callers such as oneShot deliberately have no unified session.
   // They still use Pi's native JSONL while alive, but must not emit degraded
   // transcript writes or create a ghost Open Session transcript.
@@ -1530,7 +1605,7 @@ async function* runPiAttempt(
       readModelProviderConfig()?.openaiAccounts,
       opts.accountAffinityKey || journal?.osSessionId || cwd,
       undefined,
-      user,
+      accountUser,
       opts.accountId,
       opts.accountStrict,
       new Set([...walk.excluded, pickedOpenai.id])
@@ -1583,7 +1658,7 @@ async function* runPiAttempt(
     );
     walk.promptEntryId ??= String(userLine.uuid);
     if (journal?.osSessionId) {
-      journalSet(
+      await journalSet(
         buildRunJournalRecord(opts, {
           runKey,
           osSessionId: journal.osSessionId,
@@ -1653,7 +1728,7 @@ async function* runPiAttempt(
         readModelProviderConfig()?.openaiAccounts,
         opts.accountAffinityKey || journal?.osSessionId || cwd,
         pickOut,
-        user,
+        accountUser,
         opts.accountId,
         opts.accountStrict,
         walk.excluded,
@@ -1835,7 +1910,7 @@ async function* runPiAttempt(
       // zero-cost fallback entry the bridge path minted.
       const provider = buildPiAnthropicProvider({
         unifiedSessionId: unifiedSessionId || runKey,
-        user,
+        user: accountUser,
         accountId: opts.accountId,
         accountStrict: opts.accountStrict,
         usageCredits: opts.usageCredits,
@@ -1918,7 +1993,12 @@ async function* runPiAttempt(
     // additions to the minimal environment, never inherited server secrets.
     const cliEnv: Record<string, string> = {};
     if (opts.claudeCliEnv) {
-      const cliAccount = pickClaudeAccount(undefined, user, undefined, opts.usageCredits);
+      const cliAccount = pickClaudeAccount(
+        undefined,
+        accountUser,
+        undefined,
+        opts.usageCredits,
+      );
       if (cliAccount) {
         const cliCfgDir = `${PI_STATE_DIR}/cli/claude/${cliAccount.id}`;
         mkdirSync(cliCfgDir, { recursive: true, mode: 0o700 });
@@ -1945,7 +2025,7 @@ async function* runPiAttempt(
         cfg?.openaiAccounts,
         journal?.osSessionId || runKey,
         undefined,
-        user,
+        accountUser,
       );
       if ("error" in picked) {
         console.warn(
@@ -2024,14 +2104,15 @@ async function* runPiAttempt(
     // back to its in-process built-ins for a name without an override, so a
     // separately maintained enabled-name list would be a containment escape.
     const guardedOps = makeGuardedToolOps(cwd);
-    const customTools: ToolDefinition<any, any, any>[] = [
+    let steeringBoundaryPending = false;
+    const baseCustomTools: ToolDefinition<any, any, any>[] = [
       ...mcpBridge.discoveryTools,
       ...(dialOracleAgent ? [makePiDialOracleTool(dialOracleAgent, user)] : []),
     ];
     for (const name of localTools) {
       switch (name) {
         case "read":
-          customTools.push(
+          baseCustomTools.push(
             sdk.createReadToolDefinition(cwd, {
               operations: guardedOps.read,
             }) as ToolDefinition<any, any, any>
@@ -2039,42 +2120,42 @@ async function* runPiAttempt(
           break;
         case "grep": {
           const base = sdk.createGrepToolDefinition(cwd);
-          customTools.push({
+          baseCustomTools.push({
             ...base,
             execute: makeGuardedGrepExecute(cwd, bashEnv, guardedOps.guard),
           } as ToolDefinition<any, any, any>);
           break;
         }
         case "find":
-          customTools.push(
+          baseCustomTools.push(
             sdk.createFindToolDefinition(cwd, {
               operations: guardedOps.find,
             }) as ToolDefinition<any, any, any>
           );
           break;
         case "ls":
-          customTools.push(
+          baseCustomTools.push(
             sdk.createLsToolDefinition(cwd, {
               operations: guardedOps.ls,
             }) as ToolDefinition<any, any, any>
           );
           break;
         case "edit":
-          customTools.push(
+          baseCustomTools.push(
             sdk.createEditToolDefinition(cwd, {
               operations: guardedOps.edit,
             }) as ToolDefinition<any, any, any>
           );
           break;
         case "write":
-          customTools.push(
+          baseCustomTools.push(
             sdk.createWriteToolDefinition(cwd, {
               operations: guardedOps.write,
             }) as ToolDefinition<any, any, any>
           );
           break;
         case "bash":
-          customTools.push(
+          baseCustomTools.push(
             makePiBashTool({
               cwd,
               env: bashEnv,
@@ -2083,6 +2164,7 @@ async function* runPiAttempt(
               unattended: policy.unattended,
               sessionId: journal?.osSessionId,
               runKind: journal?.kind,
+              runSignal: abort.signal,
               onAudit: (event) =>
                 audit({
                   msg: `pi_command_${event.phase}`,
@@ -2098,6 +2180,10 @@ async function* runPiAttempt(
           break;
       }
     }
+    const customTools = piSteeringBoundaryTools(
+      baseCustomTools,
+      () => steeringBoundaryPending,
+    );
 
     // The repo owning this run's cwd, or undefined for a repo-less one (a
     // scratch dir, a repo-less ask session). Dynamic import to avoid a static
@@ -2348,7 +2434,7 @@ async function* runPiAttempt(
     // Journal upgrade: the record now carries the engine id (still no
     // serverKey — boot must take the continuation re-prompt path).
     if (journal?.osSessionId) {
-      journalSet(
+      await journalSet(
         buildRunJournalRecord(opts, {
           runKey,
           osSessionId: journal.osSessionId,
@@ -2395,6 +2481,7 @@ async function* runPiAttempt(
       // text so the delivery match stays exact; the audit line below still
       // records what the person typed.
       const steerText = expandSkillCommand(text, loader.getSkills().skills);
+      steeringBoundaryPending = true;
       pendingSteers.push({ text: steerText, images, steerId });
       void liveSession.steer(steerText, piImages(images)).catch((e) => {
         console.warn("[pi-runner] steer failed:", e);
@@ -2406,6 +2493,7 @@ async function* runPiAttempt(
         // Pi exposes exact delivery identity only in our wrapper. Rebuild its
         // whole queue from our richer copy so duplicate text and images keep
         // their original order while the selected id disappears.
+        steeringBoundaryPending = remaining.length > 0;
         liveSession.clearQueue();
         for (const steer of remaining) {
           void liveSession.steer(steer.text, piImages(steer.images)).catch((e) => {
@@ -2478,16 +2566,6 @@ async function* runPiAttempt(
       });
     }
 
-    // Cumulative usage across the run (assistant messages incl. retries).
-    const usageTotal: TurnUsage = {
-      costUsd: 0,
-      inputTokens: 0,
-      outputTokens: 0,
-      cacheReadTokens: 0,
-      cacheCreationTokens: 0,
-      contextTokens: 0,
-    };
-    let sawUsage = false;
     // Final assistant outcome (stopReason error/aborted → terminal error).
     let lastStopReason: string | undefined;
     let lastErrorMessage: string | undefined;
@@ -2554,6 +2632,7 @@ async function* runPiAttempt(
               const u = msg.usage;
               if (u && typeof u.input === "number") {
                 sawUsage = true;
+                usageRequests++;
                 usageTotal.inputTokens += u.input || 0;
                 usageTotal.outputTokens += u.output || 0;
                 usageTotal.cacheReadTokens += u.cacheRead || 0;
@@ -2626,6 +2705,16 @@ async function* runPiAttempt(
                 if (idx === -1 && pendingSteers.length > 0) idx = 0;
                 if (idx !== -1) {
                   const steer = pendingSteers.splice(idx, 1)[0];
+                  steeringBoundaryPending = pendingSteers.length > 0;
+                  // Transcript parsing deliberately strips fenced system
+                  // context. A background-wait steer can therefore be fully
+                  // delivered yet leave no visible user entry for receipt
+                  // reconciliation. Acknowledge the exact queue id at the
+                  // engine boundary instead of making UI state infer delivery
+                  // from display-sanitized transcript text.
+                  if (steer.steerId) {
+                    push({ type: "steer_delivered", steerId: steer.steerId });
+                  }
                   audit({
                     ...auditBase,
                     direction: "in",
@@ -2671,6 +2760,7 @@ async function* runPiAttempt(
               const cu = ce.result.usage;
               if (cu && typeof cu.input === "number") {
                 sawUsage = true;
+                usageRequests++;
                 usageTotal.inputTokens += cu.input || 0;
                 usageTotal.outputTokens += cu.output || 0;
                 usageTotal.cacheReadTokens += cu.cacheRead || 0;
@@ -2916,14 +3006,8 @@ async function* runPiAttempt(
       ok: terminal.type === "done",
       pi_session_id: piSessionId,
       saw_settled: sawSettled,
-      ...(terminal.type === "done"
-        ? {
-            input_tokens: usageTotal.inputTokens,
-            output_tokens: usageTotal.outputTokens,
-            cache_read_input_tokens: usageTotal.cacheReadTokens,
-            total_cost_usd: usageTotal.costUsd,
-          }
-        : { error: terminal.content }),
+      ...usageAuditFields(),
+      ...(terminal.type === "done" ? {} : { error: terminal.content }),
     });
     yield terminal;
   } catch (e: any) {
@@ -2955,7 +3039,7 @@ async function* runPiAttempt(
     // usage-limit shape in one of those must not burn a healthy account.
     if (e?.usageLimitExhausted === true && takeAccountRotation(message)) return;
     reachedTerminal = true;
-    endTurn({ ok: false, pi_session_id: piSessionId, error: message });
+    endTurn({ ok: false, pi_session_id: piSessionId, ...usageAuditFields(), error: message });
     yield {
       type: "error",
       content: `pi: ${message}`,
@@ -2967,6 +3051,7 @@ async function* runPiAttempt(
     endTurn({
       ok: false,
       pi_session_id: piSessionId,
+      ...usageAuditFields(),
       status: abort.signal.aborted ? "cancelled" : "abandoned",
     });
     // Consumer teardown without a terminal (hot-reload chaos, shutdown):

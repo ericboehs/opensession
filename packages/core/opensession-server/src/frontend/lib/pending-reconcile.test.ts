@@ -1,5 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
+	markPendingStarted,
+	type OptimisticPendingPrompt,
 	PENDING_GIVE_UP_MS,
 	reconcilePending,
 } from "./pending-reconcile";
@@ -15,6 +17,32 @@ const entry = (content: string, at = SENT) => ({
 	type: "user",
 	content,
 	timestamp: new Date(at).toISOString(),
+});
+
+describe("markPendingStarted", () => {
+	const started: OptimisticPendingPrompt = {
+		id: "outbox-a",
+		content: "ship it",
+		user: "michiel",
+		sentAt: SENT,
+	};
+
+	test("moves a stale busy send from the queue back to the transcript", () => {
+		expect(
+			markPendingStarted([{ ...started, busyMode: "queue" as const }], started),
+		).toEqual([{ ...started, serverStarted: true }]);
+	});
+
+	test("restores a bubble claimed by the transient admission queue", () => {
+		expect(markPendingStarted([], started)).toEqual([
+			{ ...started, serverStarted: true },
+		]);
+	});
+
+	test("leaves an already-confirmed transcript bubble alone", () => {
+		const current = [{ ...started, serverStarted: true as const }];
+		expect(markPendingStarted(current, started)).toBe(current);
+	});
 });
 
 describe("reconcilePending", () => {
@@ -33,6 +61,26 @@ describe("reconcilePending", () => {
 		const { landed } = reconcilePending(
 			[bubble("outbox-a", "ship it")],
 			[],
+			[{ content: "ship it" }],
+			SENT,
+		);
+		expect([...landed]).toEqual(["outbox-a"]);
+	});
+
+	test("a transient queue echo does not claim a server-started bubble", () => {
+		const { landed } = reconcilePending(
+			[{ ...bubble("outbox-a", "ship it"), serverStarted: true }],
+			[],
+			[{ content: "ship it" }],
+			SENT,
+		);
+		expect(landed.size).toBe(0);
+	});
+
+	test("the transcript still claims a server-started bubble", () => {
+		const { landed } = reconcilePending(
+			[{ ...bubble("outbox-a", "ship it"), serverStarted: true }],
+			[entry("ship it")],
 			[{ content: "ship it" }],
 			SENT,
 		);

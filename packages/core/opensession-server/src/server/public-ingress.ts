@@ -1,22 +1,19 @@
 /**
- * public-ingress — the isolated PUBLIC dial-back listener for remote sandboxes
- * (docs/self-hosting-sandboxes.md "Public dial-back ingress").
+ * public-ingress — the instance's single isolated PUBLIC listener.
  *
- * Remote providers (Daytona/E2B) run on third-party compute: their run hosts
- * and MCP proxies must dial back to the server's /run-ws and /rpc-ws
- * WebSocket routes from the public internet. The main
- * Bun.serve binds the tailnet and carries the whole app, so instead of
- * exposing IT, this module runs a SECOND Bun.serve that serves only the
- * narrow sandbox transport and workload-identity surface:
+ * The main Bun.serve on 3850 carries the private app. This second listener
+ * exposes only three deliberately public capabilities: registered webhook and
+ * OAuth routes, remote-sandbox WebSockets, and workload identity. Caddy,
+ * Tailscale Funnel and Cloudflare Tunnel all proxy one origin to this port;
+ * they never need a second webhook port or a copy of the route allowlist.
  *
- *   - /run-ws/<hostId>  (WS upgrade — run host event stream)
- *   - /rpc-ws           (WS upgrade — opensession-* MCP proxy channel; same
- *                        historical prefixes accepted)
- *   - /ingress-health              (bare 200 "ok" for monitors/probes)
- *   - /workload-identity/*         (OIDC discovery, JWKS, token exchange)
+ *   - exact routes registered by webhook-server.ts
+ *   - /run-ws/<hostId>, /rpc-ws and /sandbox-portal-ws
+ *   - /ingress-health
+ *   - /workload-identity/*
  *
  * Everything else is a bodyless 404 — no app routes or frontend surface, no
- * disclosure. Auth is exactly run-ws.ts's: per-launch wsTokens keyed by
+ * disclosure. Sandbox auth is exactly run-ws.ts's: per-launch wsTokens keyed by
  * hostId, constant-time compared BEFORE the upgrade (shared handlers, not
  * copies — the token registry is process-global, so a token registered by a
  * launcher is valid on both listeners). On a deployment with no ws-transport
@@ -30,14 +27,10 @@
  * front that terminates TLS for it — the last X-Forwarded-For hop (the one
  * the proxy itself appended; earlier hops are client-controlled).
  *
- * Config (~/.opensession-sandbox.json → sandbox/config.ts publicIngress block):
- *   {"publicIngress": {"enabled": true, "port": 3860,
- *                      "publicBaseUrl": "wss://sessions.example.com"}}
- * The listener binds 127.0.0.1 by default — front it with a TLS terminator
- * (Caddy path routes / cloudflared tunnel); publicBaseUrl is what remote
- * launches embed as OPENSESSION_RUN_WS_URL/OPENSESSION_RPC_WS_URL (config.ts
- * remoteSandboxCallbackBaseUrl). The main server keeps serving the same
- * routes for the tailnet path (docker-ws) — this listener is additive.
+ * The listener binds 127.0.0.1:3860 by default. `config.json`'s canonical
+ * `ingress.publicBaseUrl` is what integrations, workload identity and remote
+ * launches publish; the legacy sandbox block may still override only the
+ * internal host/port for specialized deployments.
  *
  * Lifecycle: started once from opensession.ts boot on loopback even before a
  * public URL is configured. That makes provider connect a Settings operation,
@@ -55,8 +48,10 @@ import {
   sandboxWsOpen,
 } from "./run-ws";
 import { handleSandboxPortalRelayUpgrade, sandboxPortalRelayClose, sandboxPortalRelayMessage, sandboxPortalRelayOpen } from "./sandbox-portal-relay";
+import { configuredIngress } from "./config";
 import { publicIngressConfig } from "./sandbox/config";
 import { handleWorkloadIdentityRequest } from "./workload-identity";
+import { handleWebhookRequest } from "./webhook-server";
 
 const g = globalThis as any;
 
@@ -177,6 +172,8 @@ async function ingressFetch(req: Request, server: IngressServer): Promise<Respon
     }
     return handleSandboxWsUpgrade(req, server, path);
   }
+  const webhook = await handleWebhookRequest(req);
+  if (webhook) return webhook;
   // Everything else: a bodyless 404 — never JSON, never a route list.
   return new Response(null, { status: 404 });
 }
@@ -240,8 +237,8 @@ export function startPublicIngress(overrides?: {
   };
   g.__publicIngressServer = handle;
   console.log(
-    `[public-ingress] sandbox dial-back listener on ${handle.hostname}:${handle.port}` +
-      (cfg.publicBaseUrl ? ` (public base ${cfg.publicBaseUrl})` : ""),
+    `[public-ingress] public gateway on ${handle.hostname}:${handle.port}` +
+      (configuredIngress().publicBaseUrl ? ` (public base ${configuredIngress().publicBaseUrl})` : ""),
   );
   return handle;
 }

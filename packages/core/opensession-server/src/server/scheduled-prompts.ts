@@ -60,8 +60,8 @@ function removeFromListing(id: string): boolean {
 	return true;
 }
 
-function schedule(prompt: ScheduledPrompt): void {
-	sessionKernel(prompt.sessionId).scheduleTimer({
+async function schedule(prompt: ScheduledPrompt): Promise<void> {
+	await sessionKernel(prompt.sessionId).scheduleTimer({
 		timerId: prompt.id,
 		kind: TIMER_KIND,
 		dueAt: Date.parse(prompt.at),
@@ -130,11 +130,11 @@ export function createScheduledPrompt(input: {
 	return prompt;
 }
 
-export function deleteScheduledPrompt(id: string): boolean {
+export async function deleteScheduledPrompt(id: string): Promise<boolean> {
 	const prompt = readStore().prompts.find((candidate) => candidate.id === id);
 	if (!prompt) return false;
 	const removed = removeFromListing(id);
-	if (removed) sessionKernel(prompt.sessionId).cancelTimer(prompt.id);
+	if (removed) await sessionKernel(prompt.sessionId).cancelTimer(prompt.id);
 	return removed;
 }
 

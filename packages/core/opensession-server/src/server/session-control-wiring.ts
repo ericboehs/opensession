@@ -17,12 +17,13 @@
 
 import { AUTO_CONTINUE_USER } from "./auto-continue";
 import { personaName } from "./config";
-import { currentAgentRunToken, isAgentSessionBusy, steerAgentRun } from "./agent-runner";
-import { pendingAskAwaitingAnswer, pendingAsks } from "./asks";
+import { currentAgentRunToken, isAgentSessionBusy } from "./agent-runner";
+import { pendingAskAwaitingAnswer, pendingAskAwaitingAnswerSync, pendingAsks } from "./asks";
 import { relinkAskThreads } from "./human-asks";
 import { SESSION_EFFORTS, type SessionEffort, providerFor, resolveModel } from "./models";
 import { configuredInteractiveDefaultModel } from "./model-catalog";
-import { deliveryQueueState, durableQueueItem, liftUserStop, promptQueues, acceptQueuedSteer, prepareQueuedSteer, rejectQueuedSteer } from "./queue-state";
+import { deliveryQueueState, durableQueueItem, liftUserStop, promptQueues } from "./queue-state";
+import { prepareAndSteerQueuedPrompt } from "./queued-steer";
 import { drainQueue, enqueuePrompt, requestTurnCancel, runSessionPrompt, sessionMentionsNote, watchExternalRunAndDrain } from "./run-session";
 import { creationAttachmentPath, parseImageDataUrls, prepareCreationAttachmentSources, withUploadsNote } from "./uploads";
 import { type Sandbox } from "./sandbox";
@@ -83,7 +84,7 @@ function buildSummary(s: UnifiedSession): SessionSummary {
 	// External runs (CLI in tmux, another process) show as running via PID but
 	// aren't in our activeRuns — observe-only, can't steer/cancel them.
 	const runningExternal = !!s.isRunning && !busyHere;
-	const pending = pendingAskAwaitingAnswer(s.id);
+	const pending = pendingAskAwaitingAnswerSync(s.id);
 	const queuedCount = promptQueues.get(s.id)?.length || 0;
 
 	let state: SessionState;
@@ -151,12 +152,12 @@ registerSessionControl({
 
 	answerQuestion: async (id, answers, opts) => {
 		const requestId = opts?.requestId || randomUUIDv7();
-		const questionId = pendingAskAwaitingAnswer(id)?.questionId || null;
+		const questionId = (await pendingAskAwaitingAnswer(id))?.questionId || null;
 		// The actor records the answer durably under the caller's retry
 		// identity; the aggregate makes replay idempotent. The gateway-side
 		// resolver then runs its live side effects (escalation cancel,
 		// broadcast, tool-promise wake) — it owns the answerReceived flag.
-		const settled = sessionAsk({
+		const settled = await sessionAsk({
 			op: "answer",
 			sessionId: id,
 			questionId,
@@ -169,13 +170,13 @@ registerSessionControl({
 		const effective =
 			settled.answers ?? (answers && typeof answers === "object" ? answers : null);
 		const pending = pendingAsks.get(id) as
-			| { questionId?: string; resolve?: (value: unknown) => void }
+			| { questionId?: string; resolve?: (value: unknown) => void | Promise<void> }
 			| undefined;
 		if (
 			pending?.resolve &&
 			(questionId === null || pending.questionId === questionId)
 		)
-			pending.resolve(effective);
+			await pending.resolve(effective);
 		return true;
 	},
 
@@ -250,7 +251,7 @@ registerSessionControl({
 			// prior Stop here rather than inside the run the Stop prevents: the busy
 			// branch below only enqueues, and drainQueue parks at the latch, which
 			// would leave the message queued forever.
-			liftUserStop(id);
+			await liftUserStop(id);
 
 			const attributed = user ? `[${user}] ${content}` : content;
 			// Disk-staged files can only be supplied to a fresh turn. Never fold them
@@ -284,34 +285,30 @@ registerSessionControl({
 						...(opts?.hold ? { hold: true } : {}),
 						...(opts?.reviewHandoff ? { reviewHandoff: true } : {}),
 					});
-					if (!prepareQueuedSteer(id, deliveryId, steerItem)) {
-						throw new Error("Delivery changed before steer preparation");
-					}
-					if (
-						steerAgentRun(
-							[session.claudeSessionId, session.codexThreadId, session.id],
-							attributed,
-							opts?.images,
-							deliveryId,
-						)
-					) {
-						if (!acceptQueuedSteer(id, deliveryId))
-							throw new Error("Pending steer changed before runner acceptance");
+					const steerResult = await prepareAndSteerQueuedPrompt({
+						sessionId: id,
+						itemId: deliveryId,
+						item: steerItem,
+						text: attributed,
+						images: opts?.images,
+					});
+					if (steerResult === "steered") {
 						return {
 							status: "steered" as const,
 							message: "Folded into the running turn.",
 							deliveryId,
 						};
 					}
-					rejectQueuedSteer(id, deliveryId);
-					watchExternalRunAndDrain(id);
-					return {
-						status: "queued" as const,
-						message: "Queued behind the current run.",
-						deliveryId,
-					};
+					if (steerResult === "rejected") {
+						watchExternalRunAndDrain(id);
+						return {
+							status: "queued" as const,
+							message: "Queued behind the current run.",
+							deliveryId,
+						};
+					}
 				}
-				enqueuePrompt(id, {
+				await enqueuePrompt(id, {
 					id: deliveryId,
 					content,
 					user,
@@ -345,7 +342,7 @@ registerSessionControl({
 
 			// Every accepted prompt is durable before any engine or workspace wake.
 			// A crash after this write but before dispatch replays the same queue id.
-			enqueuePrompt(id, {
+			await enqueuePrompt(id, {
 				id: deliveryId,
 				content,
 				user,
@@ -363,7 +360,7 @@ registerSessionControl({
 				deliveryId,
 			};
 		};
-		const plan = sessionDelivery({
+		const plan = await sessionDelivery({
 			op: "request_submit_command",
 			sessionId: id,
 			requestId: deliveryId,
@@ -381,7 +378,7 @@ registerSessionControl({
 		try {
 			const result = await deliverOwned();
       submitPhysicalFinished = true;
-			return sessionDelivery({
+			return await sessionDelivery({
 				op: "complete_submit_command",
 				sessionId: id,
 				requestId: deliveryId,
@@ -390,7 +387,7 @@ registerSessionControl({
 		} catch (error) {
 			if (error instanceof SessionDeliveryError) {
         submitPhysicalFinished = true;
-				sessionDelivery({
+				await sessionDelivery({
 					op: "complete_submit_command",
 					sessionId: id,
 					requestId: deliveryId,
@@ -398,7 +395,7 @@ registerSessionControl({
 				});
 				return error.result;
 			}
-      if (!submitPhysicalFinished) sessionDelivery({
+      if (!submitPhysicalFinished) await sessionDelivery({
 				op: "fail_submit_command",
 				sessionId: id,
 				requestId: deliveryId,
@@ -410,7 +407,7 @@ registerSessionControl({
 
 	cancelSession: async (id, opts) => {
 		const requestId = opts?.requestId || randomUUIDv7();
-		const plan = sessionTurn({
+		const plan = await sessionTurn({
 			op: "request_cancel_command",
 			sessionId: id,
 			requestId,
@@ -422,28 +419,28 @@ registerSessionControl({
 			const currentSession = findSession(id);
 			if (!currentSession) {
         cancelPhysicalFinished = true;
-				return sessionTurn({
+				return await sessionTurn({
 					op: "complete_cancel_command",
 					sessionId: id,
 					requestId,
 					result: false,
 				});
 			}
-			requestTurnCancel(id, currentSession, {
+			await requestTurnCancel(id, currentSession, {
 				cancelId: `stop:${requestId}`,
 				expectedRunId: plan.targetRunId,
 				expectedGeneration: plan.targetRunGeneration,
 				source: "session_control",
 			});
       cancelPhysicalFinished = true;
-			return sessionTurn({
+			return await sessionTurn({
 				op: "complete_cancel_command",
 				sessionId: id,
 				requestId,
 				result: true,
 			});
 		} catch (error) {
-      if (!cancelPhysicalFinished) sessionTurn({
+      if (!cancelPhysicalFinished) await sessionTurn({
 				op: "fail_cancel_command",
 				sessionId: id,
 				requestId,
@@ -523,7 +520,7 @@ registerSessionControl({
 					new Date(durableCreation.updatedAt).toISOString(),
 			};
 		}
-		let createPlan = actorCreationSetupPlan(bksId, createIdentity);
+		let createPlan = await actorCreationSetupPlan(bksId, createIdentity);
 		if (
 			completedCreate?.claudeSessionId ||
 			completedCreate?.codexThreadId
@@ -710,7 +707,7 @@ registerSessionControl({
 					else {
 						sessionBranch = await branchNameFromPrompt(prompt);
 						sessionBranch = await resolveUniqueBranch(sessionBranch, repo.id);
-						createPlan = patchCreationSetupPlan(bksId, createIdentity, {
+						createPlan = await patchCreationSetupPlan(bksId, createIdentity, {
 							branch: sessionBranch,
 						});
 					}
@@ -837,7 +834,7 @@ registerSessionControl({
 				const plannedWorkspaceId =
 					createPlan.workspaceId || createPlanWorkspaceId(bksId);
 				if (!createPlan.workspaceId)
-					createPlan = patchCreationSetupPlan(bksId, createIdentity, {
+					createPlan = await patchCreationSetupPlan(bksId, createIdentity, {
 						workspaceId: plannedWorkspaceId,
 					});
 				const branchForWs = wsParent?.branch || sessionBranch;
@@ -886,7 +883,7 @@ registerSessionControl({
 		const attachmentSources =
 			createPlan.attachments ?? prepareCreationAttachmentSources(bksId, rawFiles);
 		if (!createPlan.attachments && attachmentSources.length)
-			createPlan = patchCreationSetupPlan(bksId, createIdentity, {
+			createPlan = await patchCreationSetupPlan(bksId, createIdentity, {
 				attachments: attachmentSources,
 			});
 		for (const attachment of attachmentSources)
@@ -1082,7 +1079,7 @@ ${createMentionsNote}`;
 				}
 			: computedSpec;
 		if (!createPlan.resolved) {
-			createPlan = patchCreationSetupPlan(bksId, createIdentity, {
+			createPlan = await patchCreationSetupPlan(bksId, createIdentity, {
 				resolved: snapshotOpeningCreate(computedSpec),
 			});
 		}

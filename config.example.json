@@ -12,11 +12,13 @@
   "server": {
     "host": "127.0.0.1",
     "port": 3850,
-    "webhookPort": 3848,
     "publicBaseUrl": "https://sessions.example.com",
-    "webhookBaseUrl": "https://ingress.example.com",
     "previewHost": "preview.example.com",
     "caddyAdmin": "http://localhost:2019"
+  },
+  "ingress": {
+    "publicBaseUrl": "https://ingress.example.com",
+    "exposure": "custom"
   },
   "paths": {
     "claudeBin": "claude",

@@ -46,7 +46,10 @@
  * TranscriptStore(tempPath)` directly and must never call transcriptStore().
  */
 
-import { executeSessionProjection } from "./session-projection-executor";
+import {
+  executeDestinationIdempotentSessionProjection,
+  executeSessionProjection,
+} from "./session-projection-executor";
 import { Database } from "bun:sqlite";
 import { existsSync, mkdirSync } from "fs";
 import { tmpdir } from "os";
@@ -60,6 +63,11 @@ import {
 import type { TranscriptEntry } from "./types";
 import { sanitizeTranscriptMediaEntry } from "./transcript-media";
 import { classifyEntry, dropContextInjections } from "@tellahq/opensession-protocol/notices";
+import {
+  decodeAgentTranscriptReceiptRefV1,
+  type AgentTranscriptAnchorV1,
+  type AgentTranscriptReceiptRefV1,
+} from "@tellahq/opensession-protocol/agent-operation";
 import type {
   TranscriptIndexEntry,
   TranscriptIndexRole,
@@ -93,6 +101,96 @@ export interface TranscriptPage {
   firstSeq: number;
   /** seq of entries[entries.length-1]; 0 when the page is empty. */
   lastSeq: number;
+}
+
+export interface TranscriptTurnFence {
+  sessionId: string;
+  runId: string;
+  turnId: string;
+  generation: number;
+}
+
+export interface DestinationTranscriptAppendRequest extends TranscriptTurnFence {
+  appendId: string;
+  entries: TranscriptEntry[];
+}
+
+export interface DestinationTranscriptAppendResult extends AppendResult {
+  changes: Array<{ entryId: string; seq: number; changeSeq: number }>;
+}
+
+export interface AgentDestinationTranscriptAppendRequest
+  extends DestinationTranscriptAppendRequest {
+  transcriptAnchor: Readonly<AgentTranscriptAnchorV1>;
+}
+
+export interface DestinationTranscriptReceiptQuery extends TranscriptTurnFence {
+  appendId: string;
+  requestDigest: `sha256:${string}`;
+  transcriptAnchor?: Readonly<AgentTranscriptAnchorV1>;
+}
+
+export interface DestinationTranscriptAppendReceipt
+  extends TranscriptTurnFence {
+  readonly version: 1;
+  readonly appendId: string;
+  readonly requestDigest: `sha256:${string}`;
+  readonly transcriptAnchor?: Readonly<AgentTranscriptAnchorV1>;
+  readonly entryIds: readonly string[];
+  readonly firstSeq: number;
+  readonly lastSeq: number;
+  readonly throughChangeSeq: number;
+  readonly inserted: number;
+  readonly updated: number;
+  readonly changes: readonly Readonly<{
+    entryId: string;
+    seq: number;
+    changeSeq: number;
+  }>[];
+}
+
+export interface AgentTranscriptReceiptValidationRequest
+  extends TranscriptTurnFence {
+  readonly receipt: AgentTranscriptReceiptRefV1;
+  readonly transcriptAnchor: Readonly<AgentTranscriptAnchorV1>;
+}
+
+export class TranscriptAppendConflictError extends Error {
+  readonly code = "TRANSCRIPT_APPEND_CONFLICT";
+  constructor(sessionId: string, appendId: string) {
+    super(
+      `Transcript append ${sessionId}/${appendId} was reused with another request`,
+    );
+    this.name = "TranscriptAppendConflictError";
+  }
+}
+
+/** An exact primary-key receipt exists, but one or more expected proof fields
+ * differ. The error deliberately contains no transcript or mismatched value. */
+export class TranscriptAppendReceiptMismatchError extends Error {
+  readonly code = "TRANSCRIPT_APPEND_RECEIPT_MISMATCH";
+  constructor() {
+    super("Transcript append receipt does not match the exact identity");
+    this.name = "TranscriptAppendReceiptMismatchError";
+  }
+}
+
+/** A durable receipt row is malformed or contradicts its denormalized fields. */
+export class TranscriptAppendReceiptCorruptError extends Error {
+  readonly code = "TRANSCRIPT_APPEND_RECEIPT_CORRUPT";
+  constructor() {
+    super("Transcript append receipt is corrupt");
+    this.name = "TranscriptAppendReceiptCorruptError";
+  }
+}
+
+/** The Agent proof path only permits a fresh, dense, request-ordered append. */
+export class TranscriptAppendAgentReceiptInvariantError extends Error {
+  readonly code = "TRANSCRIPT_APPEND_AGENT_RECEIPT_INVARIANT";
+  constructor() {
+    super("Transcript append cannot produce an Agent receipt");
+    this.name = "TranscriptAppendAgentReceiptInvariantError";
+  }
 }
 
 export interface AppendResult {
@@ -158,7 +256,7 @@ export interface TailWindowOpts {
 export type TranscriptAppendHook = (
   sessionId: string,
   entries: SeqEntry[]
-) => void;
+) => void | Promise<void>;
 
 const g = globalThis as unknown as {
   __osTranscriptStore?: TranscriptStore;
@@ -197,7 +295,7 @@ export function transcriptStore(): TranscriptStore {
     isTestRunner() && !sessionsDirRedirected()
       ? scratchTranscriptDbPath()
       : transcriptDbPath();
-  return (g.__osTranscriptStore = new TranscriptStore(path));
+  return (g.__osTranscriptStore = new TranscriptStore(path, { actorOwned: true }));
 }
 
 function isTestRunner(): boolean {
@@ -263,6 +361,28 @@ interface WriteOutcome {
   updated: number;
 }
 
+interface DestinationWriteOutcome {
+  replay: boolean;
+  result: DestinationTranscriptAppendResult;
+  affected: SeqEntry[];
+}
+
+interface DestinationReceiptRow {
+  session_id: unknown;
+  append_id: unknown;
+  request_digest: unknown;
+  fence_json: unknown;
+  result_json: unknown;
+  created_at: unknown;
+}
+
+interface ValidatedDestinationAppend extends DestinationTranscriptAppendRequest {
+  transcriptAnchor?: Readonly<AgentTranscriptAnchorV1>;
+  digest: string;
+  fenceJson: string;
+  requireAgentReceipt: boolean;
+}
+
 // ── Store ────────────────────────────────────────────────────────────────────
 
 export class TranscriptStore {
@@ -280,8 +400,16 @@ export class TranscriptStore {
   private txReplace: ((sessionId: string, entries: TranscriptEntry[]) => WriteOutcome) & {
     immediate: (sessionId: string, entries: TranscriptEntry[]) => WriteOutcome;
   };
+  private txDestinationAppend: ((
+    request: ValidatedDestinationAppend,
+  ) => DestinationWriteOutcome) & {
+    immediate: (request: ValidatedDestinationAppend) => DestinationWriteOutcome;
+  };
 
-  constructor(public readonly dbPath: string) {
+  constructor(
+    public readonly dbPath: string,
+    private readonly options: { actorOwned?: boolean } = {},
+  ) {
     if (dbPath !== ":memory:") {
       const dir = dirname(dbPath);
       if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
@@ -335,6 +463,15 @@ export class TranscriptStore {
         import_src  TEXT,
         import_watermark INTEGER
       );
+      CREATE TABLE IF NOT EXISTS transcript_append_receipts (
+        session_id TEXT NOT NULL,
+        append_id TEXT NOT NULL,
+        request_digest TEXT NOT NULL,
+        fence_json TEXT NOT NULL,
+        result_json TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        PRIMARY KEY (session_id, append_id)
+      );
     `);
     this.migrateChangeSequence();
     type Tx = typeof this.txWrite;
@@ -346,6 +483,7 @@ export class TranscriptStore {
       this.db.run("DELETE FROM transcript_events WHERE session_id = ?", [sessionId]);
       this.db.run("DELETE FROM transcript_outline WHERE session_id = ?", [sessionId]);
       this.db.run("DELETE FROM transcript_blobs WHERE session_id = ?", [sessionId]);
+      this.db.run("DELETE FROM transcript_append_receipts WHERE session_id = ?", [sessionId]);
       this.db.run("DELETE FROM transcript_sessions WHERE session_id = ?", [sessionId]);
     }) as unknown as typeof this.txDelete;
     this.txReplace = this.db.transaction(
@@ -365,6 +503,103 @@ export class TranscriptStore {
         return this.writeEntriesInTx(sessionId, entries);
       }
     ) as unknown as typeof this.txReplace;
+    this.txDestinationAppend = this.db.transaction(
+      (request: ValidatedDestinationAppend) => {
+        const receiptRow = this.db
+          .query(
+            `SELECT session_id, append_id, request_digest, fence_json, result_json, created_at
+             FROM transcript_append_receipts
+             WHERE session_id = ? AND append_id = ?`,
+          )
+          .get(
+            request.sessionId,
+            request.appendId,
+          ) as DestinationReceiptRow | null;
+        if (receiptRow) {
+          const receipt = decodeDestinationReceiptRow(receiptRow);
+          if (request.requireAgentReceipt) {
+            if (
+              !receipt.transcriptAnchor ||
+              receipt.inserted !== receipt.changes.length ||
+              receipt.updated !== 0
+            )
+              throw new TranscriptAppendAgentReceiptInvariantError();
+            destinationAgentReceiptRef(receipt);
+          }
+          const receiptFenceJson = canonicalDestinationJson({
+            sessionId: receipt.sessionId,
+            runId: receipt.runId,
+            turnId: receipt.turnId,
+            generation: receipt.generation,
+            ...(receipt.transcriptAnchor
+              ? { transcriptAnchor: receipt.transcriptAnchor }
+              : {}),
+          });
+          if (
+            receipt.requestDigest !== `sha256:${request.digest}` ||
+            receiptFenceJson !== request.fenceJson
+          )
+            throw new TranscriptAppendConflictError(
+              request.sessionId,
+              request.appendId,
+            );
+          return {
+            replay: true,
+            result: destinationAppendResult(receipt),
+            affected: [],
+          };
+        }
+        if (request.requireAgentReceipt) {
+          this.assertTranscriptAnchorCurrent(
+            request.sessionId,
+            request.transcriptAnchor!,
+          );
+          const seen = new Set<string>();
+          for (const entry of request.entries) {
+            if (seen.has(entry.id))
+              throw new TranscriptAppendAgentReceiptInvariantError();
+            seen.add(entry.id);
+            const existing = this.db
+              .query(
+                `SELECT 1 FROM transcript_events
+                 WHERE session_id = ? AND uuid = ?`,
+              )
+              .get(request.sessionId, entry.id);
+            if (existing)
+              throw new TranscriptAppendAgentReceiptInvariantError();
+          }
+        }
+        const outcome = this.writeEntriesInTx(
+          request.sessionId,
+          request.entries,
+        );
+        this.db.run(
+          `UPDATE transcript_sessions SET
+             imported_at = COALESCE(imported_at, ?),
+             import_src = COALESCE(import_src, 'live-only')
+           WHERE session_id = ?`,
+          [Date.now(), request.sessionId],
+        );
+        const resultJson = canonicalDestinationJson(destinationResult(outcome));
+        const result = JSON.parse(
+          resultJson,
+        ) as DestinationTranscriptAppendResult;
+        this.db.run(
+          `INSERT INTO transcript_append_receipts
+             (session_id, append_id, request_digest, fence_json, result_json, created_at)
+           VALUES (?, ?, ?, ?, ?, ?)`,
+          [
+            request.sessionId,
+            request.appendId,
+            request.digest,
+            request.fenceJson,
+            resultJson,
+            Date.now(),
+          ],
+        );
+        return { replay: false, result, affected: outcome.affected };
+      },
+    ) as unknown as typeof this.txDestinationAppend;
   }
 
   // ── Append (live path) ─────────────────────────────────────────────────────
@@ -381,7 +616,14 @@ export class TranscriptStore {
     sessionId: string,
     entries: TranscriptEntry[],
     opts?: AppendOpts
-  ): AppendResult | null {
+  ): Promise<AppendResult | null> {
+    if (!this.options.actorOwned) {
+      try {
+        return Promise.resolve(this.appendTranscriptEventsOwned(sessionId, entries, opts));
+      } catch (error) {
+        return Promise.reject(error);
+      }
+    }
     return executeSessionProjection(sessionId, "transcript_append", () =>
       this.appendTranscriptEventsOwned(sessionId, entries, opts)
     );
@@ -434,12 +676,278 @@ export class TranscriptStore {
     const hook = g.__osTranscriptAppendHook;
     if (hook) {
       try {
-        hook(sessionId, outcome.affected);
-      } catch (e) {
-        console.warn("[transcript-store] append hook threw:", e);
+        void Promise.resolve(hook(sessionId, outcome.affected)).catch((error) => {
+          console.warn("[transcript-store] append hook threw:", error);
+        });
+      } catch (error) {
+        console.warn("[transcript-store] append hook threw:", error);
       }
     }
     return result;
+  }
+
+  /**
+   * Strict internal destination API for future detached Host recovery. The
+   * actor command and SQLite receipt intentionally share the stable append id:
+   * after a gateway crash the actor re-admits the operation and this store
+   * returns the already-committed destination result without another write.
+   */
+  async appendTranscriptDestination(
+    input: DestinationTranscriptAppendRequest,
+  ): Promise<DestinationTranscriptAppendResult> {
+    const request = validateDestinationAppend(input, false);
+    try {
+      return await executeDestinationIdempotentSessionProjection(
+        request.sessionId,
+        `transcript-destination:${request.appendId}`,
+        "transcript_destination_append",
+        { digest: request.digest, fence: JSON.parse(request.fenceJson) },
+        () => this.appendTranscriptDestinationOwned(request),
+      );
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        error.message.includes("reused with another payload")
+      )
+        throw new TranscriptAppendConflictError(
+          request.sessionId,
+          request.appendId,
+        );
+      throw error;
+    }
+  }
+
+  /** Destination-only half used by a future gateway proxy after its own short
+   * actor admission. It is safe to retry independently with the same request. */
+  commitTranscriptDestinationAppend(
+    input: DestinationTranscriptAppendRequest,
+  ): DestinationTranscriptAppendResult {
+    return this.appendTranscriptDestinationOwned(
+      validateDestinationAppend(input, false),
+    );
+  }
+
+  /** Commit or replay one append and return the canonical durable proof needed
+   * by an Agent-operation settlement. The proof is derived from validated
+   * request identity plus the exact destination result, never caller values. */
+  commitTranscriptDestinationAppendReceipt(
+    input: AgentDestinationTranscriptAppendRequest,
+  ): DestinationTranscriptAppendReceipt {
+    const request = validateDestinationAppend(input, true);
+    this.appendTranscriptDestinationOwned(request);
+    const receipt = this.queryTranscriptDestinationReceipt({
+      sessionId: request.sessionId,
+      runId: request.runId,
+      turnId: request.turnId,
+      generation: request.generation,
+      appendId: request.appendId,
+      requestDigest: `sha256:${request.digest}`,
+      transcriptAnchor: request.transcriptAnchor!,
+    });
+    if (!receipt) throw new TranscriptAppendReceiptCorruptError();
+    destinationAgentReceiptRef(receipt);
+    this.assertAgentReceiptEntriesCurrent(receipt);
+    return receipt;
+  }
+
+  /** Read an immutable receipt only when the primary key, digest, complete turn
+   * fence, and optional transcript anchor all match. A missing row returns
+   * null; a present mismatch or malformed durable row throws a distinct error. */
+  queryTranscriptDestinationReceipt(
+    input: DestinationTranscriptReceiptQuery,
+  ): DestinationTranscriptAppendReceipt | null {
+    const query = validateDestinationReceiptQuery(input);
+    const row = this.db
+      .query(
+        `SELECT session_id, append_id, request_digest, fence_json, result_json, created_at
+         FROM transcript_append_receipts
+         WHERE session_id = ? AND append_id = ?`,
+      )
+      .get(query.sessionId, query.appendId) as DestinationReceiptRow | null;
+    if (!row) return null;
+    const receipt = decodeDestinationReceiptRow(row);
+    if (
+      receipt.sessionId !== query.sessionId ||
+      receipt.appendId !== query.appendId ||
+      receipt.runId !== query.runId ||
+      receipt.turnId !== query.turnId ||
+      receipt.generation !== query.generation ||
+      receipt.requestDigest !== query.requestDigest ||
+      canonicalDestinationJson(receipt.transcriptAnchor) !==
+        canonicalDestinationJson(query.transcriptAnchor)
+    )
+      throw new TranscriptAppendReceiptMismatchError();
+    return receipt;
+  }
+
+  /** Resolve an Agent-provided reference to the canonical durable reference.
+   * The caller's values are comparisons only and are never returned. */
+  validateAgentTranscriptReceiptRef(
+    input: AgentTranscriptReceiptValidationRequest,
+  ): AgentTranscriptReceiptRefV1 | null {
+    const validation = validateAgentTranscriptReceiptRequest(input);
+    const durable = this.queryTranscriptDestinationReceipt({
+      sessionId: validation.sessionId,
+      runId: validation.runId,
+      turnId: validation.turnId,
+      generation: validation.generation,
+      appendId: validation.receipt.appendId,
+      requestDigest: validation.receipt.requestDigest,
+      transcriptAnchor: validation.transcriptAnchor,
+    });
+    if (!durable) return null;
+    const canonical = destinationAgentReceiptRef(durable);
+    this.assertAgentReceiptEntriesCurrent(durable);
+    if (canonicalDestinationJson(canonical) !== canonicalDestinationJson(validation.receipt))
+      throw new TranscriptAppendReceiptMismatchError();
+    return canonical;
+  }
+
+  /** Check the store-owned cursor and named-row portion of an already
+   * authenticated anchor. Its digest is intentionally opaque here; the future
+   * gateway defines and authenticates that canonical transcript identity. */
+  private assertTranscriptAnchorCurrent(
+    sessionId: string,
+    anchor: AgentTranscriptAnchorV1,
+  ): void {
+    const session = this.db
+      .query(
+        `SELECT next_change_seq, reset_change_seq FROM transcript_sessions
+         WHERE session_id = ?`,
+      )
+      .get(sessionId) as {
+      next_change_seq: unknown;
+      reset_change_seq: unknown;
+    } | null;
+    const lastChangeSeq = session
+      ? typeof session.next_change_seq === "number"
+        ? session.next_change_seq - 1
+        : Number.NaN
+      : 0;
+    const resetChangeSeq = session
+      ? typeof session.reset_change_seq === "number"
+        ? session.reset_change_seq
+        : Number.NaN
+      : 0;
+    if (
+      !Number.isSafeInteger(lastChangeSeq) ||
+      !Number.isSafeInteger(resetChangeSeq) ||
+      anchor.throughChangeSeq !== lastChangeSeq ||
+      anchor.throughChangeSeq < resetChangeSeq
+    )
+      throw new TranscriptAppendReceiptMismatchError();
+    for (const entryId of anchor.entryIds) {
+      const row = this.db
+        .query(
+          `SELECT change_seq FROM transcript_events
+           WHERE session_id = ? AND uuid = ?`,
+        )
+        .get(sessionId, entryId) as { change_seq: unknown } | null;
+      if (
+        !row ||
+        typeof row.change_seq !== "number" ||
+        !Number.isSafeInteger(row.change_seq) ||
+        row.change_seq > anchor.throughChangeSeq
+      )
+        throw new TranscriptAppendReceiptMismatchError();
+    }
+  }
+
+  private assertAgentReceiptEntriesCurrent(
+    receipt: DestinationTranscriptAppendReceipt,
+  ): void {
+    const entries: TranscriptEntry[] = [];
+    let totalBytes = 0;
+    for (const [index, change] of receipt.changes.entries()) {
+      const row = this.db
+        .query(
+          `SELECT e.seq, e.change_seq, e.data, e.full_ref,
+                  b.data AS full_data
+           FROM transcript_events e
+           LEFT JOIN transcript_blobs b ON b.id = e.full_ref
+           WHERE e.session_id = ? AND e.uuid = ?`,
+        )
+        .get(receipt.sessionId, change.entryId) as {
+        seq: unknown;
+        change_seq: unknown;
+        data: unknown;
+        full_ref: unknown;
+        full_data: unknown;
+      } | null;
+      if (
+        !row ||
+        row.seq !== change.seq ||
+        row.change_seq !== change.changeSeq ||
+        (row.full_ref !== null && typeof row.full_ref !== "number") ||
+        (row.full_ref === null && typeof row.data !== "string") ||
+        (row.full_ref !== null && typeof row.full_data !== "string")
+      )
+        throw new TranscriptAppendReceiptMismatchError();
+      const source = (row.full_ref === null ? row.data : row.full_data) as string;
+      totalBytes += Buffer.byteLength(source);
+      if (totalBytes > TRANSCRIPT_DESTINATION_MAX_BYTES)
+        throw new TranscriptAppendReceiptMismatchError();
+      try {
+        entries.push(
+          validateDestinationEntry(
+            snapshotPlainJson(JSON.parse(source), "durableEntry"),
+            index,
+          ),
+        );
+      } catch {
+        throw new TranscriptAppendReceiptMismatchError();
+      }
+    }
+    const fence = {
+      sessionId: receipt.sessionId,
+      runId: receipt.runId,
+      turnId: receipt.turnId,
+      generation: receipt.generation,
+      transcriptAnchor: receipt.transcriptAnchor!,
+    };
+    const payloadJson = canonicalDestinationJson({ fence, entries });
+    const digest = new Bun.CryptoHasher("sha256")
+      .update(DESTINATION_HASH_DOMAIN)
+      .update(payloadJson)
+      .digest("hex");
+    if (receipt.requestDigest !== `sha256:${digest}`)
+      throw new TranscriptAppendReceiptMismatchError();
+  }
+
+  private appendTranscriptDestinationOwned(
+    request: ValidatedDestinationAppend,
+  ): DestinationTranscriptAppendResult {
+    const outcome = this.txDestinationAppend.immediate(request);
+    if (outcome.replay) return outcome.result;
+    this.importedCache.add(request.sessionId);
+    try {
+      publishTranscript(request.sessionId, {
+        entries: outcome.affected,
+        firstSeq: outcome.result.firstSeq,
+        lastSeq: outcome.result.lastSeq,
+      });
+    } catch (error) {
+      console.warn("[transcript-store] destination bus publish failed:", error);
+    }
+    const hook = g.__osTranscriptAppendHook;
+    if (hook) {
+      try {
+        void Promise.resolve(hook(request.sessionId, outcome.affected)).catch(
+          (error) => {
+            console.warn(
+              "[transcript-store] destination append hook threw:",
+              error,
+            );
+          },
+        );
+      } catch (error) {
+        console.warn(
+          "[transcript-store] destination append hook threw:",
+          error,
+        );
+      }
+    }
+    return outcome.result;
   }
 
   // ── Import (legacy history) ────────────────────────────────────────────────
@@ -456,7 +964,16 @@ export class TranscriptStore {
     entries: TranscriptEntry[],
     src: TranscriptImportSrc | string,
     watermark: number | null
-  ): { inserted: number; updated: number } {
+  ): Promise<{ inserted: number; updated: number }> {
+    if (!this.options.actorOwned) {
+      try {
+        return Promise.resolve(
+          this.importLegacyTranscriptOwned(sessionId, entries, src, watermark),
+        );
+      } catch (error) {
+        return Promise.reject(error);
+      }
+    }
     return executeSessionProjection(sessionId, "transcript_import", () =>
       this.importLegacyTranscriptOwned(sessionId, entries, src, watermark)
     );
@@ -495,7 +1012,14 @@ export class TranscriptStore {
   replaceTranscriptEvents(
     sessionId: string,
     entries: TranscriptEntry[]
-  ): { inserted: number; updated: number } {
+  ): Promise<{ inserted: number; updated: number }> {
+    if (!this.options.actorOwned) {
+      try {
+        return Promise.resolve(this.replaceTranscriptEventsOwned(sessionId, entries));
+      } catch (error) {
+        return Promise.reject(error);
+      }
+    }
     return executeSessionProjection(sessionId, "transcript_replace", () =>
       this.replaceTranscriptEventsOwned(sessionId, entries)
     );
@@ -815,11 +1339,20 @@ export class TranscriptStore {
   // ── Delete / maintenance ──────────────────────────────────────────────────
 
   /** Remove every trace of a session (events + blobs + session row). */
-  deleteSessionTranscript(sessionId: string): void {
-    executeSessionProjection(sessionId, "transcript_delete", () => {
+  deleteSessionTranscript(sessionId: string): Promise<void> {
+    const remove = () => {
       this.txDelete.immediate(sessionId);
       this.importedCache.delete(sessionId);
-    });
+    };
+    if (!this.options.actorOwned) {
+      try {
+        remove();
+        return Promise.resolve();
+      } catch (error) {
+        return Promise.reject(error);
+      }
+    }
+    return executeSessionProjection(sessionId, "transcript_delete", remove);
   }
 
   /**
@@ -1159,6 +1692,661 @@ export class TranscriptStore {
         ON transcript_events(session_id, change_seq)`);
     }).immediate();
   }
+}
+
+// ── Destination validation + identity ─────────────────────────────────────
+
+export const TRANSCRIPT_DESTINATION_MAX_ENTRIES = 500;
+export const TRANSCRIPT_DESTINATION_MAX_BYTES = 4 * 1024 * 1024;
+const DESTINATION_HASH_DOMAIN =
+  "opensession.transcript-destination-append.v1\0";
+const TRANSCRIPT_DESTINATION_MAX_JSON_DEPTH = 64;
+const DESTINATION_RECEIPT_FENCE_MAX_BYTES = 64 * 1024;
+const DESTINATION_REQUEST_KEYS = [
+  "appendId",
+  "entries",
+  "generation",
+  "runId",
+  "sessionId",
+  "turnId",
+] as const;
+const DESTINATION_REQUEST_KEYS_WITH_ANCHOR = [
+  "appendId",
+  "entries",
+  "generation",
+  "runId",
+  "sessionId",
+  "transcriptAnchor",
+  "turnId",
+] as const;
+const DESTINATION_QUERY_KEYS = [
+  "appendId",
+  "generation",
+  "requestDigest",
+  "runId",
+  "sessionId",
+  "turnId",
+] as const;
+const DESTINATION_QUERY_KEYS_WITH_ANCHOR = [
+  "appendId",
+  "generation",
+  "requestDigest",
+  "runId",
+  "sessionId",
+  "transcriptAnchor",
+  "turnId",
+] as const;
+const DESTINATION_VALIDATION_KEYS_WITH_ANCHOR = [
+  "generation",
+  "receipt",
+  "runId",
+  "sessionId",
+  "transcriptAnchor",
+  "turnId",
+] as const;
+const SHA256_DIGEST = /^sha256:[a-f0-9]{64}$/;
+const RAW_SHA256_DIGEST = /^[a-f0-9]{64}$/;
+const TRANSCRIPT_ENTRY_KEYS = new Set([
+  "agentId",
+  "content",
+  "contextInjection",
+  "featuredMedia",
+  "files",
+  "id",
+  "images",
+  "isError",
+  "model",
+  "noticeKind",
+  "requestId",
+  "sender",
+  "senderVia",
+  "timestamp",
+  "toolInput",
+  "toolName",
+  "toolUseId",
+  "type",
+  "videos",
+]);
+const TRANSCRIPT_TYPES = new Set([
+  "user",
+  "assistant",
+  "tool_use",
+  "tool_result",
+  "system",
+]);
+
+function exactSortedKeys(
+  value: Record<string, unknown>,
+  expected: readonly string[],
+): boolean {
+  const keys = Object.keys(value).sort();
+  return (
+    keys.length === expected.length &&
+    keys.every((key, index) => key === expected[index])
+  );
+}
+
+function validateDestinationAppend(
+  input: unknown,
+  requireAgentReceipt: boolean,
+): ValidatedDestinationAppend {
+  const record = snapshotPlainJson(input, "request") as Record<string, unknown>;
+  const hasAnchor = Object.hasOwn(record, "transcriptAnchor");
+  if (
+    hasAnchor !== requireAgentReceipt ||
+    !exactSortedKeys(
+      record,
+      requireAgentReceipt
+        ? DESTINATION_REQUEST_KEYS_WITH_ANCHOR
+        : DESTINATION_REQUEST_KEYS,
+    )
+  )
+    throw new TypeError("Invalid transcript destination request keys");
+  const sessionId = boundedId(record.sessionId, "sessionId", 128);
+  const runId = boundedId(record.runId, "runId", 256);
+  const turnId = boundedId(record.turnId, "turnId", 256);
+  const appendId = boundedId(record.appendId, "appendId", 128);
+  const generation = record.generation;
+  if (!Number.isSafeInteger(generation) || (generation as number) < 1)
+    throw new TypeError("Invalid transcript destination generation");
+  if (!Array.isArray(record.entries) || record.entries.length === 0)
+    throw new TypeError("Transcript destination entries must be non-empty");
+  if (record.entries.length > TRANSCRIPT_DESTINATION_MAX_ENTRIES)
+    throw new RangeError("Too many transcript destination entries");
+
+  const entries = record.entries.map((value, index) =>
+    validateDestinationEntry(value, index),
+  );
+  const transcriptAnchor = hasAnchor
+    ? validateTranscriptAnchor(record.transcriptAnchor)
+    : undefined;
+  if (requireAgentReceipt) {
+    if (!transcriptAnchor)
+      throw new TranscriptAppendAgentReceiptInvariantError();
+    const entryIds = entries.map((entry) => entry.id);
+    if (new Set(entryIds).size !== entryIds.length)
+      throw new TranscriptAppendAgentReceiptInvariantError();
+  }
+  const fence = {
+    sessionId,
+    runId,
+    turnId,
+    generation: generation as number,
+    ...(transcriptAnchor ? { transcriptAnchor } : {}),
+  };
+  const fenceJson = canonicalDestinationJson(fence);
+  if (Buffer.byteLength(fenceJson) > DESTINATION_RECEIPT_FENCE_MAX_BYTES)
+    throw new RangeError("Transcript destination fence exceeds byte limit");
+  const payloadJson = canonicalDestinationJson({
+    fence,
+    entries: requireAgentReceipt ? entries : record.entries,
+  });
+  if (Buffer.byteLength(payloadJson) > TRANSCRIPT_DESTINATION_MAX_BYTES)
+    throw new RangeError("Transcript destination payload is too large");
+  const digest = new Bun.CryptoHasher("sha256")
+    .update(DESTINATION_HASH_DOMAIN)
+    .update(payloadJson)
+    .digest("hex");
+  return {
+    ...fence,
+    appendId,
+    entries,
+    digest,
+    fenceJson,
+    requireAgentReceipt,
+  };
+}
+
+function validateTranscriptAnchor(value: unknown): AgentTranscriptAnchorV1 {
+  if (
+    !isPlainRecord(value) ||
+    !exactSortedKeys(value, ["digest", "entryIds", "throughChangeSeq"])
+  )
+    throw new TypeError("Invalid transcript destination anchor");
+  if (!SHA256_DIGEST.test(String(value.digest)))
+    throw new TypeError("Invalid transcript destination anchor digest");
+  if (
+    !Number.isSafeInteger(value.throughChangeSeq) ||
+    (value.throughChangeSeq as number) < 0 ||
+    !Array.isArray(value.entryIds) ||
+    value.entryIds.length > 512
+  )
+    throw new TypeError("Invalid transcript destination anchor range");
+  const entryIds = value.entryIds.map((entryId) =>
+    boundedId(entryId, "transcriptAnchor.entryId", 256),
+  );
+  if (new Set(entryIds).size !== entryIds.length)
+    throw new TypeError("Duplicate transcript destination anchor entry");
+  return Object.freeze({
+    throughChangeSeq: value.throughChangeSeq as number,
+    entryIds: Object.freeze(entryIds),
+    digest: value.digest as `sha256:${string}`,
+  });
+}
+
+function validateTurnFenceRecord(
+  record: Record<string, unknown>,
+): TranscriptTurnFence & { transcriptAnchor?: AgentTranscriptAnchorV1 } {
+  const sessionId = boundedId(record.sessionId, "sessionId", 128);
+  const runId = boundedId(record.runId, "runId", 256);
+  const turnId = boundedId(record.turnId, "turnId", 256);
+  if (!Number.isSafeInteger(record.generation) || (record.generation as number) < 1)
+    throw new TypeError("Invalid transcript destination generation");
+  const fence = {
+    sessionId,
+    runId,
+    turnId,
+    generation: record.generation as number,
+    ...(Object.hasOwn(record, "transcriptAnchor")
+      ? { transcriptAnchor: validateTranscriptAnchor(record.transcriptAnchor) }
+      : {}),
+  };
+  if (
+    Buffer.byteLength(canonicalDestinationJson(fence)) >
+    DESTINATION_RECEIPT_FENCE_MAX_BYTES
+  )
+    throw new RangeError("Transcript destination fence exceeds byte limit");
+  return fence;
+}
+
+function validateDestinationReceiptQuery(
+  input: unknown,
+): DestinationTranscriptReceiptQuery {
+  const record = snapshotPlainJson(input, "receiptQuery") as Record<
+    string,
+    unknown
+  >;
+  const hasAnchor = Object.hasOwn(record, "transcriptAnchor");
+  if (
+    !exactSortedKeys(
+      record,
+      hasAnchor ? DESTINATION_QUERY_KEYS_WITH_ANCHOR : DESTINATION_QUERY_KEYS,
+    )
+  )
+    throw new TypeError("Invalid transcript destination receipt query keys");
+  const fence = validateTurnFenceRecord(record);
+  const appendId = boundedId(record.appendId, "appendId", 128);
+  if (!SHA256_DIGEST.test(String(record.requestDigest)))
+    throw new TypeError("Invalid transcript destination receipt digest");
+  return Object.freeze({
+    ...fence,
+    appendId,
+    requestDigest: record.requestDigest as `sha256:${string}`,
+  });
+}
+
+function validateAgentTranscriptReceiptRequest(
+  input: unknown,
+): AgentTranscriptReceiptValidationRequest {
+  const record = snapshotPlainJson(input, "receiptValidation") as Record<
+    string,
+    unknown
+  >;
+  if (!exactSortedKeys(record, DESTINATION_VALIDATION_KEYS_WITH_ANCHOR))
+    throw new TypeError("Invalid Agent transcript receipt validation keys");
+  const fence = validateTurnFenceRecord(record);
+  if (!fence.transcriptAnchor)
+    throw new TypeError("Agent transcript receipt requires an anchor");
+  const receipt = decodeAgentTranscriptReceiptRefV1(record.receipt);
+  if (!receipt)
+    throw new TypeError("Invalid Agent transcript receipt reference");
+  return Object.freeze({
+    ...fence,
+    transcriptAnchor: fence.transcriptAnchor,
+    receipt,
+  });
+}
+
+function parseDestinationReceiptJson(
+  value: unknown,
+  path: string,
+  maxBytes: number,
+): unknown {
+  if (typeof value !== "string" || Buffer.byteLength(value) > maxBytes)
+    throw new TranscriptAppendReceiptCorruptError();
+  try {
+    return snapshotPlainJson(JSON.parse(value), path);
+  } catch {
+    throw new TranscriptAppendReceiptCorruptError();
+  }
+}
+
+function decodeDestinationReceiptRow(
+  row: DestinationReceiptRow,
+): DestinationTranscriptAppendReceipt {
+  try {
+    const sessionId = boundedId(row.session_id, "sessionId", 128);
+    const appendId = boundedId(row.append_id, "appendId", 128);
+    if (
+      typeof row.request_digest !== "string" ||
+      !RAW_SHA256_DIGEST.test(row.request_digest) ||
+      !Number.isSafeInteger(row.created_at) ||
+      (row.created_at as number) < 0
+    )
+      throw new TypeError("Invalid durable transcript receipt metadata");
+    const fenceValue = parseDestinationReceiptJson(
+      row.fence_json,
+      "durableFence",
+      DESTINATION_RECEIPT_FENCE_MAX_BYTES,
+    );
+    if (!isPlainRecord(fenceValue))
+      throw new TypeError("Invalid durable transcript receipt fence");
+    const hasAnchor = Object.hasOwn(fenceValue, "transcriptAnchor");
+    if (
+      !exactSortedKeys(
+        fenceValue,
+        hasAnchor
+          ? ["generation", "runId", "sessionId", "transcriptAnchor", "turnId"]
+          : ["generation", "runId", "sessionId", "turnId"],
+      )
+    )
+      throw new TypeError("Invalid durable transcript receipt fence keys");
+    const fence = validateTurnFenceRecord(fenceValue);
+    if (fence.sessionId !== sessionId)
+      throw new TypeError("Contradictory durable transcript receipt session");
+
+    const resultValue = parseDestinationReceiptJson(
+      row.result_json,
+      "durableResult",
+      TRANSCRIPT_DESTINATION_MAX_BYTES,
+    );
+    if (
+      !isPlainRecord(resultValue) ||
+      !exactSortedKeys(resultValue, [
+        "changes",
+        "firstSeq",
+        "inserted",
+        "lastSeq",
+        "updated",
+      ]) ||
+      !Array.isArray(resultValue.changes) ||
+      resultValue.changes.length === 0 ||
+      resultValue.changes.length > TRANSCRIPT_DESTINATION_MAX_ENTRIES ||
+      !Number.isSafeInteger(resultValue.inserted) ||
+      (resultValue.inserted as number) < 0 ||
+      !Number.isSafeInteger(resultValue.updated) ||
+      (resultValue.updated as number) < 0
+    )
+      throw new TypeError("Invalid durable transcript receipt result");
+    const changes = resultValue.changes.map((candidate) => {
+      if (
+        !isPlainRecord(candidate) ||
+        !exactSortedKeys(candidate, ["changeSeq", "entryId", "seq"]) ||
+        !Number.isSafeInteger(candidate.seq) ||
+        (candidate.seq as number) < 1 ||
+        !Number.isSafeInteger(candidate.changeSeq) ||
+        (candidate.changeSeq as number) < 1
+      )
+        throw new TypeError("Invalid durable transcript receipt change");
+      return Object.freeze({
+        entryId: boundedId(candidate.entryId, "entryId", 256),
+        seq: candidate.seq as number,
+        changeSeq: candidate.changeSeq as number,
+      });
+    });
+    const entryIds = changes.map((change) => change.entryId);
+    if (
+      (resultValue.inserted as number) + (resultValue.updated as number) !==
+        changes.length ||
+      changes.some(
+        (change, index) =>
+          index > 0 &&
+          change.changeSeq !== changes[index - 1]!.changeSeq + 1,
+      )
+    )
+      throw new TypeError("Contradictory durable transcript receipt changes");
+    const firstSeq = Math.min(...changes.map((change) => change.seq));
+    const lastSeq = Math.max(...changes.map((change) => change.seq));
+    const throughChangeSeq = Math.max(
+      ...changes.map((change) => change.changeSeq),
+    );
+    if (
+      resultValue.firstSeq !== firstSeq ||
+      resultValue.lastSeq !== lastSeq
+    )
+      throw new TypeError("Contradictory durable transcript receipt range");
+    return Object.freeze({
+      version: 1,
+      ...fence,
+      appendId,
+      requestDigest: `sha256:${row.request_digest}`,
+      entryIds: Object.freeze(entryIds),
+      firstSeq,
+      lastSeq,
+      throughChangeSeq,
+      inserted: resultValue.inserted as number,
+      updated: resultValue.updated as number,
+      changes: Object.freeze(changes),
+    });
+  } catch (error) {
+    if (error instanceof TranscriptAppendReceiptCorruptError) throw error;
+    throw new TranscriptAppendReceiptCorruptError();
+  }
+}
+
+function destinationAppendResult(
+  receipt: DestinationTranscriptAppendReceipt,
+): DestinationTranscriptAppendResult {
+  return {
+    changes: receipt.changes.map((change) => ({
+      changeSeq: change.changeSeq,
+      entryId: change.entryId,
+      seq: change.seq,
+    })),
+    firstSeq: receipt.firstSeq,
+    inserted: receipt.inserted,
+    lastSeq: receipt.lastSeq,
+    updated: receipt.updated,
+  };
+}
+
+function destinationAgentReceiptRef(
+  receipt: DestinationTranscriptAppendReceipt,
+): AgentTranscriptReceiptRefV1 {
+  if (
+    receipt.changes.some(
+      (change, index) => change.seq !== receipt.firstSeq + index,
+    )
+  )
+    throw new TranscriptAppendReceiptMismatchError();
+  const decoded = decodeAgentTranscriptReceiptRefV1({
+    appendId: receipt.appendId,
+    entryIds: receipt.entryIds,
+    firstSeq: receipt.firstSeq,
+    lastSeq: receipt.lastSeq,
+    throughChangeSeq: receipt.throughChangeSeq,
+    requestDigest: receipt.requestDigest,
+  });
+  if (!decoded) throw new TranscriptAppendReceiptMismatchError();
+  return decoded;
+}
+
+function validateDestinationEntry(
+  value: unknown,
+  index: number,
+): TranscriptEntry {
+  assertPlainJson(value, `entries[${index}]`);
+  const entry = value as Record<string, unknown>;
+  for (const key of Object.keys(entry)) {
+    if (!TRANSCRIPT_ENTRY_KEYS.has(key))
+      throw new TypeError(`Unknown transcript entry key: ${key}`);
+  }
+  boundedId(entry.id, `entries[${index}].id`, 256);
+  if (typeof entry.type !== "string" || !TRANSCRIPT_TYPES.has(entry.type))
+    throw new TypeError(`Invalid transcript entry type at ${index}`);
+  if (typeof entry.content !== "string")
+    throw new TypeError(`Invalid transcript entry content at ${index}`);
+  if (
+    typeof entry.timestamp !== "string" ||
+    !Number.isFinite(Date.parse(entry.timestamp))
+  )
+    throw new TypeError(`Invalid transcript entry timestamp at ${index}`);
+  for (const key of [
+    "toolName",
+    "toolUseId",
+    "requestId",
+    "model",
+    "agentId",
+    "sender",
+  ]) {
+    if (entry[key] !== undefined && typeof entry[key] !== "string")
+      throw new TypeError(`Invalid transcript entry ${key} at ${index}`);
+  }
+  for (const key of ["isError"]) {
+    if (entry[key] !== undefined && typeof entry[key] !== "boolean")
+      throw new TypeError(`Invalid transcript entry ${key} at ${index}`);
+  }
+  for (const key of ["images", "videos", "featuredMedia"]) {
+    if (
+      entry[key] !== undefined &&
+      (!Array.isArray(entry[key]) ||
+        !(entry[key] as unknown[]).every((item) => typeof item === "string"))
+    )
+      throw new TypeError(`Invalid transcript entry ${key} at ${index}`);
+  }
+  if (
+    entry.noticeKind !== undefined &&
+    (typeof entry.noticeKind !== "string" ||
+      Buffer.byteLength(entry.noticeKind) > 64)
+  )
+    throw new TypeError(`Invalid transcript entry noticeKind at ${index}`);
+  if (entry.senderVia !== undefined && entry.senderVia !== "slack")
+    throw new TypeError(`Invalid transcript entry senderVia at ${index}`);
+  if (entry.contextInjection !== undefined) {
+    const context = entry.contextInjection;
+    if (!isPlainRecord(context))
+      throw new TypeError(
+        `Invalid transcript entry contextInjection at ${index}`,
+      );
+    const contextKeys = Object.keys(context);
+    if (
+      contextKeys.some(
+        (key) => !["bytes", "hash", "source", "turnId"].includes(key),
+      )
+    )
+      throw new TypeError(
+        `Invalid transcript entry contextInjection at ${index}`,
+      );
+    if (typeof context.source !== "string" || !context.source)
+      throw new TypeError(
+        `Invalid transcript entry contextInjection source at ${index}`,
+      );
+    for (const key of ["hash", "turnId"]) {
+      if (context[key] !== undefined && typeof context[key] !== "string")
+        throw new TypeError(
+          `Invalid transcript entry contextInjection ${key} at ${index}`,
+        );
+    }
+    if (
+      context.bytes !== undefined &&
+      (!Number.isSafeInteger(context.bytes) || (context.bytes as number) < 0)
+    )
+      throw new TypeError(
+        `Invalid transcript entry contextInjection bytes at ${index}`,
+      );
+  }
+  if (entry.files !== undefined) {
+    if (!Array.isArray(entry.files))
+      throw new TypeError(`Invalid transcript entry files at ${index}`);
+    for (const file of entry.files) {
+      if (
+        !isPlainRecord(file) ||
+        Object.keys(file).sort().join(",") !== "name,path" ||
+        typeof file.name !== "string" ||
+        typeof file.path !== "string"
+      )
+        throw new TypeError(`Invalid transcript entry file at ${index}`);
+    }
+  }
+  return sanitizeTranscriptMediaEntry(value as TranscriptEntry);
+}
+
+function boundedId(value: unknown, name: string, maxBytes: number): string {
+  if (
+    typeof value !== "string" ||
+    value.length === 0 ||
+    Buffer.byteLength(value) > maxBytes ||
+    value.includes("\0")
+  )
+    throw new TypeError(`Invalid transcript destination ${name}`);
+  return value;
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const prototype = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
+}
+
+function assertPlainJson(
+  value: unknown,
+  path: string,
+  seen = new Set<object>(),
+  depth = 0,
+): void {
+  if (depth > TRANSCRIPT_DESTINATION_MAX_JSON_DEPTH)
+    throw new RangeError(
+      `Transcript destination JSON is too deeply nested at ${path}`,
+    );
+  if (value === null || typeof value === "string" || typeof value === "boolean")
+    return;
+  if (typeof value === "number") {
+    if (!Number.isFinite(value))
+      throw new TypeError(`Non-finite JSON number at ${path}`);
+    return;
+  }
+  if (typeof value !== "object")
+    throw new TypeError(`Unsupported JSON value at ${path}`);
+  if (seen.has(value)) throw new TypeError(`Cyclic JSON value at ${path}`);
+  seen.add(value);
+  const descriptors = Object.getOwnPropertyDescriptors(value);
+  const descriptorKeys = Reflect.ownKeys(descriptors);
+  if (descriptorKeys.some((key) => typeof key !== "string"))
+    throw new TypeError(`Symbol JSON key at ${path}`);
+  if (Array.isArray(value)) {
+    if (
+      Object.getPrototypeOf(value) !== Array.prototype ||
+      descriptorKeys.length !== value.length + 1
+    )
+      throw new TypeError(`Invalid JSON array at ${path}`);
+    for (let index = 0; index < value.length; index++) {
+      const descriptor = descriptors[String(index)];
+      if (
+        !descriptor ||
+        !("value" in descriptor) ||
+        !descriptor.enumerable ||
+        descriptor.value === undefined
+      )
+        throw new TypeError(`Sparse or accessor JSON array at ${path}`);
+      assertPlainJson(
+        descriptor.value,
+        `${path}[${index}]`,
+        seen,
+        depth + 1,
+      );
+    }
+  } else {
+    if (!isPlainRecord(value))
+      throw new TypeError(`Non-plain JSON object at ${path}`);
+    for (const key of descriptorKeys as string[]) {
+      const descriptor = descriptors[key];
+      if (
+        !descriptor ||
+        !("value" in descriptor) ||
+        !descriptor.enumerable ||
+        descriptor.value === undefined
+      )
+        throw new TypeError(`Accessor or undefined JSON value at ${path}.${key}`);
+      assertPlainJson(descriptor.value, `${path}.${key}`, seen, depth + 1);
+    }
+  }
+  seen.delete(value);
+}
+
+function snapshotPlainJson(value: unknown, path: string): unknown {
+  assertPlainJson(value, path);
+  try {
+    const snapshot = structuredClone(value);
+    assertPlainJson(snapshot, path);
+    return snapshot;
+  } catch (error) {
+    if (error instanceof RangeError || error instanceof TypeError) throw error;
+    throw new TypeError(`Invalid transcript destination JSON at ${path}`);
+  }
+}
+
+function canonicalDestinationJson(value: unknown): string {
+  if (value === null || typeof value !== "object")
+    return JSON.stringify(value)!;
+  if (Array.isArray(value))
+    return `[${value.map(canonicalDestinationJson).join(",")}]`;
+  const record = value as Record<string, unknown>;
+  return `{${Object.keys(record)
+    .sort()
+    .map(
+      (key) =>
+        `${JSON.stringify(key)}:${canonicalDestinationJson(record[key])}`,
+    )
+    .join(",")}}`;
+}
+
+function destinationResult(
+  outcome: WriteOutcome,
+): DestinationTranscriptAppendResult {
+  let firstSeq = 0;
+  let lastSeq = 0;
+  const changes = outcome.affected.map((entry) => {
+    if (!firstSeq || entry.seq < firstSeq) firstSeq = entry.seq;
+    if (entry.seq > lastSeq) lastSeq = entry.seq;
+    return { entryId: entry.id, seq: entry.seq, changeSeq: entry.changeSeq };
+  });
+  return {
+    firstSeq,
+    lastSeq,
+    inserted: outcome.inserted,
+    updated: outcome.updated,
+    changes,
+  };
 }
 
 // ── Outline projection ─────────────────────────────────────────────────────

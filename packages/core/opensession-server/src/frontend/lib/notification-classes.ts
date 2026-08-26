@@ -13,9 +13,12 @@ export const TRANSIENT_NOTICE_LANE =
 export const TOAST_NOTICE_LANE =
 	"pointer-events-none inset-x-0 bottom-[124px] z-[200]";
 
-/** Live phone status clears the fixed header and an optional docked tab strip. */
+/**
+ * Live status is product-wide rather than composer-aligned. On phones it clears
+ * the fixed header and an optional docked tab strip.
+ */
 export const ONGOING_TOAST_POSITION =
-	"phone:fixed phone:top-[calc(var(--pane-header-h)+var(--strip-clearance,0px)+8px)] phone:bottom-auto";
+	"fixed bottom-[72px] phone:top-[calc(var(--pane-header-h)+var(--strip-clearance,0px)+8px)] phone:bottom-auto";
 
 export const PERSISTENT_NOTICE_SHELF =
 	"pointer-events-none fixed bottom-2 left-2 z-[9500] flex w-fit " +

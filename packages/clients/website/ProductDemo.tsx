@@ -1,3 +1,5 @@
+"use client";
+
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import posterAsset from "./demo-poster.webp";
 import posterDarkAsset from "./demo-poster-dark.webp";
@@ -10,12 +12,9 @@ const posterDarkUrl = assetUrl(posterDarkAsset);
 const phoneUrl = assetUrl(phoneAsset);
 const phoneDarkUrl = assetUrl(phoneDarkAsset);
 
-/* The width the app is laid out at before it is scaled to fit the window, and
-   so what decides how large the product reads. The window stands for a
-   14-inch MacBook Pro's screen, which is 1512pt across, so this draws the UI
-   at 1.2x life size: enough over life to stay readable on a page you look at
-   from desk distance, and the same zoom the phone beside it carries. Keep it
-   in step with scripts/capture-demo-poster.ts. */
+/* The product is laid out at a stable desktop width, then scaled to fit the
+   hero window. This keeps its real responsive layout from rearranging as the
+   marketing page changes size. */
 const desktopDemoWidth = 1260;
 
 export function ProductDemo() {
@@ -29,7 +28,6 @@ export function ProductDemo() {
 		const updateScale = () => {
 			const scale = Math.min(1, preview.clientWidth / desktopDemoWidth);
 			preview.style.setProperty("--demo-scale", String(scale));
-			preview.dataset.scaled = String(scale < 1);
 		};
 		const observer = new ResizeObserver(updateScale);
 		observer.observe(preview);
@@ -42,6 +40,9 @@ export function ProductDemo() {
 			if (event.origin !== window.location.origin) return;
 			if (event.source !== frameRef.current?.contentWindow) return;
 			if (event.data?.type !== "opensession-demo-ready") return;
+			// A route error must never replace the poster. Only reveal a frame that
+			// contains the fixture app itself, not merely a same-origin document.
+			if (!frameRef.current?.contentDocument?.querySelector(".app")) return;
 			setReady(true);
 		};
 		window.addEventListener("message", handleMessage);
@@ -51,14 +52,15 @@ export function ProductDemo() {
 	return (
 		<>
 			<figure ref={previewRef} className="preview-wrap" data-ready={ready}>
-				{/* Two files, because the preview follows the visitor's system theme.
-				    Regenerate both with `bun scripts/capture-demo-poster.ts`. */}
+				{/* The local poster paints immediately. The fixture-backed app fades in
+				    only after it has rendered, so the hero never exposes a loading shell. */}
 				<picture>
 					<source srcSet={posterDarkUrl} media="(prefers-color-scheme: dark)" />
 					<img
 						className="product-demo-poster"
 						src={posterUrl}
-						alt="The Open Session workspace: a list of sessions beside a live transcript."
+						alt="The Open Session workspace: a list of sessions beside a transcript."
+						fetchPriority="high"
 						aria-hidden={ready}
 					/>
 				</picture>
@@ -68,18 +70,20 @@ export function ProductDemo() {
 					title="Interactive Open Session product preview"
 					aria-hidden={!ready}
 					tabIndex={ready ? undefined : -1}
+					// Keep the compatibility URL: it works on the Next server and on the
+					// static marketing host, where the extensionless route is a 404.
 					src="product-demo.html"
 					loading="eager"
+					onLoad={() => {
+						if (!frameRef.current?.contentDocument?.querySelector(".app")) setReady(false);
+					}}
 					referrerPolicy="no-referrer"
 					sandbox="allow-scripts allow-same-origin"
 				/>
 			</figure>
 
-			{/* The same app on a phone, in front of the window. It is a picture
-			    rather than a second live app: one bundle is already the heaviest
-			    thing on the page, and the point here is that the product is on a
-			    phone at all, which a photograph makes as well as a running copy.
-			    Re-shot by scripts/capture-demo-poster.ts with the poster. */}
+			{/* The supporting phone stays a local image so the page only boots one
+			    copy of the app. */}
 			<picture>
 				<source srcSet={phoneDarkUrl} media="(prefers-color-scheme: dark)" />
 				<img

@@ -29,17 +29,24 @@ const watches: Map<string, WatchState> = ((globalThis as any).__transcriptWatche
 // whose message has landed must clear NOW, not at run end, or it shows as
 // still-queued and a mid-run restart would re-deliver it). On globalThis so
 // hot reloads re-register cleanly; read at call time.
-type AppendListener = (sessionId: string, entries: TranscriptEntry[]) => void;
+type AppendListener = (
+  sessionId: string,
+  entries: TranscriptEntry[],
+) => void | Promise<void>;
 export function setTranscriptAppendListener(fn: AppendListener): void {
   (globalThis as any).__transcriptAppendListener = fn;
 }
 function notifyAppendListener(sessionId: string | undefined, entries: TranscriptEntry[]) {
   if (!sessionId || entries.length === 0) return;
   const fn = (globalThis as any).__transcriptAppendListener as AppendListener | undefined;
+  if (!fn) return;
   try {
-    fn?.(sessionId, entries);
-  } catch {
+    void Promise.resolve(fn(sessionId, entries)).catch((error) => {
+      console.warn("[file-watcher] transcript append listener failed:", error);
+    });
+  } catch (error) {
     // Reconcile is best-effort; never let it break transcript delivery.
+    console.warn("[file-watcher] transcript append listener failed:", error);
   }
 }
 
@@ -96,17 +103,17 @@ function getFileSize(path: string): number {
  * runs the import itself. A feed failure flags the session store-degraded
  * and never breaks legacy delivery.
  */
-function feedTranscriptStore(
+async function feedTranscriptStore(
   sessionId: string | undefined,
   entries: TranscriptEntry[],
   reset = false
-): void {
+): Promise<void> {
   if (!sessionId || (!reset && entries.length === 0)) return;
   try {
     const store = transcriptStore();
     if (!store.hasImported(sessionId)) return;
-    if (reset) store.replaceTranscriptEvents(sessionId, entries);
-    else store.appendTranscriptEvents(sessionId, entries);
+    if (reset) await store.replaceTranscriptEvents(sessionId, entries);
+    else await store.appendTranscriptEvents(sessionId, entries);
   } catch (e) {
     markTranscriptStoreDegraded(sessionId);
     console.warn(`[file-watcher] v2 store feed failed for ${sessionId}:`, e);
@@ -120,7 +127,7 @@ export interface FilePollDeps {
     sessionId: string | undefined,
     entries: TranscriptEntry[],
     reset?: boolean
-  ): void;
+  ): unknown | Promise<void>;
 }
 
 const pollDeps: FilePollDeps = {
@@ -173,7 +180,10 @@ export function pollTranscriptFile(
   if (entries.length === 0 && !reset) return;
 
   deps.notify(state.sessionId, entries);
-  deps.feed(state.sessionId, entries, reset);
+  void Promise.resolve(deps.feed(state.sessionId, entries, reset)).catch((error) => {
+    if (state.sessionId) markTranscriptStoreDegraded(state.sessionId);
+    console.warn(`[file-watcher] v2 store feed failed for ${state.sessionId}:`, error);
+  });
 
   // endOffset + rev = the client's resume cursor: on reconnect it re-watches
   // with sinceOffset/sinceRev and the gap since this exact byte is replayed

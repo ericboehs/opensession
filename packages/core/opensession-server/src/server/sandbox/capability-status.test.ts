@@ -37,22 +37,26 @@ let scratch: string;
 let prevEnvConfig: string | undefined;
 let prevE2bKey: string | undefined;
 let prevSecretsStore: string | undefined;
+let prevInstanceConfig: string | undefined;
 const cfgPath = () => join(scratch, "sandbox.json");
+const instanceCfgPath = () => join(scratch, "config.json");
 
 beforeAll(() => {
   scratch = mkdtempSync(join(tmpdir(), "bks-sandbox-status-"));
   prevEnvConfig = process.env.OPENSESSION_SANDBOX_CONFIG;
   prevE2bKey = process.env.E2B_API_KEY;
   prevSecretsStore = process.env.OPENSESSION_WORKSPACE_SECRETS_STORE;
+  prevInstanceConfig = process.env.OPENSESSION_CONFIG;
   process.env.OPENSESSION_SANDBOX_CONFIG = cfgPath();
+  process.env.OPENSESSION_CONFIG = instanceCfgPath();
   delete process.env.E2B_API_KEY;
   process.env.OPENSESSION_WORKSPACE_SECRETS_STORE = join(scratch, "secrets.json");
 });
 
 afterEach(() => {
-  try {
-    unlinkSync(cfgPath());
-  } catch {}
+  for (const path of [cfgPath(), instanceCfgPath()]) {
+    try { unlinkSync(path); } catch {}
+  }
 });
 
 afterAll(() => {
@@ -61,10 +65,14 @@ afterAll(() => {
   if (prevE2bKey !== undefined) process.env.E2B_API_KEY = prevE2bKey;
   if (prevSecretsStore !== undefined) process.env.OPENSESSION_WORKSPACE_SECRETS_STORE = prevSecretsStore;
   else delete process.env.OPENSESSION_WORKSPACE_SECRETS_STORE;
+  if (prevInstanceConfig !== undefined) process.env.OPENSESSION_CONFIG = prevInstanceConfig;
+  else delete process.env.OPENSESSION_CONFIG;
   rmSync(scratch, { recursive: true, force: true });
 });
 
 const write = (cfg: object) => writeFileSync(cfgPath(), JSON.stringify(cfg));
+const writeIngress = (publicBaseUrl: string) =>
+  writeFileSync(instanceCfgPath(), JSON.stringify({ ingress: { publicBaseUrl, exposure: "custom" } }));
 const ready = (provider: "docker" | "daytona" | "box" | "modal" | "microvm") => {
   connectSandboxProvider(
     provider,
@@ -147,17 +155,15 @@ describe("sandboxCapabilityStatus (the /api/sandbox/status payload)", () => {
     const s = sandboxCapabilityStatus();
     const d = s.providers.find((p) => p.id === "daytona")!;
     expect(d.configured).toBe(true);
-    expect(d.note).toContain("no dial-back URL configured");
+    expect(d.note).toContain("no public ingress configured");
     const e = s.providers.find((p) => p.id === "e2b")!;
     expect(e.configured).toBe(true);
-    expect(e.note).toContain("no dial-back URL configured");
+    expect(e.note).toContain("no public ingress configured");
   });
 
   test("healthy remote provider (public ingress configured) carries no note", () => {
-    write({
-      provider: "docker",
-      publicIngress: { enabled: true, port: 3860, publicBaseUrl: "wss://example.ts.net" },
-    });
+    write({ provider: "docker" });
+    writeIngress("https://example.ts.net");
     ready("daytona");
     const d = sandboxCapabilityStatus().providers.find((p) => p.id === "daytona")!;
     expect(d.configured).toBe(true);
@@ -236,7 +242,7 @@ describe("sandboxCapabilityStatus (the /api/sandbox/status payload)", () => {
     });
     ready("daytona");
     const d = sandboxCapabilityStatus().providers.find((p) => p.id === "daytona")!;
-    expect(d.note).toContain("no dial-back URL configured");
+    expect(d.note).toContain("no public ingress configured");
   });
 
   test("garbage config = no config", () => {

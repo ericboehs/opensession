@@ -6,6 +6,7 @@ import {
 	normalizeLegacyVoiceToolEntries,
 	orderTranscriptEntries,
 	queueAttribution,
+	summarizeInFlightContent,
 } from "./transcript-state";
 import type { TranscriptEntry } from "./types";
 
@@ -165,6 +166,25 @@ describe("transcript client state", () => {
 				"Message from another session",
 			);
 		}
+	});
+
+	test("keeps steered agent traffic grouped as reports and session messages", () => {
+		const worker = classifyQueuedContent(
+			"<!--os:worker-report-->\nReview complete.",
+			"worker bks-01a03a08-8dec-759f-9970-5766bb898909",
+		);
+		const peer = classifyQueuedContent(
+			"<!--os:session-notice-->\nNo blockers found.",
+			"agent bks-01a03a08-8dec-759f-9970-5766bb898910",
+		);
+		const human = classifyQueuedContent("Please keep going.", "Michiel");
+
+		expect(summarizeInFlightContent([worker, peer, human])).toEqual({
+			messages: 1,
+			reviews: 0,
+			workerReports: 1,
+			sessionMessages: 1,
+		});
 	});
 
 	test("credits a teammate on a queue chip but never the viewer", () => {

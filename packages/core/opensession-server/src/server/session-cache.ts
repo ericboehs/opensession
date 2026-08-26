@@ -42,6 +42,7 @@ import {
   sessionDeliveryProjection,
   sessionGatewayCommand,
   sessionKernel,
+  sessionKernelStore,
   sessionKernelActorActive,
   sessionTurn,
 } from "./session-kernel";
@@ -137,9 +138,18 @@ export function enrichSessionRuntime(
 	snapshot = sessionRuntimeSnapshot(),
 ): UnifiedSession[] {
 	const { runStarts, journalBusy } = snapshot;
+	// Full session lists must not make one compatibility RPC per historical
+	// session. Take the actor client's mirrored projection once; missing rows are
+	// idle. Small detail updates keep the targeted accessor to avoid copying the
+	// whole projection for a single session.
+	const runStateBySession = data.length > 32
+		? new Map(sessionKernelStore().runStates().map((state) => [state.sessionId, state]))
+		: undefined;
 	// Sessions driven from the web UI run in-process; surface those too
 	for (const s of data) {
-		const rs = getRunState(s.id);
+		const rs = runStateBySession
+			? ((runStateBySession.get(s.id)?.state as RunState | undefined) ?? "idle")
+			: getRunState(s.id);
 		const engineBusy = isAgentEngineBusy(
 			s.claudeSessionId,
 			s.codexThreadId,
@@ -282,6 +292,18 @@ export async function getCachedSessionsAsync(
 }
 
 /**
+ * Read the durable list projection without attaching live runtime state.
+ * Background maintenance that only needs session metadata must use this path:
+ * enriching every historical row can otherwise monopolize the synchronous
+ * actor compatibility bridge even though the maintenance task itself is async.
+ */
+export async function getSessionListSnapshotAsync(
+	slice: SessionArchiveSlice = "include",
+): Promise<UnifiedSession[]> {
+	return indexedSessions(slice) ?? getAllSessionsAsync(slice);
+}
+
+/**
  * Return the last session snapshot without triggering a synchronous disk scan.
  * Hot-path autocomplete can safely omit optional session suggestions until the
  * normal sessions refresh repopulates this cache.
@@ -314,7 +336,7 @@ export function isRunSettled(sessionId: string): boolean {
 	}
 	// Queue authority lives in the actor. Read its per-session delivery snapshot
 	// directly rather than reaching through queue-state's former global map.
-	if (sessionDeliveryProjection(id).queued.length > 0)
+	if (sessionKernelStore().deliverySnapshot(id).queued.length > 0)
 		return false;
 	return true;
 }
@@ -438,9 +460,9 @@ export function updateSessionFile(
 	sessionId: string,
 	mutator: SessionFileMutator,
 ): Promise<void> {
-  return withSessionMutationLock(sessionId, () => {
+  return withSessionMutationLock(sessionId, async () => {
     const requestId = `session-file:${crypto.randomUUID()}`;
-    const plan = sessionGatewayCommand({
+    const plan = await sessionGatewayCommand({
       op: "request",
       sessionId,
       requestId,
@@ -465,7 +487,7 @@ export function updateSessionFile(
 		}
 		invalidateSessionsCache();
       physicalFinished = true;
-      sessionGatewayCommand({
+      await sessionGatewayCommand({
         op: "complete",
         sessionId,
         requestId,
@@ -473,7 +495,7 @@ export function updateSessionFile(
         result: null,
       });
     } catch (error) {
-      if (!physicalFinished) sessionGatewayCommand({
+      if (!physicalFinished) await sessionGatewayCommand({
         op: "fail",
         sessionId,
         requestId,
@@ -675,10 +697,10 @@ export const runErrors: Map<string, { message: string; at: string }> =
  *
  * `require` rather than a static import: pi-transcript lazily requires
  * this module back (its own cycle-breaker), and the transcript write must be
- * synchronous so it lands before the client re-reads the transcript.
- * Never throws — a dead transcript store must not break outcome recording.
+ * ordered so it lands before the client re-reads the transcript.
+ * Never throws unless strict projection ownership requires fail-closed behavior.
  */
-function persistRunFailureNotice(
+async function persistRunFailureNotice(
 	sessionId: string,
 	engineSessionId: string | null | undefined,
 	message: string,
@@ -686,7 +708,7 @@ function persistRunFailureNotice(
 	projectionId?: string,
 	projectedAt?: string,
 	strict = false,
-): void {
+): Promise<void> {
 	try {
 		const m = require("./transcript-persistence") as typeof import("./transcript-persistence");
 		const line = m.transcriptLineRunnerNotice(
@@ -695,13 +717,13 @@ function persistRunFailureNotice(
 			projectedAt,
 		);
 		if (strict)
-			m.applyForwardedTranscriptStrict(
+			await m.applyForwardedTranscriptStrict(
 				sessionId,
 				engineSessionId || sessionId,
 				[line],
 			);
 		else
-			m.applyForwardedTranscript(sessionId, engineSessionId || sessionId, [line]);
+			await m.applyForwardedTranscript(sessionId, engineSessionId || sessionId, [line]);
 	} catch (error) {
 		if (strict) throw error;
 	}
@@ -729,24 +751,36 @@ export type RunOutcomeProjectionOptions = {
 	projectedAt?: string;
 };
 
-export function recordRunOutcome(
+let runOutcomeProjectorForTest:
+	| typeof applyRunOutcomeProjection
+	| undefined;
+
+export function __setRunOutcomeProjectorForTest(
+	projector: typeof applyRunOutcomeProjection | undefined,
+): typeof applyRunOutcomeProjection | undefined {
+	const previous = runOutcomeProjectorForTest;
+	runOutcomeProjectorForTest = projector;
+	return previous;
+}
+
+export async function recordRunOutcome(
 	sessionId: string,
 	errorMessage: string | null,
 	opts?: RunOutcomeProjectionOptions,
-): void {
+): Promise<void> {
 	const session = findSession(sessionId);
 	const id = session?.id || sessionId;
 	// runAgent settles every journal-owned run on its terminal event. Keep this
 	// persistence choke point compatible with non-runner callers without
 	// emitting a false double-teardown rejection for the normal path.
 	if (isRunStateUnsettled(getRunState(id)))
-		transitionRunState(id, errorMessage ? "run_failed" : "turn_end", {
+		await transitionRunState(id, errorMessage ? "run_failed" : "turn_end", {
 			...(opts?.runId ? { run_key: opts.runId } : {}),
 		});
 	if (opts?.projectionId && opts.runId && sessionKernelActorActive()) {
 		const runGeneration =
 			opts.runGeneration ?? sessionKernel(id).runState().generation;
-		sessionTurn({
+		await sessionTurn({
 			op: "prepare_outcome_projection",
 			sessionId: id,
 			projectionId: opts.projectionId,
@@ -769,7 +803,11 @@ export function recordRunOutcome(
 		!process.env.OPENSESSION_RUN_JOURNAL
 	)
 		throw new Error("Turn outcome projection requires the authoritative actor");
-	void applyRunOutcomeProjection(id, errorMessage, opts);
+	await (runOutcomeProjectorForTest ?? applyRunOutcomeProjection)(
+		id,
+		errorMessage,
+		opts,
+	);
 }
 
 /** Idempotent destination-side implementation for actor-issued projections. */
@@ -796,7 +834,7 @@ export async function applyRunOutcomeProjection(
 					: session?.codexThreadId
 						? "codex"
 						: "claude");
-			persistRunFailureNotice(
+			await persistRunFailureNotice(
 				id,
 				opts?.engineSessionId ||
 					(session ? engineSessionIdFor(session, provider) : undefined),

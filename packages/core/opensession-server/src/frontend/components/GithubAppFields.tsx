@@ -15,6 +15,7 @@ export function GithubAppFields({
 	onToggleClientIdClear,
 	onAppSlugChange,
 	onInstallationOwnerChange,
+	showInstallationOwner = true,
 	onClientSecretChange,
 	onToggleClientSecretClear,
 	onPrivateKeyChange,
@@ -32,6 +33,7 @@ export function GithubAppFields({
 	onToggleClientIdClear: () => void;
 	onAppSlugChange: (value: string) => void;
 	onInstallationOwnerChange: (value: string) => void;
+	showInstallationOwner?: boolean;
 	onClientSecretChange: (value: string) => void;
 	onToggleClientSecretClear: () => void;
 	onPrivateKeyChange: (value: string) => void;
@@ -68,24 +70,26 @@ export function GithubAppFields({
 					From github.com/apps/&lt;slug&gt;. Identifies App-authored activity.
 				</span>
 			</label>
-			<label className="flex flex-col gap-1">
-				<span className="text-supporting text-fg">Installation owner</span>
-				<input
-					type="text"
-					className="w-full rounded-md border border-line bg-surface px-2.5 py-1.5 font-mono text-supporting text-fg outline-none focus-ring phone:min-h-11 phone:text-input-phone"
-					value={installationOwner}
-					onChange={(event) => onInstallationOwnerChange(event.target.value)}
-					placeholder="my-organization"
-					aria-label="GitHub App installation owner"
-					disabled={saving}
-					autoCapitalize="none"
-					autoComplete="off"
-					spellCheck={false}
-				/>
-				<span className="text-meta leading-snug text-faint">
-					The organization or account that owns the installation.
-				</span>
-			</label>
+			{showInstallationOwner && (
+				<label className="flex flex-col gap-1">
+					<span className="text-supporting text-fg">Installation owner</span>
+					<input
+						type="text"
+						className="w-full rounded-md border border-line bg-surface px-2.5 py-1.5 font-mono text-supporting text-fg outline-none focus-ring phone:min-h-11 phone:text-input-phone"
+						value={installationOwner}
+						onChange={(event) => onInstallationOwnerChange(event.target.value)}
+						placeholder="my-organization"
+						aria-label="GitHub App installation owner"
+						disabled={saving}
+						autoCapitalize="none"
+						autoComplete="off"
+						spellCheck={false}
+					/>
+					<span className="text-meta leading-snug text-faint">
+						Required. Enter the GitHub login for the account or organization where the App is installed. Open Session uses it to select the installation that mints repository tokens.
+					</span>
+				</label>
+			)}
 			<SecretField
 				name="Client secret"
 				required

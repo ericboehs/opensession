@@ -28,7 +28,10 @@
 
 import type { McpScope } from "./runner-shared";
 import { audit } from "./audit";
-import { sessionKernel } from "./session-kernel";
+import {
+  isRetryableSessionCommandError,
+  sessionKernel,
+} from "./session-kernel";
 import { existsSync, mkdirSync, readFileSync, rmSync } from "fs";
 import {
   runAgent,
@@ -49,7 +52,7 @@ import {
   type ImageInput,
 } from "./run-events";
 import type { TranscriptEntry } from "./types";
-import { applyForwardedTranscript } from "./transcript-persistence";
+import { applyForwardedTranscriptStrict } from "./transcript-persistence";
 import { sameProcess } from "./process-identity";
 import type { GitIdentity } from "./shared/user-mappings";
 import { modelSupportsSteer, providerFor } from "./models";
@@ -87,6 +90,55 @@ import {
   launchHostUnitDirect,
   stopHostUnitDirect,
 } from "../executor/host-unit";
+
+const HOSTED_KERNEL_RETRY_ATTEMPTS = 3;
+// The actor client's sync breaker stays open for ten seconds after a timeout.
+// Wait just beyond it so a retry reaches the recovered lane instead of failing
+// immediately against the same open breaker.
+const HOSTED_KERNEL_RETRY_DELAY_MS = 10_100;
+
+export async function retryHostedKernelCall<T>(
+  call: () => T | Promise<T>,
+  options: {
+    attempts?: number;
+    delayMs?: number;
+    sleep?: (ms: number) => Promise<void>;
+    onRetry?: (error: unknown, attempt: number) => void;
+  } = {},
+): Promise<T> {
+  const attempts = options.attempts ?? HOSTED_KERNEL_RETRY_ATTEMPTS;
+  const delayMs = options.delayMs ?? HOSTED_KERNEL_RETRY_DELAY_MS;
+  const sleep = options.sleep ?? Bun.sleep;
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await call();
+    } catch (error) {
+      if (attempt >= attempts || !isRetryableSessionCommandError(error)) {
+        throw error;
+      }
+      options.onRetry?.(error, attempt);
+      await sleep(delayMs);
+    }
+  }
+}
+
+function hostedKernelCall<T>(
+  spec: RunHostSpec,
+  operation: string,
+  call: () => T | Promise<T>,
+): Promise<T> {
+  return retryHostedKernelCall(call, {
+    onRetry: (error, attempt) =>
+      audit({
+        msg: "hosted_kernel_call_retry",
+        session_id: spec.osSessionId,
+        run_key: spec.hostId,
+        operation,
+        attempt,
+        error: error instanceof Error ? error.message : String(error),
+      }),
+  });
+}
 
 const HOSTS_DIR = runHostsDir(OPENSESSION_SESSIONS_DIR);
 const DISABLE_FILE = `${OPENSESSION_SESSIONS_DIR}/disable-run-hosts`;
@@ -265,7 +317,9 @@ async function* hostedEventsWithJournal(
   spec: RunHostSpec,
 ): AsyncGenerator<StreamEvent> {
   const record = hostedRunRecord(spec);
-  const owner = sessionKernel(spec.osSessionId).runState();
+  const owner = await hostedKernelCall(spec, "initial_owner_read", () =>
+    sessionKernel(spec.osSessionId).runState(),
+  );
   if (
     owner.currentRunId &&
     owner.currentRunId !== record.runKey &&
@@ -280,16 +334,19 @@ async function* hostedEventsWithJournal(
     });
     return;
   }
-  handle.setHostChangeHandler((hostId) => {
+  handle.setHostChangeHandler(async (hostId) => {
     record.hostId = hostId;
-    journalSet(record);
+    await hostedKernelCall(spec, "host_change_journal", () => journalSet(record));
   });
-  journalSet(record);
+  await hostedKernelCall(spec, "initial_journal", () => journalSet(record));
   let sourceCompleted = false;
   let sawTerminal = false;
   try {
     for await (const ev of handle.events()) {
-      if (!sessionKernel(spec.osSessionId).isCurrentRun(record.runKey)) {
+      const isCurrent = await hostedKernelCall(spec, "event_owner_read", () =>
+        sessionKernel(spec.osSessionId).isCurrentRun(record.runKey),
+      );
+      if (!isCurrent) {
         handle.requestCancel();
         audit({
           msg: "stale_executor_event_rejected",
@@ -301,13 +358,17 @@ async function* hostedEventsWithJournal(
       }
       if (ev.type === "init" && ev.sessionId && ev.sessionId !== record.claudeSessionId) {
         record.claudeSessionId = ev.sessionId;
-        journalSet(record);
+        await hostedKernelCall(spec, "engine_session_journal", () =>
+          journalSet(record),
+        );
       }
       if (ev.type === "model_switch" && ev.toModel) {
         record.model = ev.toModel;
         record.transientFallback = ev.temporaryFallback === true;
         if (shouldPersistModelSwitch(ev)) record.selectedModel = ev.toModel;
-        journalSet(record);
+        await hostedKernelCall(spec, "model_switch_journal", () =>
+          journalSet(record),
+        );
       }
       if (ev.type === "done" || ev.type === "error") sawTerminal = true;
       yield ev;
@@ -316,7 +377,9 @@ async function* hostedEventsWithJournal(
   } finally {
     if (handle.ended && sourceCompleted && sawTerminal) journalClear(record.runKey);
     else if (handle.ended && sourceCompleted)
-      journalRecordAbnormalCompletion(record);
+      await hostedKernelCall(spec, "abnormal_completion_journal", () =>
+        journalRecordAbnormalCompletion(record),
+      );
   }
 }
 
@@ -415,7 +478,7 @@ async function spawnHostRun(
   try {
     // Persist before launch. If opensession restarts between systemd-run and
     // socket attachment, the boot sweep can still find the surviving host.
-    journalSet(hostedRunRecord(spec));
+    await journalSet(hostedRunRecord(spec));
     try {
       await launchHostUnit(hostId, dir);
     } catch (error) {
@@ -739,8 +802,10 @@ export class HostHandle {
   >();
   private respawns = 0;
   private stopRequested = false;
+  private projectionTail: Promise<void> | undefined;
+  private projectionFailure: unknown;
   private readonly ctl: HostRunControl;
-  private onHostChanged?: (hostId: string) => void;
+  private onHostChanged?: (hostId: string) => void | Promise<void>;
   engineSessionId?: string;
 
   constructor(
@@ -806,7 +871,7 @@ export class HostHandle {
     return this.stopRequested || this.endedClean;
   }
 
-  setHostChangeHandler(handler: (hostId: string) => void): void {
+  setHostChangeHandler(handler: (hostId: string) => void | Promise<void>): void {
     this.onHostChanged = handler;
   }
 
@@ -989,7 +1054,53 @@ export class HostHandle {
     return false;
   }
 
+  private enqueueProjectionFrame(
+    operation: () => void | Promise<void>,
+    runAfterFailure = false,
+  ): void {
+    const prior = this.projectionTail ?? Promise.resolve();
+    const current = prior.then(async () => {
+      if (this.projectionFailure && !runAfterFailure)
+        throw this.projectionFailure;
+      await operation();
+    });
+    const observed = current.catch((error) => {
+      if (!this.projectionFailure) {
+        this.projectionFailure = error;
+        this.queue.push({
+          type: "error",
+          content: `Run host projection failed: ${error instanceof Error ? error.message : String(error)}`,
+        });
+      }
+    });
+    this.projectionTail = observed;
+    void observed.finally(() => {
+      if (this.projectionTail === observed) this.projectionTail = undefined;
+    });
+  }
+
+  /** Completion fence for transcript frames and every later host frame. */
+  async waitForPendingProjections(): Promise<void> {
+    await this.projectionTail;
+    if (this.projectionFailure) throw this.projectionFailure;
+  }
+
   private handleMsg(msg: HostToClientMsg): void {
+    if (
+      msg.t !== "transcript" &&
+      (this.projectionTail || this.projectionFailure)
+    ) {
+      // End is cleanup, not another projection. It must close the stream even
+      // when the transcript projection ahead of it failed. Every other frame
+      // remains fenced after the failed tail settles: projectionFailure is a
+      // permanent authority failure for this handle, not just queue state.
+      this.enqueueProjectionFrame(() => this.handleMsgNow(msg), msg.t === "end");
+      return;
+    }
+    this.handleMsgNow(msg);
+  }
+
+  private handleMsgNow(msg: HostToClientMsg): void {
     switch (msg.t) {
       case "hello": {
         if (!this.acceptsSideEffectFrame("hello")) break;
@@ -1057,7 +1168,13 @@ export class HostHandle {
         // Transcript frames bypass the StreamEvent queue, so fence them here
         // against the same run generation as ordinary host events.
         if (!this.acceptsSideEffectFrame("transcript")) break;
-        applyForwardedTranscript(this.spec.osSessionId, msg.engineSessionId, msg.lines);
+        this.enqueueProjectionFrame(() =>
+          applyForwardedTranscriptStrict(
+            this.spec.osSessionId,
+            msg.engineSessionId,
+            msg.lines,
+          )
+        );
         break;
       case "steer_failed":
         if (this.acceptsSideEffectFrame("steer_failed"))
@@ -1249,7 +1366,7 @@ export class HostHandle {
     this.effectiveModel = spec.model;
     this.transientFallback = spec.transientFallback === true;
     this.ctl.hostId = hostId;
-    this.onHostChanged?.(hostId);
+    await this.onHostChanged?.(hostId);
     // The old host id's transport registration (WS token/conn) is dead with
     // the old host — swap in a connector for the new id (same wsToken; the
     // launcher re-registered it under the new host id in launch()).
@@ -1395,7 +1512,7 @@ export async function resumeLocalHostRun(
     if (recovery.kind === "uncertain") return "uncertain";
     if (recovery.kind === "resume") {
       run.claudeSessionId = recovery.engineSessionId;
-      journalSet({ ...run, claimedAt: undefined });
+      await journalSet({ ...run, claimedAt: undefined });
     }
     return null;
   }
@@ -1429,7 +1546,7 @@ export async function resumeLocalHostRun(
     if (recovery.kind === "uncertain") return "uncertain";
     if (recovery.kind === "resume") {
       run.claudeSessionId = recovery.engineSessionId;
-      journalSet({ ...run, claimedAt: undefined });
+      await journalSet({ ...run, claimedAt: undefined });
     }
     return null;
   }
@@ -1437,9 +1554,11 @@ export async function resumeLocalHostRun(
     registerRunToken(spec.rpcToken, { sessionId: spec.osSessionId, user: spec.user });
   }
   const handle = new HostHandle(dir, spec, callbacks, systemdHostLauncher, run.runKey);
-  handle.setHostChangeHandler((hostId) => {
+  handle.setHostChangeHandler(async (hostId) => {
     run.hostId = hostId;
-    journalSet({ ...run, claimedAt: undefined });
+    await hostedKernelCall(spec, "reattach_host_change_journal", () =>
+      journalSet({ ...run, claimedAt: undefined }),
+    );
   });
   try {
     await handle.connectWithWait(20_000);
@@ -1465,7 +1584,7 @@ export async function resumeLocalHostRun(
     if (recovery.kind === "uncertain") return "uncertain";
     if (recovery.kind === "resume") {
       run.claudeSessionId = recovery.engineSessionId;
-      journalSet({ ...run, claimedAt: undefined });
+      await journalSet({ ...run, claimedAt: undefined });
     }
     return null;
   }
@@ -1487,7 +1606,7 @@ export async function resumeLocalHostRun(
           if (shouldPersistModelSwitch(event)) run.selectedModel = event.toModel;
           changed = true;
         }
-        if (changed) journalSet({ ...run, claimedAt: undefined });
+        if (changed) await journalSet({ ...run, claimedAt: undefined });
         yield event;
       }
     } finally {

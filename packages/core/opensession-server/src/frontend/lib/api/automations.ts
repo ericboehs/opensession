@@ -16,6 +16,8 @@ export interface ModelOption {
 	group?: string;
 	/** One-line subtitle shown under the label (dial presets). */
 	description?: string;
+	/** Concrete lead and supporting models participating in a preset. */
+	composition?: string[];
 	/** This model has subscription-backend priority-tier variants configured. */
 	fastModeSupported?: boolean;
 }
@@ -316,7 +318,7 @@ export interface SandboxOperationInfo {
 export interface SandboxIngressInfo {
 	configuredUrl?: string;
 	proposedUrl?: string;
-	source: "sandbox_config" | "caddy_webhook" | "public_ui" | "none";
+	source: "config" | "caddy" | "none";
 	health: "ready" | "unreachable" | "not_configured";
 	caddyAdminReachable: boolean;
 	generatedSnippet: string;

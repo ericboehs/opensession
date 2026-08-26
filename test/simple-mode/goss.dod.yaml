@@ -21,9 +21,6 @@ command:
     # R1.2: not installed unless asked for.
     exec: "! command -v tailscale"
     exit-status: 0
-  no-codex-on-critical-path:
-    exec: "! command -v codex"
-    exit-status: 0
   no-source-checkout:
     # R1.3: an artefact install, not a clone.
     exec: "test ! -d {{.Vars.home}}/.opensession/src/.git"

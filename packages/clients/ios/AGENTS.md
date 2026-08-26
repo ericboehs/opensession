@@ -121,7 +121,7 @@ a task needs real Apple hardware, not just for compiles:
   `OS1_SERVER=http://127.0.0.1:13850 OS1_TOKEN=<token>
   "<build>/Open Session.app/Contents/MacOS/Open Session"` (quote it: the Mac
   target's `PRODUCT_NAME` is the product name, spaces and all; tokens:
-  `~/.opensession-web-sessions.json` on the server host). On the iOS simulator the
+  `~/.opensession/web-sessions.json` on the server host). On the iOS simulator the
   same overrides inject via `SIMCTL_CHILD_*`.
 - **Profile it.** `sample <pid> 15 -file out.txt` gives per-thread call
   graphs — enough to see exactly what runs on the main thread; `xctrace

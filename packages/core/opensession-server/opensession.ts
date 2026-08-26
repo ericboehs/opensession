@@ -33,6 +33,8 @@ import { startPlainArchiveSweep } from "./src/server/plain-archive";
 import { devInstanceBootError, isDevInstance } from "./src/server/dev-mode";
 import { startPrReviewNotificationTicker } from "./src/server/pr-review-notifications";
 import { startPublicIngress } from "./src/server/public-ingress";
+import { ensureCloudflareTunnel } from "./src/server/ingress-settings";
+import { startPrivateAppCertificateRenewal } from "./src/server/private-app-domain";
 import { creationOwnsPrompt, readActiveShutdownSnapshot, recoverableLocalHostSnapshotRecords, recordRecoveredRunEvent, restorePromptQueues, resumeDrainedSessions, settleRecoveredCreationOpening, snapshotActiveSessions, startLoopTicker } from "./src/server/run-session";
 import { startMcpHttpServer, startRunRpcServer } from "./src/server/run-rpc";
 import { handleSandboxWsUpgrade, startTimerPoisonHeartbeat, timerPoisonRequestCheck } from "./src/server/run-ws";
@@ -65,7 +67,7 @@ import {
 	type WebIdentity,
 	webAuthRequired,
 } from "./src/server/web-auth";
-import { startWebhookServer } from "./src/server/webhook-server";
+import { configureWebhookRoutes } from "./src/server/webhook-server";
 import { prImagePublicRoutes } from "./src/server/pr-images";
 import {
 	sessionHtmlWithSocialMeta,
@@ -174,8 +176,8 @@ let agents: AgentModule[] = (g.__agents as AgentModule[] | undefined) ?? [];
 // live maps and skip this branch.
 if (!g.__opensessionBooted && !isDevInstance()) {
 	initHumanAsks();
-	restorePendingAsks();
-	hydratePersistedQueueState();
+	await restorePendingAsks();
+	await hydratePersistedQueueState();
 }
 
 console.log(`Starting Open Session server on ${HOST}:${PORT}...`);
@@ -601,17 +603,6 @@ if (!g.__opensessionBooted) {
 	if (!devInstance) {
 	startLiveActivitySync();
 
-	// Public dial-back ingress for remote sandboxes (src/server/public-ingress.ts):
-	// a second, isolated listener serving ONLY the run-ws/rpc-ws upgrades +
-	// /ingress-health. No-op unless ~/.opensession-sandbox.json enables
-	// publicIngress; starting/stopping it or changing its port needs a real
-	// restart (the config's other values stay read-fresh-per-run).
-	try {
-		startPublicIngress();
-	} catch (e) {
-		console.error("[public-ingress] failed to start:", e);
-	}
-
 	// Restore completed sandbox prewarms and maintain any explicit keep-ready
 	// targets. This is a boot hook rather than a module-scope side effect.
 	void import("./src/server/sandbox/prewarm")
@@ -625,8 +616,9 @@ if (!g.__opensessionBooted) {
 		})
 		.catch((e) => console.error("[sandbox-prewarm] startup failed:", e));
 
-	// Start webhook server with enabled agents + automation webhook triggers
-	// + the public PR-image capability URLs (comment_on_pr_with_images).
+	// Build the exact public route allowlist before binding the one isolated
+	// ingress gateway. Webhooks, sandbox callbacks and workload identity share
+	// :3860; the private app on :3850 is never part of this listener.
 	agents = await loadAgents();
 	g.__agents = agents;
 	const webhookRoutes = getWebhookRoutes(() => {
@@ -638,8 +630,14 @@ if (!g.__opensessionBooted) {
 	for (const [key, handler] of sessionSocialCardPublicRoutes()) {
 		webhookRoutes.set(key, handler);
 	}
-	const webhookServer = startWebhookServer(agents, webhookRoutes);
-	void webhookServer;
+	configureWebhookRoutes(agents, webhookRoutes);
+	try {
+		startPublicIngress();
+		ensureCloudflareTunnel();
+		startPrivateAppCertificateRenewal();
+	} catch (e) {
+		console.error("[public-ingress] failed to start:", e);
+	}
 
 	// Optional instance seed pack. Generic installations start empty; existing
 	// records and anything created through the UI are unaffected.
@@ -773,25 +771,13 @@ if (!g.__opensessionBooted) {
 		void (async () => {
 		try {
 		const shutdownRecords = readActiveShutdownSnapshot();
-		const resumedIds = resumeInterruptedRuns(
-			(bksSessionId, terminalEvent, recoveredRun) => {
+		const resumedIds = await resumeInterruptedRuns(
+			async (bksSessionId, terminalEvent, recoveredRun) => {
 				if (bksSessionId && terminalEvent) {
 					const failed =
 						terminalEvent.type === "error" ||
 						!!terminalEvent.usageLimitExhausted;
-					if (recoveredRun?.promptEntryId) {
-						settleRecoveredCreationOpening(
-							bksSessionId,
-							recoveredRun.promptEntryId,
-							failed
-								? terminalEvent.content ||
-									terminalEvent.result ||
-									"Recovered opening run failed"
-								: undefined,
-							recoveredRun.runKey,
-						);
-					}
-					recordRunOutcome(
+					await recordRunOutcome(
 						bksSessionId,
 						failed
 							? terminalEvent.content ||
@@ -816,6 +802,18 @@ if (!g.__opensessionBooted) {
 								: undefined,
 						},
 					);
+					if (recoveredRun?.promptEntryId) {
+						await settleRecoveredCreationOpening(
+							bksSessionId,
+							recoveredRun.promptEntryId,
+							failed
+								? terminalEvent.content ||
+									terminalEvent.result ||
+									"Recovered opening run failed"
+								: undefined,
+							recoveredRun.runKey,
+						);
+					}
 					// The in-process settleRun died with the restart — close the
 					// automation ledger entry here or it stays "running" forever.
 					settleResumedAutomationRun(
@@ -890,14 +888,14 @@ if (!g.__opensessionBooted) {
 		}
 		resumeDrainedSessions(new Set(resumedIds), shutdownRecords);
 		// Re-deliver messages that were queued/steered when the process went down.
-		restorePromptQueues(new Set(resumedIds));
+		await restorePromptQueues(new Set(resumedIds));
 		const ownedSessionIds = new Set(
 			activeRunRecords()
 				.map((run) => run.osSessionId)
 				.filter((id): id is string => !!id),
 		);
 		for (const id of resumedIds) ownedSessionIds.add(id);
-		const staleKernelOwners = reconcileSessionKernelOwnership(ownedSessionIds);
+		const staleKernelOwners = await reconcileSessionKernelOwnership(ownedSessionIds);
 		if (staleKernelOwners.length)
 			console.warn(
 				`[session-kernel] Settled ${staleKernelOwners.length} session(s) without a recoverable run owner`,
@@ -908,8 +906,16 @@ if (!g.__opensessionBooted) {
 		// Re-admit only historical branch effects rejected before execution by
 		// retired compatibility checks. Do this behind the recovery gate so the
 		// runtime cannot race the dead-letter transition.
+		// This compatibility repair scans every isolated session database. It is
+		// maintenance work, not a boot invariant: running it after the server has
+		// accepted traffic monopolizes the actor lane long enough to make ordinary
+		// per-session reads time out and can restart the gateway in a loop. Keep it
+		// available as an explicit one-off while old deployments are being repaired,
+		// but never put it on the production recovery critical path by default.
 		const reconciledBranchEffects =
-			await reconcileCompatibleCreationBranchEffects();
+			process.env.OPENSESSION_RECONCILE_CREATION_BRANCH_DEAD_LETTERS === "1"
+				? await reconcileCompatibleCreationBranchEffects()
+				: [];
 		if (reconciledBranchEffects.length)
 			console.warn(
 				`[session-kernel] Reconciled ${reconciledBranchEffects.length} compatible branch effect(s)`,

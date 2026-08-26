@@ -453,6 +453,8 @@ interface GithubAuthData {
   webAuthRequired: boolean;
   /** github.com/apps/<slug>/installations/new, or null until the app slug ships. */
   appInstallUrl: string | null;
+  /** Current public ingress origin. Empty means callbacks remain private-only. */
+  webhookBaseUrl: string;
   /** Captured install/app-setup intent: the org the App is owned by, so the
    *  wizard prefills the org owner. null for a single-user install. */
   appOrg?: string | null;
@@ -496,12 +498,17 @@ interface DeviceFlow {
 // Blank org creates the app under the signed-in personal account; an org login
 // creates it under that organization (so the org owns it and it can reach org
 // repos). Same query params either way.
-function buildGithubAppCreateUrl(name: string, org: string): string {
+function buildGithubAppCreateUrl(name: string, org: string, webhookBaseUrl: string): string {
   const params = new URLSearchParams({
     name,
     url: "http://localhost:3850",
     public: "false",
-    webhook_active: "false",
+    ...(webhookBaseUrl
+      ? {
+          webhook_url: `${webhookBaseUrl.replace(/\/$/, "")}/github/webhook`,
+          webhook_active: "true",
+        }
+      : {}),
     // The canonical grant set — the same permissions the install tokens mint
     // request, so the App is not born missing `issues` or `checks` (the drift
     // this builder used to have: no issues, no checks).
@@ -565,6 +572,7 @@ function GithubAppWizard({
   configured,
   connected,
   installUrl,
+  webhookBaseUrl,
   onConnect,
   error,
   flow,
@@ -587,6 +595,7 @@ function GithubAppWizard({
   configured: boolean;
   connected: boolean;
   installUrl: string | null;
+  webhookBaseUrl: string;
   onConnect: () => void;
   error: string | null;
   flow: DeviceFlow | null;
@@ -657,7 +666,11 @@ function GithubAppWizard({
     if (open) stepFocusRef.current?.focus();
   }, [open, step]);
 
-  const createUrl = buildGithubAppCreateUrl(appName, appOwner === "org" ? appOrg : "");
+  const createUrl = buildGithubAppCreateUrl(
+    appName,
+    appOwner === "org" ? appOrg : "",
+    webhookBaseUrl,
+  );
   // Creating in an org needs its login to build the URL, so block until it's given.
   const createReady = appOwner === "you" || !!appOrg.trim();
   const previewSlug = deriveGithubAppSlug(appName);
@@ -755,7 +768,7 @@ function GithubAppWizard({
               Pre-filled: name{" "}
               <span className="font-mono text-dim">{appName}</span>, permissions
               (Actions, Checks, statuses, and Deployments read; Contents, Issues,
-              and Pull requests write; Members read), private, no webhook.
+              and Pull requests write; Members read), and private.
               Names are unique on GitHub, so tweak it if it's taken.
             </div>
             <Modal.Footer>
@@ -1369,7 +1382,7 @@ setError(e.message);
                         with a one-time code.
                       </div>
                       <div className="flex flex-wrap items-center gap-2.5">
-                        <Button variant="primary" onClick={() => setWizardOpen(true)}>
+                        <Button variant="primary" onClick={() => void load().then(() => setWizardOpen(true))}>
                           Set up GitHub App
                         </Button>
                       </div>
@@ -1414,6 +1427,7 @@ setError(e.message);
           configured={data.connectAvailable}
           connected={connected}
           installUrl={data.appInstallUrl}
+          webhookBaseUrl={data.webhookBaseUrl}
           onConnect={startConnect}
           error={error}
           flow={flow}

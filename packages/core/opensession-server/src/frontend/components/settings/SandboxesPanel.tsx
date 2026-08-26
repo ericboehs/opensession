@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type {
 	SandboxConnectionInfo,
-	SandboxIngressInfo,
 	SandboxOperationInfo,
 } from "../../lib/api";
 import type { SandboxConnectionsResponse } from "../../lib/api/sandboxes";
@@ -186,21 +185,16 @@ function ConnectDialog({
 	open,
 	onOpenChange,
 	onChanged,
-	ingress,
 }: {
 	connection: SandboxConnectionInfo;
 	open: boolean;
 	onOpenChange: (open: boolean) => void;
 	onChanged: (response: SandboxConnectionsResponse) => void;
-	ingress: SandboxIngressInfo;
 }) {
 	const provider = PROVIDERS.find((candidate) => candidate.id === connection.provider)!;
 	const [apiKey, setApiKey] = useState("");
 	const [tokenId, setTokenId] = useState("");
 	const [tokenSecret, setTokenSecret] = useState("");
-	const [publicBaseUrl, setPublicBaseUrl] = useState(
-		ingress.configuredUrl || ingress.proposedUrl || "",
-	);
 	const [region, setRegion] = useState(String(connection.settings.region || ""));
 	const [snapshot, setSnapshot] = useState(String(connection.settings.snapshot || ""));
 	const [app, setApp] = useState(String(connection.settings.app || ""));
@@ -222,7 +216,6 @@ const response = await connectSandbox(connection.provider, {
 				...(apiKey ? { apiKey } : {}),
 				...(tokenId ? { tokenId } : {}),
 				...(tokenSecret ? { tokenSecret } : {}),
-				...(remote && publicBaseUrl ? { publicBaseUrl } : {}),
 				settings: {
 					...(region ? { region } : {}),
 					...(snapshot ? { snapshot } : {}),
@@ -330,26 +323,9 @@ setSaving(false);
 
 				{remote && (
 					<>
-						<Field label="Public callback URL">
-							<Input
-								type="url"
-								placeholder="https://ingress.example.com"
-								value={publicBaseUrl}
-								onChange={(event) => setPublicBaseUrl(event.target.value)}
-							/>
-						</Field>
-						{ingress.note && <p className="m-0 text-supporting text-dim">{ingress.note}</p>}
-						{ingress.health !== "ready" && (
-							<details className="rounded-lg bg-surface p-3 text-meta text-dim">
-								<summary className="cursor-pointer font-medium text-fg">Generated Caddy routes</summary>
-								{ingress.proposedUrl && (
-									<code className="mt-2 block select-all overflow-x-auto rounded-md bg-panel p-2 text-xs text-fg">
-										opensession sandbox ingress install {ingress.proposedUrl}
-									</code>
-								)}
-								<pre className="mt-2 overflow-x-auto whitespace-pre-wrap text-xs text-dim">{ingress.generatedSnippet}</pre>
-							</details>
-						)}
+						<p className="m-0 text-supporting text-dim">
+							Remote providers use Public callbacks under Domains and ingress for callbacks and workload identity.
+						</p>
 						{connection.provider !== "box" && (
 							<details className="rounded-lg bg-surface p-3 text-supporting text-dim">
 								<summary className="cursor-pointer font-medium text-fg">Provider settings</summary>
@@ -414,13 +390,11 @@ function ConnectionCard({
 	connection,
 	operations,
 	onChanged,
-	ingress,
 	canManage,
 }: {
 	connection: SandboxConnectionInfo;
 	operations: SandboxOperationInfo[];
 	onChanged: (response: SandboxConnectionsResponse) => void;
-	ingress: SandboxIngressInfo;
 	canManage: boolean;
 }) {
 	const provider = PROVIDERS.find((candidate) => candidate.id === connection.provider)!;
@@ -528,7 +502,6 @@ setBusy(false);
 				open={dialogOpen}
 				onOpenChange={setDialogOpen}
 				onChanged={onChanged}
-				ingress={ingress}
 			/>
 		</>
 	);
@@ -686,12 +659,6 @@ setSaving(false);
 export function SandboxesPanel() {
 	const [connections, setConnections] = useState<SandboxConnectionInfo[]>([]);
 	const [operations, setOperations] = useState<SandboxOperationInfo[]>([]);
-	const [ingress, setIngress] = useState<SandboxIngressInfo>({
-		source: "none",
-		health: "not_configured",
-		caddyAdminReachable: false,
-		generatedSnippet: "",
-	});
 	const [environments, setEnvironments] = useState<SandboxEnvironmentInfo[]>([]);
 	const [canManage, setCanManage] = useState(false);
 	const [loading, setLoading] = useState(true);
@@ -701,7 +668,6 @@ export function SandboxesPanel() {
 	function apply(response: SandboxConnectionsResponse) {
 		setConnections(response.connections);
 		setOperations(response.operations);
-		setIngress(response.ingress);
 		setCanManage(response.canManage);
 	}
 
@@ -791,7 +757,6 @@ export function SandboxesPanel() {
 						connection={connection}
 						operations={operations}
 						onChanged={apply}
-						ingress={ingress}
 						canManage={canManage}
 					/>
 				))}

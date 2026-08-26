@@ -18,7 +18,7 @@
 # CRITICAL — why every override below is EXPLICIT: when the preview flow runs
 # this script, the inherited environment is the calling server's env. On a
 # production box that is the systemd service env (EnvironmentFile
-# ~/.opensession.env) carrying the production PORT/HOST/WEBHOOK_PORT, live
+# ~/.opensession.env) carrying the production PORT/HOST, live
 # ENABLE_* agent toggles and real integration secrets. A `bun run
 # opensession.ts` that trusted inheritance would bind production ports, steal
 # the live server's run-rpc unix socket, and double-run its agents. So this
@@ -59,8 +59,8 @@ mkdir -p "$STATE_DIR"
 
 # env -u flags must precede the NAME=VALUE assignments (GNU env argument
 # order). What each line neutralizes:
-#   -u WEBHOOK_PORT / OPENSESSION_MCP_HTTP_PORT
-#       production webhook (3848) / MCP-HTTP (3852) ports ride in via env;
+#   -u OPENSESSION_MCP_HTTP_PORT
+#       the production MCP-HTTP (3852) port rides in via env;
 #       the dev boot gate skips both binds when they are unset.
 #   -u OPENSESSION_SESSIONS_DIR / _CONFIG / _RUN_JOURNAL
 #       per-store overrides would defeat OPENSESSION_STATE_DIR isolation.
@@ -88,7 +88,6 @@ mkdir -p "$STATE_DIR"
 #       the literal "true" enables an agent, so "false" hard-disables each
 #       one even if a boot-gate gap slips through.
 exec env \
-	-u WEBHOOK_PORT \
 	-u OPENSESSION_MCP_HTTP_PORT \
 	-u OPENSESSION_SESSIONS_DIR \
 	-u OPENSESSION_CONFIG \

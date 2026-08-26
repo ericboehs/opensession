@@ -94,7 +94,7 @@ describe("Runner service definitions", () => {
 		expect(runnerExecCommand("echo hi", "linux")).toEqual(["bash", "-lc", "echo hi"]);
 		const windows = runnerExecCommand("echo hi", "win32");
 		expect(windows.slice(1)).toEqual(["-NoProfile", "-NonInteractive", "-Command", "echo hi"]);
-		expect(windows[0].toLowerCase()).toContain("powershell");
+		expect(windows[0].toLowerCase()).toMatch(/(?:^|[\\/])(?:powershell|pwsh)(?:\.exe)?$/);
 	});
 
 	test("the scheduled task names a fully qualified PowerShell, never a bare one", () => {

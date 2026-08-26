@@ -25,7 +25,7 @@ import {
 } from "./run-state";
 import type { StreamEvent, ImageInput } from "./run-events";
 import { isShuttingDown } from "./shutdown-state";
-import { sessionTurn } from "./session-kernel/kernel";
+import { sessionKernelStore, sessionTurn } from "./session-kernel/kernel";
 // Type-only, so the direct engines stay lazily loaded (see the dispatch table
 // below): this pulls in the contract's signatures, never the SDKs.
 // Static import is deliberate: the pi-runner module itself is cheap (the
@@ -415,7 +415,7 @@ export async function* runAgent(opts: RunAgentOpts): AsyncGenerator<StreamEvent>
     ["idle", "stopped", "failed", "starting"].includes(
       getRunState(osSessionId),
     )
-  ) transitionRunState(osSessionId, "prompt", { run_key: runToken });
+  ) await transitionRunState(osSessionId, "prompt", { run_key: runToken });
   for (const alias of runAliases) {
     let tokens = activeSessionRunTokens.get(alias);
     if (!tokens) activeSessionRunTokens.set(alias, (tokens = new Set()));
@@ -473,7 +473,7 @@ export async function* runAgent(opts: RunAgentOpts): AsyncGenerator<StreamEvent>
     ) {
       const failed =
         terminalEvent.type === "error" || !!terminalEvent.usageLimitExhausted;
-      transitionRunState(osSessionId, failed ? "run_failed" : "turn_end", {
+      await transitionRunState(osSessionId, failed ? "run_failed" : "turn_end", {
         run_key: runToken,
         source: "runner_terminal",
       });
@@ -877,11 +877,11 @@ function untrackRecovery(run: ActiveRunRecord): void {
   }
 }
 
-/** Mark a session as starting a run (call synchronously, before any await). */
-export function markSessionStarting(
+/** Mark a session as starting a run before launching physical work. */
+export async function markSessionStarting(
   id: string,
   token = `rh-${crypto.randomUUID()}`,
-): string {
+): Promise<string> {
   if (
     sessionRunOwners.get(id) === token ||
     pendingStarts.get(id)?.has(token)
@@ -890,7 +890,7 @@ export function markSessionStarting(
     cancelledRunTokens.add(rejected);
     return rejected;
   }
-  const decision = decideRunStateTransition(id, "prompt", { run_key: token });
+  const decision = await decideRunStateTransition(id, "prompt", { run_key: token });
   if (!decision.accepted) {
     // Return a distinct rejected token so the caller can requeue without
     // sharing/unmarking the actor winner's process reservation.
@@ -980,23 +980,24 @@ export function steerAgentRun(
   ids: Array<string | null | undefined>,
   text: string,
   images?: ImageInput[],
-
   steerId?: string
 ): boolean {
   for (const id of ids) {
-    if (!id) continue;
-    if (steerPiRun(id, text, images, steerId)) return true;
-
-    // Images ride the host frame too (protocol ClientToHostMsg.steer). This
-    // used to bail on any attachment, which read as "pi can't steer images"
-    // — it can; only the RPC frame was text-only. Once every local run moved
-    // into a detached host that guard covered every case, so no message with
-    // a screenshot could be steered at all.
-
-    if (hostSteer(id, text, images, steerId)) return true;
-
+    if (id && steerAgentRunToken(id, text, images, steerId)) return true;
   }
   return false;
+}
+
+/** Steer only one immutable dispatch token, never a reusable session alias. */
+export function steerAgentRunToken(
+  runToken: string,
+  text: string,
+  images?: ImageInput[],
+  steerId?: string,
+): boolean {
+  if (steerPiRun(runToken, text, images, steerId)) return true;
+  // Images ride the host frame too (protocol ClientToHostMsg.steer).
+  return hostSteer(runToken, text, images, steerId);
 }
 
 /** Retract one accepted steer only while it remains behind the engine's next
@@ -1041,10 +1042,18 @@ export function interruptAndSteerAgentRun(
   images?: ImageInput[]
 ): boolean {
   for (const id of ids) {
-    if (!id) continue;
-    if (hostInterruptSteer(id, text, images)) return true;
+    if (id && interruptAndSteerAgentRunToken(id, text, images)) return true;
   }
   return false;
+}
+
+/** Interrupt and steer one immutable dispatch token, never a reusable alias. */
+export function interruptAndSteerAgentRunToken(
+  runToken: string,
+  text: string,
+  images?: ImageInput[],
+): boolean {
+  return hostInterruptSteer(runToken, text, images);
 }
 
 /** Immutable dispatch identity for the run currently admitted under an alias.
@@ -1093,10 +1102,10 @@ export function isAgentRunTokenAdmitted(runToken: string): boolean {
   );
 }
 
-export function cancelAgentRunToken(runToken: string): boolean {
+export async function cancelAgentRunToken(runToken: string): Promise<boolean> {
   const admitted = isAgentRunTokenAdmitted(runToken);
   cancelledRunTokens.add(runToken);
-  const cancelled = cancelAgentRun(runToken);
+  const cancelled = await cancelAgentRun(runToken);
   if (!cancelled && !admitted) cancelledRunTokens.delete(runToken);
   return cancelled || admitted;
 }
@@ -1109,19 +1118,19 @@ export async function cancelAgentRunTokenAndWait(
   runToken: string,
   timeoutMs = 120_000,
 ): Promise<boolean> {
-  if (!cancelAgentRunToken(runToken)) return false;
+  if (!await cancelAgentRunToken(runToken)) return false;
   const deadline = Date.now() + timeoutMs;
   for (;;) {
     // A running source owns a token-aware cancellation latch even before its
     // engine handle appears; a host control can receive the exact frame now.
     if (agentRunTokenLatched(runToken)) {
       // runAgent's immutable shouldCancel closure now owns the latch.
-      cancelAgentRun(runToken);
+      await cancelAgentRun(runToken);
       return true;
     }
     if (
       (isPiSessionBusy(runToken) || hostRunBusy(runToken)) &&
-      cancelAgentRun(runToken)
+      await cancelAgentRun(runToken)
     ) return true;
     // No pending launch and no recovery owner means setup observed the latch
     // and unwound, or recovery positively settled absence.
@@ -1134,13 +1143,13 @@ export async function cancelAgentRunTokenAndWait(
       throw new Error(`Timed out reconciling cancelled dispatch ${runToken}`);
     // Boot recovery may attach after this effect starts. Re-issue against the
     // immutable token so the newly registered control is cancelled immediately.
-    cancelAgentRun(runToken);
+    await cancelAgentRun(runToken);
     await Bun.sleep(50);
   }
 }
 
 /** Cancel a run; returns true if anything was cancelled. */
-export function cancelAgentRun(...ids: Array<string | null | undefined>): boolean {
+export async function cancelAgentRun(...ids: Array<string | null | undefined>): Promise<boolean> {
   let cancelled = false;
   for (const id of ids) {
     if (!id) continue;
@@ -1158,7 +1167,7 @@ export function cancelAgentRun(...ids: Array<string | null | undefined>): boolea
     if (legacyPending) legacyCancelledSessions().add(id);
     if (!pendingTokens.size && !activeTokens.size && !legacyPending) continue;
     if (isRunStateUnsettled(getRunState(id)))
-      transitionRunState(id, "cancel", { source: "run_cancelled_preparation" });
+      await transitionRunState(id, "cancel", { source: "run_cancelled_preparation" });
     cancelled = true;
   }
   const records = new Map<string, ActiveRunRecord>();
@@ -1186,7 +1195,7 @@ export function cancelAgentRun(...ids: Array<string | null | undefined>): boolea
     // after this cancellation request; retiring ownership here would create a
     // window where a successor could start while the predecessor still works.
     if (run.osSessionId && isRunStateUnsettled(getRunState(run.osSessionId)))
-      transitionRunState(run.osSessionId, "cancel", {
+      await transitionRunState(run.osSessionId, "cancel", {
         run_key: run.runKey,
         source: "run_cancelled",
       });
@@ -1200,7 +1209,7 @@ export async function cancelAgentRunAndWait(
   ids: Array<string | null | undefined>,
   timeoutMs = 10_000,
 ): Promise<boolean> {
-  cancelAgentRun(...ids);
+  await cancelAgentRun(...ids);
   const deadline = Date.now() + timeoutMs;
   while (ids.some((id) => !!id && isAgentSessionBusy(id!))) {
     if (Date.now() >= deadline) return false;
@@ -1230,10 +1239,7 @@ function durableCancelRecoveryOwnership(
 ): "owned" | "none" | "unknown" {
   if (!run.osSessionId) return "none";
   try {
-    return sessionTurn({
-      op: "snapshot",
-      sessionId: run.osSessionId,
-    }).cancel?.runId === run.runKey
+    return sessionKernelStore().turnSnapshot(run.osSessionId).cancel?.runId === run.runKey
       ? "owned"
       : "none";
   } catch {
@@ -1245,48 +1251,48 @@ export function durableCancelOwnsRecovery(run: ActiveRunRecord): boolean {
   return durableCancelRecoveryOwnership(run) === "owned";
 }
 
-export function reissueDurableRecoveryCancel(run: ActiveRunRecord): boolean {
+export async function reissueDurableRecoveryCancel(run: ActiveRunRecord): Promise<boolean> {
   if (!durableCancelOwnsRecovery(run)) return false;
   // Keep the immutable latch live even when the original outbox already
   // settled before a gateway crash. Once recovery attaches a control under
   // this run key, repeated calls deliver cancellation to that exact owner.
   cancelledRunTokens.add(run.runKey);
-  return cancelAgentRun(run.runKey);
+  return await cancelAgentRun(run.runKey);
 }
 
 function settleDurableCancelForAbsentOwner(run: ActiveRunRecord): boolean {
   if (!run.osSessionId) return false;
-  const cancel = sessionTurn({
-    op: "snapshot",
-    sessionId: run.osSessionId,
-  }).cancel;
+  const cancel = sessionKernelStore().turnSnapshot(run.osSessionId).cancel;
   if (cancel?.runId !== run.runKey) return false;
-  if (cancel.phase !== "settled")
+  if (cancel.phase !== "settled") {
     sessionTurn({
       op: "settle_cancel",
       sessionId: run.osSessionId,
       cancelId: cancel.cancelId,
       outcome: "confirmed",
-    });
-  journalClearIfLineage(run);
+    }).then(() => journalClearIfLineage(run)).catch((error) =>
+      console.error(`[runner] Failed to settle recovered cancellation for ${run.runKey}:`, error),
+    );
+  } else journalClearIfLineage(run);
   return true;
 }
 
-export function resumeInterruptedRuns(
+export async function resumeInterruptedRuns(
   onResumed?: (
     osSessionId?: string,
     terminalEvent?: StreamEvent,
     run?: ActiveRunRecord,
-  ) => void,
+  ) => void | Promise<void>,
   askHandlerFor?: (osSessionId: string) => AskHandler | undefined,
   inProcessMcpFor?: (osSessionId: string, user?: string) => Record<string, unknown> | undefined,
   reposNoteFor?: (osSessionId: string) => string | undefined,
   onEvent?: (osSessionId: string, event: StreamEvent) => void,
   snapshotLocalHostRuns: ActiveRunRecord[] = [],
   deferRecovery?: (run: ActiveRunRecord) => boolean,
-): string[] {
+): Promise<string[]> {
   const resumed: string[] = [];
   const settledRunKeys = new Set<string>();
+  const settlingRunKeys = new Set<string>();
   const rememberHandledSession = (run: ActiveRunRecord) => {
     if (run.osSessionId && !resumed.includes(run.osSessionId))
       resumed.push(run.osSessionId);
@@ -1299,25 +1305,22 @@ export function resumeInterruptedRuns(
       console.error(`[runner] Recovered event observer failed for ${run.runKey}:`, e);
     }
   };
-  const settleRecovery = (run: ActiveRunRecord, event: StreamEvent): boolean => {
-    if (settledRunKeys.has(run.runKey)) return false;
-    settledRunKeys.add(run.runKey);
+  const settleRecovery = async (run: ActiveRunRecord, event: StreamEvent): Promise<boolean> => {
+    if (settledRunKeys.has(run.runKey) || settlingRunKeys.has(run.runKey))
+      return false;
+    settlingRunKeys.add(run.runKey);
     rememberHandledSession(run);
     try {
       emitRecoveryEvent(run, event);
       try {
-        onResumed?.(run.osSessionId, event, run);
+        await onResumed?.(run.osSessionId, event, run);
       } catch (e) {
         console.error(`[runner] Recovery settlement callback failed for ${run.runKey}:`, e);
       }
-    } finally {
       if (run.osSessionId) {
-        const cancel = sessionTurn({
-          op: "snapshot",
-          sessionId: run.osSessionId,
-        }).cancel;
+        const cancel = sessionKernelStore().turnSnapshot(run.osSessionId).cancel;
         if (cancel?.runId === run.runKey && cancel.phase !== "settled")
-          sessionTurn({
+          await sessionTurn({
             op: "settle_cancel",
             sessionId: run.osSessionId,
             cancelId: cancel.cancelId,
@@ -1326,18 +1329,21 @@ export function resumeInterruptedRuns(
       }
       if (run.osSessionId && isRunStateUnsettled(getRunState(run.osSessionId))) {
         const failed = event.type === "error" || !!event.usageLimitExhausted;
-        transitionRunState(run.osSessionId, failed ? "run_failed" : "turn_end", {
+        await transitionRunState(run.osSessionId, failed ? "run_failed" : "turn_end", {
           run_key: run.runKey,
           source: "recovery_fallback_settlement",
         });
       }
       journalClear(run.runKey);
+      settledRunKeys.add(run.runKey);
       if (!activeRecoveryWorkerRunKeys.has(run.runKey)) untrackRecovery(run);
+      return true;
+    } finally {
+      settlingRunKeys.delete(run.runKey);
     }
-    return true;
   };
-  const reportRecoveryFailure = (run: ActiveRunRecord, content: string) => {
-    settleRecovery(run, {
+  const reportRecoveryFailure = async (run: ActiveRunRecord, content: string) => {
+    await settleRecovery(run, {
       type: "error",
       content,
       model: run.model,
@@ -1434,7 +1440,7 @@ export function resumeInterruptedRuns(
           // failures, so this is only the last-resort guard.
           console.error(`[runner] Recovery worker crashed for ${run.runKey}:`, error);
           if (!settledRunKeys.has(run.runKey))
-            reportRecoveryFailure(
+            await reportRecoveryFailure(
               run,
               "Restart recovery stopped unexpectedly. Send the prompt again to continue.",
             );
@@ -1478,9 +1484,12 @@ export function resumeInterruptedRuns(
   const snapshotSeeds = snapshotLocalHostRuns.filter(
     (run) => !!run.hostId && !run.sandboxId && !run.runnerId,
   );
-  const taken = takeInterruptedRuns(snapshotSeeds).filter(
-    (run) => !deferRecovery?.(run),
-  );
+  const taken = (await takeInterruptedRuns(
+    snapshotSeeds,
+    (run) =>
+      !run.osSessionId ||
+      !sessionKernelStore().quarantinedSession(run.osSessionId),
+  )).filter((run) => !deferRecovery?.(run));
   // A graceful shutdown snapshot is intentionally broader than the shared
   // run journal: it also covers turns that finish during the drain. A local
   // detached host can still be alive even when its shared record disappeared
@@ -1491,13 +1500,13 @@ export function resumeInterruptedRuns(
   journalQuarantine(quarantined);
   for (const entry of quarantined) {
     if (!entry.notify || !entry.run.osSessionId) continue;
-    reportRecoveryFailure(entry.run, recoveryQuarantineMessage(entry));
+    await reportRecoveryFailure(entry.run, recoveryQuarantineMessage(entry));
   }
   const recoveryTasks: Array<() => Promise<void>> = [];
 
   for (const run of interrupted) {
     if (run.terminalFailure) {
-      reportRecoveryFailure(run, run.terminalFailure.content);
+      await reportRecoveryFailure(run, run.terminalFailure.content);
       continue;
     }
     // Detached review turns are consumed by the GitHub agent's persisted
@@ -1515,7 +1524,7 @@ export function resumeInterruptedRuns(
     if (run.kind?.startsWith("github-")) {
       rememberHandledSession(run);
       journalClear(run.runKey);
-      if (run.osSessionId) transitionRunState(run.osSessionId, "turn_end");
+      if (run.osSessionId) await transitionRunState(run.osSessionId, "turn_end");
       continue;
     }
     // Slack runs journal (their bks session id feeds the in-process MCP proxy
@@ -1524,7 +1533,7 @@ export function resumeInterruptedRuns(
     if (run.kind?.startsWith("slack")) {
       rememberHandledSession(run);
       journalClear(run.runKey);
-      if (run.osSessionId) transitionRunState(run.osSessionId, "turn_end");
+      if (run.osSessionId) await transitionRunState(run.osSessionId, "turn_end");
       continue;
     }
     // Workflow fan-out agents ("workflow", plus -resume/-rerun suffixes): the
@@ -1534,7 +1543,7 @@ export function resumeInterruptedRuns(
     if (run.kind?.startsWith("workflow")) {
       rememberHandledSession(run);
       journalClear(run.runKey);
-      if (run.osSessionId) transitionRunState(run.osSessionId, "turn_end");
+      if (run.osSessionId) await transitionRunState(run.osSessionId, "turn_end");
       continue;
     }
     // Runner hosts are persistent, outbound-dial run hosts just like remote
@@ -1554,7 +1563,7 @@ export function resumeInterruptedRuns(
           });
           if (await checkpointStoppedRecovery(run)) return;
           if (!events) {
-            reportRecoveryFailure(
+            await reportRecoveryFailure(
               run,
               "Restart recovery could not reconnect to the interrupted Runner. Check its connection, then send the prompt again.",
             );
@@ -1567,12 +1576,12 @@ export function resumeInterruptedRuns(
             if (await checkpointStoppedRecovery(run)) return;
             markRecoveryProgress(run, event);
             if (event.type === "done" || event.type === "error") {
-              terminalSeen = settleRecovery(run, event) || terminalSeen;
+              terminalSeen = (await settleRecovery(run, event)) || terminalSeen;
             } else emitRecoveryEvent(run, event);
           }
           if (await checkpointStoppedRecovery(run)) return;
           if (!terminalSeen) {
-            reportRecoveryFailure(
+            await reportRecoveryFailure(
               run,
               "Restart recovery ended before the Runner returned a final result. Send the prompt again to continue.",
             );
@@ -1581,7 +1590,7 @@ export function resumeInterruptedRuns(
           console.error(`[runner] Runner resume failed for ${run.runKey}:`, error);
           if (await checkpointStoppedRecovery(run)) return;
           if (!terminalSeen) {
-            reportRecoveryFailure(
+            await reportRecoveryFailure(
               run,
               "Restart recovery failed while reconnecting to the Runner. Check its connection, then send the prompt again.",
             );
@@ -1643,7 +1652,7 @@ export function resumeInterruptedRuns(
             console.warn(
               `[runner] Sandbox ${run.sandboxId} for interrupted run ${run.runKey} is gone — the session's next prompt recreates it`
             );
-            reportRecoveryFailure(
+            await reportRecoveryFailure(
               run,
               "Restart recovery could not reconnect to the interrupted sandbox. Send the prompt again to continue.",
             );
@@ -1657,13 +1666,13 @@ export function resumeInterruptedRuns(
             if (await checkpointStoppedRecovery(run)) return;
             markRecoveryProgress(run, event);
             if (event.type === "done" || event.type === "error") {
-              terminalSeen = settleRecovery(run, event) || terminalSeen;
+              terminalSeen = (await settleRecovery(run, event)) || terminalSeen;
               recordRecovery(event.type === "done" ? "ok" : "failed", event.type);
             } else emitRecoveryEvent(run, event);
           }
           if (await checkpointStoppedRecovery(run)) return;
           if (!terminalSeen) {
-            reportRecoveryFailure(
+            await reportRecoveryFailure(
               run,
               "Restart recovery ended before the interrupted sandbox returned a final result. Send the prompt again to continue.",
             );
@@ -1674,7 +1683,7 @@ export function resumeInterruptedRuns(
           console.error(`[runner] Sandbox resume failed for ${run.runKey}:`, e);
           if (await checkpointStoppedRecovery(run)) return;
           if (!terminalSeen)
-            reportRecoveryFailure(
+            await reportRecoveryFailure(
               run,
               "Restart recovery failed while reconnecting to the interrupted sandbox. Send the prompt again to continue.",
             );
@@ -1698,7 +1707,7 @@ export function resumeInterruptedRuns(
           if (await checkpointStoppedRecovery(run)) return;
           Object.assign(run, journalStartRecovery(run));
           if (run.osSessionId && !durableCancelOwnsRecovery(run))
-            transitionRunState(run.osSessionId, "reattach_start", { run_key: run.runKey });
+            await transitionRunState(run.osSessionId, "reattach_start", { run_key: run.runKey });
           const resumeLocalHost =
             localHostResumeForTest ??
             (await import("./host-client")).resumeLocalHostRun;
@@ -1720,7 +1729,7 @@ export function resumeInterruptedRuns(
             return;
           }
           if (run.osSessionId && !durableCancelOwnsRecovery(run))
-            transitionRunState(
+            await transitionRunState(
               run.osSessionId,
               reattached ? "reattach_ok" : "reattach_fail",
               { run_key: run.runKey },
@@ -1735,14 +1744,14 @@ export function resumeInterruptedRuns(
             // the stopped turn as a fresh engine run.
             if (settleDurableCancelForAbsentOwner(run)) return;
             if (!run.prompt && !run.claudeSessionId) {
-              reportRecoveryFailure(
+              await reportRecoveryFailure(
                 run,
                 "Restart recovery could not reconnect to the detached run host and had nothing to resume. Send the prompt again to continue.",
               );
               return;
             }
             if (run.osSessionId)
-              transitionRunState(run.osSessionId, "resume_reprompt", { run_key: run.runKey });
+              await transitionRunState(run.osSessionId, "resume_reprompt", { run_key: run.runKey });
             // The replacement reuses this proven-absent lineage key so terminal
             // projection remains fenced to the actor owner. Drop the host record.
             journalClear(run.runKey);
@@ -1793,12 +1802,12 @@ export function resumeInterruptedRuns(
             if (await checkpointStoppedRecovery(run)) return;
             markRecoveryProgress(run, event);
             if (event.type === "done" || event.type === "error") {
-              terminalSeen = settleRecovery(run, event) || terminalSeen;
+              terminalSeen = (await settleRecovery(run, event)) || terminalSeen;
             } else emitRecoveryEvent(run, event);
           }
           if (await checkpointStoppedRecovery(run)) return;
           if (!terminalSeen && recoveryStillOwnsJournal(run)) {
-            reportRecoveryFailure(
+            await reportRecoveryFailure(
               run,
               "Restart recovery ended before the detached run host returned a final result. Send the prompt again to continue.",
             );
@@ -1807,7 +1816,7 @@ export function resumeInterruptedRuns(
           console.error(`[runner] Local host resume failed for ${run.runKey}:`, e);
           if (await checkpointStoppedRecovery(run)) return;
           if (!terminalSeen && recoveryStillOwnsJournal(run))
-            reportRecoveryFailure(
+            await reportRecoveryFailure(
               run,
               "Restart recovery failed while reconnecting to the detached run host. Send the prompt again to continue.",
             );
@@ -1824,7 +1833,7 @@ export function resumeInterruptedRuns(
         console.warn(
           `[runner] Interrupted run ${run.runKey} (${run.kind || "unknown"}) had no engine session and no saved prompt — cannot resume`
         );
-        reportRecoveryFailure(
+        await reportRecoveryFailure(
           run,
           "Restart recovery could not continue this turn because it had not saved an engine session or original prompt. Send the prompt again to continue.",
         );
@@ -1841,7 +1850,7 @@ export function resumeInterruptedRuns(
           if (await checkpointStoppedRecovery(run)) return;
           Object.assign(run, journalStartRecovery(run));
           if (run.osSessionId)
-            transitionRunState(run.osSessionId, "resume_reprompt", {
+            await transitionRunState(run.osSessionId, "resume_reprompt", {
               run_key: run.runKey,
             });
           // The replacement reuses this proven-absent lineage key. Drop the
@@ -1891,12 +1900,12 @@ export function resumeInterruptedRuns(
             if (await checkpointStoppedRecovery(run)) return;
             markRecoveryProgress(run, event);
             if (event.type === "done" || event.type === "error") {
-              terminalSeen = settleRecovery(run, event) || terminalSeen;
+              terminalSeen = (await settleRecovery(run, event)) || terminalSeen;
             } else emitRecoveryEvent(run, event);
           }
           if (await checkpointStoppedRecovery(run)) return;
           if (!terminalSeen)
-            reportRecoveryFailure(
+            await reportRecoveryFailure(
               run,
               "Restart recovery ended before the interrupted turn returned a final result. Send the prompt again to continue.",
             );
@@ -1904,7 +1913,7 @@ export function resumeInterruptedRuns(
           console.error(`[runner] Re-run failed for ${run.runKey}:`, e);
           if (await checkpointStoppedRecovery(run)) return;
           if (!terminalSeen)
-            reportRecoveryFailure(
+            await reportRecoveryFailure(
               run,
               "Restart recovery failed while restarting the interrupted turn. Send the prompt again to continue.",
             );
@@ -1926,7 +1935,7 @@ export function resumeInterruptedRuns(
             : `[runner] Resuming interrupted ${run.kind || "run"} ${run.osSessionId || run.runKey} (started ${run.startedAt}, model ${run.model || "default"})`
         );
         if (run.osSessionId && !repairingRecoveredResult)
-          transitionRunState(run.osSessionId, "resume_reprompt", { run_key: run.runKey });
+          await transitionRunState(run.osSessionId, "resume_reprompt", { run_key: run.runKey });
         if (await checkpointStoppedRecovery(run)) return;
         // The continuation reuses this proven-absent lineage key. Drop the
         // claimed record only now, AFTER the reattach probe settled: dying
@@ -1979,12 +1988,12 @@ export function resumeInterruptedRuns(
           if (await checkpointStoppedRecovery(run)) return;
           markRecoveryProgress(run, event);
           if (event.type === "done" || event.type === "error") {
-            recoverySettled = settleRecovery(run, event) || recoverySettled;
+            recoverySettled = (await settleRecovery(run, event)) || recoverySettled;
           } else emitRecoveryEvent(run, event);
         }
         if (await checkpointStoppedRecovery(run)) return;
         if (!recoverySettled)
-          reportRecoveryFailure(
+          await reportRecoveryFailure(
             run,
             "Restart recovery ended before the interrupted turn returned a final result. Send the prompt again to continue.",
           );
@@ -1992,7 +2001,7 @@ export function resumeInterruptedRuns(
         console.error(`[runner] Resume failed for ${run.runKey}:`, e);
         if (await checkpointStoppedRecovery(run)) return;
         if (!recoverySettled)
-          reportRecoveryFailure(
+          await reportRecoveryFailure(
             run,
             "Restart recovery failed while continuing the interrupted turn. Send the prompt again to continue.",
           );
@@ -2005,7 +2014,13 @@ export function resumeInterruptedRuns(
   return resumed;
 }
 
-export const BOOT_RECOVERY_CONCURRENCY = 4;
+// Recovery admission performs several synchronous compatibility calls before
+// the detached engine yields its first event. More than one admission at once
+// can therefore monopolize the gateway even though the turns themselves run
+// out of process. Serialize only this short startup phase; each task releases
+// its slot as soon as its engine is live.
+export const BOOT_RECOVERY_CONCURRENCY = 1;
+export const BOOT_RECOVERY_ADMISSION_DELAY_MS = 100;
 // How long a recovery may wait for a queue slot before it is started anyway,
 // outside the queue. Long enough that a busy restart drains its legitimate
 // work first; bounded because the alternative — waiting forever — leaves a
@@ -2150,7 +2165,10 @@ function recoveryQuarantineMessage(entry: QuarantinedRun): string {
 export async function runRecoveryQueue(tasks: Array<() => Promise<void>>): Promise<void> {
   let next = 0;
   const worker = async () => {
+    let admitted = false;
     while (next < tasks.length) {
+      if (admitted) await Bun.sleep(BOOT_RECOVERY_ADMISSION_DELAY_MS);
+      admitted = true;
       const task = tasks[next++];
       try {
         await task();

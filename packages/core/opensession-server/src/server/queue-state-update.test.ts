@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, test } from "bun:test";
 import { classifyEntry } from "@tellahq/opensession-protocol/notices";
 import {
 	acknowledgePromptDispatch,
+	acknowledgeSteerDelivery,
 	beginNextPromptDispatch,
 	beginPromptDispatch,
 	clientVisibleQueuedCount,
@@ -24,9 +25,9 @@ import { agentActor, workerActor } from "./session-actors";
 const SESSION = "os-queue-state-update-test";
 const PNG = "data:image/png;base64,iVBORw0KGgo=";
 describe("takeQueuedPrompt", () => {
-	beforeEach(() => {
-		promptDispatches.clear();
-		promptQueues.set(SESSION, [
+	beforeEach(async () => {
+		await promptDispatches.clear();
+		await promptQueues.set(SESSION, [
 			{
 				id: "q1",
 				content: "first",
@@ -38,16 +39,16 @@ describe("takeQueuedPrompt", () => {
 		]);
 	});
 
-	test("selects and claims through the compatibility actor store", () => {
-		const interruptId = preparePromptInterrupt(SESSION, "q2", SESSION, "q2");
-    expect(preparePromptInterrupt(SESSION, "q2", SESSION, "q2")).toBe(
+	test("selects and claims through the compatibility actor store", async () => {
+		const interruptId = await preparePromptInterrupt(SESSION, "q2", SESSION, "q2");
+    expect(await preparePromptInterrupt(SESSION, "q2", SESSION, "q2")).toBe(
       interruptId,
     );
-    expect(() =>
+    await expect(
       preparePromptInterrupt(SESSION, "q2", "another-dispatch", "q2"),
-    ).toThrow("reused with another payload");
-		settlePromptInterrupt(SESSION, interruptId, "confirmed");
-		const claim = beginNextPromptDispatch(
+    ).rejects.toThrow("reused with another payload");
+		await settlePromptInterrupt(SESSION, interruptId, "confirmed");
+		const claim = await beginNextPromptDispatch(
 			SESSION,
 			{ stillWorking: true },
 			false,
@@ -67,12 +68,12 @@ describe("takeQueuedPrompt", () => {
 		]);
 	});
 
-	test("prepares an interrupt from an already-steered receipt", () => {
-		promptQueues.delete(SESSION);
-		steeredReceipts.set(SESSION, [
+	test("prepares an interrupt from an already-steered receipt", async () => {
+		await promptQueues.delete(SESSION);
+		await steeredReceipts.set(SESSION, [
 			{ id: "steered", content: "accepted but unread", hold: true },
 		]);
-		const interruptId = preparePromptInterrupt(
+		const interruptId = await preparePromptInterrupt(
 			SESSION,
 			"steered",
 			SESSION,
@@ -80,9 +81,9 @@ describe("takeQueuedPrompt", () => {
 		);
 		expect(promptQueues.get(SESSION)).toMatchObject([{ id: "steered" }]);
 		expect(steeredReceipts.get(SESSION)).toBeUndefined();
-		settlePromptInterrupt(SESSION, interruptId, "confirmed");
+		await settlePromptInterrupt(SESSION, interruptId, "confirmed");
 		expect(
-			beginNextPromptDispatch(SESSION, { stillWorking: true }, false),
+			await beginNextPromptDispatch(SESSION, { stillWorking: true }, false),
 		).toMatchObject({
 			kind: "deliver",
 			interrupted: true,
@@ -90,8 +91,8 @@ describe("takeQueuedPrompt", () => {
 		});
 	});
 
-	test("keeps a selected prompt durable until the runner acknowledges it", () => {
-		const promptEntryId = beginPromptDispatch(
+	test("keeps a selected prompt durable until the runner acknowledges it", async () => {
+		const promptEntryId = await beginPromptDispatch(
 			SESSION,
 			[{ id: "q1", content: "first", user: "Kent" }],
 			"entry-1",
@@ -103,14 +104,14 @@ describe("takeQueuedPrompt", () => {
 			items: [{ id: "q1", content: "first", user: "Kent" }],
 		});
 
-		acknowledgePromptDispatch(SESSION, "other-entry", false);
+		await acknowledgePromptDispatch(SESSION, "other-entry", false);
 		expect(promptDispatches.has(SESSION)).toBe(true);
-		acknowledgePromptDispatch(SESSION, "entry-1", false);
+		await acknowledgePromptDispatch(SESSION, "entry-1", false);
 		expect(promptDispatches.has(SESSION)).toBe(false);
 	});
 
-	test("atomically removes and returns the complete payload", () => {
-		expect(takeQueuedPrompt(SESSION, "q1", "Kent de Bruin", false)).toMatchObject({
+	test("atomically removes and returns the complete payload", async () => {
+		expect(await takeQueuedPrompt(SESSION, "q1", "Kent", false)).toMatchObject({
 			id: "q1",
 			content: "first",
 			images: [PNG],
@@ -119,24 +120,24 @@ describe("takeQueuedPrompt", () => {
 		expect(promptQueues.get(SESSION)?.map((item) => item.id)).toEqual(["q2"]);
 	});
 
-	test("only the original sender can take a row", () => {
-		expect(takeQueuedPrompt(SESSION, "q1", "Michiel", false)).toBeUndefined();
+	test("only the original sender can take a row", async () => {
+		expect(await takeQueuedPrompt(SESSION, "q1", "Michiel", false)).toBeUndefined();
 		expect(promptQueues.get(SESSION)?.map((item) => item.id)).toEqual(["q1", "q2"]);
 	});
 
-	test("routed and context-carrying rows remain queue-owned", () => {
-		promptQueues.set(SESSION, [
+	test("routed and context-carrying rows remain queue-owned", async () => {
+		await promptQueues.set(SESSION, [
 			{ id: "q1", content: "Slack", user: "Kent", slackReplyTo: { channel: "C1", threadTs: "1" } },
 			{ id: "q2", content: "Context", user: "Kent", contextSessions: ["os-other"] },
 		]);
-		expect(takeQueuedPrompt(SESSION, "q1", "Kent", false)).toBeUndefined();
-		expect(takeQueuedPrompt(SESSION, "q2", "Kent", false)).toBeUndefined();
+		expect(await takeQueuedPrompt(SESSION, "q1", "Kent", false)).toBeUndefined();
+		expect(await takeQueuedPrompt(SESSION, "q2", "Kent", false)).toBeUndefined();
 	});
 });
 
 describe("automated turns are not user messages", () => {
-	test("keeps review work queued without exposing it to clients", () => {
-		promptQueues.set(SESSION, [
+	test("keeps review work queued without exposing it to clients", async () => {
+		await promptQueues.set(SESSION, [
 			{ id: "human", content: "Please fix this", user: "Kent" },
 			{
 				id: "review",
@@ -146,7 +147,7 @@ describe("automated turns are not user messages", () => {
 			},
 		]);
 
-		expect(queueDisplayState(SESSION).queued.map((item) => item.id)).toEqual([
+		expect((await queueDisplayState(SESSION)).queued.map((item) => item.id)).toEqual([
 			"human",
 		]);
 		expect(clientVisibleQueuedCount(SESSION)).toBe(1);
@@ -157,20 +158,36 @@ describe("automated turns are not user messages", () => {
 		]);
 	});
 
-	test("keeps auto-continues queued without exposing them to clients", () => {
+	test("hides context-only system steers even without an auto-continue sender", async () => {
+		const backgroundWait = {
+			id: "background-wait",
+			content:
+				'<opensession:context source="background-wait">Continue after the timer.</opensession:context>',
+		};
+		await promptQueues.set(SESSION, [backgroundWait]);
+		await steeredReceipts.set(SESSION, [backgroundWait]);
+
+		expect(clientVisibleQueuedCount(SESSION)).toBe(0);
+		expect(await queueDisplayState(SESSION)).toEqual({ queued: [], steered: [] });
+		// Presentation filtering must not remove the runner-owned delivery.
+		expect(promptQueues.get(SESSION)).toEqual([backgroundWait]);
+		expect(steeredReceipts.get(SESSION)).toEqual([backgroundWait]);
+	});
+
+	test("keeps auto-continues queued without exposing them to clients", async () => {
 		const autoContinue = {
 			id: "auto-continue",
 			content: "<opensession:context>Continue working.</opensession:context>",
 			user: AUTO_CONTINUE_USER,
 		};
-		promptQueues.set(SESSION, [
+		await promptQueues.set(SESSION, [
 			{ id: "human", content: "Please continue", user: "Kent" },
 			autoContinue,
 		]);
-		steeredReceipts.set(SESSION, [autoContinue]);
+		await steeredReceipts.set(SESSION, [autoContinue]);
 
 		expect(clientVisibleQueuedCount(SESSION)).toBe(1);
-		expect(queueDisplayState(SESSION)).toEqual({
+		expect(await queueDisplayState(SESSION)).toEqual({
 			queued: [
 			{
 				id: "human",
@@ -190,16 +207,35 @@ describe("automated turns are not user messages", () => {
 	});
 });
 
+describe("steer delivery acknowledgement", () => {
+	test("retires the exact receipt even when its context is absent from the transcript", async () => {
+		await steeredReceipts.set(SESSION, [
+			{
+				id: "hidden",
+				content:
+					'<opensession:context source="background-wait">Continue.</opensession:context>',
+			},
+			{ id: "human", content: "Keep this receipt", user: "Kent" },
+		]);
+
+		expect(await acknowledgeSteerDelivery(SESSION, "hidden", false)).toBe(true);
+		expect(steeredReceipts.get(SESSION)?.map((item) => item.id)).toEqual([
+			"human",
+		]);
+		expect(await acknowledgeSteerDelivery(SESSION, "missing", false)).toBe(false);
+	});
+});
+
 describe("takeSteeredPrompt", () => {
-	beforeEach(() => {
-		steeredReceipts.set(SESSION, [
+	beforeEach(async () => {
+		await steeredReceipts.set(SESSION, [
 			{ id: "s1", content: "first", user: "Kent", images: [PNG] },
 			{ id: "s2", content: "same", user: "Kent" },
 		]);
 	});
 
-	test("removes one exact pending steer with its complete payload", () => {
-		expect(takeSteeredPrompt(SESSION, "s1", "Kent de Bruin", false)).toMatchObject({
+	test("removes one exact pending steer with its complete payload", async () => {
+		expect(await takeSteeredPrompt(SESSION, "s1", "Kent", false)).toMatchObject({
 			id: "s1",
 			content: "first",
 			images: [PNG],
@@ -207,8 +243,8 @@ describe("takeSteeredPrompt", () => {
 		expect(steeredReceipts.get(SESSION)?.map((item) => item.id)).toEqual(["s2"]);
 	});
 
-	test("only the original sender can take a steer", () => {
-		expect(takeSteeredPrompt(SESSION, "s1", "Michiel", false)).toBeUndefined();
+	test("only the original sender can take a steer", async () => {
+		expect(await takeSteeredPrompt(SESSION, "s1", "Michiel", false)).toBeUndefined();
 		expect(steeredReceipts.get(SESSION)?.map((item) => item.id)).toEqual(["s1", "s2"]);
 	});
 });
@@ -216,7 +252,7 @@ describe("takeSteeredPrompt", () => {
 describe("delegated messages are not user messages", () => {
 	const WORKER = "os-019fe194-5fbe-7000-a81e-d0a656ad77f4";
 
-	test("a worker's report to its parent is queue-owned, not editable", () => {
+	test("a worker's report to its parent is queue-owned, not editable", async () => {
 		// It rides the same queue as human sends because it drives the parent's
 		// next turn, but nobody typed it — so it gets none of the composer's
 		// gestures, and no teammate can pull it back into their draft.
@@ -225,13 +261,13 @@ describe("delegated messages are not user messages", () => {
 		expect(isEditableQueueItem(report)).toBe(false);
 	});
 
-	test("a person's message stays editable", () => {
+	test("a person's message stays editable", async () => {
 		const mine = { id: "q1", content: "ship it", user: "Kent" };
 		expect(isWorkerQueueItem(mine)).toBe(false);
 		expect(isEditableQueueItem(mine)).toBe(true);
 	});
 
-	test("a workflow result never enters the client message surface", () => {
+	test("a workflow result never enters the client message surface", async () => {
 		const workflowSession = `${SESSION}-workflow`;
 		const result = {
 			id: "workflow:wf-1:done",
@@ -242,21 +278,21 @@ describe("delegated messages are not user messages", () => {
 		expect(isWorkflowQueueItem(result)).toBe(true);
 		expect(isEditableQueueItem(result)).toBe(false);
 
-		promptQueues.set(workflowSession, [result]);
-		steeredReceipts.set(workflowSession, [result]);
+		await promptQueues.set(workflowSession, [result]);
+		await steeredReceipts.set(workflowSession, [result]);
 		expect(clientVisibleQueuedCount(workflowSession)).toBe(0);
-		expect(queueDisplayState(workflowSession)).toEqual({
+		expect(await queueDisplayState(workflowSession)).toEqual({
 			queued: [],
 			steered: [],
 		});
 		// Filtering is presentation-only: delivery still owns the nudge.
 		expect(promptQueues.get(workflowSession)).toEqual([result]);
 		expect(steeredReceipts.get(workflowSession)).toEqual([result]);
-		promptQueues.delete(workflowSession);
-		steeredReceipts.delete(workflowSession);
+		await promptQueues.delete(workflowSession);
+		await steeredReceipts.delete(workflowSession);
 	});
 
-	test("a peer agent message is delegated but not a worker report", () => {
+	test("a peer agent message is delegated but not a worker report", async () => {
 		const message = { content: "ping", user: agentActor(WORKER) };
 		expect(isDelegatedQueueItem(message)).toBe(true);
 		expect(isWorkerQueueItem(message)).toBe(false);
@@ -264,7 +300,7 @@ describe("delegated messages are not user messages", () => {
 		expect(isWorkerQueueItem({ content: "worker looks stuck", user: "Kent" })).toBe(false);
 	});
 
-	test("the sender the queue keeps still classifies as a worker report", () => {
+	test("the sender the queue keeps still classifies as a worker report", async () => {
 		// The queue stores content and user separately; the UI reads them back
 		// through the same classifier the transcript uses, so the two cannot
 		// disagree about what a row is.

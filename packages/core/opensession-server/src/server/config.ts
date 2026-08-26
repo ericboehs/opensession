@@ -39,11 +39,8 @@ export function configPath(): string {
 export interface ServerSection {
   host?: string;
   port?: number;
-  webhookPort?: number;
   /** Public web-UI base, e.g. "https://opensession.example.com". */
   publicBaseUrl?: string;
-  /** Public webhook/OAuth base when the UI stays on a private network. */
-  webhookBaseUrl?: string;
   /** Host previews are served from (Caddy-fronted). */
   previewHost?: string;
   /** Caddy admin API endpoint. */
@@ -71,6 +68,17 @@ export interface AssetStorageSection {
 
 export interface StorageSection {
   assets?: AssetStorageSection;
+}
+
+export type IngressExposure = "tailscale" | "cloudflare" | "custom";
+
+/** The separately exposed public origin. The private app origin remains an
+ * independent server setting and is never implied by this section. */
+export interface IngressSection {
+  publicBaseUrl?: string;
+  exposure?: IngressExposure;
+  /** Cloudflare named-tunnel id, used only to render its required CNAME. */
+  cloudflareTunnelId?: string;
 }
 
 /** How NEW sessions on a `sharedCheckout` repo get their working dir — see
@@ -221,6 +229,7 @@ export interface OpenSessionConfig {
   /** The instance-wide first-run walkthrough has been explicitly finished. */
   onboardingCompleted?: boolean;
   server?: ServerSection;
+  ingress?: IngressSection;
   paths?: PathsSection;
   storage?: StorageSection;
   /** Working-dir policy for `sharedCheckout` repos' new sessions. */
@@ -295,11 +304,16 @@ export interface Repo {
 export interface ResolvedServer {
   host: string;
   port: number;
-  webhookPort: number;
   publicBaseUrl: string;
   webhookBaseUrl: string;
   previewHost: string;
   caddyAdmin: string;
+}
+
+export interface ResolvedIngress {
+  publicBaseUrl: string;
+  exposure: IngressExposure | null;
+  cloudflareTunnelId: string;
 }
 
 export interface ResolvedPaths {
@@ -441,11 +455,23 @@ function parseConfig(text: string): OpenSessionConfig {
       cfg.server = defined({
         host: str(server.host),
         port: num(server.port),
-        webhookPort: num(server.webhookPort),
         publicBaseUrl: str(server.publicBaseUrl),
-        webhookBaseUrl: str(server.webhookBaseUrl),
         previewHost: str(server.previewHost),
         caddyAdmin: str(server.caddyAdmin),
+      });
+    }
+
+    const ingress = obj(raw.ingress);
+    if (ingress) {
+      const rawExposure = str(ingress.exposure);
+      const exposure: IngressExposure | undefined =
+        rawExposure === "tailscale" || rawExposure === "cloudflare" || rawExposure === "custom"
+          ? rawExposure
+          : undefined;
+      cfg.ingress = defined({
+        publicBaseUrl: str(ingress.publicBaseUrl),
+        exposure,
+        cloudflareTunnelId: str(ingress.cloudflareTunnelId),
       });
     }
 
@@ -595,15 +621,14 @@ export function getConfig(): OpenSessionConfig {
 export function configuredServer(): ResolvedServer {
   const s = getConfig().server || {};
   const envPort = parseInt(process.env.PORT || "");
-  const envWebhookPort = parseInt(process.env.WEBHOOK_PORT || "");
   const port = Number.isFinite(envPort) ? envPort : s.port ?? 3850;
   const publicBaseUrl =
     process.env.OPENSESSION_UI_BASE ||
     s.publicBaseUrl ||
     `http://127.0.0.1:${port}`;
   const webhookBaseUrl =
-    process.env.OPENSESSION_WEBHOOK_BASE ||
-    s.webhookBaseUrl ||
+    process.env.OPENSESSION_INGRESS_BASE ||
+    getConfig().ingress?.publicBaseUrl ||
     publicBaseUrl;
   let publicHost = "127.0.0.1";
   try {
@@ -612,7 +637,6 @@ export function configuredServer(): ResolvedServer {
   return {
     host: process.env.HOST || s.host || "127.0.0.1",
     port,
-    webhookPort: Number.isFinite(envWebhookPort) ? envWebhookPort : s.webhookPort ?? 3848,
     publicBaseUrl,
     webhookBaseUrl,
     // Portals authenticate with the OpenSession browser cookie. Defaulting to
@@ -620,6 +644,15 @@ export function configuredServer(): ResolvedServer {
     // unrelated machine/tailnet hostname would make every browser portal 401.
     previewHost: process.env.PREVIEW_HOST || s.previewHost || publicHost,
     caddyAdmin: s.caddyAdmin || "http://localhost:2019",
+  };
+}
+
+export function configuredIngress(): ResolvedIngress {
+  const ingress = getConfig().ingress || {};
+  return {
+    publicBaseUrl: (process.env.OPENSESSION_INGRESS_BASE || ingress.publicBaseUrl || "").replace(/\/+$/, ""),
+    exposure: ingress.exposure || null,
+    cloudflareTunnelId: ingress.cloudflareTunnelId || "",
   };
 }
 

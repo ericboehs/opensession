@@ -1986,14 +1986,16 @@ setLocalStaging((current) => subtractStaging(current, batch));
           {/* Model + effort live together on the right edge (ChatGPT-style):
               one pill, effort levels up top, the model behind a submenu.
               Phones reorder it next to the + button via flex order (see
-              composerToolbarSelect). */}
+              composerToolbarSelect). It stays out of the resting phone pill
+              because that state is minimized, but returns when the installed
+              PWA composer expands. */}
           <AnimatePresence initial={false}>
             {!minimized && (
               <motion.div
                 key="model-effort"
                 layout="position"
                 {...composerChipMotion}
-                className={cn("pwa-composer-auxiliary", composerToolbarSelect)}
+                className={composerToolbarSelect}
               >
                 <ModelEffortSelect
                   className={cn(palettePill, composerToolbarPill)}
@@ -2039,7 +2041,7 @@ setLocalStaging((current) => subtractStaging(current, batch));
             transition={composerMorph}
             layoutDependency={minimized}
             className={cn(
-              "pwa-composer-auxiliary inline-flex shrink-0 items-center",
+              "pwa-composer-dictation inline-flex shrink-0 items-center",
               minimized && "order-3",
             )}
           >

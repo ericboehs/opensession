@@ -1,4 +1,8 @@
-import type { DeliverySlot, DurableDeliveryState } from "./store";
+import type {
+  DeliverySlot,
+  DurableDeliveryState,
+  DurableSteerTarget,
+} from "./store";
 import type { DurableRunTarget } from "./turn-protocol";
 
 export function deliveryInterruptForAnchor(
@@ -53,11 +57,28 @@ export type DeliveryActorRequest =
     }
   | { op: "entries"; slot: DeliverySlot }
   | { op: "set"; sessionId: string; slot: DeliverySlot; value: unknown }
+  | { op: "enqueue"; sessionId: string; item: unknown; front?: boolean }
   | { op: "delete"; sessionId: string; slot: DeliverySlot }
   | { op: "clear_slot"; slot: DeliverySlot }
-  | { op: "prepare_steer"; sessionId: string; itemId: string; item?: unknown }
-  | { op: "accept_steer"; sessionId: string; itemId: string }
-  | { op: "reject_steer"; sessionId: string; itemId: string }
+  | {
+      op: "prepare_steer";
+      sessionId: string;
+      itemId: string;
+      target: DurableSteerTarget;
+      item?: unknown;
+    }
+  | {
+      op: "accept_steer";
+      sessionId: string;
+      itemId: string;
+      target: DurableSteerTarget;
+    }
+  | {
+      op: "reject_steer";
+      sessionId: string;
+      itemId: string;
+      target: DurableSteerTarget;
+    }
   | { op: "settle_pending_steers" }
   | { op: "requeue_steers"; sessionId: string; items: unknown[] }
   | {
@@ -136,6 +157,7 @@ export type DeliveryActorResult<T extends DeliveryActorRequest> =
                   ? unknown | undefined
                   : T extends {
                         op:
+                          | "enqueue"
                           | "delete"
                           | "ack_dispatch"
                           | "fail_dispatch"

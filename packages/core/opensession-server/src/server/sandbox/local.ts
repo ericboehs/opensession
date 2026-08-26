@@ -115,7 +115,10 @@ function makeLocalSandbox(cwd: string): Sandbox {
         steer: (text, images) => steerAgentRun(ids, text, images),
         interruptSteer: (text, images) =>
           interruptAndSteerAgentRun(ids, text, images),
-        cancel: () => cancelAgentRun(...ids),
+        cancel: () => {
+          void cancelAgentRun(...ids);
+          return true;
+        },
       };
     },
 

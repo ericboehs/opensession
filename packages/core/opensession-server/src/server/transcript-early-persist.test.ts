@@ -15,12 +15,12 @@ import { TranscriptStore } from "./transcript-store";
 import { transcriptLineUser } from "./transcript-persistence";
 import { parseJsonlLines } from "./jsonl-parser";
 
-function withStore(run: (store: TranscriptStore) => void) {
+async function withStore(run: (store: TranscriptStore) => Promise<void>) {
   const dir = mkdtempSync(join(tmpdir(), "transcript-early-persist-"));
   try {
     const store = new TranscriptStore(join(dir, "transcripts.db"));
     try {
-      run(store);
+      await run(store);
     } finally {
       store.close();
     }
@@ -49,18 +49,18 @@ describe("intake-time user-line persist", () => {
     expect(workspaceSetup).toBeGreaterThan(promptWrite);
   });
 
-  test("intake write + runner write with the same uuid = one upserted row", () => {
-    withStore((store) => {
+  test("intake write + runner write with the same uuid = one upserted row", async () => {
+    await withStore(async (store) => {
       const uuid = "prompt-uuid-1";
       // Intake: raw user content, persisted before any engine exists.
-      const first = store.appendTranscriptEvents(
+      const first = await store.appendTranscriptEvents(
         SESSION,
         userEntries("fix the mask selection", uuid)
       );
       expect(first).toMatchObject({ inserted: 1, updated: 0 });
 
       // Runner start: same uuid, content now carries the context decoration.
-      const second = store.appendTranscriptEvents(
+      const second = await store.appendTranscriptEvents(
         SESSION,
         userEntries(
           "<opensession:context>\nhandoff\n</backstage:context>\n\nfix the mask selection",
@@ -77,19 +77,19 @@ describe("intake-time user-line persist", () => {
     });
   });
 
-  test("a re-run with a DIFFERENT uuid would duplicate — the contract promptEntryId exists to prevent", () => {
-    withStore((store) => {
-      store.appendTranscriptEvents(SESSION, userEntries("do the thing", "uuid-a"));
-      store.appendTranscriptEvents(SESSION, userEntries("do the thing", "uuid-b"));
+  test("a re-run with a DIFFERENT uuid would duplicate — the contract promptEntryId exists to prevent", async () => {
+    await withStore(async (store) => {
+      await store.appendTranscriptEvents(SESSION, userEntries("do the thing", "uuid-a"));
+      await store.appendTranscriptEvents(SESSION, userEntries("do the thing", "uuid-b"));
       const users = store.readTail(SESSION).entries.filter((e) => e.type === "user");
       expect(users).toHaveLength(2);
     });
   });
 
-  test("a session first touched by an intake write is marked live-only, not import-blocked", () => {
-    withStore((store) => {
+  test("a session first touched by an intake write is marked live-only, not import-blocked", async () => {
+    await withStore(async (store) => {
       expect(store.needsImport(SESSION)).toBe(true);
-      store.appendTranscriptEvents(SESSION, userEntries("first ever message", "u1"));
+      await store.appendTranscriptEvents(SESSION, userEntries("first ever message", "u1"));
       expect(store.needsImport(SESSION)).toBe(false);
       expect(store.readTail(SESSION).entries).toHaveLength(1);
     });

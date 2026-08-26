@@ -878,7 +878,7 @@ setFixBusy(false);
 				groupClass,
 				"py-0 [&_.ws-summary-band]:mx-0 [&_.ws-summary-band]:mb-0 [&_.ws-summary-band]:px-2 [&_.ws-summary-band]:py-3 [&_.ws-summary-band]:[border-radius:inherit]",
 			)
-		: groupClass;
+		: cn(groupClass, "[&>.ws-summary-band:last-child]:mb-0");
 
 	return (
 		<div
@@ -888,7 +888,9 @@ setFixBusy(false);
 					: "contents"
 			}
 		>
-			<div className={prGroupClass}>
+			{/* These two group names are selector hooks: their DOM boxes disappear via
+			    `display: contents`, but they are the actual siblings around the PR band. */}
+			<div className={cn(prGroupClass, "ws-summary-pr-group")}>
 				{/* Which PR, where it stands, and the one thing to do about it. The
 				    strip owns all three; this card only says where they go. */}
 				<PrStatusBar
@@ -960,15 +962,22 @@ setFixBusy(false);
 				</div>
 			)}
 
-			<div className={groupClass}>
+			<div className={cn(groupClass, "ws-summary-review-group")}>
 				{/* One review section for both the automated reading and the people asked
 				    to review. Its action opens the complete workspace review; the final row
 				    owns the picker, so neither action requires the workspace panel. */}
 				<div
 					className={cn(
 						WS_SUMMARY_SECTION,
-						"justify-between",
-						embedded ? "h-11" : "h-7",
+						"ws-summary-review-heading justify-between",
+						embedded
+							? "h-11"
+							: cn(
+									"h-7",
+									// Match the sibling group wrappers, then reach into Review. Keep one
+									// 8px gap rather than stacking the band's 4px with this section's 12px.
+									"[.ws-summary-pr-group:has(>.ws-summary-band:last-child)+.ws-summary-review-group_&]:mt-2",
+								),
 					)}
 				>
 					<span>Review</span>

@@ -834,25 +834,15 @@ export const SIDEBAR_WS_TICKER =
 	"ml-auto min-w-[28px] flex-[0_0_auto] justify-end pr-0.5 text-right text-meta tabular-nums text-yellow group-hover:hidden desktop:min-w-[34px] desktop:pr-1";
 
 /**
- * Teammates focused on this row's work, as an overlapping pile: whoever came
- * later sits on top, tucked a shoulder's width over their neighbour.
- *
- * The separation is a 2px ring on the face ON TOP, offset left so it only ever
- * paints over the face beneath — never around the pile, where it would ring
- * each avatar against a backdrop that is four different things (sidebar
- * material, hover ink, selected, waiting). Painting it in `--sidebar-bg` reads
- * as the row showing through the seam on all four.
- *
- * A radial mask on the LOWER face was the first attempt: it needs no colour at
- * all, since the real backdrop shows through the hole. It loses because a
- * circular hole under a squircle avatar bites a visible scoop out of the face
- * beneath, while the ring follows the top face's own silhouette and leaves
- * both squircles whole.
+ * Teammates focused on this row's work, as the same overlapping pile used by
+ * Feed. The call site gives earlier faces the higher stack and rings every
+ * squircle in this surface colour, so left-to-right reading order also stays
+ * front-to-back. On hover the solid ring follows the row's precomposited gray
+ * wash instead of cutting a sidebar-coloured halo through it.
  */
-export const SIDEBAR_WS_FACES = "flex shrink-0 items-center";
-export const SIDEBAR_WS_FACE =
-	"[&:not(:first-child)]:-ml-1.5 " +
-	"[&:not(:first-child)]:[box-shadow:-2px_0_0_0_var(--sidebar-bg)]";
+export const SIDEBAR_WS_FACES =
+	"flex shrink-0 items-center [--sidebar-face-ring:var(--sidebar-bg)] group-hover:[--sidebar-face-ring:var(--row-chip)]";
+export const SIDEBAR_WS_FACE = "[&:not(:first-child)]:-ml-1.5";
 
 /**
  * Slack-style unsent-draft pencil. Its left margin is the call site's: on a

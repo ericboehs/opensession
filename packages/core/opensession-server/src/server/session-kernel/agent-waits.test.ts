@@ -81,8 +81,8 @@ const running = {
 };
 
 describe("agent wait registration", () => {
-  test("stores one durable timer and replaces it idempotently", () => {
-    const first = registerTimerAgentWait({
+  test("stores one durable timer and replaces it idempotently", async () => {
+    const first = await registerTimerAgentWait({
       sessionId: "s1",
       user: "Jaap",
       seconds: 60,
@@ -96,7 +96,7 @@ describe("agent wait registration", () => {
       dueAt: 61_000,
     });
 
-    const duplicate = registerTimerAgentWait({
+    const duplicate = await registerTimerAgentWait({
       sessionId: "s1",
       user: "Jaap",
       seconds: 120,
@@ -106,7 +106,7 @@ describe("agent wait registration", () => {
     expect(duplicate).toMatchObject({ ok: true, replaced: false });
     expect(getAgentWait("s1")).toMatchObject({ dueAt: 61_000 });
 
-    const replacement = registerPrChecksAgentWait({
+    const replacement = await registerPrChecksAgentWait({
       sessionId: "s1",
       user: "Jaap",
       repo: "example",
@@ -121,12 +121,12 @@ describe("agent wait registration", () => {
       repo: "example",
       branch: "feature",
     });
-    expect(cancelAgentWait("s1")).toBe(true);
+    expect(await cancelAgentWait("s1")).toBe(true);
     expect(getAgentWait("s1")).toBeUndefined();
   });
 
-  test("wakes with hidden system context rather than a user message", () => {
-    const registered = registerTimerAgentWait({
+  test("wakes with hidden system context rather than a user message", async () => {
+    const registered = await registerTimerAgentWait({
       sessionId: "s1",
       user: "Jaap",
       seconds: 60,
@@ -146,16 +146,16 @@ describe("agent wait registration", () => {
     expect(prompt).not.toContain("[Jaap]");
   });
 
-  test("rejects timer waits outside the safe bounds", () => {
+  test("rejects timer waits outside the safe bounds", async () => {
     expect(
-      registerTimerAgentWait({
+      await registerTimerAgentWait({
         sessionId: "s1",
         user: "Jaap",
         seconds: 5,
       }),
     ).toMatchObject({ ok: false });
     expect(
-      registerTimerAgentWait({
+      await registerTimerAgentWait({
         sessionId: "s1",
         user: "Jaap",
         seconds: 24 * 60 * 60 + 1,
@@ -165,7 +165,7 @@ describe("agent wait registration", () => {
 });
 
 describe("PR check settlement", () => {
-  test("classifies checks and fences settlement to the current head", () => {
+  test("classifies checks and fences settlement to the current head", async () => {
     expect(prCheckSettlement(details([passing, failing, running]))).toMatchObject({
       settled: false,
       total: 3,

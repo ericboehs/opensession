@@ -15,6 +15,7 @@ import {
 	seededBlockEstimate,
 	type TranscriptSizes,
 } from "../lib/transcript-sizes";
+import { newTailBlockKeys } from "../lib/transcript-block-identity";
 import {
 	registerTranscriptVirtualNavigation,
 	type TranscriptVirtualNavigation,
@@ -50,6 +51,18 @@ interface Props {
 	enabled?: boolean;
 	/** Session identity for the measured-height cache. */
 	sizeCacheKey?: string;
+}
+
+/** A block that just arrived at the live edge fades up into place instead of
+ *  popping. One-shot: callers only set `enter` on keys their previous build had
+ *  not mounted, and the class stays on across re-renders (a finished CSS
+ *  animation does not restart when its element re-renders). The transform
+ *  lives on this inner wrapper because the virtualized row itself positions
+ *  with an inline translateY that the keyframe must not fight. */
+const ENTER_CLASS = "[animation:transcript-enter_var(--dur)_var(--ease)]";
+
+function EnterRow({ enter, children }: { enter?: boolean; children: React.ReactNode }) {
+	return <div className={enter ? ENTER_CLASS : undefined}>{children}</div>;
 }
 
 /**
@@ -96,6 +109,11 @@ class TranscriptVirtualizer extends React.Component<Omit<Props, "enabled">, Adap
 	private topApproachLastFire = Number.NEGATIVE_INFINITY;
 	private rowObserver: ResizeObserver | null = null;
 	private rowRefs = new Map<string, (node: HTMLDivElement | null) => void>();
+	/** Every block key this adapter instance has ever mounted. The first build
+	 *  seeds it (opening a session is not an arrival); afterwards, a tail key
+	 *  missing from the set just arrived live and plays the entrance fade. Keys
+	 *  stay in the set once seen, so a virtualizer remount never replays it. */
+	private mountedKeys: Set<string> | null = null;
 	private seeded: { session: string; sizes?: TranscriptSizes } | null = null;
 	private virtualizer: Virtualizer<HTMLDivElement, HTMLDivElement>;
 
@@ -360,9 +378,34 @@ class TranscriptVirtualizer extends React.Component<Omit<Props, "enabled">, Adap
 			item,
 			_delta,
 			instance,
-		) => shouldAdjustTranscriptScroll(item.end, instance.scrollOffset ?? 0);
+		) => {
+			// At the live edge the follow glue owns positioning: TanStack's
+			// per-row compensation pairs every size change with an equal instant
+			// scrollTop step, which turns a turn's end-of-stream restructure into
+			// a one-frame teleport past the glide (measured 1716px). Readers away
+			// from the edge keep the compensation — it holds their place while
+			// history hydrates above them.
+			const scrollEl = instance.scrollElement;
+			if (scrollEl) {
+				const fromBottom =
+					scrollEl.scrollHeight - scrollEl.scrollTop - scrollEl.clientHeight;
+				if (fromBottom < 120) return false;
+			}
+			return shouldAdjustTranscriptScroll(item.end, instance.scrollOffset ?? 0);
+		};
 		const virtualItems = this.virtualizer.getVirtualItems();
 		const totalSize = this.virtualizer.getTotalSize();
+		// Tail-arrival detection runs here, in the imperative adapter, because
+		// "mounted by the previous build" is virtualizer knowledge: the function
+		// component above is compiler-managed and may re-render without a new
+		// item list, and a ref-based previous-set there is a compile error.
+		const entering = newTailBlockKeys(
+			this.mountedKeys,
+			this.props.items.map((item) => item.key),
+		);
+		if (this.mountedKeys === null) this.mountedKeys = new Set();
+		for (const item of this.props.items) this.mountedKeys.add(item.key);
+		const enteringSet = new Set(entering);
 		const result = (
 			<div
 				ref={this.setRoot}
@@ -384,7 +427,7 @@ class TranscriptVirtualizer extends React.Component<Omit<Props, "enabled">, Adap
 							className={cn("absolute left-0 top-0 w-full", item.className)}
 							style={{ transform: `translateY(${virtualItem.start}px)` }}
 						>
-							{item.content}
+							<EnterRow enter={enteringSet.has(item.key)}>{item.content}</EnterRow>
 						</div>
 					);
 				})}

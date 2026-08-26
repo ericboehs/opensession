@@ -37,6 +37,7 @@ import {
 	type ShippedChangeComposerProps,
 } from "./ShippedChangeComposer";
 import { SessionContextMessage } from "./SessionContextMessage";
+import { visibleTranscriptHydrationDemand } from "./session-viewer/transcript-hydration";
 
 type RenderBlock =
 	| { kind: "entry"; entry: TranscriptEntry }
@@ -692,13 +693,15 @@ function IndexedTranscriptBlocks(props: Props) {
 				indexedItemEntryIds(item).some((id) => payloadById.has(id)),
 		);
 	// Nothing to window (an empty or fully-absent outline): the curtain lifts
-	// immediately instead of waiting for a demand pass that will never run.
+	// instead of waiting for a demand pass that will never run. Recheck when the
+	// full outline replaces the bounded init even if both happen to be empty: the
+	// parent deliberately rejects the init's earlier, unproven ready signal.
 	const settleEmptyTimeline = useEffectEvent(() => {
 		props.onVisibleRangesSettled?.();
 	});
 	useEffect(() => {
 		if (renderedTimeline.length === 0) settleEmptyTimeline();
-	}, [renderedTimeline.length]);
+	}, [renderedTimeline.length, transcriptIndex]);
 	// Latest outline position of the mounted RANGE window's head row, read by
 	// handleTopApproach below. Standalone decorations (for example a model
 	// switch placed before the loaded tail by timestamp) must not become the
@@ -755,6 +758,10 @@ function IndexedTranscriptBlocks(props: Props) {
 		if (props.transcriptRangeRetryGeneration === undefined) return;
 		retryTopApproach();
 	}, [props.transcriptRangeRetryGeneration]);
+	const hydrationOutline = timeline.map((item, index) => ({
+		key: indexedItemKey(item, index),
+		ranges: indexedItemRanges(item),
+	}));
 	const items: VirtualTranscriptItem[] = renderedTimeline.map(
 		({ item, index }, position) => {
 			const entryIds = indexedItemEntryIds(item);
@@ -832,9 +839,17 @@ function IndexedTranscriptBlocks(props: Props) {
 			topGrowthVersion={
 				firstRenderedRangePartial ? firstRenderedRangeLoaded : undefined
 			}
-			onVisibleItems={() => {
-				// Every rendered row carries real payload by construction, so
-				// visibility alone settles the opening curtain.
+			onVisibleItems={(visible) => {
+				const wanted = visibleTranscriptHydrationDemand(
+					hydrationOutline,
+					new Set(visible.map((item) => item.key)),
+					(entryId) => payloadById.has(entryId),
+				);
+				if (wanted === null) return;
+				if (wanted.length > 0) {
+					props.onLoadTranscriptRanges?.(wanted);
+					return;
+				}
 				props.onVisibleRangesSettled?.();
 			}}
 		/>

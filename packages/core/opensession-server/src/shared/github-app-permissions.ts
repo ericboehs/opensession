@@ -28,10 +28,17 @@ export const GITHUB_APP_GRANT_PERMISSIONS: Record<string, string> = {
 };
 
 /** Read installation token (pr-info's statusCheckRollup) — the read view of the
- * grant. GitHub's GraphQL rollup resolves each check suite's `workflowRun`, so
- * Actions: read is required in addition to Checks and Statuses. Omitting it
- * makes the whole `gh pr view --json statusCheckRollup` query fail with
- * "Resource not accessible by integration", even though Checks is granted. */
+ *  grant. Contents/pull_requests/issues at read, plus actions/checks/statuses,
+ *  members, deployments, and metadata as granted.
+ *
+ *  `actions: read` is NOT optional despite the rollup being "just checks":
+ *  gh's `pr view --json statusCheckRollup` selects `checkSuite.workflowRun` on
+ *  every check run, and that field is gated on Actions. Without it GitHub fails
+ *  the whole GraphQL response with "Resource not accessible by integration
+ *  (…checkSuite.workflowRun)" — no data at all, not a partial result — which
+ *  surfaced as "The GitHub App is missing a permission for this API" on every
+ *  PR panel, review and auto-fix run. Verified live: same installation, same
+ *  query, read mint → hard failure, read+actions mint → full payload. */
 export const GITHUB_APP_READ_PERMISSIONS: Record<string, string> = {
 	actions: "read",
 	checks: "read",

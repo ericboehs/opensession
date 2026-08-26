@@ -106,20 +106,20 @@ export function getAgentWait(sessionId: string): AgentWait | undefined {
 		: undefined;
 }
 
-export function cancelAgentWait(sessionId: string): boolean {
+export async function cancelAgentWait(sessionId: string): Promise<boolean> {
 	if (!getAgentWait(sessionId)) return false;
-	sessionKernel(sessionId).cancelTimer(TIMER_ID);
+	await sessionKernel(sessionId).cancelTimer(TIMER_ID);
 	return true;
 }
 
-export function registerTimerAgentWait(input: {
+export async function registerTimerAgentWait(input: {
 	sessionId: string;
 	user: string;
 	prompt?: string;
 	seconds: number;
 	waitId?: string;
 	now?: number;
-}): AgentWaitRegistration {
+}): Promise<AgentWaitRegistration> {
 	const sessionId = input.sessionId.trim();
 	if (!sessionId) return { ok: false, error: "Current session id is required." };
 	if (!Number.isFinite(input.seconds) || input.seconds < MIN_TIMER_SECONDS)
@@ -142,7 +142,7 @@ export function registerTimerAgentWait(input: {
 	};
 	const current = getAgentWait(sessionId);
 	if (current?.id === wait.id) return { ok: true, wait: current, replaced: false };
-	sessionKernel(sessionId).scheduleTimer({
+	await sessionKernel(sessionId).scheduleTimer({
 		timerId: TIMER_ID,
 		kind: TIMER_KIND,
 		dueAt: wait.dueAt,
@@ -151,7 +151,7 @@ export function registerTimerAgentWait(input: {
 	return { ok: true, wait, replaced: !!current };
 }
 
-export function registerPrChecksAgentWait(input: {
+export async function registerPrChecksAgentWait(input: {
 	sessionId: string;
 	user: string;
 	repo: string;
@@ -162,7 +162,7 @@ export function registerPrChecksAgentWait(input: {
 	settleSeconds?: number;
 	waitId?: string;
 	now?: number;
-}): AgentWaitRegistration {
+}): Promise<AgentWaitRegistration> {
 	const sessionId = input.sessionId.trim();
 	const repo = input.repo.trim();
 	const branch = input.branch.trim();
@@ -203,7 +203,7 @@ export function registerPrChecksAgentWait(input: {
 	};
 	const current = getAgentWait(sessionId);
 	if (current?.id === wait.id) return { ok: true, wait: current, replaced: false };
-	sessionKernel(sessionId).scheduleTimer({
+	await sessionKernel(sessionId).scheduleTimer({
 		timerId: TIMER_ID,
 		kind: TIMER_KIND,
 		dueAt: Math.min(wait.deadlineAt, now + pollSeconds * 1000),
@@ -290,11 +290,11 @@ export function agentWaitWakePrompt(wait: AgentWait, message: string): string {
 const defaultHandlerDeps: AgentWaitHandlerDeps = {
 	now: () => Date.now(),
 	getPrDetails: getPrDetailsFresh,
-	schedule: (wait, dueAt) => {
+	schedule: async (wait, dueAt) => {
 		// A cancel or replacement can land while a GitHub request is in flight.
 		// Never let that stale response recreate the old wait over the newer one.
 		if (getAgentWait(wait.sessionId)?.id !== wait.id) return;
-		sessionKernel(wait.sessionId).scheduleTimer({
+		await sessionKernel(wait.sessionId).scheduleTimer({
 			timerId: TIMER_ID,
 			kind: TIMER_KIND,
 			dueAt,

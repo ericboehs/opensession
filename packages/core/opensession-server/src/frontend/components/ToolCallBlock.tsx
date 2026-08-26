@@ -7,7 +7,9 @@ import React, {
 } from "react";
 import type { TranscriptEntry } from "../lib/types";
 import { CodeHighlight } from "./LazyCode";
+import { ToolInputDiff } from "./ToolInputDiff";
 import { langForFile, langForGrep } from "../lib/lang";
+import { toolInputDiff } from "../lib/tool-input-diff";
 import { currentPlanItem, parsePlanItems, planDoneCount } from "@tellahq/opensession-protocol/todo-plan";
 import { PlanChecklist } from "./PlanChecklist";
 import { resolveEntryImageSrc } from "../lib/osBlob";
@@ -705,37 +707,24 @@ function toolInputNode(toolName: string, input: unknown): React.ReactNode | null
     );
   }
 
-  if (toolName === "Edit") {
-    // A patch body is already a diff; an old/new string pair becomes one.
+  if (toolName === "Edit" || toolName === "Write") {
+    // Replacement snippets become a real read-only diff: the same renderer,
+    // syntax highlighting and changed-line treatment as Files changed. This
+    // also covers multi-edit schemas (`edits: [{ oldText, newText }]`) that
+    // used to fall through to a raw JSON payload.
+    const inputDiff = toolInputDiff(toolName, input);
+    if (inputDiff) return <ToolInputDiff patch={inputDiff.patch} />;
+
+    // Codex apply_patch bodies are already diff-shaped, but not unified
+    // patches that @pierre/diffs can parse. Keep their highlighted fallback.
     const patch = pickStr(inp, "patchText", "patch");
-    const oldStr = pickStr(inp, "old_string", "oldString");
-    const newStr = pickStr(inp, "new_string", "newString");
-    const diff =
-      patch ||
-      (oldStr || newStr
-        ? [
-            ...oldStr.split("\n").map((l) => `-${l}`),
-            ...newStr.split("\n").map((l) => `+${l}`),
-          ].join("\n")
-        : "");
-    if (diff) {
+    if (patch) {
       return (
         <div className={TOOL_CODE_WELL}>
-          <ExpandableCode code={diff} lang="diff" />
+          <ExpandableCode code={patch} lang="diff" />
         </div>
       );
     }
-  }
-
-  if (toolName === "Write" && typeof inp.content === "string") {
-    return (
-      <div className={TOOL_CODE_WELL}>
-        <ExpandableCode
-          code={inp.content}
-          lang={langForFile(filePathOf(inp)) || "markdown"}
-        />
-      </div>
-    );
   }
 
   // The plan is a checklist, not a payload — render it as one (same component

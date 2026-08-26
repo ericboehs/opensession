@@ -201,7 +201,7 @@ export function createHumansMcpServer(ctx: HumansToolContext) {
             // Whoever answers first wins: a UI answer resolves the ask, which
             // settles the await below; the card is retracted once the wait
             // ends either way.
-            const card = offerAskCard(
+            const card = await offerAskCard(
               ctx.sessionId,
               [
                 {
@@ -227,7 +227,7 @@ export function createHumansMcpServer(ctx: HumansToolContext) {
               }
               return text(`${person.name} replied:\n\n${answer}`);
             } finally {
-              card.close();
+              await card.close();
             }
           }
 

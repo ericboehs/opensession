@@ -11,9 +11,15 @@ export type CoreActorRequest =
       payload: SessionActorEffectFor<SessionActorEffectKind>["payload"];
       effectKey: string;
     }
-  | { op: "ack_outbox"; id: number }
-  | { op: "defer_outbox"; id: number }
-  | { op: "fail_outbox"; id: number; error: string; maxAttempts: number }
+  | { op: "ack_outbox"; id: number; sessionId: string }
+  | { op: "defer_outbox"; id: number; sessionId: string }
+  | {
+      op: "fail_outbox";
+      id: number;
+      sessionId: string;
+      error: string;
+      maxAttempts: number;
+    }
   | { op: "clear"; sessionId: string }
   | { op: "tombstone"; sessionId: string };
 

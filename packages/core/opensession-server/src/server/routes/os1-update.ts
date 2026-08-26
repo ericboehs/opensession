@@ -33,6 +33,7 @@ const updates = () => configuredIntegration("updates");
 const releaseRepo = () =>
 	typeof updates().releaseRepo === "string" ? updates().releaseRepo as string : "";
 const CACHE_DIR = stateDir("os1-mac-updates");
+const INSTALLER_CACHE_DIR = stateDir("os1-mac-installers");
 const LATEST_TTL_MS = 5 * 60 * 1000;
 
 // os1-chrome: stable extension ID derived from the signing key
@@ -54,6 +55,8 @@ interface LatestRelease {
 	asset: string;
 	/** REST asset URL (api.github.com/…/releases/assets/<id>). */
 	assetApiUrl: string;
+	/** Signed + notarized disk image for a fresh install. */
+	installer?: { asset: string; assetApiUrl: string };
 }
 
 const g = globalThis as {
@@ -74,6 +77,11 @@ const g = globalThis as {
  */
 export function isMacReleaseAsset(name: string | undefined): boolean {
 	return /^(OpenSession|OS1)-.*-arm64\.zip$/.test(name || "");
+}
+
+/** Signed disk image people install directly; the zip above is for Squirrel. */
+export function isMacInstallerAsset(name: string | undefined): boolean {
+	return /^(OpenSession|OS1)-.*-arm64\.dmg$/.test(name || "");
 }
 
 export function chromeDownloadTag(path: string): string | null {
@@ -117,7 +125,11 @@ async function latestRelease(): Promise<LatestRelease | null> {
 			assets?: { name?: string; url?: string }[];
 		};
 		const version = parseVersion(rel.tag_name || "");
-		const asset = (rel.assets || []).find((a) => isMacReleaseAsset(a?.name));
+		const assets = rel.assets || [];
+		const asset = assets.find((candidate) => isMacReleaseAsset(candidate?.name));
+		const installer = assets.find((candidate) =>
+			isMacInstallerAsset(candidate?.name),
+		);
 		if (version && rel.tag_name && asset?.name && asset?.url) {
 			value = {
 				tag: rel.tag_name,
@@ -126,6 +138,14 @@ async function latestRelease(): Promise<LatestRelease | null> {
 				publishedAt: rel.published_at || new Date().toISOString(),
 				asset: asset.name,
 				assetApiUrl: asset.url,
+				...(installer?.name && installer.url
+					? {
+							installer: {
+								asset: installer.name,
+								assetApiUrl: installer.url,
+							},
+						}
+					: {}),
 			};
 		}
 	} catch (err) {
@@ -319,6 +339,34 @@ export async function handleOs1UpdateRoutes(
 					},
 				},
 			],
+		});
+	}
+
+	// The signed disk image used by the Download apps dialog. Keep it on a
+	// stable URL so the frontend never needs to know the current release tag.
+	if (
+		path === "/api/packages/clients/mac/download/latest.dmg" ||
+		path === "/api/os1-mac/download/latest.dmg"
+	) {
+		const rel = await latestRelease();
+		if (!rel?.installer) {
+			return Response.json({ error: "Release installer unavailable" }, { status: 404 });
+		}
+		const installerRelease: LatestRelease = {
+			...rel,
+			asset: rel.installer.asset,
+			assetApiUrl: rel.installer.assetApiUrl,
+		};
+		const file = await cachedAssetPath(installerRelease, INSTALLER_CACHE_DIR);
+		if (!file) {
+			return Response.json({ error: "Release installer unavailable" }, { status: 502 });
+		}
+		return new Response(Bun.file(file), {
+			headers: {
+				"Content-Type": "application/x-apple-diskimage",
+				"Content-Disposition": `attachment; filename="${rel.installer.asset}"`,
+				"Cache-Control": "no-cache",
+			},
 		});
 	}
 

@@ -85,10 +85,7 @@ export interface SetupEngine {
 
 export interface SetupAccess {
 	publicBaseUrl: string;
-	/** The separate public webhook origin, or null when integrations fall back to the app. */
-	webhookBaseUrl: string | null;
 	port: number;
-	webhookPort: number;
 	tailnetIp: string | null;
 	caddyInstalled: boolean;
 }

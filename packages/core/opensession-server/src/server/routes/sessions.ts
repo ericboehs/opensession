@@ -16,7 +16,7 @@ import {
 import { archiveOlderThan, isArchivedId, setArchived, unpinArchivedSessions, } from "../archive";
 import { audit } from "../audit";
 import {
-	pendingAskAwaitingAnswer,
+	pendingAskAwaitingAnswerSync,
 	pendingAskIdsAwaitingAnswer,
 } from "../asks";
 import { transcriptMatchSnippet } from "../jsonl-parser";
@@ -68,6 +68,7 @@ import {
   sessionGatewayCommand,
 	sessionKernel,
 	sessionKernelStore,
+	sessionProjectionOr,
 	tombstoneSessionKernel,
 } from "../session-kernel";
 import { withSessionMutationLock } from "../session-mutation-lock";
@@ -424,10 +425,13 @@ function enrichSession(
 			: {}),
 		waitingForInput: signals
 			? signals.waitingForInput.has(s.id)
-			: !!pendingAskAwaitingAnswer(s.id),
+			: !!sessionProjectionOr(
+					() => pendingAskAwaitingAnswerSync(s.id),
+					undefined,
+				),
 		queuedCount: signals
 			? signals.queuedCounts.get(s.id) || 0
-			: clientVisibleQueuedCount(s.id),
+			: sessionProjectionOr(() => clientVisibleQueuedCount(s.id), 0),
 		// Present on the list AND on the detail response, so one rule reads the
 		// same either side of a hydrate. `undefined` rather than `false`: it is
 		// dropped by JSON.stringify, and a session object a client builds
@@ -1475,7 +1479,7 @@ export async function handleSessionsRoutes(
           : undefined);
       if (targetRunId) {
         try {
-          requestTurnCancel(session.id, session, {
+          await requestTurnCancel(session.id, session, {
             cancelId: `archive-stop:${session.id}:${targetRunId}:${target.generation}`,
             expectedRunId: targetRunId,
             expectedGeneration: target.generation,
@@ -1495,7 +1499,7 @@ export async function handleSessionsRoutes(
         }
       }
     }
-		executeSessionProjection(sessionId, "archive_override", () =>
+		await executeSessionProjection(sessionId, "archive_override", () =>
 			setArchived(sessionId, archived),
 		);
 		// Plain done-tickets are archived via a file-level flag, not the
@@ -1526,7 +1530,7 @@ export async function handleSessionsRoutes(
 		const body = await req.json().catch(() => ({}));
 		const title =
 			typeof body?.title === "string" ? body.title.trim().slice(0, 80) : "";
-		executeSessionProjection(sessionId, "title_override", () =>
+		await executeSessionProjection(sessionId, "title_override", () =>
 			setTitleOverride(sessionId, title || null),
 		);
 		invalidateSessionsCache();
@@ -1546,7 +1550,7 @@ export async function handleSessionsRoutes(
 			return Response.json({ error: "Session not found" }, { status: 404 });
 		const body = await req.json().catch(() => ({}));
 		const status = isManualStatus(body?.status) ? body.status : null;
-		executeSessionProjection(sessionId, "status_override", () =>
+		await executeSessionProjection(sessionId, "status_override", () =>
 			setStatusOverride(sessionId, status),
 		);
 		invalidateSessionsCache();
@@ -1683,7 +1687,7 @@ export async function handleSessionsRoutes(
 				} else mirroredToGithub = true;
 			}
 		}
-		executeSessionProjection(sessionId, "review_request", () =>
+		await executeSessionProjection(sessionId, "review_request", () =>
 			setReviewRequest(
 				sessionId,
 				reviewer
@@ -1770,10 +1774,10 @@ export async function handleSessionsRoutes(
 		// the DB file existing — NOT the flag — so a kill-switch window can't
 		// leave resurrectable rows behind for deterministic session ids
 		// (bks-ghpr-*). Best-effort: a store hiccup must never block deletion.
-		const purgeTranscriptRows = (id: string) => {
+		const purgeTranscriptRows = async (id: string) => {
 			try {
 				if (existsSync(transcriptDbPath()))
-					transcriptStore().deleteSessionTranscript(id);
+					await transcriptStore().deleteSessionTranscript(id);
 			} catch {}
 			try {
 				searchIndex().remove(`session:${id}`);
@@ -1787,7 +1791,7 @@ export async function handleSessionsRoutes(
 					console.warn(`[runners] Workspace retained after deleting ${session.id}:`, error,),
 				);
 			}
-			purgeTranscriptRows(session.id);
+			await purgeTranscriptRows(session.id);
 			invalidateSessionsCache();
 			// Tear down the session's sandbox (container + engine-state volumes,
 			// and in volume-workspace mode the workspace volume itself; that data
@@ -1840,7 +1844,7 @@ export async function handleSessionsRoutes(
     let deleteExecuting = false;
     let deletePhysicalFinished = false;
 		try {
-      const plan = sessionGatewayCommand({
+      const plan = await sessionGatewayCommand({
         op: "request",
         sessionId: session.id,
         requestId: deleteRequestId,
@@ -1882,8 +1886,8 @@ export async function handleSessionsRoutes(
 			// Tombstoning first drops this active kernel from the map, so deleteSession's
 			// nested compatibility write re-enters through a fresh kernel and is fenced
 			// as a late writer, leaving a visible but immutable ghost session behind.
-			deleteSession(session);
-			tombstoneSessionKernel(session.id);
+			await deleteSession(session);
+			await tombstoneSessionKernel(session.id);
 			await finishDeletion();
 			return { status: 200, body: { ok: true } };
 		} catch (e: any) {
@@ -1891,7 +1895,7 @@ export async function handleSessionsRoutes(
 		}
 			});
       deletePhysicalFinished = true;
-      sessionGatewayCommand({
+      await sessionGatewayCommand({
         op: "complete",
         sessionId: session.id,
         requestId: deleteRequestId,
@@ -1901,7 +1905,7 @@ export async function handleSessionsRoutes(
 			return Response.json(result.body, { status: result.status });
 		} catch (error) {
       if (deleteExecuting && !deletePhysicalFinished)
-        sessionGatewayCommand({
+        await sessionGatewayCommand({
           op: "fail",
           sessionId: session.id,
           requestId: deleteRequestId,

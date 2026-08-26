@@ -18,13 +18,13 @@ current behavior.
 
 **Status: the first slice of the library is built; the plugin runtime is a
 proposal.** Settings → Library (`packages/core/opensession-server/src/server/library.ts`, `LibraryPanel.tsx`)
-browses the catalog described below — 31 entries derived from the recipes
-directory, the automation templates and the integration registry. Everything
-about the runtime, and the server-side feature gate that would make a tool
-switch real, is still design. This is the plan for turning
-Open Session's extension points into a plugin library, and for letting people
-who fork this repository add their own tools — with their own UI — that work
-with their sessions.
+currently browses 29 shipped entries: five manually maintained core tools,
+seventeen automations from seven recipes and ten templates, and seven
+integrations. It also adds one card per installed package. Everything about the
+runtime, and the server-side feature gate that would make a tool switch real,
+is still design. This is the plan for turning Open Session's extension points
+into a plugin library, and for letting people who fork this repository add
+their own tools — with their own UI — that work with their sessions.
 
 Read [extending.md](extending.md) first. That document describes what exists;
 this one describes where it is going and, more usefully, which of the obvious
@@ -56,7 +56,7 @@ switch, and leave physical extraction as an optional, invisible cleanup.
 The feeds system calls itself "Open Session's plugin seam" in its own module doc
 (`packages/core/opensession-server/src/agents/types.ts`), and it is closer to delivering the brief than it looks.
 A tool defined as a **connected MCP server plus a feed descriptor**
-(`~/.opensession-feeds.json`) already gets, with zero code:
+(`~/.opensession/feeds.json`) already gets, with zero code:
 
 - a sidebar band listing its items
 - each item resolving to a **workspace** with sessions attached, keyed
@@ -166,19 +166,18 @@ Without it, a plugin's plain `.flex-col` beats the host's `sm:flex-row`, because
 a media query adds no specificity. This is not hypothetical; it is the first bug
 a plugin ships.
 
-### Distribution: curated and in-repo
+### Distribution: git packages now, code tier later
 
-No hosted registry for v1. Extend the `recipes/` pattern — ships with the
-release, updates when you pull the repo, no update channel and no signing to
-build. bb, which is further along than we are, has no remote catalog either: its
-official plugins install from the bundled local copy.
+The shipped data-only tier is not curated in-repo. Packages are git
+repositories discovered through the uncurated `opensession-plugin` GitHub topic
+and installed from an `owner/repo`, git URL or local path. There is no hosted
+registry. `opensession-plugin.json` is the composite envelope for MCP servers,
+feeds, automations and skills. `~/.opensession/plugins.json` records each
+package's source, commit, checkout directory and installed artifacts, including
+each skill's `SKILL.md` hash. `skills-lock.json` remains unused.
 
-`skills-lock.json` is the fossil of the right v1.5 — someone already vendored
-skills from GitHub with `{source, sourceType, skillPath, computedHash}`, which
-is Obsidian's model exactly. Nothing reads that file today. Adopt the format
-when remote sources arrive, and **hash-pin**: a skill is prompt-injection
-surface, so an upstream edit must surface as a reviewable diff, never as a
-silent auto-update.
+Distribution and consent for a future runtime-code tier remain a separate
+proposal.
 
 ### Install scope
 
@@ -191,39 +190,34 @@ splitting the trust model.
 
 ## The catalog envelope
 
-One schema across all installable types would be a tagged union in a trench
-coat. Unify only what a **card and an install button** need — id, type, name,
-description, category, source, `requires`, version/hash — and dispatch the
-install to the mechanism that already exists for that type:
+The shipped `PackageManifest` in
+`packages/core/opensession-server/src/server/plugins.ts` is the data-package
+envelope. `opensession-plugin.json` carries shared package metadata and can
+bundle several MCP servers, feeds, automations and skills in one reviewed
+install. Each artifact keeps its existing type-specific schema and store;
+`Recipe` remains automation-specific. The Library separately normalizes these
+packages and built-in sources into card-shaped `LibraryEntry` values.
 
 ```mermaid
 flowchart LR
-  C["Library UI<br/>browse · search · install"] --> E["Catalog entry<br/>id · type · name · requires · hash"]
-  E -->|tool| F["feature flags (new, server-side)"]
-  E -->|connection| M["mcp-config.json"]
-  E -->|automation| S["config seeds"]
-  E -->|skill| K["skills-lock.json + .agents/skills/"]
-  E -->|project| P["~/.opensession-feeds.json"]
-  E -->|plugin| G["plugin runtime"]
+  R["Git repository"] --> E["opensession-plugin.json"]
+  E --> M["MCP servers"]
+  E --> F["feeds"]
+  E --> A["automations"]
+  E --> S["skills"]
+  E --> L["installed package card in Library"]
 ```
 
-`Recipe` in `scripts/lib/recipes.ts` is already most of this envelope; extend it
-rather than inventing one. The line to hold: the moment the shared schema starts
-describing *behaviour* across types — permission DSLs, lifecycle hooks,
-contribution points — it is a god-schema. Behaviour stays in the type-specific
-payload.
+A future runtime-code contribution should be a separately gated manifest field,
+not behaviour added to the existing artifact schemas.
 
-One thing the envelope should carry that today's recipes do not: **several
-artifacts per entry**. "Install the Linear plugin" = wire the MCP server, seed
-two automations, drop a skill, atomically. That composite is what makes it feel
-like a library rather than four settings pages with a search box.
+## The Tasks switch is still cosmetic
 
-## The Notes and Tasks switch is currently a lie
-
-`hiddenTools` (`packages/core/opensession-server/src/frontend/lib/sidebar-tools.ts`) is localStorage, per browser.
-Hide Tasks and you still get Slack DM reminders, Web Push, and todos baked into
-your Desk payload — `todos.ts` does not know or care about a client-side CSS
-toggle. Hide it in Chrome and it is still there on iOS.
+Sidebar visibility keeps a synchronous per-user local cache and syncs
+`sidebar-hidden-tools` through `/api/ui-prefs`. The native app reads the same
+account preference, so visibility follows the user across web and iOS. It is
+still only a visibility preference: hiding Tasks does not disable its routes,
+agent tools, Desk todos, Web Push or Slack reminders.
 
 So the real deliverable behind "make tasks a plugin" is a **server-side feature
 gate** covering the routes, the WebSocket handlers and — the part that makes it
@@ -242,11 +236,13 @@ credentials *and* runs autonomous agents over untrusted ticket text.
   surface can create a session, a malicious plugin escalates to reconfiguring
   the instance and steering other people's sessions. That session kind needs
   those servers stripped — the same fail-closed treatment automations get.
-- **Code plugins never install one-click from the catalog.** A runtime-loaded
-  plugin is same-origin code: it can read the session token, call every API as
-  you, and reach every other plugin's secrets. The library may one-click
-  *declarative* entries only; code plugins go through an explicit trust prompt
-  that a non-interactive caller cannot skip.
+- **Code plugins never install one-click from the catalog.** With web auth
+  enabled, same-origin JavaScript cannot read the HttpOnly session token, but
+  its API and WebSocket requests carry the browser's credentials and can act as
+  the signed-in user. With web auth disabled there is no session token, and the
+  same-origin APIs remain reachable. The library may one-click *declarative*
+  entries only; code plugins go through an explicit trust prompt that a
+  non-interactive caller cannot skip.
 
 Related, and worth fixing before any plugin asset is ever served same-origin:
 `FeedWebPane`'s iframe has no `sandbox` attribute and grants `clipboard-write`.
@@ -267,10 +263,13 @@ nowhere near worth freezing.
 
 ## Plan
 
+The Library and data-package parts of phase 2 have shipped. The runtime and
+server-side feature gates remain proposed.
+
 | Phase | What | Why here |
 | --- | --- | --- |
 | 1 | MCP proxy route + schema-derived CRUD panel | Makes the backlog example real with no platform work, and gives every future plugin a working default UI |
-| 2 | Catalog envelope + browse UI, curated in-repo; server-side feature gates for Notes and Tasks | The installables already exist; this is the whole library value at near-zero architectural risk |
+| 2 | Library browse UI + git-distributed data-package envelope; server-side feature gates for Tasks and any future Notes plugin | The installables already exist; this is the whole library value at near-zero architectural risk |
 | 3 | Surface registry: flat `PLUGINS: PluginDef[]` in one file, generic lookups replacing the hardcoded sites | Dogfood on Notes, Tasks and `slack-channel` — deleting those two ternaries is the proof the seam is real |
 | 4 | Plugin runtime: manifest block, server + app entry points, shared-runtime shim, scoped CSS, per-slot error boundaries, per-plugin reload | Only worth building once three first-party consumers have shaped the slots |
 | 5 | Scaffold (`bun create`), optimised for an *agent* to run — that is who will write most of these | |
@@ -293,10 +292,11 @@ component map — each landable in a single session.
   store row, or it returns on the next boot.
 - **Disable is not uninstall.** Disabling Notes must not touch the Yjs
   documents.
-- **Where does an installed skill live?** The engine reads skills from the run's
-  working directory. An instance-wide install needs an answer for freshly
-  created worktrees — materialise on worktree prep — before skills can ship in
-  the catalog.
+- **Installed skill location.** Package skills are copied into
+  `SHIPPED_SKILLS_DIR` (`OPENSESSION_SKILLS_DIR` or this installation's
+  `.agents/skills`). `skillSearchPaths()` includes that directory for every run,
+  so fresh worktrees need no materialization. A standalone browsable skill
+  catalog remains unimplemented.
 - **Do not build a fourth CRUD surface.** The catalog is a front door: browse,
   install, then deep-link into the existing Connections and Automations UIs. It
   is not a parallel editor.

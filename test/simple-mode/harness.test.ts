@@ -49,7 +49,7 @@ const SOURCE = process.env.SIMPLE_MODE_SOURCE === "1";
 const CLAUDE_TOKEN = process.env.OPENSESSION_TEST_CLAUDE_TOKEN;
 
 const PORT = 3850;
-const WEBHOOK_PORT = 3848;
+const INGRESS_PORT = 3860;
 const GUEST_MOUNT = "/mnt/simple-mode";
 const MINUTES = 60_000;
 const GOSS_VERSION = "v0.4.10";
@@ -119,7 +119,7 @@ async function goss(file: string): Promise<string> {
   const home = await guestHome();
   const user = await guestUser();
   const vars =
-    `home: ${home}\nuser: ${user}\nport: ${PORT}\nwebhookPort: ${WEBHOOK_PORT}\n` +
+    `home: ${home}\nuser: ${user}\nport: ${PORT}\ningressPort: ${INGRESS_PORT}\n` +
     `source: ${SOURCE}\ntoken: ${CLAUDE_TOKEN ? "true" : ""}\n`;
   const varsPath = await putInGuest("vars.yaml", vars);
   const r = await guest(
@@ -254,12 +254,14 @@ describe("simple mode install", () => {
         `exit \${PIPESTATUS[0]}`,
     );
     expectOk(r, "install.sh");
-    const doneAt = r.stdout.lastIndexOf("Done");
-    const urlAt = r.stdout.lastIndexOf(`Open http://127.0.0.1:${PORT}`);
-    expect(doneAt).toBeGreaterThanOrEqual(0);
-    expect(urlAt).toBeGreaterThan(doneAt);
+    const installedAt = r.stdout.lastIndexOf("Installed");
+    const startedAt = r.stdout.lastIndexOf("Started");
+    const urlAt = r.stdout.lastIndexOf(`Open Session is running at http://127.0.0.1:${PORT}`);
+    expect(installedAt).toBeGreaterThanOrEqual(0);
+    expect(startedAt).toBeGreaterThan(installedAt);
+    expect(urlAt).toBeGreaterThan(startedAt);
     if (!commandWasOnPath) {
-      expect(r.stdout).toContain("Run this in your current shell: source ~/.bashrc");
+      expect(r.stdout).toContain("To use opensession in this shell, run:\n    source ~/.bashrc");
     }
   }, 30 * MINUTES);
 

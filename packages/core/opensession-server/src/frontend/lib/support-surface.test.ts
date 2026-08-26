@@ -12,13 +12,12 @@ describe("supportSurfaceOf", () => {
 		expect(supportSurfaceOf(false, false)).toBe("off");
 	});
 
-	// Adding the Support tool switched it on for every account that had ever
-	// arranged its tools, on top of the band those accounts already had. Nobody
-	// chose that, so it must not read as a third setting, and it must not put
-	// the same queue on screen twice.
-	test("both on is not a choice: it reads as the band, and the tool stays off", () => {
-		expect(supportSurfaceOf(true, true)).toBe("sidebar");
-		expect(supportToolShown(true, true)).toBe(false);
+	// Defaults leave both underlying preferences visible. Support is a default
+	// tool, so that ambiguous state must render the tool without also rendering
+	// the alternate sidebar band.
+	test("both on resolves to the tool only", () => {
+		expect(supportSurfaceOf(true, true)).toBe("page");
+		expect(supportToolShown(true, true)).toBe(true);
 	});
 
 	test("the tool is only up when it is the chosen surface", () => {

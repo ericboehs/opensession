@@ -235,6 +235,9 @@ setBusy(false);
 							</SettingRowText>
 							<input
 								className={NAME_INPUT_CLASS}
+								// data-setup-field: FirstMile's onboarding wrapper widens this
+								// field past its settings-page width; settings ignores it.
+								data-setup-field="org-name"
 								value={draft}
 								maxLength={80}
 								disabled={busy}

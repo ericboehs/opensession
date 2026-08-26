@@ -5,8 +5,8 @@
 
 Which engine runs a turn, what turns it on, and where each model lands.
 The routing table below is computed by calling `routeModel()`
-(`packages/core/opensession-server/src/server/models.ts`) against a clean instance — no per-model engine
-overrides configured — so it shows the shipped defaults.
+(`packages/core/opensession-server/src/server/models.ts`) in the generator's
+hermetic clean state. Pi is the only production engine, so routing is unconditional.
 
 `routeModel()` sends every accepted model and preset to Pi.
 Native ids and provider/model paths normalize to `pi/<provider>/<model>`.
@@ -17,13 +17,13 @@ Native ids and provider/model paths normalize to `pi/<provider>/<model>`.
 
 - **Adapter** `packages/core/opensession-server/src/server/pi-runner.ts`
 - **Model ids** `pi/<provider>/<model>`
-- **Gate** `enabled` in `~/.opensession-pi.json` (`piConfigPath()`). Off by default.
+- **Gate** `enabled` in `piConfigPath()` (normally `~/.opensession/pi.json`; an existing legacy `~/.opensession-pi.json` is still honored). A missing config disables Pi, while first-run onboarding creates it enabled.
 - **Mid-turn steer** yes
 - **Note** In-process engine. `pi/anthropic/*` turns reach the Claude Agent SDK through the native in-process provider by default (`anthropicTransport`, `"bridge"` for the loopback rollback).
 
 ### fake (tests only) · `fake`
 
-- **Adapter** `packages/core/opensession-server/src/server/agent-runner.ts — the __setEngineForTest seam; fixtures in packages/core/opensession-server/src/server/fake-engine.test.ts`
+- **Adapter** `packages/core/opensession-server/src/server/agent-runner.ts — the __setEngineForTest seam; fixture implementation in packages/core/opensession-server/src/server/testing/fake-engine.ts; coverage in packages/core/opensession-server/src/server/fake-engine.test.ts`
 - **Model ids** – (intercepts every model id)
 - **Gate** Not config-gated and not reachable in production: it is a module-local test seam, set only by a test and cleared by any hot reload.
 - **Mid-turn steer** n/a

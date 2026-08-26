@@ -33,7 +33,7 @@ enum SidebarTools {
         feed, prs, tasks, plain, catchUp, "supporttinder", reports,
         "analytics",
     ]
-    static let defaultVisible = [feed, prs, catchUp]
+    static let defaultVisible = [feed, prs, plain, catchUp]
     static var defaultHidden: [String] { allIds.filter { !defaultVisible.contains($0) } }
     static var defaultHiddenJSON: String { encode(defaultHidden) }
 

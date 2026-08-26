@@ -29,8 +29,8 @@
  * listing endpoint. Anyone with the URL (including GitHub's camo cache) can
  * fetch the image, so don't attach anything that must stay repo-member-only.
  *
- * The GET /pr-images/* route registers on the webhook server (port 3848,
- * public via Caddy) — see prImagePublicRoutes(), wired in opensession.ts.
+ * The GET /pr-images/* route registers on the fail-closed public ingress
+ * gateway — see prImagePublicRoutes(), wired in opensession.ts.
  * Webhook routes bind at boot: changes here need a real restart.
  */
 

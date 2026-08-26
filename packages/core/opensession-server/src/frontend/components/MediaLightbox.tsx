@@ -1787,7 +1787,10 @@ sendingCommentRef.current = false;
 	}, [commenting, selection, selectionRect]);
 
 	useEffect(() => {
-		if (!selection) return;
+		// The card mounts one render after the selection, once the viewer has
+		// reported its viewport position. Waiting for that position keeps this
+		// focus attempt from running while the textarea ref is still null.
+		if (!selection || !selectionRect) return;
 		const frame = requestAnimationFrame(() => {
 			const field = commentInputRef.current;
 			if (!field) return;
@@ -1797,7 +1800,7 @@ sendingCommentRef.current = false;
 			field.focus({ preventScroll: true });
 		});
 		return () => cancelAnimationFrame(frame);
-	}, [selection]);
+	}, [selection, selectionRect]);
 
 	useEffect(() => {
 		const previousFocus = document.activeElement as HTMLElement | null;

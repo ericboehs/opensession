@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { enrichSessionRuntime, invalidateSessionsCache } from "./session-cache";
+import { sessionKernelStore } from "./session-kernel";
 import type { UnifiedSession } from "./types";
 import { allClients } from "./ws-hub";
 
@@ -40,5 +41,42 @@ describe("session runtime enrichment", () => {
 
 		expect(session.isRunning).toBe(false);
 		expect(session.runStartedAt).toBeUndefined();
+	});
+
+	test("uses one run-state projection for a full session list", () => {
+		const store = sessionKernelStore();
+		const originalRunState = store.runState;
+		const originalRunStates = store.runStates;
+		let projectionReads = 0;
+		let targetedReads = 0;
+		store.runState = ((...args: Parameters<typeof store.runState>) => {
+			targetedReads += 1;
+			return originalRunState.apply(store, args);
+		}) as typeof store.runState;
+		store.runStates = (() => {
+			projectionReads += 1;
+			return [{
+				sessionId: "bulk-running",
+				state: "running",
+				since: "2026-08-26T00:00:00.000Z",
+				generation: 1,
+				changeSeq: 1,
+			}];
+		}) as typeof store.runStates;
+		try {
+			const sessions = Array.from({ length: 40 }, (_, index) => ({
+				id: index === 0 ? "bulk-running" : `bulk-idle-${index}`,
+			}) as UnifiedSession);
+
+			enrichSessionRuntime(sessions);
+
+			expect(projectionReads).toBe(1);
+			expect(targetedReads).toBe(0);
+			expect(sessions[0]?.isRunning).toBe(true);
+			expect(sessions[0]?.runState).toBe("running");
+		} finally {
+			store.runState = originalRunState;
+			store.runStates = originalRunStates;
+		}
 	});
 });

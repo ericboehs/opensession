@@ -11,6 +11,7 @@ import { Menu } from "../ui/menu";
 import { cn } from "../ui/cn";
 import { Tooltip } from "../ui/tooltip";
 import { IconBolt, IconChevronRight, IconSparkle, IconUndo } from "./icons";
+import { ModelMark } from "./ModelMark";
 import type { SessionUsage } from "../lib/types";
 import { UsageCost, UsageDetails } from "./UsageMeter";
 
@@ -646,14 +647,25 @@ export function ModelEffortSelect({
 					disabled && "opacity-55",
 				)}
 			>
-				{optionDescription ? (
-					<span className="flex min-w-0 flex-1 flex-col">
-						<span className="truncate">{optionLabel}</span>
-						<span className="truncate text-xs text-faint">{optionDescription}</span>
+				<span className="flex min-w-0 flex-1 items-center gap-2">
+					{/* The slot stays fixed so paired marks can overhang into the gap
+					    without shifting any row labels. */}
+					<span className="flex size-4 shrink-0 items-center justify-center text-dim">
+						<ModelMark
+							id={option.id}
+							provider={option.engine}
+							composition={nextModelInfo?.composition}
+						/>
 					</span>
-				) : (
-					<span className="min-w-0 truncate">{optionLabel}</span>
-				)}
+					{optionDescription ? (
+						<span className="flex min-w-0 flex-1 flex-col">
+							<span className="truncate">{optionLabel}</span>
+							<span className="truncate text-xs text-faint">{optionDescription}</span>
+						</span>
+					) : (
+						<span className="min-w-0 truncate">{optionLabel}</span>
+					)}
+				</span>
 				{recentSettings.length > 0 && (
 					<span className="ml-auto shrink-0 text-supporting text-faint">
 						{recentSettings.join(" · ")}

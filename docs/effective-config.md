@@ -1,13 +1,14 @@
 # Effective config
 
-`GET /api/sessions/:id/effective-config` prints the configuration a session's
-next turn would run with, one row at a time, each naming the file or code path
-that decided it.
+`GET /api/sessions/:id/effective-config` prints a forecast for a session's next
+interactive `prompt` turn, including a prompt that resumes an existing engine
+session. Each row names the file or code path that produced it.
 
-It exists because the answer to "why did this session not get tool X" is spread
-across `mcp-config.json`, `~/.opensession-engines.json`, an automation's
-allowlist, a feed project's descriptor, a per-user model default, and policy
-code in three modules. This reads all of them at once.
+The report combines `mcp-config.json`, session, automation, or feed MCP scope,
+the session model or instance-wide interactive default, workspace model
+presets, and run-policy resolvers. It does not report Pi enablement, provider
+credentials, or engine readiness. It also does not forecast scheduled
+automations, goal wakes, create turns, or other journal kinds.
 
 ```sh
 curl -s -H "Authorization: Bearer $TOKEN" \
@@ -18,13 +19,15 @@ Query parameters:
 
 | Param | Meaning |
 | --- | --- |
-| `user` | Who the next turn is attributed to. The `allowedUsers` gate and the shared-server key both key off it. Ignored while web sign-in is active: the verified identity wins, the same rule that stops anyone acting under another name (`requestUser`). |
-| `verbose=1` | Add the static tables that are the same for every session (the ask-mode bash allowlist). |
+| `user` | Claimed prompt user when sign-in is off. With sign-in enabled, the verified identity wins through `requestUser`. Automation-owned sessions drop the prompt user. In this report, a server's `allowedUsers` gate may also be cleared by the session creator (`startedBy`). No shared-server key is returned. |
+| `verbose=1` | Add the static ask-mode bash allowlist. |
 
-So on a signed-in instance the dump answers "how would this session run *for me*". A loopback caller is the `Automation` machine identity, which is why a curl from the box reports `identity.runUser: "Automation"` rather than the session's owner.
+On a signed-in instance, an ordinary interactive session is evaluated for the
+signed-in caller. A request authenticated as the `Automation` machine identity
+therefore reports `identity.user: "Automation"`, not the session owner.
 
-Auth is the same as every other session route. The endpoint is read-only: the
-account row *peeks* the pool (`recordPick: false`) rather than picking from it.
+Auth is the same as every other session route. The endpoint is read-only and
+does not pick from or mutate an account pool.
 
 ## Reading the output
 
@@ -33,69 +36,75 @@ Every leaf is a row:
 ```json
 {
   "value": ["grafana", "incident"],
-  "source": "session-run-inputs.ts — automation \"Production Watchdog\" recipe allowlist",
+  "source": "session-run-inputs.ts MCP scope",
   "stability": "load-dependent",
   "note": "…"
 }
 ```
 
-`stability` marks rows that are re-resolved at dispatch: which account the
-bridge picks, and therefore the shared-server key, depend on pool state at the
-moment the turn starts. Everything else is stable until someone edits a config.
-The document is a forecast, not a contract — a mid-turn near-limit steer or the
-model fallback graph can still move a run.
+Only `account.pinned` is currently marked `load-dependent`. Its ID is the
+persisted `session.accountId`; its Claude-account display-name lookup can change.
+The endpoint does not predict a pool selection. The report is a forecast, not a
+contract: fallback routing and account selection are resolved at dispatch.
 
 ## Sections
 
 | Section | Answers |
 | --- | --- |
-| `execution` | Host, sandbox or Runner. Working directory, branch, mode, and what the mode costs you. |
-| `gate` | Whether the engine will run this kind of turn at all (`piGateReason`, deny by default). |
-| `model` | Requested id → engine → dispatch id, which config chose the engine, the preset behind a `dial/…` id, effort, fallback. |
-| `account` | Bridge mode, pinned/sticky/predicted account and why, every model the pick has to satisfy, and the pool-dry circuit. |
-| `mcp` | The allowlist and where it came from, then every configured server with `included` and the gate that decided it. Plus the in-process `opensession-*` set. |
-| `tools` | The unattended policy flag, and every tool stripped from the model's list with the catalog it came from. |
-| `agents` | The oracle and orchestrator-worker subagents, resolved for this run's bridge. |
-| `memory` | The `~/.opensession-memory` scopes injected into the system prompt, or why none are. |
-| `placement` | Shared always-warm engine server vs per-session, the reason, and the pool key. |
-| `identity` | The run user, the OAuth grant user, the GitHub login whose token rides along, the commit author. |
-| `instructions` | Which sources compose the system prompt. Contents are never returned: `AGENTS.local.md` is instance-private. |
+| `execution` | A coarse Runner, sandbox, or host target, plus working directory, branch, session mode, and sandbox selection. |
+| `gate` | Whether hard-coded run kind `prompt` passes `runGateReason`. This is not a Pi enablement or engine-readiness check, so `allowed` can be true even when dispatch will refuse. |
+| `model` | Requested ID, Pi dispatch ID and provider, model preset, effort, fast mode, fallback, steer support, and account-pool type. |
+| `account` | The persisted `session.accountId` pin and its Claude-account display name when found. It does not predict account selection, reason, availability, rotation, required models, or pool-dry state. |
+| `mcp` | The resolved allowlist. The response does not expose whether it came from the automation, session, feed, or unscoped branch. It also lists configured and allowlisted servers with their inclusion result, plus the in-process `opensession-*` set. |
+| `tools` | The unattended-policy flag and tools stripped from the model's list, with their source catalogs. |
+| `agents` | Oracle and orchestrator-worker subagents resolved for the routed provider. |
+| `memory` | The `~/.opensession/memory` scopes included when session context is enabled. |
+| `placement` | A coarse mode and `restartSafe`, which is currently always `true`. It does not report shared-server placement, a reason, or a pool key. |
+| `identity` | The attributed run user, resolved commit author, per-user GitHub login when applicable, and resolved instance paths. It omits the MCP OAuth grant user and the simple-mode sole GitHub account. |
+| `instructions` | Sources composing the Pi system prompt. Contents are never returned; `AGENTS.local.md` remains instance-private. |
 
-## Two rows worth knowing about
+## Important caveats
 
-**`mcp.scope` vs `placement.externalMcpAtConfigLevel`.** A run on a shared
-engine server gets `"all"` in its server config and is narrowed per prompt
-instead, so those two rows legitimately disagree. A per-session server enforces
-the allowlist in its own config and they match.
+**MCP creator grants.** The report evaluates `allowedUsers` against both the
+prompt user and `startedBy`. Live dispatch for an automation-owned session
+withholds that creator grant, so `mcp.servers` can overstate creator-gated MCP
+visibility and OAuth-grant availability for those sessions.
 
-**`gate.unattendedKind` vs `tools.unattended`.** An interactive resume of an
-automation-owned session is run kind `prompt` (so the first is false) while
-still carrying that automation's denials (so the second is true). That is the
-rule that keeps a resume from handing an automation session every MCP server.
+**Execution placement.** Do not use `execution.target` to diagnose an
+unavailable selected sandbox or detached-host eligibility. The report can say
+`host` where dispatch will fail rather than cross a sandbox boundary. It also
+does not inspect `OPENSESSION_PI_DETACH`, local host support, or the
+`disable-run-hosts` file; a reported detached host may run in process instead.
+
+**`gate.unattendedKind` and `tools.unattended`.** An interactive resume of an
+automation-owned session uses run kind `prompt`, so `gate.unattendedKind` is
+false, while the automation's denials make `tools.unattended` true. This keeps
+the automation's restricted tool policy on a manual resume.
 
 ## How it stays honest
 
-The endpoint composes the real resolvers rather than restating them:
-`routeModel` for the engine, `filterMcpServers` for MCP visibility,
-`runToolPolicy` for tool stripping, the detached-host resolver for placement,
-`sessionMemoryScopes` for memory, `pickMeridianAccount` for the account.
+The endpoint reuses `resolveSessionRunInputs`, `routeModel`,
+`filterMcpServers`, `runToolPolicy`, and `sessionMemoryScopes`. The shared
+session-run-input decision keeps MCP scope, automation denials, and run-user
+handling aligned with an interactive prompt dispatch.
 
-The one decision that used to live inline in `run-session.ts` — the
-automation / session / feed branch that picks the MCP allowlist, the denials
-and the run user — was extracted to `packages/core/opensession-server/src/server/session-run-inputs.ts`, which
-`runSessionPromptInner` now calls. One decision, two readers, so the dump
-cannot drift from the turn.
+Account selection and execution placement are not resolved through dispatch
+and must be treated as incomplete forecasts. The MCP creator-grant exception
+for automation-owned sessions is described above.
 
-The two things this file computes itself are attributions, not decisions:
-`explainMcpServers` is handed `filterMcpServers`' output and only says why each
-server is in or out, and `describeStrippedTools` is handed
-`runToolPolicy`'s disable list and only says which catalog each entry came
-from. Both are pure and tested (`packages/core/opensession-server/src/server/effective-config.test.ts`).
+`explainMcpServers` only attributes `filterMcpServers` output, and
+`describeStrippedTools` only attributes `runToolPolicy` output. Those helpers
+are pure and tested in
+`packages/core/opensession-server/src/server/effective-config.test.ts`.
 
 ## Calling it from a script
 
-`interactive-mcp.ts` binds the run-rpc socket as a module side effect, so
-`effective-config.ts` imports it lazily. Importing the module is safe, but
-*calling* `buildSessionEffectiveConfig` outside the server process would take
-the live socket. Run standalone probes with `NODE_ENV=test`, which makes that
-bind a no-op, or just call the endpoint over HTTP.
+Importing or calling `buildSessionEffectiveConfig` does not bind a socket.
+`interactive-mcp.ts` only registers an in-memory builder at module scope;
+`opensession.ts` explicitly starts the run-rpc and MCP HTTP listeners during
+boot. The import remains lazy so basic config inspection does not eagerly load
+every interactive tool builder.
+
+A standalone call still reads the configured session and instance state. Point
+`OPENSESSION_STATE_DIR` at isolated state for a probe, or call the endpoint over
+HTTP to inspect the running server's actual configuration.

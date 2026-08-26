@@ -3,6 +3,7 @@ import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { BASE_PATH } from "../lib/base";
 import { DEFAULT_DOC_TITLE, PRODUCT_NAME } from "../lib/brand";
 import { useSetupStatus } from "../hooks/useSetupStatus";
+import { effectiveTheme, onThemeChanged } from "../lib/theme";
 import { Button } from "../ui/button";
 import { cn } from "../ui/cn";
 import { duration, ease } from "../ui/motion";
@@ -16,32 +17,30 @@ import { TeamSection } from "./SetupTeam";
 import { UserAvatar } from "./UserAvatar";
 import { OrganizationProfileSection } from "./settings/GeneralPanel";
 import { ProviderAccountsSection } from "./settings/ModelAccounts";
+import { IngressPanel } from "./settings/IngressPanel";
 import { IconCheck, IconChevronLeft, IconGlobe, IconRepo } from "./icons";
 import { githubAuthState, type SetupStatus } from "./setup-shared";
 
 interface FirstMileStep {
-	id: "welcome" | "github" | "organization" | "team" | "ai" | "repos" | "ready";
+	id: "welcome" | "ingress" | "github" | "organization" | "team" | "ai" | "repos" | "ready";
 	label: string;
 	title: string;
 	description: string;
 }
 
-// GitHub comes first because it supplies the next step's answers: the
-// organization is named and marked from the org you just connected rather than
-// asked for cold. Members sit after repositories, since an invite
-// is worth more once there is something to join.
+// Organization and model setup come first, before the connection steps.
+// Domains remains before GitHub so a configured endpoint can prefill the App
+// form, but the step stays optional for private-only installations. Members sit
+// after repositories, since an invite is worth more once there is something to
+// join. The members step is removed when GitHub sign-in is not connected,
+// because that step imports and invites people through the connected GitHub
+// organization.
 const STEPS: FirstMileStep[] = [
 	{
 		id: "welcome",
 		label: "Welcome",
 		title: `Welcome to ${PRODUCT_NAME}`,
 		description: "Set up this server before you start using Open Session.",
-	},
-	{
-		id: "github",
-		label: "GitHub",
-		title: "Connect GitHub",
-		description: "GitHub signs you in and lets sessions access repositories, push changes, and create and review pull requests.",
 	},
 	{
 		id: "organization",
@@ -54,6 +53,18 @@ const STEPS: FirstMileStep[] = [
 		label: "Models",
 		title: "Models",
 		description: "Connect the AI subscriptions your team will use to run sessions.",
+	},
+	{
+		id: "ingress",
+		label: "Domains",
+		title: "Domains",
+		description: "Keep the app private for your team. Optionally let external services reach a public callback endpoint.",
+	},
+	{
+		id: "github",
+		label: "GitHub",
+		title: "Connect GitHub",
+		description: "GitHub signs you in and lets sessions access repositories, push changes, and create and review pull requests. The App form includes your public webhook URL.",
 	},
 	{
 		id: "repos",
@@ -74,6 +85,10 @@ const STEPS: FirstMileStep[] = [
 		description: "Review your setup before entering Open Session.",
 	},
 ];
+
+function githubTeamOnboardingEnabled(status: SetupStatus | null): boolean {
+	return Boolean(status?.github.userPrAuth && status.github.clientIdConfigured);
+}
 
 /** The GitHub organization this instance is wired to, for the organization
  *  step's defaults. Reads the App's own owner first, then falls back to the
@@ -118,6 +133,7 @@ function FirstMileSummary({
 	onSelect: (step: FirstMileStep["id"]) => void;
 }) {
 	const github = githubAuthState(status.github);
+	const showTeam = githubTeamOnboardingEnabled(status);
 	let serverHost = status.publicBaseUrl;
 	try {
 		serverHost = new URL(status.publicBaseUrl).host;
@@ -240,10 +256,15 @@ function FirstMileSummary({
 				</div>
 			),
 		},
-	];
+	].filter((tile) => tile.step !== "team" || showTeam);
 
 	return (
-		<div className="grid grid-cols-5 gap-3 phone:grid-cols-2">
+		<div
+			className={cn(
+				"grid gap-3 phone:grid-cols-2",
+				showTeam ? "grid-cols-5" : "mx-auto max-w-[760px] grid-cols-4",
+			)}
+		>
 			{tiles.map((tile) => {
 				const className = cn(
 					"flex aspect-square min-w-0 flex-col justify-between rounded-2xl border p-4 text-left backdrop-blur-xl phone:rounded-xl phone:p-3.5",
@@ -260,7 +281,7 @@ function FirstMileSummary({
 							<div
 								className={cn(
 									"flex size-8 shrink-0 items-center justify-center rounded-full",
-									tile.ready ? "bg-bg/60 text-green" : "bg-faint/10 text-faint",
+									tile.ready ? "bg-green text-white" : "bg-faint/10 text-faint",
 								)}
 							>
 								{tile.ready ? (
@@ -303,10 +324,15 @@ export function FirstMile({ onDone }: { onDone: () => Promise<void> }) {
 	const [direction, setDirection] = useState(1);
 	const [footerSeparated, setFooterSeparated] = useState(false);
 	const [finishing, setFinishing] = useState(false);
+	const [ingressReady, setIngressReady] = useState(false);
+	const [theme, setTheme] = useState(effectiveTheme);
 	const headingRef = useRef<HTMLHeadingElement>(null);
 	const mainRef = useRef<HTMLElement>(null);
 	const reducedMotion = useReducedMotion();
-	const step = STEPS[index]!;
+	const steps = githubTeamOnboardingEnabled(status)
+		? STEPS
+		: STEPS.filter((item) => item.id !== "team");
+	const step = steps[index]!;
 
 	useEffect(() => {
 		document.title = `Welcome to ${PRODUCT_NAME}`;
@@ -314,6 +340,8 @@ export function FirstMile({ onDone }: { onDone: () => Promise<void> }) {
 			document.title = DEFAULT_DOC_TITLE;
 		};
 	}, []);
+
+	useEffect(() => onThemeChanged(() => setTheme(effectiveTheme())), []);
 
 	useEffect(() => {
 		if (index > 0) headingRef.current?.focus({ preventScroll: true });
@@ -339,12 +367,15 @@ export function FirstMile({ onDone }: { onDone: () => Promise<void> }) {
 		};
 	}, [index, status]);
 
-	function goTo(next: number) {
-		const nextIndex = Math.min(Math.max(next, 0), STEPS.length - 1);
+	async function goTo(next: number) {
+		const nextIndex = Math.min(Math.max(next, 0), steps.length - 1);
 		if (nextIndex === index) return;
+		// The GitHub creation link carries the public callback URL. Refresh it
+		// after the preceding ingress step before rendering a clickable link.
+		if (steps[nextIndex]?.id === "github") await refetch();
 		setDirection(nextIndex > index ? 1 : -1);
 		setIndex(nextIndex);
-		void refetch();
+		if (steps[nextIndex]?.id !== "github") void refetch();
 	}
 
 	async function finish() {
@@ -366,16 +397,16 @@ export function FirstMile({ onDone }: { onDone: () => Promise<void> }) {
 		}),
 	};
 
+	const backdropName = theme === "dark" ? "onboarding-bg-dark" : "onboarding-bg";
+
 	return (
 		<div
 			data-first-mile
-			className="relative grid h-[100dvh] w-full grid-rows-[76px_minmax(0,1fr)_84px] overflow-hidden bg-bg text-fg phone:grid-rows-[68px_minmax(0,1fr)_90px] phone:pb-[env(safe-area-inset-bottom)]"
+			className="relative grid h-[100dvh] w-full grid-rows-[76px_minmax(0,1fr)_84px] overflow-hidden bg-surface bg-cover bg-center text-fg phone:grid-rows-[68px_minmax(0,1fr)_90px] phone:pb-[env(safe-area-inset-bottom)]"
+			// The vendored marketing artwork keeps first run independent of a CDN.
+			// Painting it on the shell lets a transparent idle footer reveal it.
+			style={{ backgroundImage: `url(${BASE_PATH}/${backdropName}.webp)` }}
 		>
-			<div
-				className="pointer-events-none absolute inset-0 opacity-70 [background:radial-gradient(circle_at_18%_8%,var(--accent-soft),transparent_34%),radial-gradient(circle_at_82%_92%,var(--blue-soft),transparent_36%)]"
-				aria-hidden="true"
-			/>
-
 			<TopBar
 				as="header"
 				className="relative z-10 grid grid-cols-[1fr_auto_1fr] px-8 phone:px-4"
@@ -399,7 +430,7 @@ export function FirstMile({ onDone }: { onDone: () => Promise<void> }) {
 					)}
 					aria-label="Onboarding progress"
 				>
-					{STEPS.slice(1).map((item, itemIndex) => {
+					{steps.slice(1).map((item, itemIndex) => {
 						const stepIndex = itemIndex + 1;
 						return (
 							<button
@@ -421,7 +452,7 @@ export function FirstMile({ onDone }: { onDone: () => Promise<void> }) {
 					})}
 				</nav>
 
-				{index > 0 && index < STEPS.length - 1 ? (
+				{index > 0 && index < steps.length - 1 && step.id !== "ingress" ? (
 					<button
 						type="button"
 						onClick={() => goTo(index + 1)}
@@ -459,7 +490,8 @@ export function FirstMile({ onDone }: { onDone: () => Promise<void> }) {
 								ease,
 							}}
 							className={cn(
-								"mx-auto flex min-h-full w-full max-w-[960px] flex-col items-center py-8 phone:py-5",
+								"mx-auto flex min-h-full w-full flex-col items-center py-8 phone:py-5",
+								step.id === "ingress" ? "max-w-[1120px]" : "max-w-[960px]",
 								step.id === "welcome" && "justify-center pb-16 phone:pb-10",
 							)}
 						>
@@ -476,7 +508,7 @@ export function FirstMile({ onDone }: { onDone: () => Promise<void> }) {
 									>
 										{step.title}
 									</h1>
-									<p className="mt-3 max-w-[440px] text-pretty text-body leading-relaxed text-dim">
+									<p className="mt-3 max-w-[440px] text-pretty text-body font-normal leading-relaxed text-dim">
 										{step.description}
 									</p>
 									<div className="mt-7 w-full max-w-[300px]">
@@ -496,16 +528,49 @@ export function FirstMile({ onDone }: { onDone: () => Promise<void> }) {
 										<h1
 											ref={headingRef}
 											tabIndex={-1}
-											className="m-0 text-balance text-[clamp(1.6rem,2.5vw,2.25rem)] font-title leading-[1.08] tracking-[-0.035em] text-fg outline-none"
+											className="m-0 text-balance text-[clamp(1.6rem,2.5vw,2.25rem)] font-title leading-[1.08] tracking-[-0.035em] text-fg outline-none phone:text-[1.5rem]"
 										>
 											{step.title}
 										</h1>
-										<p className="mt-3 text-pretty text-body leading-relaxed text-dim">
+										<p className="mt-3 text-pretty text-body font-normal leading-relaxed text-dim">
 											{step.description}
 										</p>
 									</div>
 
-									<div className="w-full max-w-[820px] pb-8 [&_.bg-settings-plate]:rounded-2xl [&_.bg-settings-plate]:border-transparent [&_.bg-settings-plate]:bg-blue-soft/65 [&_.bg-settings-plate]:shadow-[inset_0_1px_0_color-mix(in_srgb,white_45%,transparent),0_18px_46px_-36px_color-mix(in_srgb,var(--blue)_48%,transparent)] [&_[data-setting-description]]:hidden [&_[data-settings-hint]]:hidden">
+									{/* The marketing site places translucent white sections over this same
+									    artwork. Keep the app's settings layout, but use that material here. */}
+									<div
+										className={cn(
+											"w-full pb-8 [&_[data-setting-title]]:text-dialog-title [&_[data-setting-title]]:phone:text-body",
+											// The split ingress step needs room for setup commands. The final
+											// review uses the full canvas for larger tiles; forms stay focused.
+											step.id === "ingress"
+												? "max-w-[1120px]"
+												: step.id === "ready"
+													? "max-w-[960px]"
+													: "max-w-[820px]",
+											// Match opensession.com's card glass: translucent paper, a quiet
+											// hairline, and the same 14px blur with restrained saturation.
+											"[&_.bg-settings-plate]:rounded-3xl [&_.bg-settings-plate]:border-divider-soft [&_.bg-settings-plate]:bg-[color-mix(in_srgb,var(--popup-surface)_86%,transparent)] [&_.bg-settings-plate]:shadow-[0_18px_46px_-36px_color-mix(in_srgb,var(--blue)_48%,transparent)] [&_.bg-settings-plate]:[backdrop-filter:blur(14px)_saturate(1.08)]",
+											// First-run fields use the large field step, with extra room
+											// for the fixed-width organization and product names.
+											"[&_input]:h-9 [&_input]:min-h-9 [&_input]:px-3 [&_input]:text-base [&_select]:min-h-9 [&_textarea]:min-h-9 [&_input[data-setup-field='identity']]:w-[240px] [&_input[data-setup-field='org-name']]:w-[320px]",
+										)}
+									>
+										{step.id === "ingress" && (
+											<IngressPanel
+												onboarding
+												setup={setup}
+												onChanged={refetch}
+												onStatusChange={(ingress) => {
+													if (ingress.health !== "ready") {
+														setIngressReady(false);
+														return;
+													}
+													void refetch().then(() => setIngressReady(true));
+												}}
+											/>
+										)}
 										{step.id === "github" && (
 											<GithubAuthCard
 												github={status.github}
@@ -531,13 +596,18 @@ export function FirstMile({ onDone }: { onDone: () => Promise<void> }) {
 											<ProviderAccountsSection onboarding onChanged={refetch} />
 										)}
 										{step.id === "repos" && (
-											<ReposSection repos={status.repos} onChanged={refetch} compact />
+											<ReposSection
+												repos={status.repos}
+												onChanged={refetch}
+												compact
+												showLifecycleStatus={false}
+											/>
 										)}
 										{step.id === "ready" && (
 											<FirstMileSummary
 												status={status}
 												onSelect={(stepId) =>
-													goTo(STEPS.findIndex((item) => item.id === stepId))
+													goTo(steps.findIndex((item) => item.id === stepId))
 												}
 											/>
 										)}
@@ -554,17 +624,21 @@ export function FirstMile({ onDone }: { onDone: () => Promise<void> }) {
 					"relative z-10 border-t px-8 pt-1 transition-[border-color,background-color] phone:px-5 phone:pt-3",
 					footerSeparated
 						? "border-line bg-bg/95 backdrop-blur-xl"
-						: "border-transparent bg-[linear-gradient(to_bottom,transparent,var(--bg)_30%)]",
+						: "border-transparent bg-transparent",
 					index === 0 && "invisible",
 				)}
 			>
 				<div className="mx-auto grid h-full w-full max-w-[820px] grid-cols-[1fr_auto_1fr] items-center phone:grid-cols-1 phone:items-start">
 					<Button
-						variant="ghost"
+						variant={footerSeparated ? "ghost" : "overlay"}
 						size="lg"
 						icon={<IconChevronLeft size={18} />}
 						onClick={() => goTo(index - 1)}
-						className={cn("justify-self-start phone:hidden", index === 0 && "invisible")}
+						className={cn(
+							"justify-self-start phone:hidden",
+							!footerSeparated && "text-white!",
+							index === 0 && "invisible",
+						)}
 					>
 						Back
 					</Button>
@@ -575,19 +649,21 @@ export function FirstMile({ onDone }: { onDone: () => Promise<void> }) {
 						variant="primary"
 						size="lg"
 						onClick={() => {
-							if (index === STEPS.length - 1) void finish();
+							if (index === steps.length - 1) void finish();
 							else goTo(index + 1);
 						}}
 						disabled={!status || finishing}
 						className="justify-self-end phone:min-h-12 phone:w-full phone:justify-center phone:rounded-lg"
 					>
-						{index === 0
+						{step.id === "ingress" && !ingressReady
+							? "Skip for now"
+							: index === 0
 							? "Continue"
-							: index === STEPS.length - 1
+							: index === steps.length - 1
 								? finishing
 									? "Finishing…"
 									: `Enter ${PRODUCT_NAME}`
-								: index === STEPS.length - 2
+								: index === steps.length - 2
 									? "Review"
 									: "Next"}
 					</Button>

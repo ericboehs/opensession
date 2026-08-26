@@ -61,7 +61,7 @@ describe("transcript snapshots", () => {
       workspaceId: "ws-snap-attached",
       piSessionId: "ses_snap_attached",
     });
-    h.writeEngineTranscript("ses_snap_attached", [
+    await h.writeEngineTranscript("ses_snap_attached", [
         {
           type: "user",
           uuid: "attached-1",

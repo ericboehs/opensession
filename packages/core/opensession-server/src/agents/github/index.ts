@@ -110,25 +110,50 @@ function ensureDocsSyncAutomation(): void {
   console.log(`[github] Seeded docs-sync automation "${DOCS_SYNC_AUTOMATION_NAME}" (enabled)`);
 }
 
+/** Who armed a recovery marker. Empty/undefined means nobody did — see below. */
+function recoveryRequester(s: GithubPrState, kind: RecoveryKind): string | undefined {
+  switch (kind) {
+    case "auto-fix":
+      return s.autoFix?.requestedBy;
+    case "pending-auto-fix":
+      return s.pendingAutoFix?.requestedBy;
+    case "run":
+      return s.activeRun?.requestedBy;
+    case "mention":
+      return s.activeMention?.author;
+    case "pending-mention":
+      return s.pendingMention?.author;
+  }
+}
+
+/**
+ * May this marker's run be resumed on boot? The gate exists so an untrusted
+ * PERSON cannot get a run replayed for them across a restart.
+ *
+ * Webhook- and reconcile-triggered reviews have no human requester by design
+ * (review.ts arms `requestedBy: ""`), so an empty requester on a review means
+ * "automation", not "untrusted person". Reading it as untrusted refused every
+ * automated review that spanned a restart and, worse, cleared the marker
+ * carrying that run's durable `reviewResult` — stranding a finished, paid-for
+ * review as a permanently spinning "🔄 Reviewing…" comment (PR #99, 2026-08-25).
+ *
+ * Only reviews get this exemption: simplify and adversarial always record their
+ * triggering human, and auto-fix/mentions are inherently person-initiated, so a
+ * missing requester there really is a marker that should not be replayed.
+ */
+export function recoveryPermitted(s: GithubPrState, kind: RecoveryKind): boolean {
+  const requester = recoveryRequester(s, kind);
+  if (kind === "mention" || kind === "pending-mention")
+    return isTrustedGithubLogin(requester);
+  if (kind === "run" && s.activeRun?.kind === "review" && !requester) return true;
+  return isTrustedUser(requester);
+}
+
 /** Fire the one recovery `planRecovery` picked for this PR. */
 async function fireRecovery(s: GithubPrState, kind: RecoveryKind): Promise<void> {
-  const requester =
-    kind === "auto-fix"
-      ? s.autoFix?.requestedBy
-      : kind === "pending-auto-fix"
-        ? s.pendingAutoFix?.requestedBy
-        : kind === "run"
-          ? s.activeRun?.requestedBy
-          : kind === "mention"
-            ? s.activeMention?.author
-            : s.pendingMention?.author;
-  const requesterTrusted =
-    kind === "mention" || kind === "pending-mention"
-      ? isTrustedGithubLogin(requester)
-      : isTrustedUser(requester);
-  if (!requesterTrusted) {
+  if (!recoveryPermitted(s, kind)) {
     console.warn(
-      `[github] Refusing ${kind} recovery for PR #${s.prNumber} from untrusted @${requester || "unknown"}`,
+      `[github] Refusing ${kind} recovery for PR #${s.prNumber} from untrusted @${recoveryRequester(s, kind) || "unknown"}`,
     );
     clearRecoveryMarker(s, kind);
     return;

@@ -43,8 +43,10 @@ import { MyAccountsPanel } from "./MyAccounts";
 import { AuditPanel } from "./settings/AuditPanel";
 import { AuthenticationPanel } from "./settings/AuthenticationPanel";
 import { DeploysPanel } from "./settings/DeploysPanel";
+import { DownloadsPanel } from "./settings/DownloadsPanel";
 import { GeneralPanel } from "./settings/GeneralPanel";
 import { IntegrationsPanel } from "./settings/IntegrationsPanel";
+import { IngressPanel } from "./settings/IngressPanel";
 import { LibraryPanel } from "./settings/LibraryPanel";
 import { MembersPanel } from "./settings/MembersPanel";
 import { MemoryPanel } from "./settings/MemoryPanel";
@@ -239,12 +241,14 @@ function SectionPanel({
 			{section === "library" && <LibraryPanel />}
 			{section === "integrations" && <IntegrationsPanel />}
 			{section === "audit" && <AuditPanel />}
+			{section === "downloads" && <DownloadsPanel />}
 			{section === "providers" && <ProvidersPanel workspace={workspace} />}
 			{section === "sandboxes" && <SandboxesPanel />}
 			{section === "runners" && <RunnersPanel />}
 			{section === "connections" && <Connections />}
 			{section === "myAccounts" && <MyAccountsPanel />}
 			{section === "memory" && <MemoryPanel />}
+			{section === "ingress" && <IngressPanel />}
 			{section === "storage" && <StoragePanel />}
 			{section === "prewarming" && <PrewarmingPanel />}
 			{section === "papercuts" && <PapercutsPanel />}

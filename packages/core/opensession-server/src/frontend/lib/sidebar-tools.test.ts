@@ -30,13 +30,14 @@ beforeEach(() => store.clear());
 
 describe("readHiddenSidebarTools", () => {
 	// A tool added to SIDEBAR_TOOL_IDS must not switch itself on for everyone
-	// who has never touched the setting. New accounts start with the tools
-	// that need nothing set up.
-	test("a new account sees Feed, Pull requests and Catch up, and nothing else", () => {
+	// who has never touched the setting. Support is deliberately one of the
+	// default destinations.
+	test("a new account sees Feed, Pull requests, Support and Catch up", () => {
 		const hidden = readHiddenSidebarTools();
 		expect([...SIDEBAR_TOOL_IDS].filter((id) => !hidden.has(id))).toEqual([
 			"feed",
 			"prs",
+			"plain",
 			"catchup",
 		]);
 	});

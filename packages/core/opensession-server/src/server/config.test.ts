@@ -27,7 +27,7 @@ const ENV_KEYS = [
   "OPENSESSION_PI_BIN",
   "OPENSESSION_MCP_CONFIG",
   "OPENSESSION_UI_BASE",
-  "OPENSESSION_WEBHOOK_BASE",
+  "OPENSESSION_INGRESS_BASE",
   "PREVIEW_HOST",
 ] as const;
 const saved: Record<string, string | undefined> = {};
@@ -51,27 +51,25 @@ afterEach(() => {
 });
 
 describe("config loader", () => {
-  test("supports a separate public webhook origin", () => {
+  test("supports one canonical public ingress origin", () => {
     withConfig(JSON.stringify({
-      server: {
-        publicBaseUrl: "https://ui.example.test",
-        webhookBaseUrl: "https://ingress.example.test",
-      },
+      server: { publicBaseUrl: "https://ui.example.test" },
+      ingress: { publicBaseUrl: "https://ingress.example.test", exposure: "custom" },
     }));
     delete process.env.OPENSESSION_UI_BASE;
-    delete process.env.OPENSESSION_WEBHOOK_BASE;
+    delete process.env.OPENSESSION_INGRESS_BASE;
 
     expect(configuredServer().publicBaseUrl).toBe("https://ui.example.test");
     expect(configuredServer().webhookBaseUrl).toBe("https://ingress.example.test");
 
-    process.env.OPENSESSION_WEBHOOK_BASE = "https://env-ingress.example.test";
+    process.env.OPENSESSION_INGRESS_BASE = "https://env-ingress.example.test";
     expect(configuredServer().webhookBaseUrl).toBe("https://env-ingress.example.test");
   });
 
-  test("defaults the webhook origin to the public UI origin", () => {
+  test("keeps an unconfigured ingress distinct while setup remains portable", () => {
     withConfig(JSON.stringify({ server: { publicBaseUrl: "https://ui.example.test" } }));
     delete process.env.OPENSESSION_UI_BASE;
-    delete process.env.OPENSESSION_WEBHOOK_BASE;
+    delete process.env.OPENSESSION_INGRESS_BASE;
 
     expect(configuredServer().webhookBaseUrl).toBe("https://ui.example.test");
   });

@@ -381,6 +381,12 @@ if (!ctrl.signal.aborted) setSearching(false);
 	const results = (() => {
 		const q = query.trim().toLowerCase();
 		const terms = q.split(/\s+/).filter(Boolean);
+		const hasQuery = terms.length > 0;
+		// The command menu is a search surface, not a second full list page. Keep
+		// its resting suggestions and each searched category bounded so opening or
+		// typing never mounts hundreds of rows before the person can read them.
+		const prLimit = hasQuery ? 20 : 8;
+		const sessionLimit = hasQuery || hasSessionFilter ? 40 : 12;
 		const matches = (values: Array<string | undefined>) => {
 			if (terms.length === 0) return true;
 			const text = values.filter(Boolean).join(" ").toLowerCase();
@@ -395,6 +401,7 @@ if (!ctrl.signal.aborted) setSearching(false);
 					...(action.shortcut || []),
 				]),
 			)
+			.slice(0, hasQuery ? 24 : 16)
 			.map((action) => ({ type: "action", category: action.category, action }));
 		const prResults: PaletteResult[] = (hasSessionFilter ? [] : openPrs)
 			.filter((pr) =>
@@ -410,7 +417,7 @@ if (!ctrl.signal.aborted) setSearching(false);
 					]),
 			)
 			.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
-			.slice(0, 40)
+			.slice(0, prLimit)
 			.map((pr) => ({ type: "pr", category: "Pull requests", pr }));
 		// Falls back to deriving the text for a session the index hasn't seen, so
 		// a pool and an index that are momentarily out of step still search.
@@ -433,20 +440,22 @@ if (!ctrl.signal.aborted) setSearching(false);
 		if (sessionResults.some((session) => sessionUsesPrLink(session, q))) {
 			sessionResults = collapsePrLinkSessions(sessionResults);
 		}
-		const sessionRows: PaletteResult[] = sessionResults.slice(0, 100).map((s) => {
-			// Show the snippet only when the title/metadata didn't already match —
-			// otherwise the row explains itself.
-			const metaMatch =
-				terms.length > 0 &&
-				(terms.every((t) => hayOf(s).includes(t)) ||
-					sessionUsesPrLink(s, q));
-			return {
-				type: "session",
-				category: "Sessions",
-				session: s,
-				snippet: metaMatch ? undefined : snippets.get(s.id),
-			};
-		});
+		const sessionRows: PaletteResult[] = sessionResults
+			.slice(0, sessionLimit)
+			.map((s) => {
+				// Show the snippet only when the title/metadata didn't already match —
+				// otherwise the row explains itself.
+				const metaMatch =
+					terms.length > 0 &&
+					(terms.every((t) => hayOf(s).includes(t)) ||
+						sessionUsesPrLink(s, q));
+				return {
+					type: "session",
+					category: "Sessions",
+					session: s,
+					snippet: metaMatch ? undefined : snippets.get(s.id),
+				};
+			});
 		return [...actionResults, ...prResults, ...sessionRows];
 	})();
 	const keyedActive = results.findIndex((result) => resultKey(result) === activeKey);

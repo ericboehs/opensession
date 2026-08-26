@@ -1,13 +1,14 @@
 # GitHub
 
 The GitHub integration has three parts: one GitHub App for bot and teammate
-credentials, webhook intake on the [webhook server](install.md#webhook-server),
+credentials, webhook intake on [Public ingress](install.md#public-ingress),
 and the `gh` CLI used inside trusted runs. Installation and App user tokens are
 the only GitHub credentials Open Session accepts.
 
 ## GitHub App
 
-Create one organization-owned GitHub App. The same App provides:
+For a team install, create one organization-owned GitHub App. A single-user
+simple-mode install may instead use a personal App. The same App provides:
 
 - short-lived installation tokens for reviews, comments, merges, clones,
   pushes, previews, sandboxes, and trusted GitHub automations;
@@ -40,8 +41,9 @@ The UI will not overwrite or delete an operator-managed key.
 Environment overrides for the App identity are
 `OPENSESSION_GITHUB_CLIENT_ID`, `OPENSESSION_GITHUB_CLIENT_SECRET`,
 `OPENSESSION_GITHUB_APP_SLUG`, and `OPENSESSION_GITHUB_APP_KEY` (a path, not PEM
-contents). Environment values win over config. `installationId` may pin a known
-numeric installation; normally `installationOwner` selects it by organization.
+contents). Environment values win over config. `installationOwner` is required
+for service work and verifies repository ownership; `installationId` may also
+pin its known numeric installation.
 
 ### Required permissions
 
@@ -86,10 +88,10 @@ rewritten to HTTPS for that process so host keys cannot bypass the App.
 
 ## Webhook intake
 
-The webhook server (`packages/core/opensession-server/src/server/webhook-server.ts`) listens on
-`127.0.0.1:${WEBHOOK_PORT}` (default 3848). You need a
-TLS-terminating proxy in front of it for GitHub to reach it — Tella, for
-example, uses Caddy on a public hostname.
+The fail-closed public ingress gateway listens on `127.0.0.1:3860`. Choose
+Tailscale Funnel, Cloudflare Tunnel, or Direct HTTPS with Caddy under
+**Settings → Domains and ingress → Public callbacks**. Never route the private
+app port through that public origin.
 
 - Route: `POST /github/webhook` (registered by the GitHub agent,
   `packages/core/opensession-server/src/agents/github/index.ts`). For an existing Slack-only deployment with
@@ -97,11 +99,23 @@ example, uses Caddy on a public hostname.
   compatibility fallback. When both are enabled, only GitHub registers it.
 - Verification: `GITHUB_WEBHOOK_SECRET`, HMAC-SHA256 over the raw body,
   header `x-hub-signature-256` (`sha256=<hex>`), timing-safe compare; invalid
-  signature → 401. Deliveries are deduped by `x-github-delivery`.
+  signature → 401. The body limit is 1 MiB. Deliveries are deduped by
+  `x-github-delivery` for 24 hours, with at most 500 ids retained.
 
-Configure the GitHub webhook (repo → Settings → Webhooks) with that URL,
-content type `application/json`, your secret, and these events — this is what
-the code consumes (`packages/core/opensession-server/src/agents/github/webhook.ts`):
+Use the App-level webhook, not one repository webhook per repo. In the GitHub
+App's **General → Webhook** settings, set the public URL to
+`https://<public-origin>/github/webhook`, make it active, and paste the same
+strong secret stored as `GITHUB_WEBHOOK_SECRET` in Settings → Integrations or
+`~/.opensession.env` (for example, generate one with `openssl rand -hex 32`).
+Then under **Permissions & events → Subscribe to events**, select **Issue
+comments**, **Pull request review comments**, **Pull request reviews**, **Pull
+requests**, and **Workflow runs**. The generated Create GitHub App link
+pre-fills the URL and active state, but it cannot fill the secret or event
+subscriptions. Restart Open Session after setting or changing the secret; the
+GitHub-side subscription checkboxes take effect without an Open Session restart.
+
+These are the subscribed events the code consumes
+(`packages/core/opensession-server/src/agents/github/webhook.ts`):
 
 | Event | What happens |
 | --- | --- |
@@ -128,98 +142,81 @@ credential-free GitHub Actions CI, but cannot wake the Open Session agent,
 spend its model budget, push code, steer a session, or trigger a privileged PR
 behavior. Keep the team GitHub roster current; an empty roster fails closed.
 
-**Multi-repo**: events are accepted for **any repo in the config registry**
-(`repos` in `~/.opensession/config.json`, matched by `ghRepo`) — a repo joins
-the PR agent by existing in config and pointing its own GitHub webhook (same
-URL + secret) at the intake. Events for unconfigured repos are dropped.
-Per-PR state, locks, worktrees, and session ids are repo-qualified for
-non-default repos (the default repo keeps its historical bare-number keys).
-Merge side effects (docs-sync, SEO tracking, session deploy notifications)
-run for the **default repo only**.
+**Multi-repo**: the App webhook covers every repository on which the App is
+installed. A repo joins the PR agent when it is also in the config registry
+(`repos` in `~/.opensession/config.json`, matched by `ghRepo`). Events for
+unconfigured repos are dropped. Per-PR state, locks, worktrees, and session ids
+are repo-qualified for non-default repos (the default repo keeps its historical
+bare-number keys). Merge side effects (docs-sync and linked-session deploy
+notifications) run for the **default repo only**.
 
 ## Webhook reachability
 
 PR comments, labels, and other event-driven behavior need GitHub to reach the
-public webhook URL. Set `server.webhookBaseUrl` (or the webhook origin in
-Settings), terminate TLS there, and configure the organization webhook above.
-A private-only instance can still reconcile missed PR reviews by polling, but
-it cannot discover conversational comments without webhook delivery.
+public webhook URL. Configure Public ingress before creating the App so the
+pre-filled webhook URL is public; if the App already exists, update its webhook
+URL manually. A private-only instance can reconcile some recent, trusted
+opted-in PR reviews by polling, but it cannot discover conversational comments
+or new label commands without webhook delivery.
 
 ## Behavior toggles
 
 - Auto-review on every PR push is **off by default**: the github agent seeds
   a "review" automation disabled (label-only mode). Enable it in the
   Automations UI. Not an env var.
-- The docs-sync automation is seeded (enabled, fires on merge) **only when
-  you set a prompt** in `integrations.github.docsSyncPrompt`. Set
-  `integrations.github.docsSyncChannel` to have it announce its PRs in a Slack
-  channel; leave the channel unset and it still runs, just silently.
-- Set `integrations.github.shippedChangesChannel` to a Slack channel id to
-  enable the merged walkthrough's **Share to Slack** action. A teammate clicks
-  it deliberately after merge; the durable `after` screenshot is uploaded with
-  the PR link and the walkthrough's first prose paragraph. Backend/refactor
-  changes and walkthroughs without visual proof do not show the action.
+- The docs-sync automation is seeded enabled and fires on merge **only when
+  you set a prompt** in `integrations.github.docsSyncPrompt`. It is an ordinary
+  code automation, so under the current credential policy it can edit its
+  worktree but receives no GitHub token and cannot push or open a PR.
+  `integrations.github.docsSyncChannel` only lets the merge handler find and
+  check off a recent Slack message that already links a docs-sync PR; it does
+  not post that announcement itself.
+- `integrations.github.shippedChangesChannel` sets the default Slack channel in
+  the post-merge **Share to Slack** composer. It is not an enable switch. A
+  teammate with a personal Slack connection deliberately posts either prose or
+  selected screenshots; channel choices come from
+  `integrations.slack.channelNames`.
 - Mention replies are always on while the agent is loaded.
 - The agent itself is off unless enabled: `integrations.github.enabled: true`
-  in config, or the `ENABLE_GITHUB_AGENT` env flag (which wins when set — see
-  [integrations-misc.md](integrations-misc.md#boot-guards)).
+  in config, or the `ENABLE_GITHUB_AGENT` env flag (which wins when set; see
+  [integrations-misc.md](integrations-misc.md#boot-guards)). Agent enablement,
+  the webhook secret, and mention handles are read at load time, so restart
+  after changing them.
 
 Prompts and `pr-info.ts` defaults are config-driven (they interpolate the
 default repo's `ghRepo`, or the PR's own repo when threaded) — no code edits
 needed to point the PR agent at your repos.
 
-## Getting automation PRs reviewed
+## Automation PR credentials and review requests
 
-A `code` automation can open PRs but never merge them — PRs are the human
-gate. That gate only closes if a human is actually asked, and nothing asks by
-default: an automation PR opens with no reviewer, so it lands in the repo and
-waits. Left alone this compounds quietly; the backlog is invisible precisely
-because no one was requested on it.
+Ordinary `code` automations can edit an isolated worktree, but currently receive
+neither `GH_TOKEN` nor `GITHUB_TOKEN`. Only interactive trusted runs and the
+dedicated `github-*` code workflows receive a user or repository-scoped App
+credential. An ordinary automation therefore cannot push or open a GitHub PR.
+Its optional `prReviewer` value is validated, preserved across resume, and
+added to the run instructions, but it grants no GitHub authority. Do not rely
+on it to publish or surface automation work.
 
-Set `prReviewer` on every `code` automation (and `code` recipe). It takes a
-GitHub login, an `org/team` slug, or a comma-separated list of either, and the
-run is instructed to pass it to `gh pr create --reviewer`:
+For a PR created by an authorized path, request a GitHub login or `org/team`
+reviewer directly. The reviewer must be a repository collaborator; a requested
+team needs access to that repository. GitHub excludes the PR author. Team
+requests expand to member logins, then through `identity.team` to Open Session
+people.
 
-```jsonc
-{ "name": "Production Error Sweep", "mode": "code",
-  "prReviewer": "your-org/your-reviewers" }
-```
-
-How the request becomes a notification: `pr-review-notifications.ts` polls the
-PR cache every 60s and pushes to anyone newly appearing in a PR's
-`reviewRequested`. A team slug is expanded to its members
-(`github-review-requests.ts`), each mapped through the identity table to a
-person, so one team request notifies every member individually.
-
-Three things to know before you pick a value:
-
-- **A reviewer must be a collaborator on the repo.** For a team that means the
-  team itself needs access — being an org member with access by some other
-  route is not enough. GitHub rejects the rest with
-  `422 Reviews may only be requested from collaborators`. Grant it under
-  *Team → Repositories → Add repository*; the bot token can't (it has no
-  Administration scope).
-- **A team request fans out, it does not round-robin.** Every member gets their
-  own notification for every PR. If you want a shared queue rather than a group
-  ping, turn on the team's code review assignment in GitHub (round-robin or
-  load-balance, count 1) so the team request resolves to one person.
-- **The PR author is never requested**, so a reviewer who also authors PRs in
-  the same repo gets nothing from those.
-
-The notification is edge-triggered and sent once — there is no digest,
-reminder, or re-notify. A recipient with no push subscription, or one who
-misses the push, is left with only the review-queue row in the sidebar. Bear
-that in mind when backfilling reviewers onto many existing PRs: doing it
-against a running server fires one push per PR per reviewer, while doing it
-with the server stopped lets the next boot adopt them as the baseline
-silently.
+`pr-review-notifications.ts` refreshes the PR cache every 60 seconds. After its
+first poll establishes a baseline, it sends web push for newly observed review
+requests. Recipients need a web-push subscription, which requires the UI over
+HTTPS. A failed or missed push is not retried; removing and later re-requesting
+a reviewer creates a new edge. A team request fans out to its members unless
+GitHub's own team code-review assignment resolves it to selected people.
 
 ## Per-user GitHub auth (PRs as the session owner)
 
 Opt-in: interactive sessions open PRs as the actual human who owns the
 session instead of the bot, and the web UI's name picker becomes a real
-GitHub sign-in. Off by default — without it everything above is the whole
-story.
+GitHub sign-in. It is off by default. Without it, team-mode server actions use
+the App installation identity; single-user mode can use the sole-account flow
+below without enabling the sign-in gate.
 
 1. Use the same organization-owned **GitHub App** configured above: tick
    **"Enable Device Flow"** and generate a client secret. If the organization
@@ -232,45 +229,55 @@ story.
 2. Configure `~/.opensession/config.json`:
 
    ```json
-   "integrations": {
-     "github": {
-       "userPrAuth": true,
-        "oauthClientId": "<client id>",
-       "oauthClientSecret": "<client secret>",
-       "appSlug": "<app slug>",
-       "installationOwner": "<organization>"
+   {
+     "integrations": {
+       "github": {
+         "userPrAuth": true,
+         "oauthClientId": "<client id>",
+         "oauthClientSecret": "<client secret>",
+         "appSlug": "<app slug>",
+         "installationOwner": "<organization>"
+       }
      }
    }
    ```
 
-   The private key is stored separately as described above. Environment
-   `OPENSESSION_GITHUB_*` values win over config. Signing in needs the client
-   id; the secret renews user tokens; the key mints bot installation tokens.
-3. Restart the service to load the runner-internal token injection.
+   Before setting `userPrAuth` directly, put at least your own exact GitHub
+   login in `identity.team[].github` (and make it an admin when the roster uses
+   explicit admin roles), or every sign-in will be rejected. The Settings UI
+   prevents this lockout when it enables the gate. The private key is stored
+   separately as described above. Environment `OPENSESSION_GITHUB_*` values
+   win over config. Signing in needs the client id; the secret renews user
+   tokens; the key mints bot installation tokens.
+3. App and authentication config is read live; no restart is required. Restart
+   only after load-time agent settings change, or once if you want the boot-only
+   `createdByLogin` migration to backfill existing sessions immediately.
 
 What turns on (`packages/core/opensession-server/src/server/github-auth.ts`, `web-auth.ts`, `routes/auth.ts`):
 
 - **Sign-in required**: the UI shows "Continue with GitHub", which starts the
   device flow, the one sign-in every client uses; only logins on
-  `identity.team[].github` may sign in. Every `/api/*` call and the UI WebSocket are 401-gated on the HttpOnly
-  session cookie; non-browser callers use `Authorization: Bearer <token>`
-  with a token from `~/.opensession-web-sessions.json`. The verified
-  identity overrides client-claimed user names (WS and HTTP), stamps
-  `createdByLogin` on new sessions, and a one-time boot migration backfills
-  it onto existing ones.
+  `identity.team[].github` may sign in. Ordinary `/api/*` calls and the UI
+  WebSocket are 401-gated on the HttpOnly session cookie; non-browser callers
+  use `Authorization: Bearer <token>` with a token from
+  `~/.opensession/web-sessions.json`. Auth routes, `/api/health`, `/live`,
+  `/ready`, client update feeds, and machine routes protected by their own
+  credentials are exceptions. The verified identity overrides client-claimed
+  user names (WS and HTTP), stamps `createdByLogin` on new sessions, and a
+  one-time boot migration backfills it onto existing ones.
 - **Organization members imported**: after a repository identifies the GitHub
-  organization, the People step adds every organization member to
-  `identity.team`. Existing profile details are preserved, and the import is
-  recorded so removing someone later is not undone on the next page load.
+  organization, opening the onboarding People step imports up to 10,000
+  organization members into `identity.team`. Existing profile details are
+  preserved, and the import is recorded so removing someone later is not
+  undone on the next page load.
 - **PRs as the owner**: signing in also stores the person's GitHub App
   user-to-server token (`~/.opensession/github-auth.json`, 0600). The App's
   Members permission lets initial setup list organization members. The runner
   injects it as `GH_TOKEN`/`GITHUB_TOKEN` into interactive,
   non-least-privilege runs only — automations, unattended kinds, and any
   run carrying a deny-set stay credential-free. Trusted GitHub code workflows
-  receive the repository-scoped App credential instead. Manage
-  connections (per-teammate status, disconnect) in the Connections UI.
-- `GET /api/health` stays un-gated (deploy polls / restart detection).
+  receive the repository-scoped App credential instead. Teammates manage their
+  own connection under Settings → Account.
 
 ## Connecting GitHub in simple mode
 
@@ -280,19 +287,26 @@ needs their **private** repos available, to list them in the repo picker, clone
 them, and open PRs as themselves. Simple mode connects with a **GitHub App you
 create**, configured entirely in the UI: no file editing, no restart.
 
-1. **Create the app.** Settings → Connections → **GitHub App** opens a wizard
-   whose link lands on `github.com/settings/apps/new` pre-filled: a generated,
-   likely-unique name, private, no webhook, **Device Flow enabled**, permissions
-   the complete permission set in [Required permissions](#required-permissions).
-   The Members permission lets org setup import private memberships into the
-   sign-in roster. Pick the owner:
-   your personal account, or an organization (a
-   team's app should be org-owned so the org owns it and can reach org repos).
-   On that page, **generate a client secret** and copy it, then create the app.
-2. **Paste the details.** Back in the wizard, paste the **Client ID**, app
-   **slug**, **client secret**, and generated **private key**. The secret refreshes
-   ~8h user-to-server tokens; the 0600 private key mints installation tokens for
-   bot work. Select the installation owner when more than one installation exists.
+1. **Create the app.** Settings → Account → **GitHub** opens a wizard whose
+   link lands on `github.com/settings/apps/new` pre-filled with a generated,
+   likely-unique name, a private App, the current webhook URL and active state,
+   **Device Flow enabled**, and the complete permission set in
+   [Required permissions](#required-permissions). Confirm Device Flow because
+   its URL parameter is undocumented. If you will enable the event-driven
+   GitHub agent, configure Public ingress first, then set the webhook secret
+   and event subscriptions described in [Webhook intake](#webhook-intake)
+   after creating the App. The Members permission lets org setup import private
+   memberships into the sign-in roster. Pick the owner: your personal account,
+   or an organization (a team's App should be org-owned so the org owns it and
+   can reach org repos). Create the App, then generate a client secret on its
+   settings page. Also generate a private key if the App will do bot work.
+2. **Paste the details.** Back in the wizard, paste the **Client ID**, App
+   **slug**, and **client secret**. Paste the generated **private key** when the
+   App will do installation-token bot work; a personal sign-in-only simple-mode
+   connection can leave it blank. The secret refreshes ~8h user-to-server
+   tokens; Open Session stores a pasted private key with mode 0600. Choosing an
+   organization owner records it as the installation owner; otherwise configure
+   `installationOwner` under Settings → Integrations before enabling bot work.
 3. **Install on your repositories.** Follow the install link and pick the repos
    to expose. A user-to-server token only reaches repos the app is installed on.
 4. **Connect.** Enter the one-time code at `github.com/login/device`. The token
@@ -302,10 +316,12 @@ create**, configured entirely in the UI: no file editing, no restart.
 
 The single connected account is *the* account for this install (there is no
 roster in simple mode; the one connected account is the acting identity).
-**Disconnect** removes it; **Remove app** clears the configured client id, slug,
-secret, private key, and installation intent, then returns the section to
-unconfigured. There is no personal-access-
-token path: the App is the only simple-mode connect.
+**Disconnect** removes it. For a UI-managed App, **Remove app** then clears the
+configured client id, slug, secret, private key, and installation intent; the
+GitHub integration must be disabled first. An App set through environment
+variables can only be changed by updating those variables and restarting.
+There is no personal-access-token path: the App is the only simple-mode
+connect.
 
 ### Graduating to per-user sign-in
 
@@ -320,29 +336,34 @@ sign-in in one locked write. A personal app stays single-user with no gate.
 
 ## Deploy script
 
-`deploy/deploy.sh` updates a running box in place. There is no deploy workflow
-in this repo — run it however you like: over SSH, from a CI job, or by hand on
-the box. Tella drives it with `ssm:SendCommand` so nothing needs inbound SSH,
-which is a pattern worth copying but not a requirement.
+`deploy/deploy.sh` updates a source checkout installed as the system-scope
+service. Run it as root on the box, directly or through a root-capable remote
+runner such as AWS SSM Run Command:
 
-The script:
+```sh
+sudo deploy/deploy.sh             # deploy origin/main
+sudo deploy/deploy.sh <git-sha>   # deploy a specific fetched revision
+```
 
-1. `git fetch` + `merge --ff-only` (never `reset --hard` — the checkout is
-   live and shared; divergence aborts loudly),
-2. `bun install --frozen-lockfile` only when the lockfile changed,
-3. syncs `opensession.service` to `/etc/systemd/system/` when it changed
-   (the deployed unit is a copy, not a symlink),
-4. when Caddy is installed, syncs the Tailscale boot-order/retry drop-in from
-   `deploy/systemd/caddy.service.d/opensession.conf` and recovers Caddy if it
-   was left failed by the tailnet-IP bind race,
-5. installs the coordinator resource override and the `opensession.slice`
-   aggregate budget for detached engine/preview scopes, preventing one session
-   or an accumulation of scopes from exhausting the host,
-6. waits up to `MAX_DRAIN_WAIT` (480s) for `activeRuns == 0` on
-   `/api/health`, then `systemctl restart opensession` and a
-   post-restart health gate.
+There is no deployment workflow in this repository. The script:
 
-The drain-aware contract — ff-only pull → conditional install → idle wait →
-graceful restart — is the part worth keeping whatever invokes it. `ff-only`
-matters most: the checkout on the box is live and shared, so a divergence
-aborts loudly rather than discarding work.
+1. fetches origin and runs `git merge --ff-only <target>` as the checkout owner;
+   it never resets the live shared checkout,
+2. runs `bun install --frozen-lockfile` when `bun.lock` or the root
+   `package.json` changed,
+3. classifies changed files by runtime layer, installs the executor and session
+   kernel credentials and fixed run-host helper, syncs the executor, session
+   kernel, and gateway units as needed, and health-gates both actor services,
+4. installs the gateway resource override and the per-user
+   `opensession.slice` aggregate budget for detached engine and preview scopes,
+5. when Caddy is installed, syncs its Tailscale boot-order/retry drop-in and
+   restarts a failed Caddy after that drop-in changes,
+6. only when gateway changes require a restart, waits up to
+   `MAX_DRAIN_WAIT` (480 seconds) for `activeRuns == 0` on `/api/health`, then
+   restarts `opensession.service` and requires `/ready` to recover. An
+   executor-only deploy leaves the gateway, browser sockets, and active run
+   hosts alone.
+
+The core contract is fast-forward-only update, conditional dependency install,
+change-scoped service rollout, and a drain before gateway restart. Divergence
+aborts instead of discarding work.

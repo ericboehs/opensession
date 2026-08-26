@@ -126,11 +126,13 @@ export const SETTINGS_KEYWORDS: Record<string, string[]> = {
 	automations: ["scheduled", "cron", "triggers", "watchers", "jobs"],
 	goals: ["standing goals", "objectives"],
 	security: ["scans", "deepsec", "vulnerabilities", "findings"],
+	ingress: ["webhooks", "public", "github", "plain", "tailscale funnel", "cloudflare tunnel", "caddy", "dns", "oidc", "workload identity"],
 	storage: ["assets", "s3", "r2", "bucket", "object storage", "cloudflare"],
 	prewarming: ["acceleration", "faster starts", "dependency cache", "preview pool", "warm", "install"],
 	deploys: ["releases", "restart", "version"],
 	papercuts: ["friction", "annoyances"],
 	audit: ["history", "events", "who did what"],
+	downloads: ["download", "mac app", "desktop app", "install", "pwa", "home screen", "dmg"],
 };
 
 export type SectionLike = { key: string; label: string; group: string };

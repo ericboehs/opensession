@@ -91,7 +91,7 @@ export const INTERNAL_MCP_CAPABILITIES = {
       "Open an editable Slack draft when the task needs human-reviewed communication. The human still presses Send.",
   },
   "opensession-ask": {
-    summary: "Ask the human a blocking question (for engines with no native ask tool).",
+    summary: "Ask the human a blocking question.",
     guidance:
       "Pause on a blocking question card when a decision only the human can make is required.",
   },
@@ -129,6 +129,11 @@ export const INTERNAL_MCP_CAPABILITIES = {
     summary: "Read this instance's own disk, memory, load, process fleets and agent status.",
     guidance:
       "Inspect this instance's disk, memory, load, process fleets, and agent status.",
+  },
+  "opensession-audit": {
+    summary: "Read one day's rolled-up audit digest.",
+    guidance:
+      "Inspect one UTC day's audit totals, run outcomes, model usage, recurring errors, papercuts, and troubled sessions.",
   },
   "opensession-self": {
     summary: "A self-improving automation reading and rewriting its OWN prompt.",

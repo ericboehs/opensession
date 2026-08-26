@@ -42,15 +42,13 @@
 	/* Corner treatment. A superellipse hugs the corner tighter than a circular
 	   arc, so a browser that can draw one carries a larger radius: every corner
 	   here is authored at its circular value and multiplied by --rf, and the
-	   pair below is flipped in one @supports block. WebKit ships no
-	   `corner-shape` at all (measured on Safari 26.5: squircle, superellipse()
-	   and even `round` all fail CSS.supports), so Safari draws a circular
-	   corner and has to reach the squircle's shape with radius alone. The
-	   closest it gets is the radius that cuts the same amount off the corner,
-	   which is 1.75x smaller: an arc removes 0.215r² of its corner square
-	   against a squircle's 0.073r². Same mechanism, same numbers, as the app's
-	   base.css. */
-	--rf: 0.771;
+	   pair below is flipped in one @supports block. WebKit does not ship
+	   `corner-shape`, so Safari keeps the full authored radius and draws a
+	   conventional round corner. It cannot reproduce the squircle exactly, but
+	   retaining the radius gives the fallback a smooth curve instead of the
+	   visibly tight corners produced by shrinking it to match the squircle's
+	   cutout area. */
+	--rf: 1;
 	--cs: round;
 	/* The ink channel behind every hairline, wash and dimmed glyph. Flipping
 	   this one token is most of what dark mode is. */
@@ -61,6 +59,12 @@
 	--window: #f6f6f4;
 	--window-shadow: rgba(28, 34, 40, 0.24);
 	--surface: #fff;
+	/* The shared modal owns one material contract. Pages can tune its fill and
+	   filter without giving individual dialogs their own surface treatment. */
+	--modal-surface: var(--surface);
+	--modal-filter: none;
+	--modal-ring: transparent;
+	--modal-glow: transparent;
 	--surface-shadow: rgba(16, 18, 22, 0.22);
 	--scrim: rgba(16, 18, 22, 0.32);
 	--field: #fbfbfa;
@@ -157,6 +161,10 @@ summary:focus-visible {
 .rail h1 {
 	margin: 30px 0 0;
 	color: var(--ink);
+}
+
+.rail h1,
+.announcement-article h1 {
 	font-size: clamp(28px, 2.4vw, 35px);
 	font-weight: 600;
 	letter-spacing: -0.012em;
@@ -166,10 +174,11 @@ summary:focus-visible {
 
 /* The qualifier, in the same sentence and a lighter voice: it is the half of
    the claim that is context rather than news. Its own line, so the sentence
-   breaks where the thought does instead of wherever the column runs out. */
+   breaks where the thought does instead of wherever the column runs out. Keep
+   the ink translucent so the page background comes through in either theme. */
 .rail h1 span {
 	display: block;
-	color: var(--muted);
+	opacity: 0.45;
 }
 
 .rail-foot {
@@ -177,9 +186,27 @@ summary:focus-visible {
 	padding-top: 40px;
 }
 
+.rail-actions {
+	display: flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: 10px;
+}
+
+.rail-actions .button {
+	flex: 0 0 auto;
+	padding-inline: 18px;
+	white-space: normal;
+	text-align: center;
+}
+
+.rail-actions .button svg {
+	flex: none;
+}
+
 .rail-note {
 	margin: 16px 0 0;
-	color: var(--muted);
+	color: rgba(var(--ink-rgb), 0.64);
 	font-size: 14px;
 	line-height: 1.5;
 }
@@ -233,10 +260,10 @@ summary:focus-visible {
 	min-width: 0;
 	flex-direction: column;
 	align-items: stretch;
-	padding: 22px;
+	padding: 20px;
 	border-radius: calc(18px * var(--rf));
 	corner-shape: var(--cs);
-	background: rgba(var(--ink-rgb), 0.04);
+	background: rgba(var(--ink-rgb), 0.03);
 }
 
 .landing-setup-step-icon,
@@ -249,6 +276,11 @@ summary:focus-visible {
 	background: rgba(var(--ink-rgb), 0.055);
 	color: rgba(var(--ink-rgb), 0.62);
 	place-items: center;
+}
+
+.landing-setup-step-icon {
+	border-radius: 50%;
+	corner-shape: round;
 }
 
 .landing-setup-step-copy {
@@ -278,22 +310,44 @@ summary:focus-visible {
 	align-items: center;
 	align-self: flex-start;
 	justify-content: center;
+	gap: 7px;
 	margin-top: 18px;
 	padding: 0 14px;
 	border: 0;
 	border-radius: calc(11px * var(--rf));
 	corner-shape: var(--cs);
-	background: var(--ink);
-	color: var(--surface);
+	background-color: var(--accent-blue);
+	background-image: linear-gradient(
+		180deg,
+		var(--accent-blue) 0%,
+		var(--accent-blue-deep) 100%
+	);
+	box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14);
+	color: #fff;
 	cursor: pointer;
 	font-size: 13px;
 	font-weight: 600;
 	white-space: nowrap;
-	transition: background-color 160ms ease, transform 160ms cubic-bezier(0.23, 1, 0.32, 1);
+	transition: filter 160ms ease, transform 160ms cubic-bezier(0.23, 1, 0.32, 1);
 }
 
 .landing-setup-step-action:hover {
-	background: rgba(var(--ink-rgb), 0.82);
+	filter: brightness(1.06);
+}
+
+.landing-setup-step-action svg {
+	flex: none;
+}
+
+.landing-setup-step-action-secondary {
+	background: rgba(var(--ink-rgb), 0.075);
+	box-shadow: none;
+	color: var(--ink);
+}
+
+.landing-setup-step-action-secondary:hover {
+	background: rgba(var(--ink-rgb), 0.12);
+	filter: none;
 }
 
 .landing-setup-step-action:active {
@@ -421,13 +475,11 @@ summary:focus-visible {
 	width: 100%;
 	min-width: 0;
 	max-width: 100%;
-	overflow: hidden;
 	color: #ededed;
 	font-family: ui-monospace, "SFMono-Regular", Consolas, monospace;
 	font-size: 11.5px;
 	line-height: 1.4;
-	text-overflow: ellipsis;
-	white-space: nowrap;
+	overflow-wrap: anywhere;
 }
 
 .landing-install-command button {
@@ -457,11 +509,10 @@ summary:focus-visible {
 	transform: scale(0.96);
 }
 
-/* The browser supplies focus trapping, Escape handling and top-layer
-   placement. The panel is separate so clicking the backdrop can dismiss it. */
-.pwa-guide {
-	width: min(520px, calc(100% - 32px));
-	max-height: calc(100dvh - 32px);
+/* One native-dialog shell serves every website modal. The browser owns focus
+   trapping, Escape and top-layer placement; the shared panel owns material,
+   edge, glow and close chrome. Variant classes only set size and content flow. */
+.website-modal {
 	padding: 0;
 	border: 0;
 	background: transparent;
@@ -469,39 +520,51 @@ summary:focus-visible {
 	overflow: visible;
 }
 
-.pwa-guide::backdrop {
+.pwa-guide {
+	width: min(520px, calc(100% - 32px));
+	max-height: calc(100dvh - 32px);
+}
+
+.website-modal::backdrop {
 	background: var(--scrim);
+	-webkit-backdrop-filter: blur(8px);
 	backdrop-filter: blur(8px);
 }
 
-.pwa-guide-panel {
+.website-modal-panel {
 	position: relative;
 	padding: 30px;
-	border-radius: calc(24px * var(--rf));
+	border-radius: calc(32px * var(--rf));
 	corner-shape: var(--cs);
-	background: var(--surface);
-	box-shadow: 0 24px 70px var(--surface-shadow);
+	background: var(--modal-surface);
+	-webkit-backdrop-filter: var(--modal-filter);
+	backdrop-filter: var(--modal-filter);
+	box-shadow:
+		inset 0 0 0 1px var(--modal-ring),
+		0 0 72px -10px var(--modal-glow),
+		0 24px 70px var(--surface-shadow);
 }
 
-.pwa-guide-close {
+.website-modal-close {
 	display: grid;
 	position: absolute;
 	top: 14px;
 	right: 14px;
+	z-index: 1;
 	width: 44px;
 	height: 44px;
 	padding: 0;
 	border: 0;
-	border-radius: calc(12px * var(--rf));
-	corner-shape: var(--cs);
-	background: transparent;
+	border-radius: 50%;
+	corner-shape: round;
+	background: rgba(var(--ink-rgb), 0.055);
 	color: var(--muted);
 	cursor: pointer;
 	place-items: center;
 }
 
-.pwa-guide-close:hover {
-	background: rgba(var(--ink-rgb), 0.06);
+.website-modal-close:hover {
+	background: rgba(var(--ink-rgb), 0.1);
 	color: var(--ink);
 }
 
@@ -586,7 +649,6 @@ summary:focus-visible {
 	   square. */
 	container-type: size;
 	aspect-ratio: 3 / 2;
-	border: 1px solid var(--line);
 	border-radius: calc(28px * var(--rf));
 	corner-shape: var(--cs);
 	background: var(--stage-bg);
@@ -637,13 +699,9 @@ summary:focus-visible {
 	box-shadow: 0 22px 54px var(--window-shadow);
 }
 
-/* The product, painted from a file so it is on screen at first paint. The
-   iframe underneath carries the whole app bundle and takes a second or two to
-   have anything to show, which used to be a skeleton and a "Loading" label:
-   a picture of the loading of a product rather than the product. The poster is
-   a photograph of this very preview at the width it lays the app out at, so
-   the live app fades in over the same pixels. Narrower windows crop it from
-   the top left, which is the corner that is nailed down. */
+/* The poster is the immediate first frame. The real client runs over local,
+   deterministic fixtures in the iframe and replaces it only after rendering,
+   so interactivity does not trade away a fast or stable first paint. */
 .product-demo-poster {
 	position: absolute;
 	inset: 0;
@@ -653,6 +711,8 @@ summary:focus-visible {
 	object-fit: cover;
 	object-position: top left;
 	opacity: 1;
+	pointer-events: none;
+	user-select: none;
 	transition: opacity 220ms ease;
 }
 
@@ -893,8 +953,251 @@ summary:focus-visible {
 	filter: brightness(1.06);
 }
 
+.button-secondary {
+	border-color: #d1d1d1;
+	background: #fff;
+	color: #0a0a0a;
+}
+
+.button-secondary:hover {
+	background: #f7f7f7;
+	filter: none;
+}
+
 .button:active {
 	transform: scale(0.96);
+}
+
+/* ── Announcement ───────────────────────────────────────────────────── */
+
+/* The announcement uses the shared website modal material and chrome; this
+   variant only supplies the larger reading viewport. Direct visitors still
+   get the article as a normal, server-rendered page below. */
+.announcement-dialog {
+	position: relative;
+	width: min(760px, calc(100% - 32px));
+	height: min(800px, calc(100dvh - 48px));
+	max-height: none;
+	margin: auto;
+}
+
+/* Larger screens get a roomier reading viewport. */
+@media (min-width: 1440px) and (min-height: 900px) {
+	.announcement-dialog {
+		width: min(860px, calc(100% - 32px));
+		height: min(880px, calc(100dvh - 48px));
+	}
+}
+
+.announcement-dialog .website-modal-panel {
+	width: 100%;
+	height: 100%;
+	padding: 0;
+	overflow: hidden;
+}
+
+.announcement-page {
+	position: relative;
+	min-height: 100svh;
+	padding-inline: clamp(20px, 5vw, 72px);
+	background: #fff;
+	color: #0a0a0a;
+}
+
+.announcement-scroll {
+	width: 100%;
+	height: 100%;
+	padding-inline: 36px;
+	background: transparent;
+	overflow-y: auto;
+	overscroll-behavior: contain;
+	scrollbar-gutter: stable;
+}
+
+.announcement-home {
+	display: inline-flex;
+	position: fixed;
+	top: 22px;
+	right: 22px;
+	z-index: 1;
+	min-height: 44px;
+	align-items: center;
+	justify-content: center;
+	padding: 0 18px;
+	border: 1px solid #d1d1d1;
+	border-radius: calc(12px * var(--rf));
+	corner-shape: var(--cs);
+	background: #fff;
+	color: #0a0a0a;
+	font-size: 15px;
+	font-weight: 600;
+	letter-spacing: -0.012em;
+	transition: background-color 140ms ease, transform 140ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+.announcement-home:hover {
+	background: #f7f7f7;
+}
+
+.announcement-home:active {
+	transform: scale(0.96);
+}
+
+.announcement-page .announcement-article {
+	padding-top: 40px;
+}
+
+/* Inside the compact dialog the article steps down from page scale. */
+.announcement-dialog .announcement-article {
+	padding-block: 56px 72px;
+	color: var(--muted);
+	font-size: 17px;
+}
+
+.announcement-dialog .announcement-article h1 {
+	color: var(--ink);
+	font-size: 27px;
+}
+
+.announcement-dialog .announcement-article h1 + * {
+	margin-top: 32px;
+}
+
+.announcement-dialog .announcement-article h2 {
+	margin-top: 52px;
+	color: var(--ink);
+	font-size: 21px;
+}
+
+.announcement-page-mark {
+	display: block;
+	width: 44px;
+	height: 44px;
+	border-radius: calc(8px * var(--rf));
+	corner-shape: var(--cs);
+}
+
+.announcement-page-mark + h1 {
+	margin-top: 32px;
+}
+
+.announcement-article {
+	width: 100%;
+	max-width: 760px;
+	margin-inline: auto;
+	padding-block: clamp(92px, 11vh, 124px) 128px;
+	color: #787878;
+	font-size: 20px;
+	font-weight: 450;
+	letter-spacing: -0.012em;
+	line-height: 1.55;
+}
+
+.announcement-article > * {
+	margin-block: 0;
+}
+
+.announcement-article > * + * {
+	margin-top: 1.5em;
+}
+
+.announcement-article h1 {
+	color: #0a0a0a;
+}
+
+.announcement-article h1 + * {
+	margin-top: 52px;
+}
+
+.announcement-article h2 {
+	margin-top: 72px;
+	color: #3f3f3f;
+	font-size: 28px;
+	font-weight: 600;
+	letter-spacing: -0.012em;
+	line-height: 1.15;
+}
+
+.announcement-article h2 + p {
+	margin-top: 16px;
+}
+
+.announcement-article ol {
+	padding-inline-start: 1.35em;
+}
+
+.announcement-article li {
+	padding-inline-start: 0.25em;
+}
+
+.announcement-article li + li {
+	margin-top: 0.35em;
+}
+
+.announcement-article strong {
+	font-weight: 650;
+}
+
+/* Focused product views use the landing demo's blue artwork as one shared
+   stage. Each image is a crop of the real fixture app, enlarged past the frame
+   so the feature named by the surrounding paragraph stays readable. */
+.announcement-feature-shot {
+	position: relative;
+	overflow: hidden;
+	aspect-ratio: 16 / 10;
+	border-radius: calc(28px * var(--rf));
+	corner-shape: var(--cs);
+	background: url("./demo-background.webp") center / cover;
+}
+
+.announcement-feature-shot img {
+	position: absolute;
+	display: block;
+	max-width: none;
+	border-radius: calc(15px * var(--rf));
+	corner-shape: var(--cs);
+	outline: 1px solid oklch(0 0 0 / 0.1);
+	box-shadow: 0 22px 54px rgba(28, 34, 40, 0.24);
+}
+
+.announcement-feature-collaboration img {
+	top: 7%;
+	left: 7%;
+	width: 93%;
+}
+
+.announcement-feature-automations {
+	aspect-ratio: 2 / 1;
+}
+
+.announcement-feature-automations img {
+	right: 0;
+	bottom: 0;
+	width: 120%;
+}
+
+.announcement-feature-walkthroughs img {
+	top: 7%;
+	left: 5%;
+	width: 96%;
+}
+
+.announcement-inline-link {
+	color: inherit;
+	text-decoration-line: underline;
+	text-decoration-thickness: from-font;
+	text-underline-offset: 0.14em;
+	text-decoration-skip-ink: auto;
+	transition: color 140ms ease;
+}
+
+.announcement-inline-link:hover {
+	color: var(--accent-blue);
+}
+
+.announcement-cta {
+	width: fit-content;
+	margin-top: 56px;
 }
 
 /* ── Narrower ────────────────────────────────────────────────────────── */
@@ -936,6 +1239,10 @@ summary:focus-visible {
 
 	.rail h1 {
 		max-width: 20ch;
+	}
+
+	.rail h1,
+	.announcement-article h1 {
 		font-size: clamp(30px, 6.4vw, 40px);
 	}
 
@@ -952,10 +1259,20 @@ summary:focus-visible {
 	}
 }
 
-@media (max-width: 720px) {
+@media (max-width: 1120px) {
 	.landing-setup-steps {
 		gap: 12px;
 		grid-template-columns: minmax(0, 1fr);
+	}
+}
+
+@media (max-width: 720px) {
+	.landing-setup-step-icon {
+		display: none;
+	}
+
+	.landing-setup-step-copy {
+		margin-top: 0;
 	}
 }
 
@@ -975,7 +1292,7 @@ summary:focus-visible {
 	}
 
 	.landing-setup-steps > li {
-		padding: 18px;
+		padding: 16px;
 	}
 
 	.landing-setup-step-action {
@@ -994,8 +1311,17 @@ summary:focus-visible {
 		font-size: 11px;
 	}
 
+	.landing-install-command {
+		grid-template-columns: minmax(0, 1fr);
+	}
+
 	.landing-install-command code {
 		font-size: 11px;
+	}
+
+	.landing-install-command button {
+		height: 44px;
+		justify-self: end;
 	}
 
 	.pwa-guide {
@@ -1003,12 +1329,63 @@ summary:focus-visible {
 		max-height: calc(100dvh - 24px);
 	}
 
-	.pwa-guide-panel {
-		padding: 24px;
+	.announcement-dialog {
+		width: calc(100% - 16px);
+		height: calc(100dvh - 16px);
+		border-radius: calc(24px * var(--rf));
+	}
+
+	.announcement-home {
+		top: 12px;
+		right: 12px;
+	}
+
+	.announcement-scroll {
+		padding-inline: 20px;
+		scrollbar-gutter: auto;
+	}
+
+	.announcement-article {
+		padding-block: 78px 88px;
+	}
+
+	.announcement-article h1 + * {
+		margin-top: 40px;
+	}
+
+	.announcement-feature-shot {
+		aspect-ratio: 5 / 4;
 		border-radius: calc(22px * var(--rf));
 	}
 
-	.pwa-guide-close {
+	.announcement-feature-collaboration img {
+		top: 6%;
+		left: 5%;
+		width: 95%;
+	}
+
+	.announcement-feature-automations {
+		aspect-ratio: 2 / 1;
+	}
+
+	.announcement-feature-automations img {
+		right: 0;
+		bottom: 0;
+		width: 150%;
+	}
+
+	.announcement-feature-walkthroughs img {
+		top: 7%;
+		left: 5%;
+		width: 130%;
+	}
+
+	.website-modal-panel {
+		padding: 24px;
+		border-radius: calc(28px * var(--rf));
+	}
+
+	.website-modal-close {
 		top: 10px;
 		right: 10px;
 	}
@@ -1047,6 +1424,15 @@ summary:focus-visible {
 		width: 100%;
 	}
 
+	.rail-actions {
+		align-items: stretch;
+		flex-direction: column;
+	}
+
+	.rail-actions .button {
+		flex: none;
+	}
+
 	.feed-foot {
 		justify-content: flex-start;
 	}
@@ -1058,8 +1444,16 @@ summary:focus-visible {
 		animation: enter 700ms cubic-bezier(0.23, 1, 0.32, 1) both;
 	}
 
-	.pwa-guide[open] .pwa-guide-panel {
+	.pwa-guide[open] .website-modal-panel {
 		animation: dialog-enter 220ms cubic-bezier(0.23, 1, 0.32, 1) both;
+	}
+
+	.announcement-dialog[open] {
+		animation: announcement-enter 180ms cubic-bezier(0.23, 1, 0.32, 1) both;
+	}
+
+	.announcement-dialog[open]::backdrop {
+		animation: announcement-backdrop-enter 180ms ease-out both;
 	}
 
 	.rail > :nth-child(2) { animation-delay: 60ms; }
@@ -1075,6 +1469,14 @@ summary:focus-visible {
 	from { opacity: 0; transform: translateY(10px) scale(0.98); }
 }
 
+@keyframes announcement-enter {
+	from { opacity: 0; transform: translateY(12px) scale(0.985); }
+}
+
+@keyframes announcement-backdrop-enter {
+	from { background: transparent; backdrop-filter: blur(0); }
+}
+
 @media (prefers-reduced-motion: reduce) {
 	.hero-video {
 		display: none;
@@ -1088,8 +1490,8 @@ summary:focus-visible {
 
 /* Dark mode follows the system rather than offering a switch: the page has one
    screen of content and no settings, so a preference the visitor already set
-   is the whole answer. The product preview reads the same signal from inside
-   its iframe, and the hero swaps Tella's Silver Silk loop for Midnight Dust.
+   is the whole answer. The product preview reads the same signal inside its
+   frame, and the hero swaps Tella's Silver Silk loop for Midnight Dust.
    The blue is deliberately unchanged: it is the product's accent, it already
    clears its contrast on white, and it only gains presence on a dark page. */
 @media (prefers-color-scheme: dark) {
@@ -1105,8 +1507,13 @@ summary:focus-visible {
 		--window: #0d0d0f;
 		--window-shadow: rgba(0, 0, 0, 0.5);
 		--surface: #151517;
-		--surface-shadow: rgba(0, 0, 0, 0.55);
-		--scrim: rgba(0, 0, 0, 0.55);
+		/* Pages without artwork keep a neutral modal surface. The marketing page
+		   overrides this token with the same blue glass used by its sections. */
+		--modal-surface: color-mix(in oklch, var(--surface) 90%, var(--ink));
+		--modal-ring: oklch(1 0 0 / 0.11);
+		--modal-glow: color-mix(in oklch, var(--accent-blue) 32%, transparent);
+		--surface-shadow: color-mix(in srgb, black 38%, transparent);
+		--scrim: color-mix(in srgb, black 24%, transparent);
 		--field: #1a1a1d;
 		--ok: #3fb950;
 		--err: #f87171;
@@ -1128,3 +1535,272 @@ summary:focus-visible {
 	.hero-video {
 		filter: brightness(0.6) saturate(1.12);
 	}
+}
+
+/* ── The download dialog's two cards ─────────────────────────────────────
+   What you are installing, shown rather than listed: a Mac screenshot and a
+   phone, each on a soft wash that fades into the card so the image has no
+   bottom edge to cut. The app ships the same picture built on its own UI
+   primitives; this is the site's copy, on the site's tokens. */
+/* The cards need more room than the 520px a text guide asks for. Keyed off
+   the content rather than a second class, so the dialog stays one component. */
+.setup-guide:has(.download-cards),
+.setup-guide:has(.download-steps) {
+	width: min(760px, calc(100% - 32px));
+}
+
+.setup-guide:has(.download-cards) .website-modal-panel,
+.setup-guide:has(.download-steps) .website-modal-panel {
+	padding: 36px;
+}
+
+.setup-guide:has(.download-cards) .website-modal-close,
+.setup-guide:has(.download-steps) .website-modal-close {
+	top: 18px;
+	right: 18px;
+}
+
+.setup-guide:has(.download-cards) h2,
+.setup-guide:has(.download-steps) h2 {
+	margin-bottom: 24px;
+	padding-right: 48px;
+}
+
+.download-cards {
+	display: grid;
+	gap: 14px;
+	grid-template-columns: 3fr 2fr;
+}
+
+.download-card {
+	--download-card-surface: color-mix(in oklch, var(--card) 97%, var(--accent-blue) 3%);
+	display: flex;
+	overflow: hidden;
+	flex-direction: column;
+	height: 320px;
+	border-radius: calc(24px * var(--rf));
+	corner-shape: var(--cs);
+	background: var(--download-card-surface);
+}
+
+.download-card-preview {
+	position: relative;
+	min-height: 0;
+	flex: 1;
+	overflow: hidden;
+}
+
+.download-card-preview-mac {
+	padding: 18px 0 0 18px;
+	background-image: url("./demo-background.webp");
+	background-position: center;
+	background-size: cover;
+}
+
+.download-card-preview-mac img {
+	width: 100%;
+	height: 100%;
+	border-top-left-radius: calc(12px * var(--rf));
+	corner-shape: var(--cs);
+	object-fit: cover;
+	object-position: left top;
+	outline: 1px solid rgba(0, 0, 0, 0.1);
+	outline-offset: -1px;
+}
+
+.download-card-preview-phone {
+	display: flex;
+	padding: 22px 12px 0;
+	justify-content: center;
+	background-image:
+		linear-gradient(oklch(0.952 0.187 117.448 / 0.6), oklch(0.952 0.187 117.448 / 0.6)),
+		url("./demo-background.webp");
+	background-position: center;
+	background-size: cover;
+}
+
+.download-card-preview-phone img {
+	width: auto;
+	max-width: none;
+	height: 155%;
+	border-radius: calc(18px * var(--rf));
+	corner-shape: var(--cs);
+	filter: drop-shadow(0 14px 30px rgba(16, 18, 22, 0.22));
+	object-fit: contain;
+	object-position: top;
+}
+
+/* The wash runs under the copy, so the screenshot ends in the card rather
+   than against a line. */
+.download-card-fade {
+	position: absolute;
+	right: 0;
+	bottom: 0;
+	left: 0;
+	height: 34%;
+	background: linear-gradient(to bottom, transparent, var(--download-card-surface));
+	pointer-events: none;
+}
+
+.download-card-body {
+	position: relative;
+	z-index: 1;
+	display: flex;
+	flex: none;
+	flex-direction: column;
+	padding: 0 18px 18px;
+	background: var(--download-card-surface);
+}
+
+.download-card-body strong {
+	font-size: 17px;
+	font-weight: 600;
+	letter-spacing: -0.01em;
+	line-height: 1.25;
+}
+
+.download-card-body small {
+	margin: 3px 0 14px;
+	color: var(--muted);
+	font-size: 13px;
+	font-weight: 500;
+}
+
+.download-card-action {
+	display: inline-flex;
+	min-height: 40px;
+	align-items: center;
+	justify-content: center;
+	gap: 7px;
+	border: 0;
+	border-radius: calc(11px * var(--rf));
+	corner-shape: var(--cs);
+	background: var(--ink);
+	color: var(--page);
+	cursor: pointer;
+	font-size: 13px;
+	font-weight: 600;
+	transition: background-color 160ms ease, transform 160ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+.download-card-action:hover {
+	background: rgba(var(--ink-rgb), 0.82);
+}
+
+.download-card-action:active {
+	transform: scale(0.96);
+}
+
+.download-card-action-soft {
+	background: rgba(var(--ink-rgb), 0.075);
+	color: var(--ink);
+}
+
+.download-card-action-soft:hover {
+	background: rgba(var(--ink-rgb), 0.12);
+}
+
+/* In dark mode the filled action trades white ink for the product's blue:
+   a white slab is the brightest thing in the dialog and reads as a bare
+   surface, while the blue matches the page's one filled control
+   (.button-primary), lit top edge and all. Light mode keeps black on white,
+   where the blue would fight the screenshot above it. The soft PWA button
+   stays an ink wash in both modes so the pair keeps its hierarchy. */
+@media (prefers-color-scheme: dark) {
+	.download-card-action:not(.download-card-action-soft) {
+		background-color: var(--accent-blue);
+		background-image: linear-gradient(
+			180deg,
+			var(--accent-blue) 0%,
+			var(--accent-blue-deep) 100%
+		);
+		box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14);
+		color: #fff;
+		transition: filter 160ms ease, transform 160ms cubic-bezier(0.23, 1, 0.32, 1);
+	}
+
+	.download-card-action:not(.download-card-action-soft):hover {
+		filter: brightness(1.08);
+	}
+}
+
+.download-steps-back {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	margin-bottom: 16px;
+	padding: 0;
+	border: 0;
+	background: transparent;
+	color: var(--muted);
+	cursor: pointer;
+	font-size: 13px;
+	font-weight: 600;
+}
+
+.download-steps-back:hover {
+	color: var(--ink);
+}
+
+.download-steps ol {
+	display: grid;
+	margin: 0;
+	padding: 0;
+	gap: 10px;
+	grid-template-columns: repeat(3, minmax(0, 1fr));
+	counter-reset: download-step;
+	list-style: none;
+}
+
+.download-steps li {
+	display: flex;
+	flex-direction: column;
+	padding: 18px;
+	border-radius: calc(16px * var(--rf));
+	corner-shape: var(--cs);
+	background: rgba(var(--ink-rgb), 0.04);
+	counter-increment: download-step;
+}
+
+.download-steps li::before {
+	display: grid;
+	width: 30px;
+	height: 30px;
+	margin-bottom: 42px;
+	border-radius: calc(10px * var(--rf));
+	corner-shape: var(--cs);
+	background: var(--ink);
+	color: var(--page);
+	content: counter(download-step);
+	font-size: 13px;
+	font-weight: 600;
+	place-items: center;
+}
+
+.download-steps strong {
+	font-size: 15px;
+	font-weight: 600;
+	line-height: 1.25;
+}
+
+.download-steps span {
+	margin-top: 5px;
+	color: var(--muted);
+	font-size: 13px;
+	line-height: 1.45;
+}
+
+@media (max-width: 560px) {
+	.download-cards,
+	.download-steps ol {
+		grid-template-columns: minmax(0, 1fr);
+	}
+
+	.download-card {
+		height: 300px;
+	}
+
+	.download-steps li::before {
+		margin-bottom: 14px;
+	}
+}

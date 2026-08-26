@@ -178,7 +178,7 @@ export function createAdminMcpServer(ctx: AdminToolContext) {
       ),
       tool(
         "create_automation",
-        "Create a new automation (routine). Provide a clear prompt describing the task. Set `repo` to the repository it works in, or it runs against the instance default. Use a 5-field UTC cron `schedule` for recurring jobs (omit for manual/webhook only). Pick mode 'ask' for read-only or 'code' if it must edit files / open PRs. Optionally restrict tools with mcpServers and set a model.",
+        "Create a new automation (routine). Provide a clear prompt describing the task. Set `repo` to the repository it works in, or it runs against the instance default. Use a 5-field UTC cron `schedule` for recurring jobs (omit for manual/webhook only). Pick mode 'ask' for read-only or 'code' if it must edit and commit files. Ordinary automations receive no GitHub credential, so code mode alone cannot push or open a GitHub PR. Optionally restrict tools with mcpServers and set a model.",
         {
           name: z.string().describe("Short display name."),
           prompt: z

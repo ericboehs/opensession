@@ -105,7 +105,7 @@ export function createWalkthroughMcpServer(ctx: WalkthroughToolContext) {
     ),
     tool(
       "comment_on_pr_with_images",
-      `Post a comment on this session's PR (or an explicit PR) with screenshots that RENDER INLINE on GitHub. Images are copied to durable storage and served from unguessable URLs on ${configuredServer().publicBaseUrl} (our own infrastructure, never a third-party host or repository commit); GitHub's camo proxy fetches them so they render everywhere, private repos included. The URLs are capability links: anyone holding one can fetch the image, so don't attach anything that must stay strictly repo-member-only. Place images in the markdown with {{image:1}}, {{image:2}}, … (1-based); images you don't reference are appended at the end.`,
+      "Post a comment on this session's PR (or an explicit PR) with screenshots that RENDER INLINE on GitHub. Images are copied to durable storage and served from unguessable URLs on the configured public media origin. This requires a GitHub-reachable HTTPS origin configured through OPENSESSION_PR_IMAGES_BASE, integrations.media.publicBaseUrl, or server.publicBaseUrl; loopback, private-network, and tailnet URLs will not render. The URLs are capability links: anyone holding one can fetch the image, so don't attach anything that must stay strictly repo-member-only. Place images in the markdown with {{image:1}}, {{image:2}}, … (1-based); images you don't reference are appended at the end.",
       {
         comment: z
           .string()

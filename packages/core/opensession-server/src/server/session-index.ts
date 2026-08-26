@@ -24,7 +24,10 @@
  */
 
 import { stateDir } from "./paths";
-import { getCachedSessions, getCachedSessionsAsync } from "./session-cache";
+import {
+	getCachedSessions,
+	getSessionListSnapshotAsync,
+} from "./session-cache";
 import { mergedSessionTranscriptAsync } from "./sessions";
 import { oneShot } from "./one-shot";
 import { audit } from "./audit";
@@ -266,7 +269,7 @@ export async function sweepSessionIndex(): Promise<{
 	try {
 		const store = searchIndex();
 		const state = store.indexState();
-		const sessions = [...(await getCachedSessionsAsync())].sort(
+		const sessions = [...(await getSessionListSnapshotAsync())].sort(
 			(a, b) => (b.lastActivity || "").localeCompare(a.lastActivity || ""),
 		);
 		const now = Date.now();

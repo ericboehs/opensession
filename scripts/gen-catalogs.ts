@@ -18,8 +18,9 @@
  *
  * How the tool data is obtained: every server in MCP_SERVER_CATALOG
  * (packages/core/opensession-server/src/server/mcp-catalog.ts) is BUILT — the same call the runtime makes — and
- * asked for tools/list over an in-memory MCP transport. Nothing is parsed out
- * of source, so a tool cannot exist without appearing here.
+ * asked for tools/list over an in-memory MCP transport. Wiring tests compare
+ * the catalog with the interactive and automation server sets so additions to
+ * those runtime surfaces cannot be omitted here.
  *
  * Determinism: tool descriptions interpolate instance config (the persona name,
  * the default repo's label, the list owner's timezone), so the whole generator
@@ -144,7 +145,7 @@ async function renderMcpTools(): Promise<string> {
         "call it. Tool names and inputs are read from the live server objects",
         "(`tools/list`), so this file cannot drift from the code; the run classes",
         "and conditions are declared in `packages/core/opensession-server/src/server/mcp-catalog.ts` beside each",
-        "entry and checked against the real wiring by `mcp-catalog.test.ts`.",
+        "entry and checked against the interactive and automation wiring by `mcp-catalog.test.ts`.",
         "",
         "External MCP servers (`mcp-config.json`) are NOT listed here: they are",
         "per-instance configuration, and their per-user `allowedUsers` scoping is",
@@ -162,14 +163,15 @@ async function renderMcpTools(): Promise<string> {
         "  interactive server yields nothing.",
         "- **Slack loop**, **goal wake** — their own narrow sets.",
         "",
-        "Two further layers apply to every run, and neither currently touches an",
-        "in-process tool (both name external MCP tools):",
+        "Additional external-tool filters apply selectively; neither currently",
+        "touches an in-process tool:",
         "",
         "- `AUTOMATION_DENIED_TOOLS` (`packages/core/opensession-server/src/server/automation-denied-tools.ts`) —",
         "  stripped from automation runs and from interactive resumes of",
         "  automation-owned sessions.",
         "- `STRIPE_CONFIRM_TOOLS` (`packages/core/opensession-server/src/server/runner-shared.ts`) — money movers,",
-        "  stripped from every run's tool list.",
+        "  stripped on standard run paths. The Plain integration's separately",
+        "  classified explicit-approval path deliberately runs without this filter.",
       ].join("\n"),
     ),
   ];
@@ -258,14 +260,14 @@ export const ENGINE_NOTES: Record<
     title: "pi",
     adapter: "packages/core/opensession-server/src/server/pi-runner.ts",
     prefix: "`pi/<provider>/<model>`",
-    gate: "`enabled` in `~/.opensession-pi.json` (`piConfigPath()`). Off by default.",
+    gate: "`enabled` in `piConfigPath()` (normally `~/.opensession/pi.json`; an existing legacy `~/.opensession-pi.json` is still honored). A missing config disables Pi, while first-run onboarding creates it enabled.",
     note:
       "In-process engine. `pi/anthropic/*` turns reach the Claude Agent SDK through the native " +
       "in-process provider by default (`anthropicTransport`, `\"bridge\"` for the loopback rollback).",
   },
   fake: {
     title: "fake (tests only)",
-    adapter: "packages/core/opensession-server/src/server/agent-runner.ts — the __setEngineForTest seam; fixtures in packages/core/opensession-server/src/server/fake-engine.test.ts",
+    adapter: "packages/core/opensession-server/src/server/agent-runner.ts — the __setEngineForTest seam; fixture implementation in packages/core/opensession-server/src/server/testing/fake-engine.ts; coverage in packages/core/opensession-server/src/server/fake-engine.test.ts",
     prefix: "– (intercepts every model id)",
     gate:
       "Not config-gated and not reachable in production: it is a module-local test seam, set only " +
@@ -294,8 +296,8 @@ async function renderEngines(): Promise<string> {
       [
         "Which engine runs a turn, what turns it on, and where each model lands.",
         "The routing table below is computed by calling `routeModel()`",
-        "(`packages/core/opensession-server/src/server/models.ts`) against a clean instance — no per-model engine",
-        "overrides configured — so it shows the shipped defaults.",
+        "(`packages/core/opensession-server/src/server/models.ts`) in the generator's",
+        "hermetic clean state. Pi is the only production engine, so routing is unconditional.",
         "",
         "`routeModel()` sends every accepted model and preset to Pi.",
         "Native ids and provider/model paths normalize to `pi/<provider>/<model>`.",

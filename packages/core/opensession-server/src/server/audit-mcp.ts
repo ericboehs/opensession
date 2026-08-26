@@ -111,7 +111,7 @@ export function createAuditMcpServer() {
   const tools = [
     tool(
       "read_audit_digest",
-      "Read one day of this instance's audit log, rolled up: totals (events, sessions, turns, errors, tool errors, cost), turn verdicts including silent drops, per-run-kind breakdown, model usage, the top recurring error and tool-error groups, top tools, one-shot counts, logged papercuts, and the most troubled sessions. Defaults to yesterday (UTC). Use this instead of trying to read ~/.opensession-audit or fetch the server over HTTP. Neither is reachable from an unattended run.",
+      "Read one day of this instance's audit log, rolled up: totals (events, sessions, turns, errors, tool errors, cost), turn verdicts including silent drops, per-run-kind breakdown, model usage, the top recurring error and tool-error groups, top tools, one-shot counts, logged papercuts, and the most troubled sessions. Defaults to yesterday (UTC). Use this instead of trying to read the audit state directory or fetch the server over HTTP. Neither is reachable from an unattended run.",
       {
         date: z
           .string()

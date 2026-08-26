@@ -439,6 +439,9 @@ type PendingDraftPark = {
   text: string;
   workspaceId?: string;
   consumed: boolean;
+  /** The existing workspace the create adopted. When absent, the create made
+   *  another workspace and a late unscoped park can be deleted outright. */
+  consumedIntoWorkspaceId?: string;
 };
 
 // A dismissed palette can be reopened while its workspace request is still in
@@ -453,10 +456,15 @@ const pendingDraftParks = new Set<PendingDraftPark>();
 // unmounts between the two closes.
 let parkedWorkspaceId: string | null = null;
 
-function consumePendingDraftParks(text: string, workspaceId?: string) {
+function consumePendingDraftParks(
+  text: string,
+  workspaceId: string | undefined,
+  consumedIntoWorkspaceId?: string,
+) {
   for (const operation of pendingDraftParks) {
     if (operation.text === text && operation.workspaceId === workspaceId) {
       operation.consumed = true;
+      operation.consumedIntoWorkspaceId = consumedIntoWorkspaceId;
     }
   }
 }
@@ -997,6 +1005,7 @@ export function NewSession({ onBack, inline, focusSeq, send, addHandler, connect
   const creatingRef = useRef(false);
   const createSessionIdRef = useRef<string | null>(null);
   const createMessageRef = useRef<WSClientMessage | null>(null);
+  const createWorkspaceIdRef = useRef<string | null>(null);
   const replayCreateRef = useRef(false);
   // A successful create replaces the surface behind this dialog. Returning
   // focus to the now-removed opener makes Base UI advance to the new session's
@@ -1009,6 +1018,7 @@ export function NewSession({ onBack, inline, focusSeq, send, addHandler, connect
       creatingRef.current = false;
       createSessionIdRef.current = null;
       createMessageRef.current = null;
+      createWorkspaceIdRef.current = null;
       replayCreateRef.current = false;
       setStatus({ kind: "failed", message: msg.message });
     } else if (
@@ -1018,12 +1028,19 @@ export function NewSession({ onBack, inline, focusSeq, send, addHandler, connect
       creatingRef.current = false;
       createSessionIdRef.current = null;
       createMessageRef.current = null;
+      const consumedWorkspaceId = createWorkspaceIdRef.current;
+      createWorkspaceIdRef.current = null;
       replayCreateRef.current = false;
-      // The prompt was consumed. Drop the stored draft and its pending write,
-      // which might otherwise land after this and restore the sent prompt.
+      // The prompt was consumed. Drop both copies and their pending writes: the
+      // global composer copy, plus the workspace copy made when it was closed.
       promptHandle.current?.dropPendingDraftWrite();
       dropStagingAttachments(DRAFT_KEY);
       clearDraft(DRAFT_KEY);
+      if (consumedWorkspaceId) {
+        const consumedDraftKey = workspaceDraftKey(consumedWorkspaceId);
+        dropStagingAttachments(consumedDraftKey);
+        clearDraft(consumedDraftKey);
+      }
       // The next draft is a new one, so it gets its own workspace.
       parkedWorkspaceId = null;
       // "Create more" stays in the palette and resets for the next task. The
@@ -1130,10 +1147,12 @@ const createWorkspace = () =>
             })
           : await createWorkspace();
       if (operation.consumed) {
-        // The same prompt started while this request was in flight. Remove the
-        // late draft instead of leaving a duplicate beside the live session.
-        if (workspaceId) await updateWorkspaceApi(workspaceId, { draft: null });
-        else {
+        // The same prompt started while this request was in flight. A create
+        // that adopted this workspace only needs its late draft cleared. When
+        // it created elsewhere, remove the now-empty duplicate workspace.
+        if (workspaceId || operation.consumedIntoWorkspaceId === workspace.id) {
+          await updateWorkspaceApi(workspace.id, { draft: null });
+        } else {
           if (parkedWorkspaceId === workspace.id) parkedWorkspaceId = null;
           await deleteWorkspaceApi(workspace.id);
         }
@@ -1199,9 +1218,10 @@ pendingDraftParks.delete(operation);
     setStatus({ kind: "creating" });
     creatingRef.current = true;
     // Workspace linkage: scoped to an existing workspace (the tab/sidebar +),
-    // the session joins it — sharing its worktree when reusing the sibling branch,
-    // stacking a fresh worktree off it for a new branch. Unscoped, the default
-    // is a brand-new Workspace + first Session created together.
+    // the session joins it. An unscoped composer that was closed already made
+    // a draft workspace, so reopening and creating adopts that same workspace
+    // instead of leaving the draft beside a second, live workspace.
+    const createWorkspaceId = workspaceId || parkedWorkspaceId || undefined;
     const worktreeMode =
       createMode === "ask"
         ? "ask"
@@ -1225,7 +1245,7 @@ pendingDraftParks.delete(operation);
           ? resolvedAuto?.repo || registeredDefaultRepo
           : createRepo,
       branch: createMode === "code" ? branch : null,
-      ...(workspaceId ? { workspaceId } : {}),
+      ...(createWorkspaceId ? { workspaceId: createWorkspaceId } : {}),
       ...(optimisticModel ? { model: optimisticModel } : {}),
       ...(images.length ? { images } : {}),
       ...(files.length ? { files } : {}),
@@ -1245,8 +1265,8 @@ pendingDraftParks.delete(operation);
       ...(attachRepos.length && (canAddRepos || repo === AUTO_REPO)
         ? { attachRepos }
         : {}),
-      ...(workspaceId
-        ? { workspaceId: workspaceId, worktreeMode }
+      ...(createWorkspaceId
+        ? { workspaceId: createWorkspaceId, worktreeMode }
         : { createWorkspace: {} }),
       ...(modelWorkspaceId ? { modelWorkspaceId } : {}),
       branch: createMode === "code" ? branch : "",
@@ -1272,9 +1292,10 @@ pendingDraftParks.delete(operation);
     } as WSClientMessage;
     createSessionIdRef.current = clientSessionId;
     createMessageRef.current = createMessage;
+    createWorkspaceIdRef.current = createWorkspaceId ?? null;
     try {
       send(createMessage);
-      consumePendingDraftParks(prompt, workspaceId);
+      consumePendingDraftParks(prompt, workspaceId, createWorkspaceId);
       if (createAction === "open") {
         // The send was accepted. Consume the global composer now, before App
         // opens the optimistic session, so reopening it during workspace setup
@@ -1290,6 +1311,7 @@ pendingDraftParks.delete(operation);
       creatingRef.current = false;
       createSessionIdRef.current = null;
       createMessageRef.current = null;
+      createWorkspaceIdRef.current = null;
       setStatus({
         kind: "failed",
         message: error instanceof Error ? error.message : String(error),

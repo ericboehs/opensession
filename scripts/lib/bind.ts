@@ -120,9 +120,9 @@ export async function bind(address?: string): Promise<number> {
   if (target !== "127.0.0.1") {
     console.log(
       yellow(
-        `\n  Reminder: Open Session has no built-in authentication — everyone who can\n` +
-          `  reach ${target}:${port} is trusted. Keep it on Tailscale or an equivalent\n` +
-          `  private network. See docs/setup/README.md#trust-model.\n`,
+        `\n  Reminder: Until GitHub authentication is set up, Open Session trusts\n` +
+          `  everyone who can reach ${target}:${port}. Keep it on Tailscale or an\n` +
+          `  equivalent private network. See docs/setup/README.md#trust-model.\n`,
       ),
     );
   }

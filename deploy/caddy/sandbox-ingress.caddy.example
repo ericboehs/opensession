@@ -1,23 +1,10 @@
-# Public webhook + remote-sandbox ingress. Replace the hostname, then either
-# install this as the site block or let `opensession sandbox ingress install`
-# own the marked routes in the real Caddyfile. Never proxy the public catch-all
-# to port 3850.
+# One public origin for signed webhooks, remote Sandbox callbacks and workload
+# identity. The local gateway owns the exact method/path allowlist and returns
+# 404 for everything else. Never proxy this hostname to the private app on 3850.
 ingress.example.com {
     # BEGIN OPENSESSION SANDBOX INGRESS
-    handle /run-ws/* {
-        reverse_proxy 127.0.0.1:3860
-    }
-    handle /rpc-ws {
-        reverse_proxy 127.0.0.1:3860
-    }
-    handle /ingress-health {
-        reverse_proxy 127.0.0.1:3860
-    }
-    handle /workload-identity/* {
+    handle {
         reverse_proxy 127.0.0.1:3860
     }
     # END OPENSESSION SANDBOX INGRESS
-    handle {
-        reverse_proxy 127.0.0.1:3848
-    }
 }

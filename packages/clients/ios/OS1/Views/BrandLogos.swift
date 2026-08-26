@@ -38,7 +38,6 @@ enum Brand {
 
     private static func baseKey(_ name: String) -> String {
         let key = name.lowercased()
-        if key == "tellainternalsupportmcp" { return "tella" }
         if tileColors[key] != nil || logos[key] != nil { return key }
         return key.split(separator: "-").first.map(String.init) ?? key
     }
@@ -50,7 +49,6 @@ enum Brand {
         "incident": "incident.io",
         "openai": "OpenAI",
         "posthog": "PostHog",
-        "tellainternalsupportmcp": "Tella internal support",
         "workos": "WorkOS",
     ]
 

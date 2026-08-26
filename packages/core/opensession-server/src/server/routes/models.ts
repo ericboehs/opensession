@@ -7,7 +7,7 @@
  */
 
 import { requestUser, type RouteContext } from "./context";
-import { DIAL_PRESETS, KNOWN_MODELS, ORCHESTRATOR_PRESETS, accountProviderForModel, getDefaultModel, getModelFallbackAuto, interactiveDefaultModel, modelEfforts, piModelLabel, refreshPickerModels, setDefaultModel, setInteractiveDefaultModel, setModelFallbackAuto, toPiModel } from "../models";
+import { DIAL_ORACLE_AGENTS, DIAL_PRESETS, KNOWN_MODELS, ORCHESTRATOR_PRESETS, accountProviderForModel, getDefaultModel, getModelFallbackAuto, interactiveDefaultModel, modelEfforts, orchestratorWorkerForBridge, piModelLabel, refreshPickerModels, setDefaultModel, setInteractiveDefaultModel, setModelFallbackAuto, toPiModel } from "../models";
 import { orchestratorEnabled } from "../model-providers";
 import { configuredInteractiveDefaultModel, configuredModelProviders, modelFitsConfiguredProviders, pickerModelId, presetFitsConfiguredProviders } from "../model-catalog";
 import { type Sandbox } from "../sandbox";
@@ -54,9 +54,15 @@ export async function handleModelsRoutes(
 		// no workspace (the /new composer) gets the global Dial and, when opted
 		// in, Orchestrator presets instead — the entries resolveModel already
 		// serves — so the instance default (`dial/…`) always has a picker row.
+		const presetComposition = (models: Array<string | undefined>) =>
+			models.flatMap((model) => {
+				if (!model) return [];
+				return [toPiModel(model) || model];
+			});
 		const globalPresetEntry = (
 			p: { id: string; label: string; description: string; effort: string },
 			group: "dial" | "orchestrator",
+			composition: string[],
 		) => ({
 			id: `pi/${p.id}`,
 			provider: "pi" as const,
@@ -65,6 +71,7 @@ export async function handleModelsRoutes(
 			group,
 			description: p.description,
 			fixedEffort: p.effort,
+			composition,
 		});
 		const presetModels = workspace ? (settings.presets || [])
 			.filter((preset) =>
@@ -83,6 +90,10 @@ export async function handleModelsRoutes(
 					preset.instructions?.trim() || "Workspace model combination",
 					`${piModelLabel(toPiModel(preset.lead.model) || preset.lead.model)}${preset.supporting?.length ? ` + ${preset.supporting.length} supporting model${preset.supporting.length === 1 ? "" : "s"}` : ""}`,
 				].join(" · "),
+				composition: presetComposition([
+					preset.lead.model,
+					...(preset.supporting || []).map((model) => model.model),
+				]),
 			})) : engineConfigured
 				? [
 						...DIAL_PRESETS
@@ -90,14 +101,30 @@ export async function handleModelsRoutes(
 								group: "dial",
 								lead: { model: p.model },
 							}, configuredProviders))
-							.map((p) => globalPresetEntry(p, "dial")),
+							.map((p) => globalPresetEntry(p, "dial", presetComposition([
+								p.model,
+								DIAL_ORACLE_AGENTS[p.oracleAgent]?.model,
+							]))),
 						...(orchestratorEnabled()
 							? ORCHESTRATOR_PRESETS
 								.filter((p) => presetFitsConfiguredProviders({
 									group: "orchestrator",
 									lead: { model: p.model },
 								}, configuredProviders))
-								.map((p) => globalPresetEntry(p, "orchestrator"))
+								.map((p) => {
+									const lead = toPiModel(p.model) || p.model;
+									const leadProvider = lead.split("/")[1] || "anthropic";
+									return globalPresetEntry(p, "orchestrator", presetComposition([
+										lead,
+										...p.workerAgents.map((name) =>
+											orchestratorWorkerForBridge(
+												name,
+												leadProvider,
+												configuredProviders,
+											)?.model,
+										),
+									]));
+								})
 							: []),
 					]
 				: [];

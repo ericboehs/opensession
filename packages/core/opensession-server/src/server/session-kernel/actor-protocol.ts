@@ -5,7 +5,7 @@ import type {
   RunEventDecisionResult,
 } from "./store";
 
-export const SESSION_KERNEL_ACTOR_VERSION = 20;
+export const SESSION_KERNEL_ACTOR_VERSION = 28;
 export const SESSION_KERNEL_TRANSPORT_VERSION = 1;
 export const SESSION_KERNEL_MAX_REQUEST_BYTES = 16 * 1024 * 1024;
 export const SESSION_KERNEL_MAX_RESPONSE_BYTES = 128 * 1024 * 1024;
@@ -23,8 +23,7 @@ export type KernelActorAsyncRequest =
       timerKinds: string[];
       effectKinds: string[];
       limit: number;
-    }
-;
+    };
 
 export type KernelActorAsyncResponse =
   | { t: "ready"; rpcId: string; version: number; serviceEpoch?: string }
@@ -42,6 +41,12 @@ export type KernelActorAsyncResponse =
       outbox: DurableOutboxItem[];
     }
   | { t: "error"; rpcId: string; error: string; retryable?: boolean };
+
+/** Gateway-worker-only async call. The transport wraps this in a service call;
+ * it never crosses the independently supervised service boundary directly. */
+export type KernelActorClientCallRequest =
+  | { t: "store"; rpcId: string; method: string; args: unknown[] }
+  | { t: "reduce"; rpcId: string; command: SessionActorReducerCommand };
 
 export type KernelActorServiceCall = {
   t: "call";
@@ -62,6 +67,13 @@ export type KernelActorServiceResponse =
       body?: string;
     };
 
+export type KernelActorClientRequest =
+  KernelActorAsyncRequest | KernelActorClientCallRequest;
+
+export type KernelActorClientResponse =
+  | KernelActorAsyncResponse
+  | Extract<KernelActorServiceResponse, { t: "call_result" }>;
+
 export type KernelActorTransportEnvelope = {
   version: number;
   actorVersion: number;
@@ -80,15 +92,21 @@ export type KernelActorSyncRequest =
 
 export type KernelActorRunEventResult = RunEventDecisionResult;
 
-/** Settlement follows a physical or externally visible action. Any rejected
- * settlement is ambiguous, so both the client and actor fail-stop. */
+/** Settlement follows a physical or externally visible action. A rejected
+ * session-scoped settlement quarantines that session. Infrastructure failures
+ * still fail-stop the whole actor because commit state may be unknowable. */
 export function isCriticalSettlementCommand(
   command: SessionActorReducerCommand,
 ): boolean {
+  if (command.kind === "agent_operation")
+    return command.request.op === "settle" || command.request.op === "indeterminate";
   if (command.kind === "gateway")
     return command.request.op === "complete" || command.request.op === "fail";
   if (command.kind === "core")
-    return command.request.op === "ack_outbox" || command.request.op === "fail_outbox";
+    return (
+      command.request.op === "ack_outbox" ||
+      command.request.op === "fail_outbox"
+    );
   if (command.kind === "timer")
     return command.request.op === "complete" || command.request.op === "fail";
   if (command.kind === "delivery")
