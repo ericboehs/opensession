@@ -485,6 +485,41 @@ describe("session kernel actor service", () => {
     expect(unauthorized.status).toBe(401);
   });
 
+  test("reports per-lane occupancy and cumulative counters on /ready", async () => {
+    // Complete at least one turn so counters have advanced.
+    await rpc({
+      t: "call",
+      rpcId: crypto.randomUUID(),
+      outputBytes: 256 * 1024,
+      request: { t: "store", method: "stats", args: [] },
+    });
+    const ready = (await (await fetch(`${service.url}/ready`)).json()) as {
+      workers: { capacity: number };
+      lanes: Array<Record<string, unknown>>;
+    };
+    // Catalog lane (index 0) plus every session lane.
+    expect(ready.lanes.length).toBe(ready.workers.capacity + 1);
+    for (const lane of ready.lanes) {
+      expect(lane).toMatchObject({ ready: true, restarting: false });
+      expect(typeof lane.index).toBe("number");
+      expect(typeof lane.queued).toBe("number");
+      expect(typeof lane.executing).toBe("number");
+      expect(typeof lane.turnsCompleted).toBe("number");
+      expect(typeof lane.queueWaitMsTotal).toBe("number");
+      expect(typeof lane.busyMsTotal).toBe("number");
+      expect(typeof lane.timeouts).toBe("number");
+      expect(typeof lane.restarts).toBe("number");
+      expect(typeof lane.rejectedFull).toBe("number");
+    }
+    // The handshake and at least one call ran somewhere: total completed turns
+    // across lanes must have advanced.
+    const completed = ready.lanes.reduce(
+      (total, lane) => total + Number(lane.turnsCompleted),
+      0,
+    );
+    expect(completed).toBeGreaterThan(0);
+  });
+
   test("refuses to send the actor credential off host", () => {
     const previous = process.env.OPENSESSION_SESSION_KERNEL_URL;
     process.env.OPENSESSION_SESSION_KERNEL_URL = "https://example.com/rpc";

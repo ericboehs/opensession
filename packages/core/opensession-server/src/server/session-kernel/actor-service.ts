@@ -52,14 +52,28 @@ type Pending = {
   request: KernelActorTransportEnvelope["request"];
   readOnly: boolean;
   criticalSessionId?: string;
+  /** When the turn started executing on the worker (lane busy-time metric). */
+  startedAt: number;
 };
 
 type SlotTurn = {
   request: KernelActorTransportEnvelope["request"];
   allowUnready: boolean;
   priority: boolean;
+  enqueuedAt: number;
   resolve: (response: KernelActorResponse) => void;
   reject: (error: Error) => void;
+};
+
+/** Cumulative per-lane counters. Monotonic for the service lifetime — they
+ * deliberately survive lane restarts so operators can see instability. */
+type LaneMetrics = {
+  turnsCompleted: number;
+  queueWaitMsTotal: number;
+  busyMsTotal: number;
+  timeouts: number;
+  restarts: number;
+  rejectedFull: number;
 };
 
 type WorkerSlot = {
@@ -71,6 +85,7 @@ type WorkerSlot = {
   ready: boolean;
   restarting: boolean;
   priorityBurst: number;
+  metrics: LaneMetrics;
 };
 
 type QueuedSessionTurn = {
@@ -233,6 +248,14 @@ export async function startSessionKernelService(
       ready: false,
       restarting: false,
       priorityBurst: 0,
+      metrics: {
+        turnsCompleted: 0,
+        queueWaitMsTotal: 0,
+        busyMsTotal: 0,
+        timeouts: 0,
+        restarts: 0,
+        rejectedFull: 0,
+      },
     }),
   );
   const sessionSlots = slots.slice(1);
@@ -362,6 +385,7 @@ export async function startSessionKernelService(
     if (safeCatalogReadRestart)
       console.warn("Restarting session kernel catalog lane after read failure", error);
     slot.restarting = true;
+    slot.metrics.restarts += 1;
     stopSlot(slot, error, true);
     void (async () => {
       const critical = active.filter((entry) => entry.criticalSessionId);
@@ -414,7 +438,10 @@ export async function startSessionKernelService(
     const originalRpcId = turn.request.rpcId;
     const rpcId = crypto.randomUUID();
     const generation = slot.generation;
+    const startedAt = Date.now();
+    slot.metrics.queueWaitMsTotal += Math.max(0, startedAt - turn.enqueuedAt);
     const timer = setTimeout(() => {
+      slot.metrics.timeouts += 1;
       const error = new Error(`Session actor lane ${slot.index} response timed out`);
       restartSessionSlot(slot, error, generation);
     }, responseTimeoutMs);
@@ -425,6 +452,7 @@ export async function startSessionKernelService(
       request: turn.request,
       readOnly: isReadOnlyRequest(turn.request),
       criticalSessionId: criticalSessionId(turn.request),
+      startedAt,
     });
     try {
       slot.worker.postMessage({ ...turn.request, rpcId });
@@ -460,9 +488,12 @@ export async function startSessionKernelService(
         RESERVED_LANE_PRIORITY_TURNS,
         Math.max(0, laneQueueLimit - 1),
       ))
-    ) return Promise.reject(new RetryableActorHostError("Session actor lane is full"));
+    ) {
+      slot.metrics.rejectedFull += 1;
+      return Promise.reject(new RetryableActorHostError("Session actor lane is full"));
+    }
     return new Promise((resolve, reject) => {
-      const turn = { request, allowUnready, priority, resolve, reject };
+      const turn = { request, allowUnready, priority, enqueuedAt: Date.now(), resolve, reject };
       if (urgent) slot.queue.unshift(turn);
       else slot.queue.push(turn);
       pumpSlot(slot);
@@ -484,6 +515,8 @@ export async function startSessionKernelService(
         if (!entry) return;
         slot.pending.delete(response.rpcId);
         clearTimeout(entry.timer);
+        slot.metrics.turnsCompleted += 1;
+        slot.metrics.busyMsTotal += Math.max(0, Date.now() - entry.startedAt);
         const restored = { ...response, rpcId: entry.originalRpcId };
         entry.resolve(restored);
         if (actorFatal(response))
@@ -743,6 +776,18 @@ export async function startSessionKernelService(
               ready: sessionSlots.filter((slot) => slot.ready).length,
               capacity: sessionSlots.length,
             },
+            // Per-lane occupancy and cumulative counters. Index 0 is the
+            // catalog lane; the rest are session execution lanes. Counters are
+            // monotonic for the service lifetime so operators can compute
+            // rates and spot lane skew, timeout storms, and restart churn.
+            lanes: slots.map((slot) => ({
+              index: slot.index,
+              ready: slot.ready,
+              restarting: slot.restarting,
+              queued: slot.queue.length,
+              executing: slot.pending.size,
+              ...slot.metrics,
+            })),
           },
           { status: ready ? 200 : 503 },
         );
