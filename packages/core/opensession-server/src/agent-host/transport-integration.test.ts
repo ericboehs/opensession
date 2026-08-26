@@ -49,6 +49,17 @@ const descriptor = {
   adapterRequestVersion: "model.v1",
 };
 const descriptorDigest = await hashAgentOperationDescriptorV1(descriptor);
+const secondDescriptor = {
+  ...descriptor,
+  stepId: "step-transport-2",
+  transcript: {
+    throughChangeSeq: 4,
+    entryIds: ["entry-transport-2"],
+    digest: digest("f"),
+  },
+};
+const secondDescriptorDigest =
+  await hashAgentOperationDescriptorV1(secondDescriptor);
 const startedAt = Date.now();
 const spec: AgentTurnSpec = {
   fence,
@@ -89,21 +100,29 @@ async function eventually(check: () => boolean, message: string) {
 class FakeDriver implements AgentTurnDriver {
   transport?: AgentHostOperationTransport;
   readonly delivered: { seq: number; bytes: string }[] = [];
+  readonly deliveredOperationIds: string[] = [];
   readonly deliveryStarted: number[] = [];
-  readonly deliveryGates = new Map<
-    number,
-    ReturnType<typeof deferred<void>>
-  >();
+  readonly deliveryGates = new Map<number, ReturnType<typeof deferred<void>>>();
   cancelCalls = 0;
   shutdownCalls = 0;
   private readonly result = deferred<AgentTurnResult>();
 
+  constructor(private readonly requestSecondOperation = false) {}
+
   async run(_spec: AgentTurnSpec, transport: AgentHostOperationTransport) {
     this.transport = transport;
     await transport.requestOperation(spec.initialOperation);
+    if (this.requestSecondOperation)
+      await transport.requestOperation({
+        operationId: "operation-transport-2",
+        descriptor: secondDescriptor,
+        descriptorDigest: secondDescriptorDigest,
+        deadlineMs: spec.initialOperation.deadlineMs,
+      });
     return this.result.promise;
   }
   async deliverOperationStream(stream: {
+    operationId: string;
     streamSeq: number;
     bytes: string;
   }) {
@@ -113,6 +132,7 @@ class FakeDriver implements AgentTurnDriver {
       seq: stream.streamSeq,
       bytes: Buffer.from(stream.bytes, "base64url").toString(),
     });
+    this.deliveredOperationIds.push(stream.operationId);
   }
   async query(afterStreamSeq: number) {
     const query: AgentHostOperationQuery = {
@@ -206,6 +226,8 @@ function signing() {
 
 function operationReceipt(
   state: AgentOperationReceiptV1["state"],
+  operationId = spec.initialOperation.operationId,
+  operationDescriptorDigest = descriptorDigest,
 ): AgentOperationReceiptV1 {
   const terminal = state === "settled";
   const terminalRef = {
@@ -218,12 +240,12 @@ function operationReceipt(
   };
   return {
     version: 1,
-    operationId: spec.initialOperation.operationId,
+    operationId,
     kind: descriptor.kind,
     fence,
     planHash,
     authorityHash: digest("c"),
-    descriptorDigest,
+    descriptorDigest: operationDescriptorDigest,
     payloadDigest: digest("d"),
     actorIdentity: {
       supervisorEpoch: 1,
@@ -252,7 +274,11 @@ function operationReceipt(
   };
 }
 
-const resources: { host: AgentHost; root: string; clients: AgentHostClient[] }[] = [];
+const resources: {
+  host: AgentHost;
+  root: string;
+  clients: AgentHostClient[];
+}[] = [];
 afterEach(async () => {
   for (const resource of resources.splice(0)) {
     for (const client of resource.clients) client.close();
@@ -265,15 +291,18 @@ type SetupOptions = {
   chunks?: string[];
   chunkSource?: AsyncIterable<Uint8Array>;
   settleQueries?: boolean;
+  twoOperations?: boolean;
+  dispatchGates?: Map<string, ReturnType<typeof deferred<void>>>;
   failpoint?: ConstructorParameters<typeof AgentHostClient>[0]["failpoint"];
   acknowledgeOperationStream?: ConstructorParameters<
     typeof AgentHostClient
   >[0]["acknowledgeOperationStream"];
+  hostFailpoint?: ConstructorParameters<typeof AgentHost>[0]["failpoint"];
 };
 async function setup(options: SetupOptions = {}) {
   const root = await mkdtemp(join(tmpdir(), "agent-host-transport-"));
   const socketPath = join(root, "host.sock");
-  const driver = new FakeDriver();
+  const driver = new FakeDriver(options.twoOperations);
   const signature = signing();
   const host = createAgentHost({
     socketPath,
@@ -283,6 +312,7 @@ async function setup(options: SetupOptions = {}) {
     hostIncarnation: "transport-incarnation-1",
     supervisionKeyring: signature.keyring,
     reconnectGraceMs: 2_000,
+    failpoint: options.hostFailpoint,
   });
   const dispatchIntents: unknown[] = [];
   const queryIntents: any[] = [];
@@ -297,8 +327,13 @@ async function setup(options: SetupOptions = {}) {
     dispatchOperation: async (intent) => {
       dispatches++;
       dispatchIntents.push(intent);
+      await options.dispatchGates?.get(intent.operationId)?.promise;
       return {
-        receipt: operationReceipt("executing"),
+        receipt: operationReceipt(
+          "executing",
+          intent.operationId,
+          intent.descriptorDigest,
+        ),
         chunks:
           options.chunkSource ??
           (options.chunks ?? ["one", "two"]).map((value) => Buffer.from(value)),
@@ -311,6 +346,8 @@ async function setup(options: SetupOptions = {}) {
           intent.recovery || options.settleQueries === false
             ? "executing"
             : "settled",
+          intent.operationId,
+          intent.descriptorDigest,
         ),
         fromStreamSeq: intent.afterStreamSeq + 1,
         chunks: intent.recovery
@@ -325,7 +362,11 @@ async function setup(options: SetupOptions = {}) {
       return {
         disposition: "indeterminate",
         receipt: {
-          ...operationReceipt("executing"),
+          ...operationReceipt(
+            "executing",
+            intent.operationId,
+            intent.descriptorDigest,
+          ),
           state: "indeterminate",
           completedAtMs: Date.now(),
           kernelTerminal: {
@@ -518,8 +559,9 @@ describe("Agent Host v4 end-to-end transport", () => {
     );
     await eventually(
       () =>
-        harness.errors.some((error) => error.message.includes("disconnected")) ||
-        !(harness.host as any).active,
+        harness.errors.some((error) =>
+          error.message.includes("disconnected"),
+        ) || !(harness.host as any).active,
       "terminal receipt did not complete the drained turn",
     );
     expect((harness.host as any).active).toBeUndefined();
@@ -536,42 +578,171 @@ describe("Agent Host v4 end-to-end transport", () => {
     });
   });
 
+  test("binds concurrent operation, query, and cancel receipts to their exact Host intents", async () => {
+    const firstGate = deferred<void>();
+    const secondGate = deferred<void>();
+    const harness = await setup({
+      chunks: [],
+      settleQueries: false,
+      twoOperations: true,
+      dispatchGates: new Map([
+        [spec.initialOperation.operationId, firstGate],
+        ["operation-transport-2", secondGate],
+      ]),
+    });
+
+    await harness.client.connect(fence, planHash);
+    await harness.client.startTurn(spec);
+    await eventually(
+      () => harness.dispatches === 2,
+      "operations did not overlap",
+    );
+
+    secondGate.resolve();
+    await eventually(
+      () =>
+        (harness.host as any).active?.ops.get("operation-transport-2")?.receipt
+          ?.state === "executing",
+      "second operation receipt used the wrong Host sequence",
+    );
+    firstGate.resolve();
+    await eventually(
+      () =>
+        (harness.host as any).active?.ops.get(spec.initialOperation.operationId)
+          ?.receipt?.state === "executing",
+      "first operation receipt used another operation's Host sequence",
+    );
+
+    const transport = harness.driver.transport!;
+    await Promise.all([
+      transport.queryOperation({
+        operationId: spec.initialOperation.operationId,
+        kind: descriptor.kind,
+        descriptorDigest,
+        payloadDigest: digest("d"),
+        afterStreamSeq: 0,
+      }),
+      transport.queryOperation({
+        operationId: spec.initialOperation.operationId,
+        kind: descriptor.kind,
+        descriptorDigest,
+        payloadDigest: digest("d"),
+        afterStreamSeq: 0,
+      }),
+      transport.cancelOperation({
+        operationId: "operation-transport-2",
+        cancelId: "cancel-transport-2",
+        reason: "user",
+      }),
+    ]);
+    await eventually(
+      () =>
+        harness.queryIntents.length === 2 && harness.cancelIntents.length === 1,
+      "query/cancel intents were not acknowledged",
+    );
+    expect(harness.errors).toEqual([]);
+    expect(harness.dispatches).toBe(2);
+    expect(
+      (harness.host as any).active.ops.get("operation-transport-2").receipt
+        .state,
+    ).toBe("indeterminate");
+  });
+
   test.each([
     "after_host_message",
     "after_coordinator_result",
     "before_receipt_write",
     "after_receipt_write",
     "after_stream_chunk",
-  ] as const)("client crash at %s resumes by query without physical relaunch", async (point) => {
-    let crashed = false;
-    let hostMessages = 0;
+  ] as const)(
+    "client crash at %s resumes by query without physical relaunch",
+    async (point) => {
+      let crashed = false;
+      let hostMessages = 0;
+      const harness = await setup({
+        chunks: ["only"],
+        twoOperations: true,
+        failpoint: (candidate) => {
+          if (candidate === "after_host_message") hostMessages++;
+          const armed =
+            candidate === point &&
+            (candidate !== "after_host_message" || hostMessages > 3);
+          if (!crashed && armed) {
+            crashed = true;
+            throw new Error(`crash:${point}`);
+          }
+        },
+      });
+      await harness.client.connect(fence, planHash);
+      await harness.client.startTurn(spec).catch(() => {});
+      await eventually(
+        () =>
+          harness.errors.some((error) =>
+            error.message.includes(`crash:${point}`),
+          ),
+        `failpoint ${point} did not disconnect the gateway client`,
+      );
+
+      await harness.client.connect(fence, planHash);
+      await eventually(
+        () => harness.dispatches === 2,
+        `failpoint ${point} did not recover both operations`,
+      );
+      expect(harness.dispatches).toBe(2);
+      expect(
+        new Set(
+          harness.dispatchIntents.map((intent: any) => intent.operationId),
+        ),
+      ).toEqual(
+        new Set([spec.initialOperation.operationId, "operation-transport-2"]),
+      );
+      expect(harness.queryIntents.every((intent) => intent.recovery)).toBe(
+        true,
+      );
+    },
+  );
+
+  test("Host recovers coordinator state as well as owed Driver-consumption credit", async () => {
+    let failed = false;
     const harness = await setup({
       chunks: ["only"],
-      failpoint: (candidate) => {
-        if (candidate === "after_host_message") hostMessages++;
-        const armed =
-          candidate === point &&
-          (candidate !== "after_host_message" || hostMessages > 3);
-        if (!crashed && armed) {
-          crashed = true;
-          throw new Error(`crash:${point}`);
+      twoOperations: true,
+      hostFailpoint: (point) => {
+        if (point === "afterDriverDeliveryBeforeStreamAck" && !failed) {
+          failed = true;
+          throw new Error("crash:driver-consumption-ack");
         }
       },
     });
-    await harness.client.connect(fence, planHash);
-    await harness.client.startTurn(spec).catch(() => {});
-    await eventually(
-      () => harness.errors.some((error) => error.message.includes(`crash:${point}`)),
-      `failpoint ${point} did not disconnect the gateway client`,
-    );
 
     await harness.client.connect(fence, planHash);
+    await harness.client.startTurn(spec);
     await eventually(
-      () => harness.driver.delivered.length === 1 || harness.queryIntents.length > 0,
-      `failpoint ${point} did not recover the operation`,
+      () => failed,
+      "Driver-consumption ACK failpoint was not reached",
     );
-    expect(harness.dispatches).toBe(1);
+    await eventually(
+      () => harness.errors.length > 0,
+      "Driver-consumption ACK failpoint did not detach the client",
+    );
+    await harness.client.connect(fence, planHash);
+    await eventually(
+      () =>
+        harness.queryIntents.filter((intent) => intent.recovery).length === 2,
+      "Host did not query both operations while restoring owed credit",
+    );
+
+    expect(harness.dispatches).toBe(2);
+    expect(
+      harness.driver.deliveredOperationIds.filter(
+        (operationId) => operationId === spec.initialOperation.operationId,
+      ),
+    ).toHaveLength(1);
     expect(harness.queryIntents.every((intent) => intent.recovery)).toBe(true);
+    for (const op of (harness.host as any).active.ops.values()) {
+      expect(op.owedCreditBytes).toBe(0);
+      expect(op.owedCreditChunks).toBe(0);
+    }
   });
 
   test("bounds replay while repeated real queries preserve one physical dispatch", async () => {
@@ -604,7 +775,10 @@ describe("Agent Host v4 end-to-end transport", () => {
     const harness = await setup({ chunks: [], settleQueries: false });
     await harness.client.connect(fence, planHash);
     await harness.client.startTurn(spec);
-    await eventually(() => harness.dispatches === 1, "operation was not dispatched");
+    await eventually(
+      () => harness.dispatches === 1,
+      "operation was not dispatched",
+    );
 
     await harness.driver.query(0);
     await eventually(

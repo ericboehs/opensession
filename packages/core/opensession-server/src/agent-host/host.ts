@@ -998,7 +998,6 @@ export class AgentHost {
         this.credit(t, o, o.through, o.owedCreditBytes, o.owedCreditChunks);
         o.owedCreditBytes = 0;
         o.owedCreditChunks = 0;
-        continue;
       }
       if (!o.receipt) {
         o.sent.add(

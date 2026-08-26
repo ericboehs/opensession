@@ -352,8 +352,6 @@ export class AgentHostClient {
               }
               this.ready = true;
               finish();
-              if (attached.mode === "recovery_required")
-                void this.recoverOperations(generation);
             } catch (error) {
               fail(error instanceof Error ? error : new Error(String(error)));
             }
@@ -506,6 +504,7 @@ export class AgentHostClient {
           message.hostSeq,
           generation,
         );
+        op.uncertain = false;
       } else {
         const result = await this.options.dispatchOperation(
           Object.freeze({
@@ -527,7 +526,7 @@ export class AgentHostClient {
     } else if (message.t === "operation_query") {
       op.payloadDigest = message.payloadDigest;
       const result = await this.options.queryOperation(
-        this.queryIntent(op, message.afterStreamSeq, false),
+        this.queryIntent(op, message.afterStreamSeq, op.uncertain),
         signal,
       );
       await this.options.failpoint?.("after_coordinator_result");
@@ -538,6 +537,7 @@ export class AgentHostClient {
         message.hostSeq,
         generation,
       );
+      op.uncertain = false;
     } else {
       const result = await this.options.cancelOperation(
         Object.freeze({
@@ -556,7 +556,7 @@ export class AgentHostClient {
           version: 4,
           requestId: this.nextRequestId(),
           fence: this.fence!,
-          ackHostSeq: this.lastHostSeq,
+          ackHostSeq: message.hostSeq,
           operationId: op.operationId,
           cancelId: message.cancelId,
           disposition: result.disposition,
@@ -564,6 +564,7 @@ export class AgentHostClient {
         },
         generation,
       );
+      op.uncertain = false;
     }
   }
 
@@ -658,7 +659,7 @@ export class AgentHostClient {
       version: 4 as const,
       requestId: this.nextRequestId(),
       fence: this.fence!,
-      ackHostSeq: this.lastHostSeq,
+      ackHostSeq: hostSeq,
       operationId: op.operationId,
       receipt: result.receipt,
     };
@@ -674,7 +675,9 @@ export class AgentHostClient {
         result.receipt.state === "settled" ||
         result.receipt.state === "indeterminate"
       )
-        throw new Error("Terminal operation receipt cannot precede stream data");
+        throw new Error(
+          "Terminal operation receipt cannot precede stream data",
+        );
       const bytes = raw instanceof Uint8Array ? raw.slice() : undefined;
       if (!bytes?.byteLength)
         throw new Error("Invalid empty operation stream chunk");
@@ -783,30 +786,6 @@ export class AgentHostClient {
       throw new Error("Agent Host receipt write became uncertain");
     this.write(message);
     await this.options.failpoint?.("after_receipt_write");
-  }
-
-  private async recoverOperations(generation: number): Promise<void> {
-    for (const op of this.operations.values()) {
-      try {
-        const result = await this.options.queryOperation(
-          this.queryIntent(op, op.throughStreamSeq, true),
-          new AbortController().signal,
-        );
-        await this.sendResult(
-          op,
-          result,
-          "operation_query_receipt",
-          this.lastHostSeq,
-          generation,
-        );
-        op.uncertain = false;
-      } catch (error) {
-        this.desynchronize(
-          error instanceof Error ? error : new Error(String(error)),
-        );
-        return;
-      }
-    }
   }
 
   private request(
