@@ -88,7 +88,7 @@ import {
   transcriptLineUser,
   storeAppendUserLineEarly,
 } from "./transcript-persistence";
-import { transcriptStore } from "./transcript-store";
+import { transcript } from "./actor-transcript";
 import { transcriptForwarder } from "./transcript-forward";
 import { gitIdentityEnv } from "./shared/user-mappings";
 import { providerAccountUser } from "./session-actors";
@@ -2108,7 +2108,7 @@ async function* runPiAttempt(
       try {
         const tail = (transcriptForwarder()
           ? opts.seedTranscriptEntries || []
-          : transcriptStore().readTail(unifiedSessionId, 200).entries)
+          : (await transcript.readTail(unifiedSessionId, 200)).entries)
           // This turn's own prompt was already early-persisted — the model
           // gets it as the actual prompt, not as history.
           .filter((e) => e.id !== String(userLine.uuid));
@@ -2909,9 +2909,9 @@ export async function runPiSmokeTurn(
   const enabled = piEngineEnabled();
   const sessionId = `os-test-pi-${Date.now().toString(36)}`;
   const started = Date.now();
-  const storeRowsFor = (id: string): number => {
+  const storeRowsFor = async (id: string): Promise<number> => {
     try {
-      return transcriptStore().getLastSeq(id);
+      return await transcript.getLastSeq(id);
     } catch {
       return 0;
     }
@@ -3001,6 +3001,6 @@ export async function runPiSmokeTurn(
     // Store rows prove the write path for REAL turns only; the disabled dry
     // path must not open the transcript store at all (a test/scratch process
     // would otherwise cold-open the live DB just to read a zero).
-    storeRows: enabled ? storeRowsFor(sessionId) : 0,
+    storeRows: enabled ? await storeRowsFor(sessionId) : 0,
   };
 }

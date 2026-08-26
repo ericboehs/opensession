@@ -30,7 +30,10 @@ import {
 	type WorkspaceGroup,
 } from "@tellahq/opensession-protocol/workspace-group";
 import { withToolPresentations } from "@tellahq/opensession-protocol/tool-presentation";
-import { transcriptDbPath, transcriptStore } from "../transcript-store";
+import {
+  deleteSessionTranscript,
+  transcript,
+} from "../actor-transcript";
 import { clearSessionFileArchive } from "../plain-archive";
 import {
 	editPrReviewers,
@@ -685,64 +688,22 @@ interface StoredTranscriptSearchResult {
 	searchedSessions: number;
 }
 
-/**
- * Search transcript v2 on a read-only child process. Bun's SQLite API is
- * synchronous, so doing this in the coordinator would pause sockets and every
- * other request for the duration of a rare-query scan.
- */
+/** Search each bounded actor-owned store in activity order. The coordinator
+ * performs no SQLite work and stops as soon as the response cap is full. */
 async function searchStoredTranscripts(
 	query: string,
 	sessionIds: string[],
 	signal?: AbortSignal,
 ): Promise<StoredTranscriptSearchResult> {
-	if (!sessionIds.length || !existsSync(transcriptDbPath()))
-		return { matches: [], searchedSessions: 0 };
-	const proc = Bun.spawn(
-		[process.execPath, `${import.meta.dir}/../transcript-search-worker.ts`],
-		{
-			stdin: "pipe",
-			stdout: "pipe",
-			stderr: "pipe",
-			timeout: 10_000,
-		},
-	);
-	const abort = () => proc.kill();
-	if (signal?.aborted) {
-		abort();
-		await proc.exited;
-		return { matches: [], searchedSessions: 0 };
+	const matches: StoredTranscriptSearchResult["matches"] = [];
+	let searchedSessions = 0;
+	for (const id of sessionIds) {
+		if (signal?.aborted || matches.length >= 50) break;
+		const snippet = await transcript.search(id, query);
+		searchedSessions++;
+		if (snippet) matches.push({ id, snippet });
 	}
-	signal?.addEventListener("abort", abort, { once: true });
-	proc.stdin.write(
-		JSON.stringify({ dbPath: transcriptDbPath(), query, sessionIds, maxMatches: 50, }),
-	);
-	proc.stdin.end();
-	let output = "";
-	let error = "";
-	let code = -1;
-	try {
-		[output, error, code] = await Promise.all([
-			new Response(proc.stdout).text(),
-			new Response(proc.stderr).text(),
-			proc.exited,
-		]);
-	} finally {
-		signal?.removeEventListener("abort", abort);
-	}
-	if (code !== 0) {
-		if (!signal?.aborted)
-			console.warn(`[transcript-search] store worker failed: ${error.trim().slice(0, 300)}`,);
-		return { matches: [], searchedSessions: 0 };
-	}
-	try {
-		const parsed = JSON.parse(output) as StoredTranscriptSearchResult;
-		return {
-			matches: Array.isArray(parsed.matches) ? parsed.matches : [],
-			searchedSessions: Number(parsed.searchedSessions) || 0,
-		};
-	} catch {
-		return { matches: [], searchedSessions: 0 };
-	}
+	return { matches, searchedSessions };
 }
 
 async function ripgrepFiles(
@@ -1241,7 +1202,7 @@ export async function handleSessionsRoutes(
 			// consult it first; unknown ids and store failures fall through to
 			// the legacy merged-transcript scan unchanged.
 			try {
-				const full = transcriptStore().getFullEntry(session.id, entryId);
+				const full = await transcript.getFullEntry(session.id, entryId);
 				// content keeps its exact legacy shape; toolInput/images are
 				// additive (existing clients ignore them) — they carry the
 				// unstripped fields the bounded store row summarized away.
@@ -1334,9 +1295,9 @@ export async function handleSessionsRoutes(
 			// mirror can't resolve the image, decode it from there. Guarded on the
 			// DB file existing — not the flag — so images keep serving through
 			// kill-switch windows.
-			if (!img && existsSync(transcriptDbPath())) {
+			if (!img) {
 				try {
-					const src = transcriptStore().getFullEntry(session.id, entryId)
+					const src = (await transcript.getFullEntry(session.id, entryId))
 						?.images?.[idx];
 					if (typeof src === "string") {
 						if (!src.startsWith("data:")) {
@@ -1815,8 +1776,7 @@ export async function handleSessionsRoutes(
 		// (bks-ghpr-*). Best-effort: a store hiccup must never block deletion.
 		const purgeTranscriptRows = async (id: string) => {
 			try {
-				if (existsSync(transcriptDbPath()))
-					await transcriptStore().deleteSessionTranscript(id);
+				await deleteSessionTranscript(id);
 			} catch {}
 			try {
 				searchIndex().remove(`session:${id}`);

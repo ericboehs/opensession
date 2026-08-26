@@ -52,13 +52,20 @@ export type TranscriptActorRequest =
   | (SessionRequest & { op: "since"; sinceSeq: number; limit?: number })
   | (SessionRequest & { op: "changes_since"; changeSeq: number; limit?: number })
   | (SessionRequest & { op: "before"; beforeSeq: number; limit?: number })
-  | (SessionRequest & { op: "range"; fromSeq: number; toSeq: number; limit?: number })
+  | (SessionRequest & {
+      op: "range";
+      fromSeq: number;
+      toSeq: number;
+      afterSeq?: number;
+      limit?: number;
+    })
   | (SessionRequest & { op: "outline" })
   | (SessionRequest & { op: "full_entry"; entryId: string })
   | (SessionRequest & { op: "last_seq" })
   | (SessionRequest & { op: "last_change_seq" })
   | (SessionRequest & { op: "last_reset_change_seq" })
   | (SessionRequest & { op: "count" })
+  | (SessionRequest & { op: "search"; query: string })
   | (SessionRequest & { op: "pending_wake" })
   | (SessionRequest & { op: "ack_wake"; cursor: number });
 
@@ -97,8 +104,10 @@ export type TranscriptActorResult<T extends TranscriptActorRequest> =
                     ? TranscriptOutline
                     : T extends { op: "full_entry" }
                       ? TranscriptEntry | null
-                      : T extends { op: "pending_wake" }
-                        ? TranscriptWake | null
+                      : T extends { op: "search" }
+                        ? string | null
+                        : T extends { op: "pending_wake" }
+                          ? TranscriptWake | null
                         : T extends { op: "ack_wake" }
                           ? boolean
                           : T extends { op: "last_seq" | "last_change_seq" | "last_reset_change_seq" | "count" }

@@ -30,7 +30,7 @@ import { stateDir } from "./paths";
 import { writeJsonAtomic } from "./shared/atomic-write";
 import { ensureDeskSession } from "./desk";
 import { getSessionControl } from "./session-control";
-import { transcriptStore } from "./transcript-store";
+import { appendTranscriptEvents } from "./actor-transcript";
 import type { InProcessMcpServer } from "./inprocess-mcp";
 import type { TranscriptEntry } from "./types";
 
@@ -506,7 +506,7 @@ export function mirrorVoiceEntries(
 		content: e.text,
 		timestamp: now,
 	}));
-	void transcriptStore().appendTranscriptEvents(sessionId, tes).catch((error) => {
+	void appendTranscriptEvents(sessionId, tes).catch((error) => {
     console.error(`[desk-voice] Failed to mirror voice entries for ${sessionId}:`, error);
   });
 	appendHandoff(
@@ -527,7 +527,7 @@ export function mirrorVoiceToolCall(
 	result: unknown,
 ): void {
 	const { sessionId } = ensureDeskSession(user);
-	void transcriptStore().appendTranscriptEvents(
+	void appendTranscriptEvents(
 		sessionId,
 		voiceToolTranscriptEntries(callId, name, args, result),
 	).catch((error) => {

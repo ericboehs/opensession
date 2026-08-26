@@ -17,7 +17,11 @@ import { warmWorkspaceNamesAsync } from "./workspaces";
 import { findCodexRollout } from "./codex-accounts";
 import { providerFor } from "./models";
 import { parseTranscript, parseTranscriptAsync } from "./jsonl-parser";
-import { type SeqEntry, type TranscriptStore, transcriptStore } from "./transcript-store";
+import type { SeqEntry } from "./transcript-store";
+import {
+  importLegacyTranscript,
+  transcript,
+} from "./actor-transcript";
 import {
   isTranscriptStoreDegraded,
   clearTranscriptStoreDegraded,
@@ -282,17 +286,6 @@ type TranscriptSessionRef = Pick<UnifiedSession, "transcriptPath"> & {
 export function mergedSessionTranscript(
   session: TranscriptSessionRef,
 ): TranscriptEntry[] {
-  if (session.id && !session.id.startsWith("plain-")) {
-    try {
-      const served = v2StoreTranscript(session.id, session);
-      if (served) return served;
-    } catch (error) {
-      console.warn(
-        `[sessions] transcript store read failed for ${session.id}:`,
-        error instanceof Error ? error.message : error,
-      );
-    }
-  }
   return session.transcriptPath ? parseTranscript(session.transcriptPath) : [];
 }
 
@@ -301,7 +294,7 @@ export async function mergedSessionTranscriptAsync(
 ): Promise<TranscriptEntry[]> {
   if (session.id && !session.id.startsWith("plain-")) {
     try {
-      const served = v2StoreTranscript(session.id, session);
+      const served = await v2StoreTranscript(session.id, session);
       if (served) return served;
     } catch (error) {
       console.warn(
@@ -339,15 +332,15 @@ export function v2MirrorFiles(
  * content; wire-level clamping stays the serializers' job
  * (clampEntriesForWire at the send sites).
  */
-function v2ReadAll(store: TranscriptStore, sessionId: string): TranscriptEntry[] {
+async function v2ReadAll(sessionId: string): Promise<TranscriptEntry[]> {
   const PAGE = 2000;
   const out: SeqEntry[] = [];
   let since = 0;
   for (;;) {
-    const page = store.readSince(sessionId, since, PAGE);
+    const page = await transcript.readSince(sessionId, since, PAGE);
     if (!page.entries.length) break;
     for (const e of page.entries) {
-      const full = store.getFullEntry(sessionId, e.id);
+      const full = await transcript.getFullEntry(sessionId, e.id);
       out.push(full ? { ...full, seq: e.seq, changeSeq: e.changeSeq } : e);
     }
     since = page.entries[page.entries.length - 1].seq;
@@ -371,11 +364,11 @@ function v2ReadAll(store: TranscriptStore, sessionId: string): TranscriptEntry[]
  * so growth costs once per burst, not per read. Callers react to drift with a
  * full re-import + clearTranscriptStoreDegraded.
  */
-export function v2TranscriptHasDrift(
-  store: TranscriptStore,
+export async function v2TranscriptHasDrift(
+  store: Pick<typeof transcript, "getImportInfo">,
   sessionId: string,
   session: TranscriptSessionRef
-): boolean {
+): Promise<boolean> {
   if (
     isTranscriptStoreDegraded(sessionId)
   )
@@ -384,7 +377,7 @@ export function v2TranscriptHasDrift(
   // No legacy files at all (every post-retirement session) → nothing to
   // drift against; the store is the only source.
   if (!files.length) return false;
-  const info = store.getImportInfo(sessionId);
+  const info = await store.getImportInfo(sessionId);
   const totalSize = files.reduce((sum, f) => sum + f.size, 0);
   return !(info?.watermark != null && totalSize <= info.watermark);
 }
@@ -394,24 +387,24 @@ export function v2TranscriptHasDrift(
  * drift-free; null → caller falls back to legacy; on drift this re-imports
  * (idempotent upserts) and returns the legacy merge for this call directly.
  */
-function v2StoreTranscript(
+async function v2StoreTranscript(
   sessionId: string,
   session: TranscriptSessionRef
-): TranscriptEntry[] | null {
-  const store = transcriptStore();
-  if (!store.hasImported(sessionId)) return null;
-  if (!v2TranscriptHasDrift(store, sessionId, session))
-    return v2ReadAll(store, sessionId);
+): Promise<TranscriptEntry[] | null> {
+  if (await transcript.needsImport(sessionId)) return null;
+  if (!await v2TranscriptHasDrift(transcript, sessionId, session))
+    return v2ReadAll(sessionId);
   // Drift (§8): re-import (upserts keep original seqs, making this safe to
   // repeat) and serve legacy for THIS call. Watermark = candidate-set size
   // measured BEFORE the legacy parse — lines appended during the parse then
   // read as growth next time instead of being silently covered.
   const totalSize = v2MirrorFiles(session).reduce((sum, f) => sum + f.size, 0);
   const legacy = session.transcriptPath ? parseTranscript(session.transcriptPath) : [];
-  void store.importLegacyTranscript(
+  const importInfo = await transcript.getImportInfo(sessionId);
+  void importLegacyTranscript(
     sessionId,
     legacy,
-    store.getImportInfo(sessionId)?.src || "merged",
+    importInfo?.src || "merged",
     totalSize
   ).then(() => {
     // The full re-import restored every entry the store had missed. Release

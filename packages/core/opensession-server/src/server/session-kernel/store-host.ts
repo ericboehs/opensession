@@ -261,7 +261,7 @@ export class SessionKernelStoreHost {
           request.sessionId,
           request.fromSeq,
           request.toSeq,
-          request.fromSeq - 1,
+          request.afterSeq ?? request.fromSeq - 1,
           request.limit,
         );
         break;
@@ -271,6 +271,7 @@ export class SessionKernelStoreHost {
       case "last_change_seq": result = store.getLastChangeSeq(request.sessionId); break;
       case "last_reset_change_seq": result = store.getLastResetChangeSeq(request.sessionId); break;
       case "count": result = store.countEvents(request.sessionId); break;
+      case "search": result = store.applyActorRequest(request); break;
       case "pending_wake": result = store.pendingActorWake(request.sessionId); break;
       case "ack_wake": result = store.ackActorWake(request.sessionId, request.cursor); break;
       default: {

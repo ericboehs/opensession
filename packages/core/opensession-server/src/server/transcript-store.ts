@@ -62,6 +62,7 @@ import {
 } from "./transcript-bus";
 import type { TranscriptEntry } from "./types";
 import { sanitizeTranscriptMediaEntry } from "./transcript-media";
+import { transcriptEntryMatchSnippet } from "./transcript-search";
 import { classifyEntry, dropContextInjections } from "@tellahq/opensession-protocol/notices";
 import {
   decodeAgentTranscriptReceiptRefV1,
@@ -274,6 +275,18 @@ const g = globalThis as unknown as {
  */
 export function setAppendHook(fn: TranscriptAppendHook | null): void {
   g.__osTranscriptAppendHook = fn;
+}
+
+/** Gateway-side delivery for actor-returned, post-commit transcript changes. */
+export function notifyTranscriptAppendHook(
+  sessionId: string,
+  entries: SeqEntry[],
+): void {
+  try {
+    g.__osTranscriptAppendHook?.(sessionId, entries);
+  } catch (error) {
+    console.warn("[transcript-store] append hook threw:", error);
+  }
 }
 
 /** Default DB path, derived from the active sessions dir. */
@@ -1001,7 +1014,7 @@ export class TranscriptStore {
         request.sessionId,
         request.fromSeq,
         request.toSeq,
-        request.fromSeq - 1,
+        request.afterSeq ?? request.fromSeq - 1,
         request.limit,
       );
     if (request.op === "outline") return this.readTranscriptIndex(request.sessionId);
@@ -1011,6 +1024,25 @@ export class TranscriptStore {
     if (request.op === "last_reset_change_seq")
       return this.getLastResetChangeSeq(request.sessionId);
     if (request.op === "count") return this.countEvents(request.sessionId);
+    if (request.op === "search") {
+      const query = request.query.trim();
+      if (query.length < 2 || query.length > 1_000) return null;
+      const rows = this.db.query(`
+        SELECT data FROM transcript_events
+        WHERE session_id = ? AND instr(lower(data), ?) > 0
+        ORDER BY seq DESC LIMIT 24
+      `).all(request.sessionId, query.toLowerCase()) as Array<{ data: string }>;
+      for (const row of rows) {
+        try {
+          const snippet = transcriptEntryMatchSnippet(
+            JSON.parse(row.data) as TranscriptEntry,
+            query,
+          );
+          if (snippet) return snippet;
+        } catch {}
+      }
+      return null;
+    }
     if (request.op === "pending_wake") return this.pendingActorWake(request.sessionId);
     return this.ackActorWake(request.sessionId, request.cursor);
   }
