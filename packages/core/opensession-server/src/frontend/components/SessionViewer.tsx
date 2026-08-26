@@ -194,6 +194,7 @@ import {
 	markPendingBusy,
 	markPendingStarted,
 	type OptimisticPendingPrompt,
+	optimisticOutboxFallbacks,
 	reconcilePending,
 } from "../lib/pending-reconcile";
 import {
@@ -4622,11 +4623,13 @@ export function SessionViewer({
 			.filter((item) => item.state === "failed")
 			.map((item) => `outbox-${item.clientId}`),
 	);
+	const reconciliationNow = Date.now();
+	const deliveryEchoes = [...queued, ...steered];
 	const pendingReconciliation = reconcilePending(
 		pending,
 		entries,
-		[...queued, ...steered],
-		Date.now(),
+		deliveryEchoes,
+		reconciliationNow,
 	);
 	const visiblePending = pending.filter(
 		(item) =>
@@ -4634,10 +4637,34 @@ export function SessionViewer({
 			!pendingReconciliation.landed.has(item.id) &&
 			!pendingReconciliation.expired.has(item.id),
 	);
-	const pendingQueue = visiblePending.filter((p) => p.busyMode || settingUpWorkspace);
-	const pendingBubbles = visiblePending.filter(
-		(p) => !p.busyMode && !settingUpWorkspace,
+	// React pending state, transcript frames, queue echoes and the REST outbox
+	// settle on independent clocks. If the local row drops first, keep a pristine
+	// idle outbox item on the same optimistic surface instead of flashing its
+	// transport-only "Waiting to send" state between two copies of the bubble.
+	const fallbackCandidates = optimisticOutboxFallbacks(
+		outboxItems,
+		new Set(pending.map((item) => item.id)),
+		landedOutboxIds,
 	);
+	const fallbackReconciliation = reconcilePending(
+		fallbackCandidates,
+		entries,
+		deliveryEchoes,
+		reconciliationNow,
+	);
+	const fallbackPending = fallbackCandidates.filter(
+		(item) =>
+			!fallbackReconciliation.landed.has(item.id) &&
+			!fallbackReconciliation.expired.has(item.id),
+	);
+	const pendingQueue = [
+		...visiblePending.filter((p) => p.busyMode || settingUpWorkspace),
+		...(settingUpWorkspace ? fallbackPending : []),
+	];
+	const pendingBubbles = [
+		...visiblePending.filter((p) => !p.busyMode && !settingUpWorkspace),
+		...(settingUpWorkspace ? [] : fallbackPending),
+	];
 	const optimisticTranscriptEntries: TranscriptEntry[] =
 		pendingBubbles.length === 0
 			? EMPTY_TRANSCRIPT_ENTRIES
@@ -4648,17 +4675,14 @@ export function SessionViewer({
 					timestamp: new Date(pending.sentAt).toISOString(),
 					...(pending.images?.length ? { images: pending.images } : {}),
 				}));
-	// The durable row covers a prompt the store still holds: one this tab never
-	// showed a bubble for (another tab's send, or a reload), or one whose bubble
-	// is still up. A prompt already confirmed by the server is dropped from the
-	// row instead of rendering twice. Dropped, not discarded: the store is
-	// localStorage-backed and cross-tab, so a discard is durable and a wrong
-	// match would lose the message, while a wrong hide only costs a row until
-	// delivery removes the item itself.
+	// Retried, failed and authoritatively busy prompts keep the explicit outbox
+	// surface. A pristine idle item is already represented by the fallback above.
+	const fallbackIds = new Set(fallbackCandidates.map((item) => item.id));
 	const durableOutbox = outboxItems.filter(
 		(item) =>
 			item.state === "failed" ||
-			(!pending.some((entry) => entry.id === `outbox-${item.clientId}`) &&
+			(!fallbackIds.has(`outbox-${item.clientId}`) &&
+				!pending.some((entry) => entry.id === `outbox-${item.clientId}`) &&
 				!landedOutboxIds.has(`outbox-${item.clientId}`)),
 	);
 	const hasLiveConversation =

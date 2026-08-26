@@ -3,9 +3,11 @@ import {
 	markPendingBusy,
 	markPendingStarted,
 	type OptimisticPendingPrompt,
+	optimisticOutboxFallbacks,
 	PENDING_GIVE_UP_MS,
 	reconcilePending,
 } from "./pending-reconcile";
+import type { PromptOutboxItem } from "./prompt-outbox";
 
 const SENT = 1_000_000;
 const bubble = (id: string, content: string, user?: string) => ({
@@ -18,6 +20,63 @@ const entry = (content: string, at = SENT) => ({
 	type: "user",
 	content,
 	timestamp: new Date(at).toISOString(),
+});
+
+const outboxItem = (
+	overrides: Partial<PromptOutboxItem> = {},
+): PromptOutboxItem => ({
+	clientId: "a",
+	sessionId: "session",
+	content: "ship it",
+	state: "pending",
+	attempts: 0,
+	createdAt: SENT,
+	nextAttemptAt: SENT,
+	...overrides,
+});
+
+describe("optimisticOutboxFallbacks", () => {
+	test("keeps a pristine idle outbox handoff on the transcript surface", () => {
+		expect(optimisticOutboxFallbacks([outboxItem()], new Set(), new Set())).toEqual([
+			{
+				id: "outbox-a",
+				content: "ship it",
+				user: undefined,
+				sentAt: SENT,
+			},
+		]);
+	});
+
+	test("does not duplicate a local pending row or a landed delivery", () => {
+		expect(
+			optimisticOutboxFallbacks(
+				[outboxItem()],
+				new Set(["outbox-a"]),
+				new Set(),
+			),
+		).toEqual([]);
+		expect(
+			optimisticOutboxFallbacks(
+				[outboxItem()],
+				new Set(),
+				new Set(["outbox-a"]),
+			),
+		).toEqual([]);
+	});
+
+	test("leaves real queue placement and retry feedback in the outbox", () => {
+		expect(
+			optimisticOutboxFallbacks(
+				[
+					outboxItem({ busyMode: "queue" }),
+					outboxItem({ clientId: "b", attempts: 1 }),
+					outboxItem({ clientId: "c", state: "failed" }),
+				],
+				new Set(),
+				new Set(),
+			),
+		).toEqual([]);
+	});
 });
 
 describe("markPendingStarted", () => {

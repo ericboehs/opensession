@@ -1,3 +1,5 @@
+import type { PromptOutboxItem } from "./prompt-outbox";
+
 /**
  * Which optimistic "just sent" bubbles the server has accounted for.
  *
@@ -28,6 +30,36 @@ export interface PendingPrompt {
 export interface OptimisticPendingPrompt extends PendingPrompt {
 	images?: string[];
 	busyMode?: "queue" | "steer";
+}
+
+/**
+ * A pristine idle outbox item is the same optimistic message even when React's
+ * local pending row has already reconciled or has not committed yet. Project it
+ * onto the transcript instead of exposing the outbox's transport status.
+ */
+export function optimisticOutboxFallbacks(
+	items: readonly PromptOutboxItem[],
+	pendingIds: ReadonlySet<string>,
+	landedIds: ReadonlySet<string>,
+): OptimisticPendingPrompt[] {
+	return items
+		.filter((item) => {
+			const id = `outbox-${item.clientId}`;
+			return (
+				item.state !== "failed" &&
+				item.attempts === 0 &&
+				!item.busyMode &&
+				!pendingIds.has(id) &&
+				!landedIds.has(id)
+			);
+		})
+		.map((item) => ({
+			id: `outbox-${item.clientId}`,
+			content: item.content,
+			user: item.user,
+			sentAt: item.createdAt,
+			...(item.images?.length ? { images: item.images } : {}),
+		}));
 }
 
 /**
