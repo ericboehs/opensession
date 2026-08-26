@@ -74,7 +74,8 @@ describe("Host ledger physical accounting", () => {
         globalChargedBytes: 0,
         turnChargedBytes: 0,
         activeLiabilityBytes: 0,
-        availableBytes: bound - 1,
+        availableBytes: 0,
+        reserveAvailableBytes: bound - 1,
       }),
     ).toThrow(LedgerCapacityError);
     const snapshot = {
@@ -126,11 +127,20 @@ describe("Host ledger physical accounting", () => {
     expect(() =>
       preflightLiability({ ...base, availableBytes: bound - 1 }),
     ).toThrow(LedgerCapacityError);
+    expect(() =>
+      preflightLiability({
+        ...base,
+        availableBytes: 0,
+        reserveAvailableBytes: bound,
+      }),
+    ).toThrow(LedgerCapacityError);
     const emergency = {
       ...base,
       writeClass: "emergency" as const,
       globalChargedBytes: LEDGER_TOTAL_PHYSICAL_MAX - bound,
       turnChargedBytes: 0,
+      availableBytes: 0,
+      reserveAvailableBytes: bound,
     };
     expect(preflightLiability(emergency).bytes).toBe(bound);
     expect(() =>

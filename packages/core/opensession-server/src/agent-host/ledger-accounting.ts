@@ -120,6 +120,8 @@ export function preflightLiability(input: {
   turnChargedBytes: number;
   activeLiabilityBytes: number;
   availableBytes: number;
+  /** Physically allocated generation reserve available only to emergency writes. */
+  reserveAvailableBytes?: number;
   chargeTurn?: boolean;
 }): Liability {
   for (const [value, label] of [
@@ -128,6 +130,7 @@ export function preflightLiability(input: {
     [input.turnChargedBytes, "turn charged bytes"],
     [input.activeLiabilityBytes, "active liability bytes"],
     [input.availableBytes, "available bytes"],
+    [input.reserveAvailableBytes ?? 0, "reserve available bytes"],
   ] as const)
     capacityInteger(value, label);
   const bytes = conservativeTransactionBound(input.shape);
@@ -148,7 +151,16 @@ export function preflightLiability(input: {
     throw new LedgerCapacityError(
       `${input.writeClass} Host ledger ceiling would be exceeded`,
     );
-  if (bytes > input.availableBytes)
+  const reserveAvailable = input.reserveAvailableBytes ?? 0;
+  if (input.writeClass === "emergency" && bytes > reserveAvailable)
+    throw new LedgerCapacityError(
+      "emergency liability exceeds physically allocated reserve",
+    );
+  if (
+    bytes >
+    input.availableBytes +
+      (input.writeClass === "emergency" ? reserveAvailable : 0)
+  )
     throw new LedgerCapacityError(
       "insufficient filesystem bytes for conservative ledger liability",
     );

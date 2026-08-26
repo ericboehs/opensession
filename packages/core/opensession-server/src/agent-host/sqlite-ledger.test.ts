@@ -1,8 +1,14 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { Database } from "bun:sqlite";
-import { mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
+import {
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  truncateSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { AGENT_HOST_LEDGER_RETENTION_MS } from "./ledger-schema";
 import {
   HostLedgerConflictError,
@@ -25,6 +31,7 @@ function fixture() {
     dbPath,
     writerNonce: "writer-nonce-0001",
     now: () => now,
+    emergencyReserveBytes: 4 * 1024 * 1024,
     keyring: {
       activeKeyId: "active",
       keys: [
@@ -233,6 +240,68 @@ describe("SQLite Host recovery ledger", () => {
       ledger.purgeExpired(1001 + AGENT_HOST_LEDGER_RETENTION_MS),
     ).toBeGreaterThan(0);
     ledger.close();
+  });
+  test("recovers a partially consumed reserve on reopen", () => {
+    const f = fixture();
+    f.open().close();
+    const reservePath = join(
+      dirname(f.dbPath),
+      ".agent-host-emergency.reserve",
+    );
+    truncateSync(reservePath, 1024 * 1024);
+    const reopened = f.open();
+    const reserve = statSync(reservePath);
+    expect(reserve.size).toBe(4 * 1024 * 1024);
+    expect(Number(reserve.blocks) * 512).toBeGreaterThanOrEqual(reserve.size);
+    reopened.close();
+  });
+  test("reconciles every injected emergency fault without physical retries", () => {
+    const boundaries = [
+      "reserve:before-consume",
+      "reserve:after-consume",
+      "transaction:before-begin",
+      "transaction:after-begin",
+      "transaction:before-commit",
+      "transaction:after-commit",
+      "checkpoint:before",
+      "checkpoint:after",
+      "reserve:before-recreate",
+      "reserve:after-recreate",
+    ] as const;
+    for (const boundary of boundaries) {
+      const f = fixture();
+      let armed = false;
+      let hits = 0;
+      const ledger = new SQLiteHostRecoveryLedger({
+        ...f.options,
+        injectFault(at) {
+          if (armed && at === boundary) {
+            hits++;
+            throw new Error(`fault:${boundary}`);
+          }
+        },
+      });
+      const turn = fence();
+      ledger.admitTurn({
+        fence: turn,
+        authorityHash: digest(1),
+        recoveryDescriptor: {},
+        admittedAtMs: 1000,
+      });
+      armed = true;
+      expect(() => ledger.quarantine(turn, "fault", {}, 1001)).toThrow(
+        `fault:${boundary}`,
+      );
+      expect(hits).toBe(1);
+      ledger.close();
+      const reopened = f.open();
+      const reserve = statSync(
+        join(dirname(f.dbPath), ".agent-host-emergency.reserve"),
+      );
+      expect(reserve.size).toBe(4 * 1024 * 1024);
+      expect(Number(reserve.blocks) * 512).toBeGreaterThanOrEqual(reserve.size);
+      reopened.close();
+    }
   });
   test("reopens with stable writer nonce and validates AEAD", () => {
     const f = fixture();

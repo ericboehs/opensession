@@ -10,6 +10,10 @@ import {
 } from "node:fs";
 import { dirname, parse, resolve } from "node:path";
 import {
+  GenerationEmergencyReserve,
+  type GenerationOwner,
+} from "./emergency-reserve";
+import {
   HostLedgerKeyring,
   type HostLedgerKeyringInput,
 } from "./ledger-crypto";
@@ -94,6 +98,8 @@ export type LedgerFaultBoundary =
   | "transaction:after-commit"
   | "checkpoint:before"
   | "checkpoint:after"
+  | "reserve:before-consume"
+  | "reserve:after-consume"
   | "reserve:before-recreate"
   | "reserve:after-recreate";
 
@@ -109,6 +115,10 @@ export interface SQLiteHostLedgerOptions {
   /** Qualification seams. Production callers must use the defaults. */
   physicalAccounting?: LedgerPhysicalAccounting;
   injectFault?: (boundary: LedgerFaultBoundary) => void;
+  /** Exact generation StateDirectory owner. Defaults to the current process. */
+  generationOwner?: GenerationOwner;
+  /** Qualification seam. Production generations must retain the 64 MiB default. */
+  emergencyReserveBytes?: number;
 }
 export class HostLedgerConflictError extends Error {
   constructor(message = "Host ledger identity conflict") {
@@ -182,6 +192,7 @@ export class SQLiteHostRecoveryLedger {
   ) => boolean;
   readonly #physical: LedgerPhysicalAccounting;
   readonly #injectFault: (boundary: LedgerFaultBoundary) => void;
+  readonly #reserve: GenerationEmergencyReserve;
   #closed = false;
   #activeLiability = 0;
 
@@ -203,6 +214,7 @@ export class SQLiteHostRecoveryLedger {
     preflightSidecars(this.#path);
     const existed = exists(this.#path);
     const db = new Database(this.#path, { create: true, strict: true });
+    let claimedWriter = false;
     try {
       db.exec(
         `PRAGMA busy_timeout=${options.busyTimeoutMs ?? 5000}; PRAGMA page_size=4096; PRAGMA foreign_keys=ON;`,
@@ -229,10 +241,33 @@ export class SQLiteHostRecoveryLedger {
         throw new Error("Host ledger structural corruption");
       this.#db = db;
       this.#claimWriter();
+      claimedWriter = true;
       secureFiles(this.#path);
+      const reserve = new GenerationEmergencyReserve({
+        stateDirectory: dirname(this.#path),
+        owner: options.generationOwner,
+        bytes: options.emergencyReserveBytes,
+      });
+      this.#reserve = reserve;
+      try {
+        // A crash may leave released reserve blocks occupied by SQLite WAL.
+        // Recover/checkpoint first, then make one allocation pass.
+        this.#checkpoint(false);
+        reserve.replenish();
+      } catch (error) {
+        reserve.close();
+        throw error;
+      }
       if (!existed) this.#updatePhysicalHighWater();
       this.validateEncryptedRows();
     } catch (error) {
+      if (claimedWriter) {
+        try {
+          db.query(
+            "DELETE FROM writer WHERE singleton=1 AND claim_nonce=? AND process_id=?",
+          ).run(this.#writerNonce, process.pid);
+        } catch {}
+      }
       db.close();
       throw error;
     }
@@ -975,6 +1010,7 @@ export class SQLiteHostRecoveryLedger {
       )
       .run(this.#writerNonce, process.pid);
     this.#db.close();
+    this.#reserve.close();
     this.#closed = true;
   }
 
@@ -1313,39 +1349,40 @@ export class SQLiteHostRecoveryLedger {
           )
           .get(turnKey)
       : undefined;
+    const emergency = writeClass === "emergency";
+    const effectiveShape = emergency
+      ? { ...shape, checkpointPossible: true }
+      : shape;
+    const reserve = this.#reserve.snapshot();
     const liability = preflightLiability({
-      shape,
+      shape: effectiveShape,
       writeClass,
       currentPhysicalBytes: before.totalBytes,
       globalChargedBytes: accounting.global_charge,
       turnChargedBytes: turn?.charged_bytes ?? 0,
       activeLiabilityBytes: this.#activeLiability,
       availableBytes: before.availableBytes,
+      reserveAvailableBytes: Math.min(
+        reserve.logicalBytes,
+        reserve.allocatedBytes,
+      ),
       chargeTurn: turnKey !== undefined,
     });
     this.#activeLiability += liability.bytes;
-    this.#injectFault("transaction:before-begin");
-    this.#db.exec("BEGIN IMMEDIATE");
+    let reserveConsumed = false;
     let committed = false;
     try {
-      this.#injectFault("transaction:after-begin");
-      const result = fn();
-      this.#applyCharge(
-        turnKey,
-        liability.bytes,
-        liability.turnCharge,
-        before.totalBytes + liability.bytes,
-      );
-      this.#injectFault("transaction:before-commit");
-      this.#db.exec("COMMIT");
-      committed = true;
-      this.#injectFault("transaction:after-commit");
-      const after = this.#physical.snapshot(this.#path);
-      assertCommittedBound(before, after, liability);
-      if (shape.checkpointPossible) this.#checkpointAndRestoreReserve();
-      return result;
-    } catch (error) {
-      if (error instanceof CommitThenThrow && !committed) {
+      if (emergency) {
+        this.#injectFault("reserve:before-consume");
+        this.#reserve.consume(liability.bytes);
+        reserveConsumed = true;
+        this.#injectFault("reserve:after-consume");
+      }
+      this.#injectFault("transaction:before-begin");
+      this.#db.exec("BEGIN IMMEDIATE");
+      try {
+        this.#injectFault("transaction:after-begin");
+        const result = fn();
         this.#applyCharge(
           turnKey,
           liability.bytes,
@@ -1358,16 +1395,50 @@ export class SQLiteHostRecoveryLedger {
         this.#injectFault("transaction:after-commit");
         const after = this.#physical.snapshot(this.#path);
         assertCommittedBound(before, after, liability);
-        if (shape.checkpointPossible) this.#checkpointAndRestoreReserve();
-        throw error.rejection;
+        if (emergency) {
+          this.#checkpointAndRestoreReserve(true);
+          reserveConsumed = false;
+        } else if (shape.checkpointPossible) {
+          this.#checkpointAndRestoreReserve(true);
+        }
+        return result;
+      } catch (error) {
+        if (error instanceof CommitThenThrow && !committed) {
+          this.#applyCharge(
+            turnKey,
+            liability.bytes,
+            liability.turnCharge,
+            before.totalBytes + liability.bytes,
+          );
+          this.#injectFault("transaction:before-commit");
+          this.#db.exec("COMMIT");
+          committed = true;
+          this.#injectFault("transaction:after-commit");
+          const after = this.#physical.snapshot(this.#path);
+          assertCommittedBound(before, after, liability);
+          if (emergency) {
+            this.#checkpointAndRestoreReserve(true);
+            reserveConsumed = false;
+          }
+          throw error.rejection;
+        }
+        if (!committed) {
+          try {
+            this.#db.exec("ROLLBACK");
+          } catch {}
+        }
+        throw error;
       }
-      if (!committed) {
-        try {
-          this.#db.exec("ROLLBACK");
-        } catch {}
-      }
-      throw error;
     } finally {
+      if (reserveConsumed) {
+        try {
+          if (committed) this.#checkpointAndRestoreReserve(false);
+          else this.#reserve.replenish();
+        } catch {
+          // Preserve the operation failure. Reopen reconciliation checkpoints
+          // before its single reserve allocation pass.
+        }
+      }
       this.#activeLiability -= liability.bytes;
     }
   }
@@ -1389,8 +1460,8 @@ export class SQLiteHostRecoveryLedger {
         )
         .run(turnCharge, turnKey);
   }
-  #checkpointAndRestoreReserve() {
-    this.#injectFault("checkpoint:before");
+  #checkpoint(inject: boolean) {
+    if (inject) this.#injectFault("checkpoint:before");
     const checkpoint = this.#db
       .query<{ busy: number; log: number; checkpointed: number }, []>(
         "PRAGMA wal_checkpoint(TRUNCATE)",
@@ -1402,9 +1473,12 @@ export class SQLiteHostRecoveryLedger {
       checkpoint.log !== checkpoint.checkpointed
     )
       throw new Error("Host ledger checkpoint did not complete");
-    this.#injectFault("checkpoint:after");
+    if (inject) this.#injectFault("checkpoint:after");
+  }
+  #checkpointAndRestoreReserve(inject: boolean) {
+    this.#checkpoint(inject);
     const physical = this.#physical.snapshot(this.#path);
-    this.#injectFault("reserve:before-recreate");
+    if (inject) this.#injectFault("reserve:before-recreate");
     this.#db.exec("BEGIN IMMEDIATE");
     let committed = false;
     try {
@@ -1415,7 +1489,6 @@ export class SQLiteHostRecoveryLedger {
         .run(physical.totalBytes, physical.totalBytes);
       this.#db.exec("COMMIT");
       committed = true;
-      this.#injectFault("reserve:after-recreate");
     } finally {
       if (!committed) {
         try {
@@ -1423,6 +1496,11 @@ export class SQLiteHostRecoveryLedger {
         } catch {}
       }
     }
+    // The accounting update itself wrote a WAL frame. Retire it before taking
+    // the released filesystem blocks back for the generation.
+    this.#checkpoint(false);
+    this.#reserve.replenish();
+    if (inject) this.#injectFault("reserve:after-recreate");
   }
   #encrypt(
     bytes: Uint8Array,
