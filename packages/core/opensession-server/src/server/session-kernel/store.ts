@@ -6188,6 +6188,35 @@ export class SessionKernelStore {
       .map((row) => row.session_id);
   }
 
+  transcriptMigrationSessionIds(
+    limit = 1_000,
+    afterSessionId = "",
+  ): string[] {
+    if (!Number.isInteger(limit) || limit < 1 || limit > 1_000)
+      throw new Error("Invalid transcript migration session limit");
+    return (this.db.query(`
+      SELECT session_id FROM (
+        SELECT session_id FROM session_kernel_tombstones
+        UNION SELECT session_id FROM session_kernel_quarantine
+        UNION SELECT session_id FROM session_kernel_state
+        UNION SELECT session_id FROM session_kernel_creation
+        UNION SELECT session_id FROM session_kernel_asks
+        UNION SELECT session_id FROM session_kernel_delivery
+        UNION SELECT session_id FROM session_kernel_turn
+        UNION SELECT session_id FROM session_kernel_turn_projections
+        UNION SELECT session_id FROM session_kernel_commands
+        UNION SELECT session_id FROM session_kernel_changes
+        UNION SELECT session_id FROM session_kernel_timers
+        UNION SELECT session_id FROM session_kernel_outbox
+        UNION SELECT session_id FROM session_kernel_placements
+          WHERE placement = 'isolated' AND transcript_authority = 'shared'
+      ) candidates
+      WHERE session_id > ?
+      ORDER BY session_id LIMIT ?
+    `).all(afterSessionId, limit) as Array<{ session_id: string }>)
+      .map((row) => row.session_id);
+  }
+
   publishActorTranscriptAuthorities(
     entries: ReadonlyArray<{ sessionId: string; migrationReceipt: string }>,
   ): void {
@@ -6592,6 +6621,7 @@ export type SessionKernelStoreApi = Omit<
 	| "sessionPlacement"
 	| "isolatedSessionPlacements"
 	| "actorTranscriptSessionIds"
+	| "transcriptMigrationSessionIds"
 	| "publishActorTranscriptAuthority"
 	| "publishActorTranscriptAuthorities"
 	| "rollbackActorTranscriptAuthority"

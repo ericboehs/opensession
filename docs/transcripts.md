@@ -39,18 +39,22 @@ file-backed as described below.
 
 The authority move is an offline, all-at-once operation. Stop the gateway,
 executor, and session-kernel services, then run
-`scripts/migrate-actor-transcripts.ts`. It enumerates the union of all five
-source tables and migrates any legacy central kernel state first. A
-transcript-only row with no kernel state receives an offline-only isolated
+`scripts/migrate-actor-transcripts.ts`. It fails closed unless all three units
+report the explicit systemd state `inactive`. It enumerates the union of all
+five source tables, every central durable session, and every shared-authority
+placement, including sessions with no transcript rows, then migrates any legacy
+central kernel state first. A transcript-only row with no kernel state receives
+an offline-only isolated
 placement whose authority remains `shared` until the final publication, so old
 fixture/orphan evidence cannot be stranded behind the actor facade. The cutover
 copies every transcript into its isolated kernel database in one transaction,
-verifies global and per-table counts, bidirectional `EXCEPT`, dense sequences,
-reset/change/import high-waters, blob and outline coherence, and
-`integrity_check`, then atomically publishes every central authority placement
-last. Rerunning adopts verified targets after a crash before publication. The
-shared source is attached read-only, is never modified or removed, and retains
-its original file mode.
+verifies global and per-table counts, bidirectional `EXCEPT`, sequence and
+change-cursor invariants, reset/import high-waters, durable append receipts,
+blob and outline coherence, and `integrity_check`, then atomically publishes
+every central authority placement last. Rerunning adopts verified targets after
+a crash before publication. A private read-only snapshot is attached for the
+copy, so the shared source is never modified, removed, or chmodded and retains
+its exact bytes and file mode even if migration is killed.
 
 With all three services stopped, audit without creating placements or targets:
 
@@ -65,7 +69,11 @@ bun scripts/migrate-actor-transcripts.ts
 ```
 
 To deploy the old shared-store build again, first atomically roll every catalog
-entry back to shared authority (the actor files and source remain intact):
+entry back to shared authority. Rollback verifies every actor transcript and
+migration receipt against the frozen shared source before changing any catalog
+entry. It fails closed if an actor-owned append, import, replacement, deletion,
+or other divergence occurred after cutover; it cannot report success while the
+shared source is stale:
 
 ```sh
 bun scripts/migrate-actor-transcripts.ts --rollback

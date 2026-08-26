@@ -1,6 +1,14 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { Database } from "bun:sqlite";
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import {
+  chmodSync,
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { TranscriptStore } from "../transcript-store";
@@ -84,6 +92,7 @@ describe("offline actor transcript migration", () => {
   test("copies exact transcript authority and leaves the rollback source untouched", async () => {
     const paths = await fixture();
     const beforeBytes = readFileSync(paths.sourceTranscriptPath);
+    const beforeMode = statSync(paths.sourceTranscriptPath).mode & 0o777;
     const source = new TranscriptStore(paths.sourceTranscriptPath);
     const expected = snapshot(source, paths.sessionId);
     source.close();
@@ -123,6 +132,7 @@ describe("offline actor transcript migration", () => {
       claimedTranscriptOnly: 1,
     });
     expect(readFileSync(paths.sourceTranscriptPath)).toEqual(beforeBytes);
+    expect(statSync(paths.sourceTranscriptPath).mode & 0o777).toBe(beforeMode);
 
     const target = new TranscriptStore(
       sessionKernelSessionDbPath(paths.sessionId, paths.isolatedRoot),
@@ -140,7 +150,11 @@ describe("offline actor transcript migration", () => {
     });
     central.close();
 
-    expect(rollbackActorTranscriptsOffline(paths.centralPath)).toBe(2);
+    expect(rollbackActorTranscriptsOffline({
+      centralPath: paths.centralPath,
+      sourceTranscriptPath: paths.sourceTranscriptPath,
+      isolatedRoot: paths.isolatedRoot,
+    })).toBe(2);
     auditCentral = new SessionKernelStore(paths.centralPath);
     expect(auditCentral.sessionPlacement(paths.sessionId)?.transcriptAuthority).toBe("shared");
     expect(
@@ -150,9 +164,70 @@ describe("offline actor transcript migration", () => {
     expect(readFileSync(paths.sourceTranscriptPath)).toEqual(beforeBytes);
   });
 
+  test("rollback fails closed after post-cutover append, import, or replace", async () => {
+    for (const operation of ["append", "import", "replace"] as const) {
+      const paths = await fixture();
+      migrateActorTranscriptsOffline(paths);
+      const target = new TranscriptStore(
+        sessionKernelSessionDbPath(paths.sessionId, paths.isolatedRoot),
+      );
+      const entry = {
+        id: `post-cutover-${operation}`,
+        type: "assistant" as const,
+        timestamp: "2026-01-01T00:00:02.000Z",
+        content: operation,
+      };
+      if (operation === "append") await target.appendTranscriptEvents(paths.sessionId, [entry]);
+      else if (operation === "replace")
+        await target.replaceTranscriptEvents(paths.sessionId, [entry]);
+      else target.applyActorRequest({
+        op: "import",
+        requestId: "post-cutover-import-request",
+        sessionId: paths.sessionId,
+        entries: [entry],
+        src: "post-cutover",
+        watermark: 999,
+      });
+      target.close();
+
+      if (operation === "append") {
+        const bin = join(paths.root, "bin");
+        const systemctl = join(bin, "systemctl");
+        Bun.spawnSync(["mkdir", "-p", bin]);
+        writeFileSync(systemctl, "#!/bin/sh\nprintf 'inactive\\n'\nexit 3\n");
+        chmodSync(systemctl, 0o755);
+        const cli = Bun.spawnSync([
+          process.execPath,
+          join(process.cwd(), "scripts/migrate-actor-transcripts.ts"),
+          "--rollback",
+          "--central",
+          paths.centralPath,
+          "--source",
+          paths.sourceTranscriptPath,
+          "--isolated-root",
+          paths.isolatedRoot,
+        ], {
+          env: { ...process.env, PATH: `${bin}:${process.env.PATH ?? ""}` },
+          stdout: "pipe",
+          stderr: "pipe",
+        });
+        expect(cli.exitCode).not.toBe(0);
+      }
+      expect(() => rollbackActorTranscriptsOffline({
+        centralPath: paths.centralPath,
+        sourceTranscriptPath: paths.sourceTranscriptPath,
+        isolatedRoot: paths.isolatedRoot,
+      })).toThrow();
+      const central = new SessionKernelStore(paths.centralPath);
+      expect(central.sessionPlacement(paths.sessionId)?.transcriptAuthority).toBe("actor");
+      central.close();
+    }
+  });
+
   test("adopts a verified target after a crash before placement publication", async () => {
     const paths = await fixture();
     const beforeBytes = readFileSync(paths.sourceTranscriptPath);
+    const beforeMode = statSync(paths.sourceTranscriptPath).mode & 0o777;
     let verified = 0;
     expect(() => migrateActorTranscriptsOffline({
       ...paths,
@@ -179,6 +254,7 @@ describe("offline actor transcript migration", () => {
     ]);
     orphanTarget.close();
     expect(readFileSync(paths.sourceTranscriptPath)).toEqual(beforeBytes);
+    expect(statSync(paths.sourceTranscriptPath).mode & 0o777).toBe(beforeMode);
 
     const adopted = migrateActorTranscriptsOffline(paths);
     expect(adopted).toMatchObject({
@@ -220,6 +296,157 @@ describe("offline actor transcript migration", () => {
       transcriptAuthority: "shared",
     });
     central.close();
+  });
+
+  test("cuts over a legacy central session with no transcript rows", () => {
+    const root = mkdtempSync(join(tmpdir(), "actor-transcript-no-source-rows-"));
+    roots.push(root);
+    const centralPath = join(root, "session-kernel.sqlite");
+    const isolatedRoot = join(root, "session-kernel-sessions");
+    const sourceTranscriptPath = join(root, "transcripts.db");
+    const sessionId = "legacy-central-without-transcript";
+    const central = new SessionKernelStore(centralPath);
+    central.setRunState({ sessionId, state: "idle", event: "legacy" });
+    central.close();
+    new TranscriptStore(sourceTranscriptPath).close();
+
+    const audit = migrateActorTranscriptsOffline({
+      centralPath,
+      isolatedRoot,
+      sourceTranscriptPath,
+      dryRun: true,
+    });
+    expect(audit).toMatchObject({
+      migrated: 0,
+      migratedLegacyKernel: 1,
+      claimedTranscriptOnly: 0,
+      sessions: [{ sessionId }],
+    });
+
+    const result = migrateActorTranscriptsOffline({
+      centralPath,
+      isolatedRoot,
+      sourceTranscriptPath,
+    });
+    expect(result).toMatchObject({
+      migrated: 1,
+      migratedLegacyKernel: 1,
+      claimedTranscriptOnly: 0,
+      sessions: [{ sessionId, receipt: audit.sessions[0]!.receipt }],
+    });
+    const targetPath = sessionKernelSessionDbPath(sessionId, isolatedRoot);
+    const targetTranscript = new TranscriptStore(targetPath);
+    expect(targetTranscript.countEvents(sessionId)).toBe(0);
+    expect(targetTranscript.getImportInfo(sessionId)).toBeNull();
+    targetTranscript.close();
+    const reopened = new SessionKernelStore(centralPath);
+    expect(reopened.hasSessionDurableState(sessionId)).toBe(false);
+    expect(reopened.sessionPlacement(sessionId)).toMatchObject({
+      placement: "isolated",
+      transcriptAuthority: "actor",
+      transcriptMigrationReceipt: audit.sessions[0]!.receipt,
+    });
+    reopened.close();
+  });
+
+  test("refuses contradictory transcript evidence for an empty source", async () => {
+    const root = mkdtempSync(join(tmpdir(), "actor-transcript-empty-conflict-"));
+    roots.push(root);
+    const centralPath = join(root, "session-kernel.sqlite");
+    const isolatedRoot = join(root, "session-kernel-sessions");
+    const sourceTranscriptPath = join(root, "transcripts.db");
+    const sessionId = "empty-source-with-target-evidence";
+    const central = new SessionKernelStore(centralPath);
+    central.claimIsolatedSessionForTranscriptMigration(sessionId);
+    central.close();
+    new TranscriptStore(sourceTranscriptPath).close();
+    const target = new TranscriptStore(
+      sessionKernelSessionDbPath(sessionId, isolatedRoot),
+    );
+    await target.appendTranscriptEvents(sessionId, [{
+      id: "contradiction",
+      type: "user",
+      timestamp: "2026-01-01T00:00:00.000Z",
+      content: "must not be erased",
+    }]);
+    target.close();
+
+    expect(() => migrateActorTranscriptsOffline({
+      centralPath,
+      isolatedRoot,
+      sourceTranscriptPath,
+    })).toThrow("empty transcript target contains transcript_events");
+    const preserved = new TranscriptStore(
+      sessionKernelSessionDbPath(sessionId, isolatedRoot),
+    );
+    expect(preserved.readTail(sessionId, 10).entries).toMatchObject([
+      { id: "contradiction", content: "must not be erased" },
+    ]);
+    preserved.close();
+    const reopened = new SessionKernelStore(centralPath);
+    expect(reopened.sessionPlacement(sessionId)?.transcriptAuthority).toBe("shared");
+    reopened.close();
+  });
+
+  test("rejects non-positive change cursors and corrupt durable receipts", async () => {
+    for (const corruption of ["change-seq", "receipt"] as const) {
+      const root = mkdtempSync(join(tmpdir(), `actor-transcript-${corruption}-`));
+      roots.push(root);
+      const centralPath = join(root, "session-kernel.sqlite");
+      const isolatedRoot = join(root, "session-kernel-sessions");
+      const sourceTranscriptPath = join(root, "transcripts.db");
+      const sessionId = `corrupt-${corruption}`;
+      new SessionKernelStore(centralPath).close();
+      const source = new TranscriptStore(sourceTranscriptPath);
+      source.applyActorRequest({
+        op: "append",
+        requestId: "corrupt-source-request",
+        sessionId,
+        entries: [
+          {
+            id: "one",
+            type: "user",
+            timestamp: "2026-01-01T00:00:00.000Z",
+            content: "one",
+          },
+          {
+            id: "two",
+            type: "assistant",
+            timestamp: "2026-01-01T00:00:01.000Z",
+            content: "two",
+          },
+        ],
+      });
+      source.close();
+      const corrupt = new Database(sourceTranscriptPath);
+      if (corruption === "change-seq") {
+        corrupt.run(
+          "UPDATE transcript_events SET change_seq = 0 WHERE session_id = ? AND seq = 1",
+          [sessionId],
+        );
+        corrupt.run(
+          "UPDATE transcript_outline SET change_seq = 0 WHERE session_id = ? AND seq = 1",
+          [sessionId],
+        );
+      } else {
+        corrupt.run(
+          `UPDATE transcript_append_receipts
+           SET result_json = '{"replay":false,"result":{"inserted":"bad","updated":0},"wakeCursor":1}'
+           WHERE session_id = ?`,
+          [sessionId],
+        );
+      }
+      corrupt.close();
+
+      expect(() => migrateActorTranscriptsOffline({
+        centralPath,
+        isolatedRoot,
+        sourceTranscriptPath,
+      })).toThrow();
+      const central = new SessionKernelStore(centralPath);
+      expect(central.sessionPlacement(sessionId)?.transcriptAuthority).toBe("shared");
+      central.close();
+    }
   });
 
   test("migrates legacy central kernel placement before an empty-reset transcript", async () => {
