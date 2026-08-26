@@ -65,7 +65,8 @@ describe("single session ownership", () => {
 		expect(kernel).toContain("compatibilityStoreForTest");
 		expect(kernel).toContain('process.env.NODE_ENV !== "test"');
 		expect(kernel).toContain("requires the authoritative actor");
-		expect(kernel).toContain("projection.delete(request.sessionId)");
+		expect(kernel).toContain("actor.decideAskAsync(request)");
+		expect(kernel).toContain("actor.decideDeliveryAsync(request)");
 		expect(kernel).not.toContain(
 			'actor.decideDelivery({ op: "snapshot", sessionId: request.sessionId })',
 		);
@@ -619,7 +620,7 @@ describe("single session ownership", () => {
 			'throw new Error("Opening run ended without a terminal event")',
 		);
 		expect(create).toContain("openingJournal?.terminalFailure");
-		expect(create).toContain("startToken = markSessionStarting(");
+		expect(create).toContain("startToken = await markSessionStarting(");
 		expect(create).toContain("hostId: startToken");
 		expect(create).toContain("isAgentSessionCancelled(bksId, startToken)");
 		// Sandbox launches bind the physical host to the admitted token so
@@ -633,7 +634,7 @@ describe("single session ownership", () => {
 		const runSession = read("run-session.ts");
 		const cancelPrepared = runSession.indexOf('op: "prepare_cancel"');
 		const settleGuarded = runSession.indexOf(
-			"try {\n    settleCreationOpeningForStop(sessionId);",
+			"try {\n    await settleCreationOpeningForStop(sessionId);",
 			cancelPrepared,
 		);
 		const bookkeeping = runSession.indexOf("} finally {", settleGuarded);
