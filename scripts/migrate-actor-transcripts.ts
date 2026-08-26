@@ -2,7 +2,10 @@
 import { dirname } from "node:path";
 import { OPENSESSION_SESSIONS_DIR } from "../packages/core/opensession-server/src/server/paths";
 import { sessionKernelDbPath } from "../packages/core/opensession-server/src/server/session-kernel/store";
-import { migrateActorTranscriptsOffline } from "../packages/core/opensession-server/src/server/session-kernel/transcript-offline-migration";
+import {
+  migrateActorTranscriptsOffline,
+  rollbackActorTranscriptsOffline,
+} from "../packages/core/opensession-server/src/server/session-kernel/transcript-offline-migration";
 
 function value(flag: string): string | undefined {
   const index = process.argv.indexOf(flag);
@@ -26,18 +29,30 @@ function assertServicesStopped(): void {
 
 assertServicesStopped();
 const centralPath = value("--central") ?? sessionKernelDbPath();
-const sourceTranscriptPath = value("--source") ??
-  `${OPENSESSION_SESSIONS_DIR}/transcripts.db`;
-const isolatedRoot = value("--isolated-root") ??
-  `${dirname(centralPath)}/session-kernel-sessions`;
+const rollback = process.argv.includes("--rollback");
+const dryRun = process.argv.includes("--dry-run") || process.argv.includes("--audit");
+if (rollback && dryRun) throw new Error("Choose either --rollback or --dry-run");
 const startedAt = performance.now();
-const result = migrateActorTranscriptsOffline({
-  centralPath,
-  sourceTranscriptPath,
-  isolatedRoot,
-});
-console.log(JSON.stringify({
-  ...result,
-  sourceUntouched: sourceTranscriptPath,
-  elapsedMs: Math.round(performance.now() - startedAt),
-}, null, 2));
+if (rollback) {
+  console.log(JSON.stringify({
+    rolledBack: rollbackActorTranscriptsOffline(centralPath),
+    centralPath,
+    elapsedMs: Math.round(performance.now() - startedAt),
+  }, null, 2));
+} else {
+  const sourceTranscriptPath = value("--source") ??
+    `${OPENSESSION_SESSIONS_DIR}/transcripts.db`;
+  const isolatedRoot = value("--isolated-root") ??
+    `${dirname(centralPath)}/session-kernel-sessions`;
+  const result = migrateActorTranscriptsOffline({
+    centralPath,
+    sourceTranscriptPath,
+    isolatedRoot,
+    dryRun,
+  });
+  console.log(JSON.stringify({
+    ...result,
+    sourceUntouched: sourceTranscriptPath,
+    elapsedMs: Math.round(performance.now() - startedAt),
+  }, null, 2));
+}

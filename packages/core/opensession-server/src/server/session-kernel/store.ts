@@ -2378,6 +2378,31 @@ export class SessionKernelStore {
     return result;
   }
 
+  assertTranscriptDestinationFence(input: {
+    sessionId: string;
+    runId: string;
+    turnId: string;
+    generation: number;
+  }): void {
+    const run = this.runState(input.sessionId);
+    if (
+      run.currentRunId !== input.runId || run.generation !== input.generation ||
+      !["starting", "running", "ask_blocked", "interrupted", "reattaching"].includes(run.state)
+    ) throw new Error(`Transcript destination run fence rejected ${input.sessionId}`);
+    const plan = decodeDurableAgentHostPlan(
+      input.sessionId,
+      this.db.query(
+        `SELECT registration_id, run_id, run_generation, turn_id, plan_hash,
+                host_id, host_generation_high_water, supervisor_high_water
+         FROM session_kernel_agent_host_plan WHERE session_id = ?`,
+      ).get(input.sessionId) as Record<string, unknown> | null,
+    );
+    if (
+      !plan || plan.runId !== input.runId ||
+      plan.generation !== input.generation || plan.turnId !== input.turnId
+    ) throw new Error(`Transcript destination turn fence rejected ${input.sessionId}`);
+  }
+
   registerAgentHostPlan(
     input: AgentHostPlanRegistration,
   ): AgentHostPlanRegistrationResult {
@@ -6092,6 +6117,39 @@ export class SessionKernelStore {
       .map((row) => row.session_id);
   }
 
+  publishActorTranscriptAuthorities(
+    entries: ReadonlyArray<{ sessionId: string; migrationReceipt: string }>,
+  ): void {
+    const publish = this.db.transaction(() => {
+      for (const { sessionId, migrationReceipt } of entries) {
+        if (!migrationReceipt || Buffer.byteLength(migrationReceipt) > 16 * 1024)
+          throw new Error("Invalid transcript migration receipt");
+        const existing = this.sessionPlacement(sessionId);
+        if (!existing || existing.placement !== "isolated")
+          throw new Error(`Session ${sessionId} has no isolated placement`);
+        if (
+          existing.transcriptAuthority === "actor" &&
+          existing.transcriptMigrationReceipt !== migrationReceipt
+        ) throw new Error(`Session ${sessionId} transcript authority receipt conflict`);
+      }
+      const now = Date.now();
+      for (const { sessionId, migrationReceipt } of entries) {
+        const existing = this.sessionPlacement(sessionId)!;
+        if (existing.transcriptAuthority === "actor") continue;
+        const result = this.db.run(`
+          UPDATE session_kernel_placements
+          SET transcript_authority = 'actor', transcript_migration_receipt = ?,
+              transcript_published_at = ?, needs_scan = 1, updated_at = ?
+          WHERE session_id = ? AND placement = 'isolated'
+            AND transcript_authority = 'shared'
+        `, [migrationReceipt, now, now, sessionId]);
+        if (result.changes !== 1)
+          throw new Error(`Session ${sessionId} transcript authority publication raced`);
+      }
+    });
+    publish.immediate();
+  }
+
   publishActorTranscriptAuthority(
     sessionId: string,
     migrationReceipt: string,
@@ -6117,6 +6175,24 @@ export class SessionKernelStore {
     return this.sessionPlacement(sessionId)!;
   }
 
+  rollbackActorTranscriptAuthorities(sessionIds: readonly string[]): void {
+    const rollback = this.db.transaction(() => {
+      const now = Date.now();
+      for (const sessionId of sessionIds) {
+        const result = this.db.run(`
+          UPDATE session_kernel_placements
+          SET transcript_authority = 'shared', transcript_published_at = NULL,
+              needs_scan = 1, updated_at = ?
+          WHERE session_id = ? AND placement = 'isolated'
+            AND transcript_authority = 'actor'
+        `, [now, sessionId]);
+        if (result.changes !== 1)
+          throw new Error(`Session ${sessionId} has no actor transcript authority`);
+      }
+    });
+    rollback.immediate();
+  }
+
   rollbackActorTranscriptAuthority(sessionId: string): DurableSessionPlacement {
     const result = this.db.run(`
       UPDATE session_kernel_placements
@@ -6128,6 +6204,21 @@ export class SessionKernelStore {
     if (result.changes !== 1)
       throw new Error(`Session ${sessionId} has no actor transcript authority`);
     return this.sessionPlacement(sessionId)!;
+  }
+
+  claimIsolatedSessionForTranscriptMigration(sessionId: string): DurableSessionPlacement {
+    if (this.hasSessionDurableState(sessionId))
+      throw new Error(`Session ${sessionId} still has central kernel state`);
+    this.db.run(`
+      INSERT INTO session_kernel_placements
+        (session_id, placement, transcript_authority, needs_scan, updated_at)
+      VALUES (?, 'isolated', 'shared', 1, ?)
+      ON CONFLICT(session_id) DO NOTHING
+    `, [sessionId, Date.now()]);
+    const placement = this.sessionPlacement(sessionId);
+    if (!placement || placement.placement !== "isolated")
+      throw new Error(`Session ${sessionId} isolated migration placement was not persisted`);
+    return placement;
   }
 
 	claimIsolatedSession(sessionId: string): DurableSessionPlacement {
@@ -6424,14 +6515,18 @@ export type SessionKernelStoreApi = Omit<
 	| "hasSessionDurableState"
 	| "hasPendingSteers"
 	| "hasCreationBranchDeadLetters"
+	| "assertTranscriptDestinationFence"
 	| "legacySessionIds"
 	| "migrateLegacySession"
 	| "sessionPlacement"
 	| "isolatedSessionPlacements"
 	| "actorTranscriptSessionIds"
 	| "publishActorTranscriptAuthority"
+	| "publishActorTranscriptAuthorities"
 	| "rollbackActorTranscriptAuthority"
+	| "rollbackActorTranscriptAuthorities"
 	| "claimIsolatedSession"
+	| "claimIsolatedSessionForTranscriptMigration"
 	| "markIsolatedSessionDirty"
 	| "settleIsolatedSessionWake"
 	| "isolatedWakeCandidates"

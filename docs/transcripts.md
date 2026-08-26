@@ -39,12 +39,37 @@ file-backed as described below.
 
 The authority move is an offline, all-at-once operation. Stop the gateway,
 executor, and session-kernel services, then run
-`scripts/migrate-actor-transcripts.ts`. It copies all transcript tables into
-existing isolated kernel databases in one transaction per session, verifies
-counts, bidirectional `EXCEPT`, blob references, sequence high-waters, and
-`integrity_check`, records a target receipt, and publishes central placement
-last. Rerunning adopts a verified target after a crash before publication. The
-shared source is never modified or removed.
+`scripts/migrate-actor-transcripts.ts`. It enumerates the union of all five
+source tables and migrates any legacy central kernel state first. A
+transcript-only row with no kernel state receives an offline-only isolated
+placement whose authority remains `shared` until the final publication, so old
+fixture/orphan evidence cannot be stranded behind the actor facade. The cutover
+copies every transcript into its isolated kernel database in one transaction,
+verifies global and per-table counts, bidirectional `EXCEPT`, dense sequences,
+reset/change/import high-waters, blob and outline coherence, and
+`integrity_check`, then atomically publishes every central authority placement
+last. Rerunning adopts verified targets after a crash before publication. The
+shared source is attached read-only, is never modified or removed, and retains
+its original file mode.
+
+With all three services stopped, audit without creating placements or targets:
+
+```sh
+bun scripts/migrate-actor-transcripts.ts --audit
+```
+
+Perform the verified cutover:
+
+```sh
+bun scripts/migrate-actor-transcripts.ts
+```
+
+To deploy the old shared-store build again, first atomically roll every catalog
+entry back to shared authority (the actor files and source remain intact):
+
+```sh
+bun scripts/migrate-actor-transcripts.ts --rollback
+```
 
 For future detached Agent Host recovery, the store also exposes a typed internal
 `transcript_destination_append` API. This is deliberately separate from legacy
