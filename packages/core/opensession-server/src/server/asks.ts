@@ -92,9 +92,9 @@ export function pendingAskAwaitingAnswerSync(
 }
 
 /** One actor snapshot for list rendering, instead of one RPC per session. */
-export function pendingAskIdsAwaitingAnswer(): Set<string> {
+export async function pendingAskIdsAwaitingAnswer(): Promise<Set<string>> {
 	const ids = new Set<string>();
-	for (const [sessionId, value] of sessionKernelStore().askEntries()) {
+	for (const [sessionId, value] of await sessionAsk({ op: "entries" })) {
 		const pending = value as { answerReceived?: boolean } | undefined;
 		if (!pending?.answerReceived) ids.add(sessionId);
 	}

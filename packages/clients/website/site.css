@@ -1296,6 +1296,8 @@ summary:focus-visible {
 	}
 
 	.landing-setup-step-action {
+		width: 100%;
+		align-self: stretch;
 		margin-top: 16px;
 	}
 

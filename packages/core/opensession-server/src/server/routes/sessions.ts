@@ -359,9 +359,9 @@ type SessionListRuntimeSignals = {
 	runtime: SessionRuntimeSnapshot;
 };
 
-function sessionListRuntimeSignals(): SessionListRuntimeSignals {
+async function sessionListRuntimeSignals(): Promise<SessionListRuntimeSignals> {
 	return {
-		waitingForInput: pendingAskIdsAwaitingAnswer(),
+		waitingForInput: await pendingAskIdsAwaitingAnswer(),
 		queuedCounts: clientVisibleQueuedCounts(),
 		runtime: sessionRuntimeSnapshot(),
 	};
@@ -736,7 +736,7 @@ function refreshSidebarSessionsResponse(
 	const current = sessionsResponseRefreshes.get(key);
 	if (current) return current;
 	const refresh = (async () => {
-		const signals = sessionListRuntimeSignals();
+		const signals = await sessionListRuntimeSignals();
 		const indexed = indexedSidebarSessions(scope.selectedSessionId);
 		const sliced = (
 			indexed ?? (await getCachedSessionsAsync("exclude"))
@@ -769,7 +769,7 @@ function refreshSessionsResponse(
 	const current = sessionsResponseRefreshes.get(variant);
 	if (current) return current;
 	const refresh = (async () => {
-		const signals = sessionListRuntimeSignals();
+		const signals = await sessionListRuntimeSignals();
 		const slice =
 			variant === "exclude"
 				? "exclude"
@@ -960,7 +960,7 @@ export async function handleSessionsRoutes(
 				(await getCachedSessionsAsync("only")).filter((session) =>
 					inWorkspaceGroup(session, scope),
 				);
-			const signals = sessionListRuntimeSignals();
+			const signals = await sessionListRuntimeSignals();
 			const rows = selected.map((session) => enrichSession(session, signals));
 			shareWorkspacePrRefs(rows);
 			const text = JSON.stringify(
