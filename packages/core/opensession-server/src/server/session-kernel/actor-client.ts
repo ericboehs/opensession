@@ -346,27 +346,6 @@ export class SessionKernelActorClient {
     return (response as DeliveryMutationReply<DeliveryActorResult<T>>).result;
   }
 
-  async decideDeliveryAsync<T extends DeliveryActorRequest>(
-    request: T,
-  ): Promise<DeliveryActorResult<T>> {
-    if (request.op === "snapshot") return this.decideDelivery(request);
-    if (request.op === "entries") return this.decideDelivery(request);
-    const response = await this.callAsync<
-      DeliveryActorResult<T> | DeliveryMutationReply<DeliveryActorResult<T>>
-    >(
-      {
-        t: "reduce",
-        command: {
-          kind: "delivery",
-          commandId: crypto.randomUUID(),
-          request,
-        },
-      },
-      `delivery ${request.op}`,
-    );
-    return (response as DeliveryMutationReply<DeliveryActorResult<T>>).result;
-  }
-
   decideAgentOperation(request: AgentOperationRequest): AgentOperationResult {
     return this.callSync<AgentOperationResult>(
       { t: "reduce", command: { kind: "agent_operation", commandId: request.identity.operationId, request } },
