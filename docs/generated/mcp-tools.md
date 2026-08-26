@@ -383,7 +383,7 @@ Deploy this instance to a sha and restart the live server.
 
 `mcp__opensession-self-deploy__deploy_self` · input: `sha` (string), `confirm` (boolean, required)
 
-Deploy THIS Open Session instance to a git sha and RESTART THE LIVE SERVER. Fetches origin, fast-forwards the deploy checkout (ff-only — aborts on a dirty/diverged tree), restarts opensession.service, health-gates the restart, and auto-records a last-known-good pin for rollback. The restart is graceful: detached engine turns survive and sessions reattach, but the UI blips. Requires confirm: true.
+Deploy THIS Open Session instance to an immutable git release and RESTART THE LIVE SERVER. The target must advance from the currently running release; stale or parallel targets are refused (rollback is a separate operation). The shared WIP checkout is only an object source and is never changed. Prepares locked dependencies, atomically switches the runtime pointer, health-gates the gateway/kernel/executor release, and switches back to the last-known-good release on failure. Detached engine turns survive and sessions reattach, but the UI blips. Requires confirm: true.
 
 ### `deploy_status`
 
