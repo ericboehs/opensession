@@ -58,8 +58,14 @@ const FILE_HEADER =
 // headers working with `overflow-clip`, but a positioned body needs to own the
 // bottom radius so its painted code surface can never square off the file row.
 const FILE_BODY = "relative z-0 max-w-full overflow-clip rounded-b-lg";
+// The outer row owns the rounded frame. The square sticky layer masks code
+// below the header's curved corners with the surrounding surface, while the
+// inner surface draws the actual rounded top bar. Overlap the scroll edge by a
+// pixel so code cannot peek above either layer.
 const STICKY_FILE_HEADER =
-  "sticky top-[var(--review-file-header-top,0px)] z-[6] rounded-t-lg bg-bg data-[stuck]:overflow-visible";
+  "sticky top-[calc(var(--review-file-header-top,0px)-1px)] z-[6] bg-surface";
+const STICKY_FILE_HEADER_SURFACE =
+  "rounded-t-lg bg-bg group-data-[stuck]:shadow-[inset_0_0_0_1px_var(--border),inset_0_-1px_0_var(--divider)]";
 const FILE_TOGGLE =
   "focus-ring flex min-w-0 cursor-pointer items-center gap-2 self-stretch border-none bg-transparent p-0 text-left text-fg";
 
@@ -796,24 +802,15 @@ const pendingByFile = m;
         data-diff-file={file.name}
       >
         <div
-          // `diff-file-header` is a DOM hook, not styling — no rule reaches it
-          // any more: PrPanel's Files card finds this row by that class to
-          // scroll to and expand a file (`el.querySelector(".diff-file-header")`).
-          className={`${FILE_HEADER} ${stickyFileHeaders ? STICKY_FILE_HEADER : "bg-transparent"}`}
+          className={`group ${stickyFileHeaders ? STICKY_FILE_HEADER : ""}`}
           data-sticky-edge={stickyFileHeaders ? "" : undefined}
         >
-          {stickyFileHeaders && (
-            <>
-              <span
-                aria-hidden="true"
-                className="pointer-events-none absolute -inset-x-px inset-y-0 -z-[1] hidden bg-bg group-data-[stuck]:block"
-              />
-              <span
-                aria-hidden="true"
-                className="pointer-events-none absolute -inset-x-px inset-y-0 z-[1] hidden rounded-t-lg border-x border-b border-line [border-bottom-color:var(--divider)] group-data-[stuck]:block"
-              />
-            </>
-          )}
+          <div
+            // `diff-file-header` is a DOM hook, not styling — no rule reaches it
+            // any more: PrPanel's Files card finds this row by that class to
+            // scroll to and expand a file (`el.querySelector(".diff-file-header")`).
+            className={`${FILE_HEADER} ${stickyFileHeaders ? STICKY_FILE_HEADER_SURFACE : "bg-transparent"}`}
+          >
           <button
             type="button"
             className={`diff-file-header ${FILE_TOGGLE}`}
@@ -1034,6 +1031,7 @@ const pendingByFile = m;
               </Menu.Popup>
             </Menu.Root>
           )}
+          </div>
         </div>
         {(isOpen || resolved.length > 0) && (
           <div className={FILE_BODY}>

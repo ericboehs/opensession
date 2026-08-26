@@ -164,7 +164,13 @@ test("sidebar Changes shares Review's code display options", () => {
 		"stickyFileHeaders={toolbarTarget === undefined}",
 	);
 	expect(diffPanelSource).toContain("--review-file-header-top");
-	expect(commentableDiffSource).toContain("z-[6] rounded-t-lg bg-bg");
+	expect(commentableDiffSource).toContain(
+		"top-[calc(var(--review-file-header-top,0px)-1px)]",
+	);
+	expect(commentableDiffSource).toContain("z-[6] bg-surface");
+	expect(commentableDiffSource).toContain("rounded-t-lg bg-bg");
+	expect(commentableDiffSource).not.toContain("data-[stuck]:overflow-visible");
+	expect(commentableDiffSource).not.toContain("-inset-x-px");
 	expect(commentableDiffSource).toContain("overflow-clip rounded-b-lg");
 	expect(viewerSource).toContain("--diff-panel-top");
 	expect(codeDisplaySource).toContain('label="Wrap lines"');
