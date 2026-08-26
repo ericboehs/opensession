@@ -4,8 +4,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   accountProviderForModel,
+  automaticFallbackModel,
   explicitEngineFor,
   fallbackPlan,
+  interactiveFallbackModel,
   modelEngineKey,
   modelLabel,
   nextFallbackModel,
@@ -19,6 +21,7 @@ import {
 const originalPiConfig = process.env.OPENSESSION_PI_CONFIG;
 const originalModelProvidersConfig =
   process.env.OPENSESSION_MODEL_PROVIDERS_CONFIG;
+const originalHaikuFallbackModel = process.env.OPENSESSION_HAIKU_FALLBACK_MODEL;
 let pickerConfigDir = "";
 afterEach(() => {
   if (originalPiConfig === undefined) delete process.env.OPENSESSION_PI_CONFIG;
@@ -28,6 +31,9 @@ afterEach(() => {
   else
     process.env.OPENSESSION_MODEL_PROVIDERS_CONFIG =
       originalModelProvidersConfig;
+  if (originalHaikuFallbackModel === undefined)
+    delete process.env.OPENSESSION_HAIKU_FALLBACK_MODEL;
+  else process.env.OPENSESSION_HAIKU_FALLBACK_MODEL = originalHaikuFallbackModel;
   refreshPickerModels();
   if (pickerConfigDir) rmSync(pickerConfigDir, { recursive: true, force: true });
   pickerConfigDir = "";
@@ -121,6 +127,23 @@ describe("Pi-only model routing", () => {
     expect(first?.id.startsWith("pi/")).toBe(true);
     expect(fallbackPlan("pi/anthropic/claude-fable-5", "pi/openai/gpt-5.6-sol"))
       .toSatisfy((hops) => hops.every((hop) => hop.id.startsWith("pi/")));
+  });
+
+  test("crosses exhausted Haiku sessions to OpenAI", () => {
+    expect(automaticFallbackModel("claude-haiku-4-5")).toBe(
+      "pi/openai/gpt-5.6-luna",
+    );
+    expect(interactiveFallbackModel("claude-haiku-4-5")).toBe(
+      "pi/openai/gpt-5.6-luna",
+    );
+    expect(interactiveFallbackModel("pi/anthropic/claude-haiku-4-5")).toBe(
+      "pi/openai/gpt-5.6-luna",
+    );
+
+    process.env.OPENSESSION_HAIKU_FALLBACK_MODEL = "gpt-5.6-sol";
+    expect(automaticFallbackModel("claude-haiku-4-5")).toBe(
+      "pi/openai/gpt-5.6-sol",
+    );
   });
 
   test("labels Pi models without an engine prefix", () => {

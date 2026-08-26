@@ -16,7 +16,7 @@ import { runAgent, isAgentSessionBusy } from "./agent-runner";
 import { defaultRepo, personaName } from "./config";
 import { isDevInstance } from "./dev-mode";
 import { getGoal, listGoals, saveGoal, type Goal } from "./goals";
-import { DEFAULT_FALLBACK_MODEL, providerFor } from "./models";
+import { automaticFallbackModel, providerFor } from "./models";
 import { engineSessionPatch } from "./sessions";
 import { STRIPE_CONFIRM_TOOLS } from "./runner-shared";
 import { gitIdentityFor } from "./shared/user-mappings";
@@ -193,7 +193,7 @@ export async function runGoal(goal: Goal): Promise<void> {
 			fallbackModel:
 				goal.fallbackModel === "none"
 					? undefined
-					: goal.fallbackModel || DEFAULT_FALLBACK_MODEL,
+					: goal.fallbackModel || automaticFallbackModel(goal.model),
 			journal: { osSessionId: bksId, kind: "goal" },
 			// Headless: no onAskUser. Human gates go through opensession-humans ask_human
 			// (async) and hard blocks through opensession-goal-self mark_paused.

@@ -29,7 +29,7 @@ import { runAgentHosted } from "./host-client";
 import {
   providerFor,
   resolveModel,
-  DEFAULT_FALLBACK_MODEL,
+  automaticFallbackModel,
   modelLabel,
   toPiModel,
 } from "./models";
@@ -1585,7 +1585,7 @@ export async function runAutomation(
     let textTail = "";
     const fallbackModel = (() => {
       if (automation.fallbackModel === "none" || automation.sandbox) return undefined;
-      const fb = automation.fallbackModel || DEFAULT_FALLBACK_MODEL;
+      const fb = automation.fallbackModel || automaticFallbackModel(effectiveModel);
       return fb ? automationModel(fb) : undefined;
     })();
     // This run was admitted before shutdown. Keep it visible to the bounded

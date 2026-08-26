@@ -166,6 +166,23 @@ export async function readEngineTranscriptAsync(
   return parseTranscriptAsync(path);
 }
 
+/** Recent engine history for a bounded context handoff. Store-only engines
+ * must not hydrate their complete transcript here: the note consumes at most
+ * 180 KB, while a long-running session can hold tens of thousands of rows and
+ * gigabytes of full tool-result blobs. Engine-native files still parse
+ * cooperatively; their parser does not block the gateway thread. */
+export async function readEngineHandoffTranscriptAsync(
+  worktreeDir: string,
+  engineSessionId: string,
+  provider: "claude" | "codex" | "pi"
+): Promise<TranscriptEntry[]> {
+  if (provider === "pi") return engineStoreHandoffTranscript(engineSessionId);
+  const path = getEngineTranscriptPath(worktreeDir, engineSessionId, provider);
+  if (!path || !existsSync(path))
+    return engineStoreHandoffTranscript(engineSessionId);
+  return parseTranscriptAsync(path);
+}
+
 /**
  * A STORE-ONLY engine session's transcript as entries — pi, and the removed
  * direct-SDK engines' historical sessions (claude-direct, codex-direct),
@@ -194,9 +211,8 @@ export async function readEngineTranscriptAsync(
  *     the uuid can only mean this engine session; ses_/claude ids of other
  *     sessions never collide with one of these uuids).
  */
-function engineStoreTranscript(engineSessionId: string): TranscriptEntry[] {
-  if (!engineSessionId) return [];
-  try {
+function engineStoreOwner(engineSessionId: string): UnifiedSession | undefined {
+  if (!engineSessionId) return undefined;
     // Call-time require, not a static import: session-cache imports this
     // module (getAllSessions), so the static edge must stay one-directional.
     // By the time a transcript is read the cache module is long-loaded —
@@ -213,7 +229,7 @@ function engineStoreTranscript(engineSessionId: string): TranscriptEntry[] {
     const journaled = activeRunRecords().find(
       (r) => r.claudeSessionId === engineSessionId && r.osSessionId
     );
-    const owner =
+    return (
       byUnifiedId(journaled?.osSessionId) ??
       byUnifiedId(sessionForEngineId(engineSessionId)) ??
       sessions.find(
@@ -221,11 +237,36 @@ function engineStoreTranscript(engineSessionId: string): TranscriptEntry[] {
           s.piSessionId === engineSessionId ||
           s.codexThreadId === engineSessionId ||
           s.claudeSessionId === engineSessionId
-      );
+      )
+    );
+}
+
+function engineStoreTranscript(engineSessionId: string): TranscriptEntry[] {
+  try {
+    const owner = engineStoreOwner(engineSessionId);
     return owner ? mergedSessionTranscript(owner) : [];
   } catch (e) {
     console.warn(
       `[sessions] engine store transcript read failed for ${engineSessionId}:`,
+      e instanceof Error ? e.message : e
+    );
+    return [];
+  }
+}
+
+/** The handoff renderer clips each conversational row to 8 KB and the whole
+ * note to 180 KB. Read just enough bounded store rows to satisfy that budget;
+ * never resolve full_ref blobs for history the renderer will discard. */
+function engineStoreHandoffTranscript(engineSessionId: string): TranscriptEntry[] {
+  try {
+    const owner = engineStoreOwner(engineSessionId);
+    if (!owner || owner.id.startsWith("plain-")) return [];
+    const store = transcriptStore();
+    if (!store.hasImported(owner.id)) return mergedSessionTranscript(owner);
+    return store.readHandoffTail(owner.id).entries;
+  } catch (e) {
+    console.warn(
+      `[sessions] engine handoff transcript read failed for ${engineSessionId}:`,
       e instanceof Error ? e.message : e
     );
     return [];

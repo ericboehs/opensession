@@ -6,9 +6,9 @@
 	--page-art: url("./landing-background.webp");
 	--card-glass: oklch(1 0 0 / 0.8);
 	--glass-line: oklch(0 0 0 / 0.07);
-	/* Marketing dialogs use the section material through WebsiteModal, keeping
-	   its hue while letting more of the artwork show through. */
-	--modal-surface: oklch(1 0 0 / 0.74);
+	/* Marketing dialogs use a slightly whiter version of the section material
+	   through WebsiteModal, while still letting the artwork show through. */
+	--modal-surface: oklch(1 0 0 / 0.78);
 	--modal-filter: blur(14px) saturate(1.08);
 	--modal-ring: var(--glass-line);
 	--button-glass: oklch(1 0 0 / 0.52);

@@ -27,7 +27,7 @@
 import { $ } from "bun";
 import { cancelAgentRun, runAgent, type RunAgentOpts, type StreamEvent } from "./agent-runner";
 import {
-	DEFAULT_FALLBACK_MODEL,
+	automaticFallbackModel,
 	getDefaultModel,
 	modelEfforts,
 	resolveModel,
@@ -511,7 +511,7 @@ export const workflowExecutor: WorkflowExecutor = {
 				mode: write ? "code" : "ask",
 				model,
 				...(effort ? { effort } : {}),
-				fallbackModel: DEFAULT_FALLBACK_MODEL,
+				fallbackModel: automaticFallbackModel(model),
 				accountAffinityKey: `workflow:${ctx.runId}:${req.seq}`,
 				user: ctx.user,
 				...(write ? { author: gitIdentityFor(ctx.user) } : {}),
