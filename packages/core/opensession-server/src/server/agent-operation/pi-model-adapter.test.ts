@@ -237,7 +237,7 @@ async function gatewayHarness(options: {
       async fail() {},
     }),
     appendTerminal: async () => terminal("pi-terminal", d("7"), "ok"),
-    appendIndeterminateNotice: async (record, appendId) => terminal(appendId, d("8"), record.terminalReservation?.reason ?? "reconciliation_unsupported").kernelTerminal,
+    appendIndeterminate: async (record, reservation) => terminal(reservation.reservationId, d("8"), record.terminalReservation?.reason ?? "reconciliation_unsupported").kernelTerminal,
   });
   return { gateway, request: requestValue, reference: invocationOwner.reference, invocationRegistry, calls: () => calls, events };
 }
@@ -278,7 +278,7 @@ describe("Pi model operation adapter", () => {
     expect(decoded).toBeDefined();
 
     const live = await gatewayHarness({ executor: async ({ invocation: seen, publish }) => {
-      expect(seen).toBe(invocation);
+      expect(seen).toEqual(invocation);
       await publish(new Uint8Array([1]));
       await publish(new Uint8Array([2]));
       return { outcome: { status: "succeeded", code: "ok" }, transcript: { text: "ephemeral" } };
@@ -329,7 +329,7 @@ describe("Pi model operation adapter", () => {
     let secondPublishStarted = false;
     const h = setup({ executor: async ({ binding: seenBinding, invocation: seenInvocation, publish }) => {
       expect(seenBinding).toBe(h.runtimeBinding);
-      expect(seenInvocation).toBe(invocation);
+      expect(seenInvocation).toEqual(invocation);
       await publish(new Uint8Array([1]));
       secondPublishStarted = true;
       await publish(new Uint8Array([2]));

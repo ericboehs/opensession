@@ -1,7 +1,10 @@
 import { createHash } from "node:crypto";
 import type { AgentOperationDigest } from "@tellahq/opensession-protocol/agent-operation";
 import type { AgentTurnFence } from "@tellahq/opensession-protocol/agent-host";
-import type { AgentGatewayDecodedPayload } from "./gateway";
+import {
+  authenticateAgentGatewayDecodedPayload,
+  type AgentGatewayDecodedPayload,
+} from "./gateway";
 
 export const PI_MODEL_INVOCATION_DIGEST_DOMAIN =
   "opensession.pi-model.invocation.v1\0";
@@ -242,6 +245,7 @@ export class PiModelInvocationRegistry {
   /** Decode-only tombstones let the gateway authenticate settled duplicate replays. */
   readonly #decodable = new Map<string, Entry>();
   readonly #used = new Set<string>();
+  readonly #sessionKeys = new Map<string, Set<string>>();
   readonly #capacity: number;
   readonly #now: () => number;
 
@@ -257,12 +261,21 @@ export class PiModelInvocationRegistry {
     if (!validIdentity(input)) throw new TypeError("invalid model invocation identity");
     if (!Number.isSafeInteger(input.deadlineMs) || input.deadlineMs <= this.#now())
       throw new Error("model invocation deadline has expired");
-    if (!immutableSnapshot(input.invocation))
-      throw new TypeError("model invocation snapshot must be immutable");
     if (!(input.canonicalBytes instanceof Uint8Array))
       throw new TypeError("invalid model invocation bytes");
     if (input.canonicalBytes.byteLength > MAX_PI_MODEL_INVOCATION_BYTES)
       throw new RangeError("model invocation exceeds byte limit");
+    // Authenticate first so Proxy/accessor rejection happens before the stricter
+    // deep-frozen capability check can perform any reflective operation.
+    const canonical = authenticateAgentGatewayDecodedPayload({
+      kind: "model",
+      value: input.invocation,
+      canonicalBytes: input.canonicalBytes,
+      retainValueIdentity: true,
+    });
+    const invocation = canonical.value;
+    if (!immutableSnapshot(invocation))
+      throw new TypeError("model invocation snapshot must be immutable");
     const key = identityKey(input);
     if (this.#used.has(key))
       throw new Error("model invocation identity was already registered");
@@ -283,17 +296,23 @@ export class PiModelInvocationRegistry {
     const adapterPayload = Object.freeze({
       version: 1 as const,
       identity,
-      invocation: input.invocation,
+      invocation,
     });
     const entry: Entry = Object.freeze({
       key,
-      invocation: input.invocation,
+      invocation,
       canonicalBytes,
       deadlineMs: input.deadlineMs,
       identity,
       adapterPayload,
     });
     this.#used.add(key);
+    let sessionKeys = this.#sessionKeys.get(input.fence.sessionId);
+    if (!sessionKeys) {
+      sessionKeys = new Set();
+      this.#sessionKeys.set(input.fence.sessionId, sessionKeys);
+    }
+    sessionKeys.add(key);
     this.#active.set(key, entry);
     this.#decodable.set(key, entry);
     const reference = Object.freeze({
@@ -313,6 +332,29 @@ export class PiModelInvocationRegistry {
         return this.#active.delete(key);
       },
     });
+  }
+
+  deleteSession(sessionId: string): number {
+    const keys = this.#sessionKeys.get(sessionId);
+    if (!keys) return 0;
+    for (const key of keys) {
+      this.#active.delete(key);
+      this.#decodable.delete(key);
+      this.#used.delete(key);
+    }
+    this.#sessionKeys.delete(sessionId);
+    return keys.size;
+  }
+
+  clear(): void {
+    this.#active.clear();
+    this.#decodable.clear();
+    this.#used.clear();
+    this.#sessionKeys.clear();
+  }
+
+  get size(): number {
+    return this.#active.size;
   }
 
   /** Deletes entries whose caller-owned absolute deadline has passed. */
@@ -397,11 +439,12 @@ export function decodePiModelGatewayPayload(
     invocationDigest: reference.invocationDigest,
   });
   if (!snapshot) return undefined;
-  return Object.freeze({
-    kind: "model" as const,
+  return authenticateAgentGatewayDecodedPayload({
+    kind: "model",
     value: snapshot.adapterPayload,
+    receiptValue: snapshot.invocation,
     canonicalBytes: snapshot.canonicalBytes,
-    retainValueIdentity: true as const,
+    retainValueIdentity: true,
   });
 }
 

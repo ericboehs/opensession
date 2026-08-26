@@ -7,6 +7,7 @@ import {
   MCP_AGENT_OPERATION_RECONCILER,
   MCP_AGENT_OPERATION_REQUEST_VERSION,
   McpAgentOperationAmbiguityError,
+  McpAgentOperationNoEffectError,
   McpTurnRuntimeRegistry,
   createMcpAgentOperationAdapter,
 } from "./mcp-adapter";
@@ -297,10 +298,7 @@ describe("turn-scoped MCP Agent operation adapter", () => {
   });
 
   test("timeout and disconnect after invocation are typed ambiguous and reconciliation fails closed", async () => {
-    for (const [message, reason] of [
-      ["request timed out", "timeout_ambiguous"],
-      ["connection closed", "disconnect_ambiguous"],
-    ] as const) {
+    for (const message of ["request timed out", "connection closed"] as const) {
       let calls = 0;
       const setup = await installed(
         runtime({
@@ -319,7 +317,7 @@ describe("turn-scoped MCP Agent operation adapter", () => {
       );
       await expect(promise).rejects.toMatchObject({
         name: "McpAgentOperationAmbiguityError",
-        reason,
+        reason: "disconnect_ambiguous",
       });
       expect(calls).toBe(1);
     }
@@ -335,7 +333,7 @@ describe("turn-scoped MCP Agent operation adapter", () => {
     const setup = await installed(
       runtime({
         call: async () => {
-          throw new Error("secret credential abc");
+          throw new McpAgentOperationNoEffectError();
         },
       }),
     );
@@ -424,5 +422,28 @@ describe("turn-scoped MCP Agent operation adapter", () => {
     expect(JSON.stringify({ registry, ownerA, adapter })).not.toMatch(
       /credential|config|grant/i,
     );
+  });
+
+  test("session deletion awaits an owner-started close without closing twice", async () => {
+    let closes = 0;
+    let releaseClose!: () => void;
+    const closeGate = new Promise<void>((resolve) => { releaseClose = resolve; });
+    const registry = new McpTurnRuntimeRegistry();
+    const turn = fence();
+    const owner = registry.register(turn, runtime({
+      close: async () => {
+        closes++;
+        await closeGate;
+      },
+    }));
+    const ownerClose = owner.close();
+    const deletion = registry.deleteSession(turn.sessionId);
+    await Promise.resolve();
+    expect(closes).toBe(1);
+    expect(registry.get(turn)).toBeUndefined();
+    releaseClose();
+    expect(await deletion).toBe(1);
+    await ownerClose;
+    expect(closes).toBe(1);
   });
 });

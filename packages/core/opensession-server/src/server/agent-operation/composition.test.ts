@@ -162,7 +162,6 @@ function fixture() {
             ? { pendingToolUseEntryIds: freeze([] as string[]) }
             : {}),
         }),
-      authenticateReservation: async (_identity, reservation) => reservation,
     },
     piInvocations: { now: () => 10 },
     piExecutor: {
@@ -191,9 +190,6 @@ function fixture() {
     gateway: {
       now: () => 20,
       resolveTranscriptAnchor: async () => anchor,
-      appendIndeterminateNotice: async () => {
-        throw new Error("unexpected recovery");
-      },
     },
     verifySupervision: async () => ({ authority, authorityHash: d("c") }),
     hostClient: {
@@ -344,6 +340,7 @@ describe("detached Agent operation boot composition", () => {
     const mcpDescriptorDigest =
       await hashAgentOperationDescriptorV1(mcpDescriptor);
     let mcpPhysical = 0;
+    let mcpCloses = 0;
     g.composition.mcpRuntimes.register(fence, {
       catalog: async () => [
         { id: "search-server_search", server: "search-server", name: "search" },
@@ -352,7 +349,7 @@ describe("detached Agent operation boot composition", () => {
         mcpPhysical++;
         return { content: [{ type: "text", text: "tool done" }] };
       },
-      close: async () => {},
+      close: async () => { mcpCloses++; },
     } as any);
     const mcpPlan = {
       operationId: "operation-mcp",
@@ -393,8 +390,34 @@ describe("detached Agent operation boot composition", () => {
     expect(mcpPhysical).toBe(1);
     expect(f.composition.readinessFeed()).toMatchObject({
       gatewayOperationLedger: { schemaVersion: 2, recoverActiveComplete: true },
+      boundedRegistries: {
+        gatewayGrants: true,
+        gatewayOperations: true,
+        piInvocations: true,
+        piBindings: true,
+        mcpRuntimes: true,
+      },
+      capabilities: { deletion: true },
       infrastructureFallback: false,
     });
+    expect(await f.composition.deleteSession(fence.sessionId)).toEqual({
+      plans: 1,
+      invocations: 1,
+      bindings: 1,
+      mcpRuntimes: 0,
+      ledgerRows: 1,
+    });
+    expect(await g.composition.deleteSession(fence.sessionId)).toEqual({
+      plans: 1,
+      invocations: 0,
+      bindings: 0,
+      mcpRuntimes: 1,
+      ledgerRows: 1,
+    });
+    expect(f.composition.piInvocations.size).toBe(0);
+    expect(f.composition.piBindings.size).toBe(0);
+    expect(g.composition.mcpRuntimes.size).toBe(0);
+    expect(mcpCloses).toBe(1);
     await Promise.all([f.composition.close(), g.composition.close()]);
     f.store.close();
     g.store.close();
@@ -426,10 +449,42 @@ describe("detached Agent operation boot composition", () => {
       ),
     ).rejects.toThrow("plan mismatch");
     expect(f.modelPhysical()).toBe(0);
+    const bindingRef = Buffer.alloc(32, 3).toString("base64url");
+    const invocationRef = Buffer.alloc(32, 4).toString("base64url");
+    f.composition.piBindings.register({
+      fence,
+      bindingRef,
+      binding: { model: { provider: "test", id: "model" } } as any,
+      descriptorDigest: d("1"),
+      modelPolicyHash: d("2"),
+      modelIdentity: { provider: "test", id: "model" },
+    });
+    const privateInvocation = freeze({ prompt: "close-only private prompt" });
+    f.composition.piInvocations.register({
+      fence,
+      operationId: "close-only-operation",
+      bindingRef,
+      invocationRef,
+      descriptorDigest: d("1"),
+      invocation: privateInvocation,
+      canonicalBytes: new TextEncoder().encode(JSON.stringify(privateInvocation)),
+      deadlineMs: 500,
+    });
+    let runtimeCloses = 0;
+    f.composition.mcpRuntimes.register(fence, {
+      catalog: async () => [],
+      callExact: async () => ({ content: [] }),
+      close: async () => { runtimeCloses++; },
+    } as any);
     await Promise.all([f.composition.close(), f.composition.close()]);
+    expect(f.composition.piBindings.size).toBe(0);
+    expect(f.composition.piInvocations.size).toBe(0);
+    expect(f.composition.mcpRuntimes.size).toBe(0);
+    expect(runtimeCloses).toBe(1);
     expect(f.composition.readinessFeed()).toMatchObject({
       gatewayOperationLedger: { recoverActiveComplete: false },
       infrastructureFallback: false,
+      capabilities: { deletion: false },
     });
     f.store.close();
   });

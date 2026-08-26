@@ -294,6 +294,7 @@ export class AgentOperationService {
       ready: this.#ready,
       recovering: this.#recovering,
       failed: this.#failed,
+      closing: this.#closing,
       activeOperations: active,
       activeStreams: streams,
       replayBytes,
@@ -313,6 +314,9 @@ export class AgentOperationService {
       entry.controller?.abort();
       await entry.journal?.fail();
     }
+    await Promise.all(removed.flatMap((entry) =>
+      entry.task ? [entry.task.catch(() => undefined)] : [],
+    ));
     this.#options.grants.revokeSession(sessionId);
     return removed.length;
   }

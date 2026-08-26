@@ -12,7 +12,10 @@ import {
   AgentGatewayGrantRegistry,
   encodeAgentGatewayPolicyHandle,
 } from "./grants";
-import { AgentGatewayAmbiguousExecutionError } from "./gateway";
+import {
+  AgentGatewayAmbiguousExecutionError,
+  authenticateAgentGatewayDecodedPayload,
+} from "./gateway";
 import { AgentOperationService, type AgentOperationPlan } from "./service";
 import { SQLiteAgentOperationLedger } from "./sqlite-ledger";
 
@@ -90,7 +93,7 @@ async function fixture(options: { dbPath?: string; mode?: Mode; recoveryGate?: P
         },
       }),
       decodePayload: (kind, payload) => payload && kind === "model"
-        ? { kind, value: payload, canonicalBytes: payloadBytes }
+        ? authenticateAgentGatewayDecodedPayload({ kind, value: payload, canonicalBytes: payloadBytes })
         : undefined,
       appendTerminal: async (_identity, result) => {
         order.push("append");
@@ -98,9 +101,9 @@ async function fixture(options: { dbPath?: string; mode?: Mode; recoveryGate?: P
         const refs = [{ appendId: `append-${code}`, entryIds: ["entry-terminal"], firstSeq: 3, lastSeq: 3, throughChangeSeq: 3, requestDigest: digest("1") }];
         return { refs, kernelTerminal: { outputDigest: digest("e"), outcomeCode: code, transcriptRefs: refs, pendingToolUseEntryIds: [] } };
       },
-      appendIndeterminateNotice: async (record, appendId) => {
+      appendIndeterminate: async (record, reservation) => {
         await options.recoveryGate;
-        const refs = [{ appendId, entryIds: ["entry-indeterminate"], firstSeq: 3, lastSeq: 3, throughChangeSeq: 3, requestDigest: digest("2") }];
+        const refs = [{ appendId: reservation.reservationId, entryIds: ["entry-indeterminate"], firstSeq: 3, lastSeq: 3, throughChangeSeq: 3, requestDigest: digest("2") }];
         return { outputDigest: digest("f"), outcomeCode: record.terminalReservation?.reason ?? "reconciliation_unsupported", transcriptRefs: refs, pendingToolUseEntryIds: [] };
       },
     },

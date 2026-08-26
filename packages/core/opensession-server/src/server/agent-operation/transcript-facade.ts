@@ -81,7 +81,6 @@ export class AgentOperationTranscriptFacade {
   async appendIndeterminate(
     identity: Readonly<AgentOperationIdentity>,
     reservation: Readonly<AgentOperationTerminalReservation>,
-    result: Readonly<AgentGatewayAdapterResult>,
     replay?: Readonly<AgentTranscriptReplayHint>,
   ): Promise<AgentGatewayTranscriptTerminal> {
     // Authentication deliberately precedes receipt lookup, rendering, and all
@@ -92,11 +91,14 @@ export class AgentOperationTranscriptFacade {
     );
     if (!authenticated || !sameReservation(authenticated, reservation))
       throw new AgentTranscriptReservationAuthenticationError();
+    const appendId = reservationAppendId(authenticated.reservationId);
+    const result = indeterminateResult(authenticated);
     return this.#append(
       identity,
       result,
-      reservationAppendId(authenticated.reservationId),
+      appendId,
       replay,
+      indeterminateRendered(identity, authenticated, appendId),
     );
   }
 
@@ -105,6 +107,7 @@ export class AgentOperationTranscriptFacade {
     result: Readonly<AgentGatewayAdapterResult>,
     appendId: string,
     replay?: Readonly<AgentTranscriptReplayHint>,
+    ownedRendered?: Readonly<AgentTranscriptRenderResult>,
   ): Promise<AgentGatewayTranscriptTerminal> {
     const existing = replay ?? this.#replays.get(appendId);
     if (existing) {
@@ -115,7 +118,7 @@ export class AgentOperationTranscriptFacade {
 
     const rendered = validateRendered(
       identity.kind,
-      await this.#options.render(identity, result),
+      ownedRendered ?? await this.#options.render(identity, result),
     );
     const durable = this.#options.store.commitTranscriptDestinationAppendReceipt({
       sessionId: identity.fence.sessionId,
@@ -161,6 +164,36 @@ export class AgentOperationTranscriptFacade {
     if (!canonical) throw new TypeError("Agent transcript replay receipt is missing");
     return canonical;
   }
+}
+
+function indeterminateResult(
+  _reservation: Readonly<AgentOperationTerminalReservation>,
+): AgentGatewayAdapterResult {
+  return Object.freeze({
+    outcome: Object.freeze({ status: "failed" as const, code: "provider_error" as const }),
+    transcript: undefined,
+  });
+}
+
+function indeterminateRendered(
+  identity: Readonly<AgentOperationIdentity>,
+  reservation: Readonly<AgentOperationTerminalReservation>,
+  appendId: string,
+): AgentTranscriptRenderResult {
+  const entries = Object.freeze([Object.freeze({
+    id: `${appendId}:notice`,
+    type: "system" as const,
+    content: "This operation may have completed, but its result could not be verified.",
+    timestamp: new Date(
+      Math.min(reservation.reservedAtMs, 8_640_000_000_000_000),
+    ).toISOString(),
+  })]);
+  return Object.freeze({
+    entries,
+    ...(identity.kind === "model"
+      ? { pendingToolUseEntryIds: Object.freeze([] as string[]) }
+      : {}),
+  });
 }
 
 function terminal(

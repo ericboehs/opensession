@@ -23,6 +23,7 @@ const MAX_MCP_AGENT_CONTENT_BLOCKS = 64;
 const TRUNCATED = "…[truncated]";
 const OMITTED_IMAGE =
   "[image omitted: MCP result exceeded the transcript limit]";
+const DEFAULT_MCP_RUNTIME_REGISTRY_CAPACITY = 256;
 
 function fenceKey(fence: Readonly<AgentTurnFence>): string {
   return JSON.stringify([
@@ -55,6 +56,10 @@ function exactFence(value: Readonly<AgentTurnFence>): boolean {
   );
 }
 
+export interface McpTurnRuntimeRegistryOptions {
+  readonly capacity?: number;
+}
+
 export interface McpTurnRuntimeRegistration {
   /** Removes this exact turn runtime and closes it. Safe to call repeatedly. */
   close(): Promise<void>;
@@ -69,7 +74,20 @@ export interface McpTurnRuntimeRegistration {
  */
 export class McpTurnRuntimeRegistry {
   readonly #active = new Map<string, McpRuntime>();
+  readonly #entries = new Map<
+    string,
+    Readonly<{ runtime: McpRuntime; close(): Promise<void> }>
+  >();
   readonly #consumed = new Set<string>();
+  readonly #sessionKeys = new Map<string, Set<string>>();
+  readonly #capacity: number;
+
+  constructor(options: McpTurnRuntimeRegistryOptions = {}) {
+    const capacity = options.capacity ?? DEFAULT_MCP_RUNTIME_REGISTRY_CAPACITY;
+    if (!Number.isSafeInteger(capacity) || capacity <= 0)
+      throw new TypeError("invalid MCP runtime registry capacity");
+    this.#capacity = capacity;
+  }
 
   register(
     fence: Readonly<AgentTurnFence>,
@@ -79,19 +97,59 @@ export class McpTurnRuntimeRegistry {
     const key = fenceKey(fence);
     if (this.#consumed.has(key))
       throw new Error("MCP runtime already registered for this turn");
+    if (this.#consumed.size >= this.#capacity)
+      throw new Error("MCP runtime registry is full");
     this.#consumed.add(key);
+    let sessionKeys = this.#sessionKeys.get(fence.sessionId);
+    if (!sessionKeys) {
+      sessionKeys = new Set();
+      this.#sessionKeys.set(fence.sessionId, sessionKeys);
+    }
+    sessionKeys.add(key);
     this.#active.set(key, runtime);
     let closePromise: Promise<void> | undefined;
-    return Object.freeze({
+    const entry = Object.freeze({
+      runtime,
       close: () => {
-        if (!closePromise) {
-          this.#active.delete(key);
+        if (!closePromise)
           closePromise = Promise.resolve().then(() => runtime.close());
-        }
         return closePromise;
       },
     });
+    this.#entries.set(key, entry);
+    return Object.freeze({
+      close: () => {
+        if (this.#active.get(key) === runtime) this.#active.delete(key);
+        return entry.close();
+      },
+    });
   }
+
+  async deleteSession(sessionId: string): Promise<number> {
+    const keys = this.#sessionKeys.get(sessionId);
+    if (!keys) return 0;
+    const entries = [...keys].flatMap((key) => {
+      const entry = this.#entries.get(key);
+      this.#active.delete(key);
+      this.#entries.delete(key);
+      this.#consumed.delete(key);
+      return entry ? [entry] : [];
+    });
+    this.#sessionKeys.delete(sessionId);
+    await Promise.all(entries.map((entry) => entry.close()));
+    return keys.size;
+  }
+
+  async clear(): Promise<void> {
+    const entries = [...this.#entries.values()];
+    this.#active.clear();
+    this.#entries.clear();
+    this.#consumed.clear();
+    this.#sessionKeys.clear();
+    await Promise.all(entries.map((entry) => entry.close()));
+  }
+
+  get size(): number { return this.#active.size; }
 
   /** Adapter-only borrowing boundary. It transfers neither runtime nor close ownership. */
   get(fence: Readonly<AgentTurnFence>): McpRuntime | undefined {
@@ -102,6 +160,24 @@ export class McpTurnRuntimeRegistry {
 
 export type McpAgentOperationAmbiguityReason =
   "cancellation_ambiguous" | "timeout_ambiguous" | "disconnect_ambiguous";
+
+/** Explicit runtime proof that dispatch failed before the tool could run. */
+export class McpAgentOperationNoEffectError extends Error {
+  constructor() {
+    super("MCP dispatch proved no effect");
+    this.name = "McpAgentOperationNoEffectError";
+  }
+}
+
+/** Explicit runtime proof that dispatch completed and returned this exact result. */
+export class McpAgentOperationCompletedError extends Error {
+  readonly result: McpRuntimeCallResult;
+  constructor(result: McpRuntimeCallResult) {
+    super("MCP dispatch proved completed");
+    this.name = "McpAgentOperationCompletedError";
+    this.result = result;
+  }
+}
 
 export class McpAgentOperationAmbiguityError extends AgentGatewayAmbiguousExecutionError {
   declare readonly reason: McpAgentOperationAmbiguityReason;
@@ -249,21 +325,8 @@ function boundedTranscript(result: McpRuntimeCallResult): Readonly<{
   return Object.freeze({ kind: "mcp", content: Object.freeze(content) });
 }
 
-function ambiguityReason(
-  error: unknown,
-  signal: AbortSignal,
-): McpAgentOperationAmbiguityReason | undefined {
-  if (signal.aborted || (error instanceof Error && error.name === "AbortError"))
-    return "cancellation_ambiguous";
-  const text =
-    error instanceof Error ? `${error.name} ${error.message}` : String(error);
-  if (/time(?:d?\s*out|out)|deadline/i.test(text)) return "timeout_ambiguous";
-  if (
-    /disconnect|connection (?:closed|lost|reset)|socket|broken pipe|econnreset|eof/i.test(
-      text,
-    )
-  )
-    return "disconnect_ambiguous";
+function ambiguityReason(signal: AbortSignal): McpAgentOperationAmbiguityReason {
+  return signal.aborted ? "cancellation_ambiguous" : "disconnect_ambiguous";
 }
 
 function terminalResult(
@@ -345,20 +408,26 @@ export function createMcpAgentOperationAdapter(
       );
       if (matches.length !== 1) return failedResult();
 
+      let result: McpRuntimeCallResult;
       try {
-        const result = await runtime.callExact(matches[0]!.id, args, {
+        result = await runtime.callExact(matches[0]!.id, args, {
           toolCallId: descriptor.toolUseId,
           signal,
         });
-        return Object.freeze({
-          outcome: Object.freeze({ status: "succeeded", code: "ok" }),
-          transcript: boundedTranscript(result),
-        });
       } catch (error) {
-        const reason = ambiguityReason(error, signal);
-        if (reason) throw new McpAgentOperationAmbiguityError(reason);
-        return failedResult();
+        if (error instanceof McpAgentOperationNoEffectError)
+          return failedResult();
+        if (error instanceof McpAgentOperationCompletedError)
+          result = error.result;
+        else if (error instanceof McpAgentOperationAmbiguityError)
+          throw error;
+        else
+          throw new McpAgentOperationAmbiguityError(ambiguityReason(signal));
       }
+      return Object.freeze({
+        outcome: Object.freeze({ status: "succeeded", code: "ok" }),
+        transcript: boundedTranscript(result),
+      });
     },
   });
 }

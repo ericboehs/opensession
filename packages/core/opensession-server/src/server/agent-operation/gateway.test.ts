@@ -17,6 +17,7 @@ import {
 import {
   AgentGatewayAmbiguousExecutionError,
   AgentOperationGateway,
+  authenticateAgentGatewayDecodedPayload,
   type AgentGatewayFailpoint,
   type AgentGatewayLiveEventSink,
 } from "./gateway";
@@ -28,7 +29,7 @@ afterEach(() => {
     rmSync(root, { recursive: true, force: true });
 });
 const d = (c: string) => `sha256:${c.repeat(64)}` as const;
-const bytes = new TextEncoder().encode("payload");
+const bytes = new TextEncoder().encode(JSON.stringify("payload"));
 const authority: AgentHostSupervisionAuthorityV2 = {
   version: 2,
   fence: {
@@ -158,7 +159,7 @@ async function fixture(
     }),
     decodePayload: (kind, payload) => {
       if (kind !== "model" || payload !== "payload") return undefined;
-      return Object.freeze({ kind, value: payload, canonicalBytes: bytes });
+      return authenticateAgentGatewayDecodedPayload({ kind, value: payload, canonicalBytes: bytes });
     },
     appendTerminal: async () => {
       lifecycle?.onAppend?.();
@@ -168,10 +169,10 @@ async function fixture(
     beginLiveExecution: lifecycle?.begin
       ? (record) => lifecycle.begin!(record.receipt.state)
       : undefined,
-    appendIndeterminateNotice: async (record, appendId) => {
+    appendIndeterminate: async (record, reservation) => {
       notices++;
       return terminal(
-        appendId,
+        reservation.reservationId,
         d("f"),
         record.terminalReservation?.reason ?? "reconciliation_unsupported",
       ).kernelTerminal;
@@ -291,13 +292,11 @@ async function mcpFixture(options?: {
       },
     }),
     decodePayload: (kind, payload) =>
-      Object.freeze({
+      authenticateAgentGatewayDecodedPayload({
         kind: kind as "mcp",
         value:
           options && "decodedValue" in options ? options.decodedValue : payload,
         canonicalBytes: payloadBytes,
-        canonicalArgumentsBytes:
-          options?.canonicalArgumentsBytes ?? argumentsBytes,
       }),
     resolveTranscriptAnchor: async (resolvedRequest, toolUseEntryId) => {
       resolverCalls++;
@@ -317,7 +316,7 @@ async function mcpFixture(options?: {
         },
       };
     },
-    appendIndeterminateNotice: async () => {
+    appendIndeterminate: async () => {
       throw new Error("unexpected recovery");
     },
   });
@@ -537,7 +536,7 @@ describe("Agent operation gateway durable choreography", () => {
     });
     await expect(
       f.gateway.dispatch(f.request, { arguments: {} }),
-    ).rejects.toThrow("arguments digest mismatch");
+    ).rejects.toThrow("invalid payload");
     expect(f.counts()).toEqual({ admits: 0, executions: 0, resolverCalls: 0 });
     await f.ledger.close();
   });
@@ -563,7 +562,7 @@ describe("Agent operation gateway durable choreography", () => {
     for (const payload of [getterPayload, proxyPayload]) {
       const f = await mcpFixture({ decodedValue: payload });
       await expect(f.gateway.dispatch(f.request, payload)).rejects.toThrow(
-        "invalid decoded payload",
+        "invalid payload",
       );
       expect(f.counts()).toEqual({
         admits: 0,
@@ -584,7 +583,7 @@ describe("Agent operation gateway durable choreography", () => {
       },
     });
     await expect(
-      f.gateway.dispatch(f.request, { arguments: {} }),
+      f.gateway.dispatch(f.request, { arguments: { query: "safe" } }),
     ).rejects.toThrow();
     expect(f.counts()).toEqual({ admits: 0, executions: 0, resolverCalls: 1 });
     await f.ledger.close();

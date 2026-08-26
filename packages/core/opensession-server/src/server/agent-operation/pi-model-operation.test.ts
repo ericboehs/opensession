@@ -65,6 +65,35 @@ describe("Pi model invocation reference and registry", () => {
     expect(() => hashPiModelInvocationV1(new Uint8Array(MAX_PI_MODEL_INVOCATION_BYTES + 1))).toThrow("byte limit");
   });
 
+  test("rejects invocation and receipt-byte mismatch before retaining private material", () => {
+    const registry = new PiModelInvocationRegistry({ now: () => 1_000 });
+    expect(() => registry.register(input({
+      canonicalBytes: new TextEncoder().encode('{"prompt":"different"}'),
+    }))).toThrow("do not encode executable value");
+    expect(registry.size).toBe(0);
+  });
+
+  test("rejects invocation Proxies without executing their traps", () => {
+    let traps = 0;
+    const proxied = new Proxy(Object.freeze({ prompt: "private" }), {
+      getPrototypeOf() {
+        traps++;
+        throw new Error("proxy trap executed");
+      },
+      ownKeys() {
+        traps++;
+        throw new Error("proxy trap executed");
+      },
+    });
+    const registry = new PiModelInvocationRegistry({ now: () => 1_000 });
+    expect(() => registry.register(input({
+      invocation: proxied,
+      canonicalBytes: new TextEncoder().encode('{"prompt":"private"}'),
+    }))).toThrow("proxy");
+    expect(traps).toBe(0);
+    expect(registry.size).toBe(0);
+  });
+
   test("peek is non-consuming and consume is exactly once", () => {
     const registry = new PiModelInvocationRegistry({ now: () => 1_000 });
     const owner = registry.register(input());

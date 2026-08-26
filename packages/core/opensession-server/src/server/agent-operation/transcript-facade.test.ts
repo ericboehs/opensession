@@ -128,13 +128,13 @@ describe("Agent operation transcript destination facade", () => {
   test("uses reservation-derived append identity and authenticates before any callback", async () => {
     const f = fixture();
     try {
-      const good = await f.facade.appendIndeterminate(f.who, reservation, adapter(freeze({ status: "failed", code: reservation.reason }) as unknown as AgentOperationOutcomeV1));
+      const good = await f.facade.appendIndeterminate(f.who, reservation);
       expect(good.refs[0]?.appendId).toMatch(/^agent-indeterminate:[a-f0-9]{64}$/);
       expect(good.refs[0]?.appendId).not.toContain(f.who.operationId);
       const forged = freeze({ ...reservation, reservationId: `reservation:${"b".repeat(64)}` });
       const before = f.counts();
       const rejecting = f.facadeFor(f.store, async () => undefined);
-      await expect(rejecting.appendIndeterminate(f.who, forged, adapter())).rejects.toBeInstanceOf(AgentTranscriptReservationAuthenticationError);
+      await expect(rejecting.appendIndeterminate(f.who, forged)).rejects.toBeInstanceOf(AgentTranscriptReservationAuthenticationError);
       expect(f.counts()).toEqual(before);
     } finally { cleanup(f); }
   });

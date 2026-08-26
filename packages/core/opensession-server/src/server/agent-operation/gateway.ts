@@ -1,3 +1,4 @@
+import { types as utilTypes } from "node:util";
 import {
   decodeAgentOperationRequestV1,
   hashAgentMcpArgumentsV1,
@@ -84,7 +85,7 @@ export type AgentGatewayDecodedPayload =
       kind: "model";
       value: unknown;
       canonicalBytes: Uint8Array;
-      /** Trusted decoders may retain an already-validated immutable private capability. */
+      /** Gateway-issued proof that canonicalBytes encode the exact private invocation. */
       retainValueIdentity?: true;
     }>
   | Readonly<{
@@ -93,6 +94,50 @@ export type AgentGatewayDecodedPayload =
       canonicalBytes: Uint8Array;
       canonicalArgumentsBytes: Uint8Array;
     }>;
+
+const authenticatedDecodedPayloads = new WeakSet<object>();
+const canonicalEncoder = new TextEncoder();
+
+/**
+ * The sole codec for executable Agent-operation values. It snapshots without
+ * invoking accessors, emits deterministic JSON, and byte-compares caller proof.
+ * For private model capabilities, receiptValue is the invocation while value is
+ * the opaque adapter payload that closes over that exact snapshotted invocation.
+ */
+export function authenticateAgentGatewayDecodedPayload(input: Readonly<{
+  kind: "model" | "mcp";
+  value: unknown;
+  canonicalBytes: Uint8Array;
+  receiptValue?: unknown;
+  retainValueIdentity?: true;
+}>): AgentGatewayDecodedPayload {
+  if (!(input.canonicalBytes instanceof Uint8Array))
+    throw new TypeError("invalid canonical payload bytes");
+  const receiptSnapshot = immutableSnapshot(
+    input.receiptValue === undefined ? input.value : input.receiptValue,
+  );
+  const canonicalBytes = canonicalEncoder.encode(canonicalJson(receiptSnapshot));
+  if (!equalBytes(canonicalBytes, input.canonicalBytes))
+    throw new TypeError("canonical payload bytes do not encode executable value");
+  const value = input.retainValueIdentity
+    ? validateDecodedValue(input.value)
+    : receiptSnapshot;
+  const decoded = input.kind === "mcp"
+    ? Object.freeze({
+        kind: "mcp" as const,
+        value,
+        canonicalBytes,
+        canonicalArgumentsBytes: canonicalMcpArguments(value),
+      })
+    : Object.freeze({
+        kind: "model" as const,
+        value,
+        canonicalBytes,
+        ...(input.retainValueIdentity ? { retainValueIdentity: true as const } : {}),
+      });
+  authenticatedDecodedPayloads.add(decoded);
+  return decoded;
+}
 export interface AgentGatewayTranscriptTerminal {
   readonly refs: readonly AgentTranscriptReceiptRefV1[];
   readonly kernelTerminal: Readonly<AgentOperationKernelTerminalV1>;
@@ -126,9 +171,9 @@ export interface AgentOperationGatewayOptions {
     identity: AgentOperationIdentity,
     result: AgentGatewayAdapterResult,
   ) => Promise<AgentGatewayTranscriptTerminal>;
-  readonly appendIndeterminateNotice: (
+  readonly appendIndeterminate: (
     record: AgentOperationRecord,
-    appendId: string,
+    reservation: Readonly<AgentOperationTerminalReservation>,
   ) => Promise<AgentOperationKernelTerminalV1>;
   /** Optional and production-unwired. Resolves only after Host transport acknowledgement. */
   readonly beginLiveExecution?: (
@@ -187,13 +232,7 @@ export class AgentOperationGateway {
             record,
             this.#options.reconcilerFor?.(record),
             async (authenticated, reservation) =>
-              this.#options.appendIndeterminateNotice(
-                authenticated,
-                indeterminateAppendId(
-                  authenticated.operationId,
-                  reservation.reservationId,
-                ),
-              ),
+              this.#options.appendIndeterminate(authenticated, reservation),
             this.#now(),
           );
           if (
@@ -236,6 +275,7 @@ export class AgentOperationGateway {
     if (
       !decoded ||
       decoded.kind !== request.kind ||
+      !authenticatedDecodedPayloads.has(decoded as object) ||
       !(decoded.canonicalBytes instanceof Uint8Array) ||
       (decoded.kind === "mcp" &&
         !(decoded.canonicalArgumentsBytes instanceof Uint8Array))
@@ -391,12 +431,9 @@ export class AgentOperationGateway {
       throw new AgentOperationConflictError(
         "agent operation terminal reservation mismatch",
       );
-    const terminal = await this.#options.appendIndeterminateNotice(
+    const terminal = await this.#options.appendIndeterminate(
       authenticated,
-      indeterminateAppendId(
-        authenticated.operationId,
-        authenticated.terminalReservation.reservationId,
-      ),
+      authenticated.terminalReservation,
     );
     const settled = await this.#options.ledger.markIndeterminate(
       authenticated,
@@ -471,6 +508,36 @@ export class AgentOperationGateway {
   }
 }
 
+function equalBytes(left: Uint8Array, right: Uint8Array): boolean {
+  if (left.byteLength !== right.byteLength) return false;
+  let difference = 0;
+  for (let index = 0; index < left.byteLength; index++)
+    difference |= left[index]! ^ right[index]!;
+  return difference === 0;
+}
+
+function canonicalJson(value: unknown): string {
+  if (value === null || typeof value !== "object") return JSON.stringify(value);
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
+  const record = value as Record<string, unknown>;
+  return `{${Object.keys(record).map((key) =>
+    `${JSON.stringify(key)}:${canonicalJson(record[key])}`
+  ).join(",")}}`;
+}
+
+function canonicalMcpArguments(value: unknown): Uint8Array {
+  if (!value || typeof value !== "object" || Array.isArray(value))
+    throw new TypeError("invalid MCP payload");
+  const descriptors = Object.getOwnPropertyDescriptors(value);
+  const keys = Reflect.ownKeys(descriptors);
+  const argument = descriptors.arguments;
+  if (
+    keys.length !== 1 || keys[0] !== "arguments" || !argument ||
+    !("value" in argument) || !argument.enumerable
+  ) throw new TypeError("invalid MCP payload");
+  return canonicalEncoder.encode(canonicalJson(argument.value));
+}
+
 function validateDecodedValue(value: unknown): unknown {
   immutableSnapshot(value);
   // structuredClone rejects Proxy objects. Run it only after the descriptor walk,
@@ -485,6 +552,8 @@ function snapshotDecodedValue(value: unknown): unknown {
 }
 
 function immutableSnapshot(value: unknown): unknown {
+  if (value && typeof value === "object" && utilTypes.isProxy(value))
+    throw new TypeError("invalid decoded payload proxy");
   if (
     value === null ||
     typeof value === "string" ||
@@ -617,9 +686,6 @@ function guardedLiveEventSink(
       await sink.fail(reason);
     },
   });
-}
-function indeterminateAppendId(operationId: string, reservationId: string) {
-  return `agent-indeterminate:${operationId}:${reservationId}`;
 }
 function synthetic(identity: AgentOperationIdentity): AgentOperationRecord {
   return {

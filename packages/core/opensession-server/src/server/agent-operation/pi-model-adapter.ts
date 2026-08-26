@@ -27,6 +27,7 @@ export const PI_MODEL_AGENT_OPERATION_ADAPTER_VERSION = "1.0";
 export const PI_MODEL_AGENT_OPERATION_REQUEST_VERSION = "v1";
 
 const REF = /^[A-Za-z0-9_-]{43}$/;
+const DEFAULT_BINDING_REGISTRY_CAPACITY = 256;
 
 function fenceKey(fence: Readonly<AgentTurnFence>): string {
   return JSON.stringify([
@@ -77,6 +78,10 @@ export interface PiRuntimeBindingRegistrationInput {
   readonly modelIdentity: Readonly<{ provider: string; id: string }>;
 }
 
+export interface PiRuntimeBindingRegistryOptions {
+  readonly capacity?: number;
+}
+
 export interface PiRuntimeBindingRegistration {
   /** Owner-only removal capability. Safe to repeat. */
   close(): boolean;
@@ -86,6 +91,15 @@ export interface PiRuntimeBindingRegistration {
 export class PiRuntimeBindingRegistry {
   readonly #active = new Map<string, BindingEntry>();
   readonly #used = new Set<string>();
+  readonly #sessionKeys = new Map<string, Set<string>>();
+  readonly #capacity: number;
+
+  constructor(options: PiRuntimeBindingRegistryOptions = {}) {
+    const capacity = options.capacity ?? DEFAULT_BINDING_REGISTRY_CAPACITY;
+    if (!Number.isSafeInteger(capacity) || capacity <= 0)
+      throw new TypeError("invalid Pi binding registry capacity");
+    this.#capacity = capacity;
+  }
 
   register(input: PiRuntimeBindingRegistrationInput): PiRuntimeBindingRegistration {
     if (!exactFence(input.fence) || !REF.test(input.bindingRef))
@@ -98,6 +112,8 @@ export class PiRuntimeBindingRegistry {
     ) throw new Error("Pi binding model identity mismatch");
     const key = `${fenceKey(input.fence)}\0${input.bindingRef}`;
     if (this.#used.has(key)) throw new Error("Pi binding already registered");
+    if (this.#used.size >= this.#capacity)
+      throw new Error("Pi binding registry is full");
     const entry = Object.freeze({
       binding: input.binding,
       descriptorDigest: input.descriptorDigest,
@@ -106,6 +122,12 @@ export class PiRuntimeBindingRegistry {
       modelId: input.modelIdentity.id,
     });
     this.#used.add(key);
+    let sessionKeys = this.#sessionKeys.get(input.fence.sessionId);
+    if (!sessionKeys) {
+      sessionKeys = new Set();
+      this.#sessionKeys.set(input.fence.sessionId, sessionKeys);
+    }
+    sessionKeys.add(key);
     this.#active.set(key, entry);
     let closed = false;
     return Object.freeze({
@@ -116,6 +138,25 @@ export class PiRuntimeBindingRegistry {
       },
     });
   }
+
+  deleteSession(sessionId: string): number {
+    const keys = this.#sessionKeys.get(sessionId);
+    if (!keys) return 0;
+    for (const key of keys) {
+      this.#active.delete(key);
+      this.#used.delete(key);
+    }
+    this.#sessionKeys.delete(sessionId);
+    return keys.size;
+  }
+
+  clear(): void {
+    this.#active.clear();
+    this.#used.clear();
+    this.#sessionKeys.clear();
+  }
+
+  get size(): number { return this.#active.size; }
 
   get(
     fence: Readonly<AgentTurnFence>,

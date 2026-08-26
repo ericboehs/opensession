@@ -7,9 +7,10 @@ import {
   AgentGatewayGrantRegistry,
   type AgentGatewayGrantRegistryOptions,
 } from "./grants";
-import type {
-  AgentGatewayDecodedPayload,
-  AgentOperationGatewayOptions,
+import {
+  authenticateAgentGatewayDecodedPayload,
+  type AgentGatewayDecodedPayload,
+  type AgentOperationGatewayOptions,
 } from "./gateway";
 import { AgentOperationKernelFacade } from "./kernel-facade";
 import {
@@ -18,6 +19,7 @@ import {
   MCP_AGENT_OPERATION_ADAPTER_VERSION,
   MCP_AGENT_OPERATION_RECONCILER,
   McpTurnRuntimeRegistry,
+  type McpTurnRuntimeRegistryOptions,
 } from "./mcp-adapter";
 import {
   createPiModelAgentOperationAdapter,
@@ -26,6 +28,7 @@ import {
   PI_MODEL_AGENT_OPERATION_RECONCILER,
   PiRuntimeBindingRegistry,
   type PiBoundModelExecutor,
+  type PiRuntimeBindingRegistryOptions,
 } from "./pi-model-adapter";
 import {
   decodePiModelGatewayPayload,
@@ -57,6 +60,7 @@ type ServiceGatewayOptions = Omit<
   | "adapterFor"
   | "decodePayload"
   | "appendTerminal"
+  | "appendIndeterminate"
   | "reconcilerFor"
   | "beginLiveExecution"
   | "verifySupervision"
@@ -73,9 +77,14 @@ export interface AgentOperationCompositionOptions {
   readonly ledger: SQLiteAgentOperationLedgerOptions;
   readonly grants?: AgentGatewayGrantRegistryOptions;
   readonly actor: ActorClient;
-  readonly transcript: AgentOperationTranscriptFacadeOptions;
+  readonly transcript: Omit<
+    AgentOperationTranscriptFacadeOptions,
+    "authenticateReservation"
+  >;
   readonly piExecutor: PiBoundModelExecutor;
   readonly piInvocations?: PiModelInvocationRegistryOptions;
+  readonly piBindings?: PiRuntimeBindingRegistryOptions;
+  readonly mcpRuntimes?: McpTurnRuntimeRegistryOptions;
   /** Strict turn-owned MCP decoder. It must return canonical full-payload and arguments bytes. */
   readonly decodeMcpPayload: (
     payload: unknown,
@@ -97,10 +106,13 @@ export interface AgentOperationReadinessFeed {
   readonly boundedRegistries: Readonly<{
     gatewayGrants: true;
     gatewayOperations: true;
+    piInvocations: true;
+    piBindings: true;
+    mcpRuntimes: true;
   }>;
   readonly infrastructureFallback: false;
   readonly capabilities: Readonly<{
-    deletion: true;
+    deletion: boolean;
     recovery: true;
     streamAck: true;
   }>;
@@ -126,10 +138,22 @@ export class AgentOperationComposition {
     this.ledger = new SQLiteAgentOperationLedger(options.ledger);
     this.grants = new AgentGatewayGrantRegistry(options.grants);
     this.kernel = new AgentOperationKernelFacade(options.actor);
-    this.transcript = new AgentOperationTranscriptFacade(options.transcript);
-    this.piBindings = new PiRuntimeBindingRegistry();
+    this.transcript = new AgentOperationTranscriptFacade({
+      ...options.transcript,
+      authenticateReservation: async (identity, reservation) => {
+        const record = await this.ledger.getExact(identity);
+        const durable = record?.terminalReservation;
+        return record?.receipt.state === "executing" && durable &&
+            durable.reservationId === reservation.reservationId &&
+            durable.reason === reservation.reason &&
+            durable.reservedAtMs === reservation.reservedAtMs
+          ? durable
+          : undefined;
+      },
+    });
+    this.piBindings = new PiRuntimeBindingRegistry(options.piBindings);
     this.piInvocations = new PiModelInvocationRegistry(options.piInvocations);
-    this.mcpRuntimes = new McpTurnRuntimeRegistry();
+    this.mcpRuntimes = new McpTurnRuntimeRegistry(options.mcpRuntimes);
 
     const piAdapter = createPiModelAgentOperationAdapter(
       this.piBindings,
@@ -152,6 +176,9 @@ export class AgentOperationComposition {
 
     const closeOwners = [
       () => this.hostClient.close(),
+      () => this.mcpRuntimes.clear(),
+      () => this.piInvocations.clear(),
+      () => this.piBindings.clear(),
       () => this.ledger.close(),
     ] as const;
     service = new AgentOperationService({
@@ -165,7 +192,12 @@ export class AgentOperationComposition {
         decodePayload: (kind, payload, request) => {
           if (kind === "mcp") {
             const decoded = options.decodeMcpPayload(payload);
-            return decoded?.kind === "mcp" ? decoded : undefined;
+            if (decoded?.kind !== "mcp") return undefined;
+            return authenticateAgentGatewayDecodedPayload({
+              kind: "mcp",
+              value: decoded.value,
+              canonicalBytes: decoded.canonicalBytes,
+            });
           }
           const reference = decodePiModelOperationReferenceV1(payload);
           if (!reference) return undefined;
@@ -182,6 +214,8 @@ export class AgentOperationComposition {
         },
         appendTerminal: (identity, result) =>
           this.transcript.appendTerminal(identity, result),
+        appendIndeterminate: async (identity, reservation) =>
+          (await this.transcript.appendIndeterminate(identity, reservation)).kernelTerminal,
         reconcilerFor: (record) => {
           if (
             record.adapterId === PI_MODEL_AGENT_OPERATION_ADAPTER_ID &&
@@ -212,6 +246,21 @@ export class AgentOperationComposition {
     return this.service.start();
   }
 
+  async deleteSession(sessionId: string): Promise<Readonly<{
+    plans: number;
+    invocations: number;
+    bindings: number;
+    mcpRuntimes: number;
+    ledgerRows: number;
+  }>> {
+    const plans = await this.service.deleteSession(sessionId);
+    const invocations = this.piInvocations.deleteSession(sessionId);
+    const bindings = this.piBindings.deleteSession(sessionId);
+    const mcpRuntimes = await this.mcpRuntimes.deleteSession(sessionId);
+    const ledgerRows = await this.ledger.deleteSession(sessionId);
+    return Object.freeze({ plans, invocations, bindings, mcpRuntimes, ledgerRows });
+  }
+
   close(): Promise<void> {
     return this.service.close();
   }
@@ -227,10 +276,13 @@ export class AgentOperationComposition {
       boundedRegistries: Object.freeze({
         gatewayGrants: true as const,
         gatewayOperations: true as const,
+        piInvocations: true as const,
+        piBindings: true as const,
+        mcpRuntimes: true as const,
       }),
       infrastructureFallback: false as const,
       capabilities: Object.freeze({
-        deletion: true as const,
+        deletion: !health.failed && !health.closing,
         recovery: true as const,
         streamAck: true as const,
       }),
