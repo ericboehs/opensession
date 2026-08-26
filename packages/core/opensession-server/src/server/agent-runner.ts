@@ -320,7 +320,10 @@ function recordPoolDryShortCircuit(opts: RunAgentOpts, model: string, reason: st
 }
 
 
-function runOnModel(opts: RunAgentOpts, model: string | undefined): AsyncIterable<StreamEvent> {
+async function* runOnModel(
+  opts: RunAgentOpts,
+  model: string | undefined,
+): AsyncGenerator<StreamEvent> {
   // All production turns route to Pi. The fake seam stays before dispatch so
   // consumer tests exercise the same context logging and fallback walk.
   const requested = model || getDefaultModel();
@@ -344,7 +347,7 @@ function runOnModel(opts: RunAgentOpts, model: string | undefined): AsyncIterabl
   // for EVERY engine — the direct SDK adapters assemble their own tool lists
   // and would each need their own call otherwise. What the runner adds below
   // it (`mcp-servers`) is the resolution of this scope, not a second copy.
-  logStandingJson({
+  await logStandingJson({
     sessionId: opts.journal?.osSessionId || opts.transcriptSessionId,
     turnId: opts.promptEntryId || opts.startToken,
     source: "tools",
@@ -365,9 +368,12 @@ function runOnModel(opts: RunAgentOpts, model: string | undefined): AsyncIterabl
       localWorkspaceToolsDisabled: !!opts.disableLocalWorkspaceTools,
     },
   });
-  if (engineForTest) return engineForTest(opts, mapped);
+  if (engineForTest) {
+    yield* engineForTest(opts, mapped);
+    return;
+  }
   const route = routeModel(requested, { interactive: isInteractiveRun(opts) });
-  return runPi(opts, route.model);
+  yield* runPi(opts, route.model);
 }
 
 /** Pi owns every live engine session transcript. */

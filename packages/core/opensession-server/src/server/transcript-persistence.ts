@@ -130,10 +130,10 @@ async function appendLines(engineSessionId: string, lines: JsonlLine[]): Promise
   }
 }
 
-export function storeAppendUserLineEarly(
+export async function storeAppendUserLineEarly(
   sessionId: string,
   line: Record<string, unknown>,
-): void {
+): Promise<void> {
   if (!sessionId) return;
   const forward = transcriptForwarder();
   if (forward) {
@@ -142,11 +142,7 @@ export function storeAppendUserLineEarly(
   }
   try {
     const entries = parseJsonlLines([JSON.stringify(line)]);
-    if (entries.length) {
-      void appendTranscriptEvents(sessionId, entries).catch((error) => {
-        warnFailureOnce(sessionId, `[transcript] early user-line persist failed for ${sessionId}`, error);
-      });
-    }
+    if (entries.length) await appendTranscriptEvents(sessionId, entries);
   } catch (error) {
     warnFailureOnce(sessionId, `[transcript] early user-line persist failed for ${sessionId}`, error);
   }

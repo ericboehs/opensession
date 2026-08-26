@@ -868,18 +868,89 @@ function migrateTranscriptAuthoritySchema31(
 ): void {
   if (schemaVersion >= 31) return;
   const tx = db.transaction(() => {
+    type Column = {
+      name: string;
+      type: string;
+      notnull: number;
+      dflt_value: string | null;
+    };
+    const columns = new Map(
+      (db.query("PRAGMA table_info(session_kernel_placements)").all() as Column[])
+        .map((column) => [column.name, column]),
+    );
+    const authority = columns.get("transcript_authority");
+    if (!authority) {
+      db.exec(`
+        ALTER TABLE session_kernel_placements
+          ADD COLUMN transcript_authority TEXT NOT NULL DEFAULT 'shared'
+          CHECK (transcript_authority IN ('shared', 'actor'));
+      `);
+    } else if (
+      authority.type !== "TEXT" ||
+      authority.notnull !== 1 ||
+      authority.dflt_value !== "'shared'"
+    ) {
+      throw new Error("Schema 31 requires exact transcript authority storage");
+    }
+
+    const receipt = columns.get("transcript_migration_receipt");
+    if (!receipt) {
+      db.exec(`
+        ALTER TABLE session_kernel_placements
+          ADD COLUMN transcript_migration_receipt TEXT;
+      `);
+    } else if (
+      receipt.type !== "TEXT" ||
+      receipt.notnull !== 0 ||
+      receipt.dflt_value !== null
+    ) {
+      throw new Error("Schema 31 requires exact transcript migration receipts");
+    }
+
+    const published = columns.get("transcript_published_at");
+    if (!published) {
+      db.exec(`
+        ALTER TABLE session_kernel_placements
+          ADD COLUMN transcript_published_at INTEGER;
+      `);
+    } else if (
+      published.type !== "INTEGER" ||
+      published.notnull !== 0 ||
+      published.dflt_value !== null
+    ) {
+      throw new Error("Schema 31 requires exact transcript publication storage");
+    }
+
+    const placementSql = (
+      db.query(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name='session_kernel_placements'",
+      ).get() as { sql: string } | null
+    )?.sql;
+    if (
+      !placementSql ||
+      !/CHECK\s*\(\s*transcript_authority\s+IN\s*\(\s*'shared'\s*,\s*'actor'\s*\)\s*\)/i.test(
+        placementSql,
+      )
+    ) {
+      throw new Error("Schema 31 requires constrained transcript authority storage");
+    }
+
     db.exec(`
-      ALTER TABLE session_kernel_placements
-        ADD COLUMN transcript_authority TEXT NOT NULL DEFAULT 'shared'
-        CHECK (transcript_authority IN ('shared', 'actor'));
-      ALTER TABLE session_kernel_placements
-        ADD COLUMN transcript_migration_receipt TEXT;
-      ALTER TABLE session_kernel_placements
-        ADD COLUMN transcript_published_at INTEGER;
-      CREATE INDEX idx_skp_transcript_authority
+      CREATE INDEX IF NOT EXISTS idx_skp_transcript_authority
         ON session_kernel_placements(transcript_authority, session_id);
-      PRAGMA user_version = 31;
+
     `);
+    const indexColumns = db
+      .query("PRAGMA index_info(idx_skp_transcript_authority)")
+      .all() as Array<{ seqno: number; name: string }>;
+    if (
+      indexColumns.length !== 2 ||
+      indexColumns[0]?.name !== "transcript_authority" ||
+      indexColumns[1]?.name !== "session_id"
+    ) {
+      throw new Error("Schema 31 requires exact transcript authority index");
+    }
+    db.exec("PRAGMA user_version = 31");
   });
   tx.immediate();
 }

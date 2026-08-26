@@ -2011,7 +2011,7 @@ async function* runPiAttempt(
     // record is the only account of it (previous runner's equivalent can be read
     // back from its config file). Recorded once per session, then again only
     // when the content hash moves.
-    logStandingJson({
+    await logStandingJson({
       sessionId: unifiedSessionId,
       turnId: opts.promptEntryId || opts.startToken,
       source: "mcp-servers",
@@ -2035,7 +2035,7 @@ async function* runPiAttempt(
         ...(dialOracleAgent ? { oracleTool: dialOracleAgent } : {}),
       },
     });
-    logStandingContext({
+    await logStandingContext({
       sessionId: unifiedSessionId,
       turnId: opts.promptEntryId || opts.startToken,
       source: "instructions",
@@ -2167,7 +2167,7 @@ async function* runPiAttempt(
     // answers what preceded the session's initial message.
     if (!opts.sessionId) {
       const activeToolNames = new Set(session.getActiveToolNames());
-      logStandingContext({
+      await logStandingContext({
         sessionId: unifiedSessionId,
         turnId: opts.promptEntryId || opts.startToken,
         source: "session-start",
