@@ -217,6 +217,10 @@ describe("single session ownership", () => {
     const queuedSteer = read("queued-steer.ts");
     expect(queuedSteer).toContain("await deps.prepare(");
     expect(queuedSteer).toContain("steerAgentRunToken");
+    expect(queuedSteer).toContain("interruptAndSteerAgentRunToken");
+    const runSession = read("run-session.ts");
+    expect(runSession).toContain("await prepareAndInterruptQueuedPrompt({");
+    expect(runSession).not.toContain("!interruptAndSteerAgentRun(");
 	});
 
 	test("sandbox prompts are visible before remote startup can fail", () => {
@@ -253,6 +257,15 @@ describe("single session ownership", () => {
 		const entry = read("../../opensession.ts");
 		expect(entry.indexOf("await startSessionKernelActor()")).toBeLessThan(
 			entry.indexOf("initHumanAsks()"),
+		);
+		expect(entry).toContain("await restorePendingAsks()");
+		expect(entry).toContain("await hydratePersistedQueueState()");
+		expect(entry).toContain("await restorePromptQueues(new Set(resumedIds))");
+		const queueRestore = entry.indexOf(
+			"await restorePromptQueues(new Set(resumedIds))",
+		);
+		expect(queueRestore).toBeLessThan(
+			entry.indexOf("reconcileSessionKernelOwnership(", queueRestore),
 		);
 		const actor = read("session-kernel/actor-worker.ts");
 		expect(actor).toContain("const host = new SessionKernelStoreHost()");

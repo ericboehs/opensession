@@ -1042,10 +1042,18 @@ export function interruptAndSteerAgentRun(
   images?: ImageInput[]
 ): boolean {
   for (const id of ids) {
-    if (!id) continue;
-    if (hostInterruptSteer(id, text, images)) return true;
+    if (id && interruptAndSteerAgentRunToken(id, text, images)) return true;
   }
   return false;
+}
+
+/** Interrupt and steer one immutable dispatch token, never a reusable alias. */
+export function interruptAndSteerAgentRunToken(
+  runToken: string,
+  text: string,
+  images?: ImageInput[],
+): boolean {
+  return hostInterruptSteer(runToken, text, images);
 }
 
 /** Immutable dispatch identity for the run currently admitted under an alias.

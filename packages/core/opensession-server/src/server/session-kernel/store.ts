@@ -109,6 +109,12 @@ export interface DurableTimer {
 	createdAt: number;
 }
 
+export type DurableSteerTarget = {
+  token: string;
+  runId: string;
+  generation: number;
+};
+
 export type DurableDeliveryState = {
   revision: number;
   queued: unknown[];
@@ -123,7 +129,12 @@ export type DurableDeliveryState = {
     source?: { slot: "steered"; index: number };
   };
   steered: unknown[];
-  pendingSteers: Array<{ item: unknown; index: number; preparedAt: number }>;
+  pendingSteers: Array<{
+    item: unknown;
+    index: number;
+    preparedAt: number;
+    target?: DurableSteerTarget;
+  }>;
   updatedAt: number;
 };
 
@@ -3347,7 +3358,7 @@ export class SessionKernelStore {
       interrupt: parsed(row.interrupt as string | null),
       steered: parsed<unknown[]>(String(row.steered)) ?? [],
       pendingSteers:
-        parsed<Array<{ item: unknown; index: number; preparedAt: number }>>(
+        parsed<DurableDeliveryState["pendingSteers"]>(
           String(row.pending_steers),
         ) ?? [],
       updatedAt: Number(row.updated_at),
@@ -3704,9 +3715,15 @@ export class SessionKernelStore {
   prepareSteerDelivery(
     sessionId: string,
     itemId: string,
+    target: DurableSteerTarget,
     directItem?: unknown,
   ): unknown | undefined {
     return this.mutateDelivery(sessionId, "delivery_steer_prepared", (state) => {
+      const run = this.runState(sessionId);
+      if (
+        run.currentRunId !== target.runId ||
+        run.generation !== target.generation
+      ) return undefined;
       const queue = state.queued as Array<{ id?: string }>;
       const index = queue.findIndex((item) => item.id === itemId);
       if (index < 0 && directItem === undefined) return undefined;
@@ -3721,48 +3738,62 @@ export class SessionKernelStore {
         item,
         index: index >= 0 ? index : 0,
         preparedAt: Date.now(),
+        target,
       });
       return item;
     }).result;
   }
 
-  acceptSteerDelivery(sessionId: string, itemId: string): boolean {
-    const current = this.deliveryRow(sessionId).pendingSteers.find(
-      (pending) => (pending.item as { id?: string }).id === itemId,
-    );
-    if (!current) return false;
-    this.mutateDelivery(sessionId, "delivery_steer_accepted", (state) => {
+  acceptSteerDelivery(
+    sessionId: string,
+    itemId: string,
+    target: DurableSteerTarget,
+  ): boolean {
+    return this.mutateDelivery(sessionId, "delivery_steer_accepted", (state) => {
+      const run = this.runState(sessionId);
+      if (
+        run.currentRunId !== target.runId ||
+        run.generation !== target.generation
+      ) return false;
       const index = state.pendingSteers.findIndex(
-        (pending) => (pending.item as { id?: string }).id === itemId,
+        (pending) =>
+          (pending.item as { id?: string }).id === itemId &&
+          pending.target?.token === target.token &&
+          pending.target.runId === target.runId &&
+          pending.target.generation === target.generation,
       );
-      if (index < 0) throw new Error("Pending steer changed before acceptance");
+      if (index < 0) return false;
       const [pending] = state.pendingSteers.splice(index, 1);
       state.steered.push({
         ...(pending.item as Record<string, unknown>),
         steeredAt: Date.now(),
       });
-    });
-    return true;
+      return true;
+    }).result as boolean;
   }
 
-  rejectSteerDelivery(sessionId: string, itemId: string): boolean {
-    const current = this.deliveryRow(sessionId).pendingSteers.find(
-      (pending) => (pending.item as { id?: string }).id === itemId,
-    );
-    if (!current) return false;
-    this.mutateDelivery(sessionId, "delivery_steer_rejected", (state) => {
+  rejectSteerDelivery(
+    sessionId: string,
+    itemId: string,
+    target: DurableSteerTarget,
+  ): boolean {
+    return this.mutateDelivery(sessionId, "delivery_steer_rejected", (state) => {
       const index = state.pendingSteers.findIndex(
-        (pending) => (pending.item as { id?: string }).id === itemId,
+        (pending) =>
+          (pending.item as { id?: string }).id === itemId &&
+          pending.target?.token === target.token &&
+          pending.target.runId === target.runId &&
+          pending.target.generation === target.generation,
       );
-      if (index < 0) throw new Error("Pending steer changed before rejection");
+      if (index < 0) return false;
       const [pending] = state.pendingSteers.splice(index, 1);
       state.queued.splice(
         Math.min(pending.index, state.queued.length),
         0,
         pending.item,
       );
-    });
-    return true;
+      return true;
+    }).result as boolean;
   }
 
   requeueSteerDeliveries(sessionId: string, items: unknown[]): number {

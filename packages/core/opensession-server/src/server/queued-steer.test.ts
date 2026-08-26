@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import {
+  prepareAndInterruptQueuedPrompt,
   prepareAndSteerQueuedPrompt,
   type QueuedSteerDeps,
 } from "./queued-steer";
@@ -42,6 +43,51 @@ test("rejects a prepared steer when a replacement run wins during actor await", 
   expect(await result).toBe("rejected");
   expect(steered).toEqual([]);
   expect(rejected).toEqual(["item-1"]);
+});
+
+test("surfaces an unconfirmed fenced rejection", async () => {
+  let target = { token: "run-old", runId: "run-old", generation: 4 };
+  const deps: QueuedSteerDeps = {
+    target: () => target,
+    prepare: async () => ({ id: "item-1", content: "hello" }),
+    steer: () => true,
+    accept: async () => true,
+    reject: async () => false,
+  };
+  const result = prepareAndSteerQueuedPrompt({
+    sessionId: "session-1",
+    itemId: "item-1",
+    text: "hello",
+  }, deps);
+  target = { token: "run-new", runId: "run-new", generation: 5 };
+
+  await expect(result).rejects.toThrow("fenced rejection");
+});
+
+test("does not interrupt a successor that wins during actor preparation", async () => {
+  let target = { token: "run-old", runId: "run-old", generation: 4 };
+  const prepared = deferred<{ id: string; content: string }>();
+  const interrupted: string[] = [];
+  const deps: QueuedSteerDeps = {
+    target: () => target,
+    prepare: async () => prepared.promise,
+    steer: (token) => {
+      interrupted.push(token);
+      return true;
+    },
+    accept: async () => true,
+    reject: async () => true,
+  };
+  const result = prepareAndInterruptQueuedPrompt({
+    sessionId: "session-1",
+    itemId: "item-1",
+    text: "hello",
+  }, deps);
+  target = { token: "run-new", runId: "run-new", generation: 5 };
+  prepared.resolve({ id: "item-1", content: "hello" });
+
+  expect(await result).toBe("target_changed");
+  expect(interrupted).toEqual([]);
 });
 
 test("steers and accepts only the captured immutable run token", async () => {

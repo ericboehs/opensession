@@ -565,6 +565,92 @@ describe("session kernel actor boundary", () => {
     })).toThrow("actor stopped");
   });
 
+  test("classifies structured quarantine failures on the async path", async () => {
+    class StructuredErrorWorker {
+      listeners = new Map<string, (event: MessageEvent) => void>();
+      addEventListener(type: string, listener: (event: MessageEvent) => void) {
+        this.listeners.set(type, listener);
+      }
+      removeEventListener() {}
+      postMessage(message: { rpcId: string }) {
+        const body = JSON.stringify({
+          ok: false,
+          code: "session_quarantined",
+          sessionId: "async-quarantine",
+          error: "settlement is quarantined",
+        });
+        queueMicrotask(() => this.listeners.get("message")?.({
+          data: {
+            t: "call_result",
+            rpcId: message.rpcId,
+            status: -1,
+            length: body.length,
+            body,
+          },
+        } as MessageEvent));
+      }
+      terminate() {}
+    }
+    const host = new SessionKernelActorClient(
+      new StructuredErrorWorker() as unknown as Worker,
+    );
+    client = host;
+
+    await expect(host.decideGatewayAsync({
+      op: "request",
+      sessionId: "async-quarantine",
+      requestId: "request",
+      operation: "websocket_command",
+    })).rejects.toBeInstanceOf(SessionKernelQuarantinedError);
+  });
+
+  test("marks structured actor-fatal failures dead on the async path", async () => {
+    class StructuredErrorWorker {
+      listeners = new Map<string, (event: MessageEvent) => void>();
+      addEventListener(type: string, listener: (event: MessageEvent) => void) {
+        this.listeners.set(type, listener);
+      }
+      removeEventListener() {}
+      postMessage(message: { rpcId: string }) {
+        const body = JSON.stringify({
+          ok: false,
+          code: "actor_fatal",
+          error: "actor authority failed",
+        });
+        queueMicrotask(() => this.listeners.get("message")?.({
+          data: {
+            t: "call_result",
+            rpcId: message.rpcId,
+            status: -1,
+            length: body.length,
+            body,
+          },
+        } as MessageEvent));
+      }
+      terminate() {}
+    }
+    const fatal: Error[] = [];
+    const host = new SessionKernelActorClient(
+      new StructuredErrorWorker() as unknown as Worker,
+      (error) => fatal.push(error),
+    );
+    client = host;
+
+    await expect(host.decideGatewayAsync({
+      op: "request",
+      sessionId: "async-fatal",
+      requestId: "request",
+      operation: "websocket_command",
+    })).rejects.toThrow("actor authority failed");
+    expect(fatal).toHaveLength(1);
+    await expect(host.decideGatewayAsync({
+      op: "request",
+      sessionId: "async-fatal",
+      requestId: "later",
+      operation: "websocket_command",
+    })).rejects.toThrow("actor authority failed");
+  });
+
   test("quarantines one session after ambiguous typed settlement", async () => {
     const host = await actor();
     host.decideGateway({

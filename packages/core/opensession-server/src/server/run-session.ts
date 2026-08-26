@@ -23,7 +23,6 @@ import {
   currentAgentRunToken,
   isAgentRunTokenAdmitted,
 	engineFamily,
-	interruptAndSteerAgentRun,
 	restartContinuationPrompt,
 	type StreamEvent,
 } from "./agent-runner";
@@ -155,7 +154,10 @@ import {
 	undeliveredSteers,
 	type QueueItem,
 } from "./queue-state";
-import { prepareAndSteerQueuedPrompt } from "./queued-steer";
+import {
+	prepareAndInterruptQueuedPrompt,
+	prepareAndSteerQueuedPrompt,
+} from "./queued-steer";
 import { isShuttingDown } from "./shutdown-state";
 import {
 	parseImageDataUrls,
@@ -688,11 +690,15 @@ export async function interruptQueuedPrompt(
 	if (!queue) return false;
 	const index = queuedPromptIndex(queue, queueId, queueIndex);
 	if (index < 0) return false;
-	const [item] = queue.splice(index, 1);
+	let item = queue[index];
 	if (!item) return false;
-	if (isGitHubQueueItem(item) || (Array.isArray(item.files) && item.files.length > 0)) {
-		queue.splice(index, 0, item);
+	if (isGitHubQueueItem(item) || (Array.isArray(item.files) && item.files.length > 0))
 		return false;
+	if (!item.id) {
+		item = queueItem(item);
+		queue[index] = item;
+		await promptQueues.set(sessionId, queue);
+		persistQueues();
 	}
 	const attributed =
 		item.user && !isContextOnly(item.content)
@@ -705,37 +711,19 @@ export async function interruptQueuedPrompt(
 			session.codexThreadId,
 			session.id,
 		)
-	) {
-		queue.splice(index, 0, item);
-		return false;
-	}
-	if (
-		!interruptAndSteerAgentRun(
-			[session.claudeSessionId, session.codexThreadId, session.id],
-			attributed,
-			images,
-		)
-	) {
-		// No in-band interrupt-and-steer (pi): keep the item queued — it's
-		// the durable record — and abort the turn so the drain delivers it right
-		// away. Mark it (by id) as the solo delivery so the drain delivers ONLY
-		// this item; every other queued item stays put and drains at the next
-		// natural stopping point instead of being swept into this batch. Kept at
-		// its original position so the queue doesn't visibly reshuffle.
-		const solo = queueItem(item);
-		queue.splice(index, 0, solo);
-		await promptQueues.set(sessionId, queue);
-		persistQueues();
-		await broadcastQueue(sessionId);
-		return await abortTurnAndDrain(sessionId, session, solo.id);
-	}
-	// No steer receipt: an interrupt delivers almost immediately, so the
-	// transcript entry is the record (same treatment as a direct interrupt send).
-	if (queue.length > 0) await promptQueues.set(sessionId, queue);
-	else await promptQueues.delete(sessionId);
-	persistQueues();
-	await broadcastQueue(sessionId);
-	return true;
+	) return false;
+	const interrupt = await prepareAndInterruptQueuedPrompt({
+		sessionId,
+		itemId: item.id!,
+		text: attributed,
+		images,
+	});
+	if (interrupt === "interrupted") return true;
+	if (interrupt !== "unsupported") return false;
+	// No in-band interrupt-and-steer (pi): the fenced rejection restored the
+	// durable queue item. Abort the exact current turn so the drain delivers
+	// only this item immediately; every other prompt stays queued.
+	return await abortTurnAndDrain(sessionId, session, item.id!);
 }
 
 /**

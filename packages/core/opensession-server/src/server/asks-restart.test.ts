@@ -43,6 +43,56 @@ async function resetState(): Promise<void> {
 afterEach(resetState);
 
 describe("pending ask restart persistence", () => {
+	test("rejects the ask when its initial durable write fails", async () => {
+		const originalSet = pendingAsks.set.bind(pendingAsks);
+		(pendingAsks as any).set = async () => {
+			throw new Error("initial ask write failed");
+		};
+		try {
+			await expect(makeAskHandler(SESSION)({ questions: [QUESTION] }))
+				.rejects.toThrow("initial ask write failed");
+		} finally {
+			(pendingAsks as any).set = originalSet;
+		}
+	});
+
+	test("keeps an ask answer retryable when its durable write fails", async () => {
+		const originalSet = pendingAsks.set.bind(pendingAsks);
+		let writes = 0;
+		let cardReady!: () => void;
+		const ready = new Promise<void>((resolve) => {
+			cardReady = resolve;
+		});
+		sessionWatchers.set(SESSION, new Set([{
+			data: { watchingSessionId: SESSION, user: "Test" },
+			send: (payload: string) => {
+				if (JSON.parse(payload).type === "ask_question") cardReady();
+			},
+		} as never]));
+		(pendingAsks as any).set = async (sessionId: string, value: any) => {
+			writes += 1;
+			if (writes === 2) throw new Error("answer write failed");
+			return await originalSet(sessionId, value);
+		};
+		try {
+			const result = makeAskHandler(SESSION)({ questions: [QUESTION] });
+			await ready;
+			const ask = pendingAsks.get(SESSION)!;
+			await expect(ask.resolve({ "Which option?": "One" }))
+				.rejects.toThrow("answer write failed");
+			expect(writes).toBe(2);
+			await ask.resolve({ "Which option?": "One" });
+			expect(await result).toEqual({
+				behavior: "allow",
+				updatedInput: {
+					questions: [QUESTION],
+					answers: { "Which option?": "One" },
+				},
+			});
+		} finally {
+			(pendingAsks as any).set = originalSet;
+		}
+	});
 	test("restores the card and keeps the original escalation deadline", async () => {
 		scratch = mkdtempSync(join(tmpdir(), "os-asks-restart-"));
 		const storePath = join(scratch, "pending-asks.json");

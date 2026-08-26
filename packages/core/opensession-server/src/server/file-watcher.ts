@@ -29,17 +29,24 @@ const watches: Map<string, WatchState> = ((globalThis as any).__transcriptWatche
 // whose message has landed must clear NOW, not at run end, or it shows as
 // still-queued and a mid-run restart would re-deliver it). On globalThis so
 // hot reloads re-register cleanly; read at call time.
-type AppendListener = (sessionId: string, entries: TranscriptEntry[]) => void;
+type AppendListener = (
+  sessionId: string,
+  entries: TranscriptEntry[],
+) => void | Promise<void>;
 export function setTranscriptAppendListener(fn: AppendListener): void {
   (globalThis as any).__transcriptAppendListener = fn;
 }
 function notifyAppendListener(sessionId: string | undefined, entries: TranscriptEntry[]) {
   if (!sessionId || entries.length === 0) return;
   const fn = (globalThis as any).__transcriptAppendListener as AppendListener | undefined;
+  if (!fn) return;
   try {
-    fn?.(sessionId, entries);
-  } catch {
+    void Promise.resolve(fn(sessionId, entries)).catch((error) => {
+      console.warn("[file-watcher] transcript append listener failed:", error);
+    });
+  } catch (error) {
     // Reconcile is best-effort; never let it break transcript delivery.
+    console.warn("[file-watcher] transcript append listener failed:", error);
   }
 }
 

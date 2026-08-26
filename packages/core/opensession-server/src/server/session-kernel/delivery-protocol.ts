@@ -1,4 +1,8 @@
-import type { DeliverySlot, DurableDeliveryState } from "./store";
+import type {
+  DeliverySlot,
+  DurableDeliveryState,
+  DurableSteerTarget,
+} from "./store";
 import type { DurableRunTarget } from "./turn-protocol";
 
 export function deliveryInterruptForAnchor(
@@ -56,9 +60,25 @@ export type DeliveryActorRequest =
   | { op: "enqueue"; sessionId: string; item: unknown; front?: boolean }
   | { op: "delete"; sessionId: string; slot: DeliverySlot }
   | { op: "clear_slot"; slot: DeliverySlot }
-  | { op: "prepare_steer"; sessionId: string; itemId: string; item?: unknown }
-  | { op: "accept_steer"; sessionId: string; itemId: string }
-  | { op: "reject_steer"; sessionId: string; itemId: string }
+  | {
+      op: "prepare_steer";
+      sessionId: string;
+      itemId: string;
+      target: DurableSteerTarget;
+      item?: unknown;
+    }
+  | {
+      op: "accept_steer";
+      sessionId: string;
+      itemId: string;
+      target: DurableSteerTarget;
+    }
+  | {
+      op: "reject_steer";
+      sessionId: string;
+      itemId: string;
+      target: DurableSteerTarget;
+    }
   | { op: "settle_pending_steers" }
   | { op: "requeue_steers"; sessionId: string; items: unknown[] }
   | {

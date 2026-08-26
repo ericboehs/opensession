@@ -256,7 +256,7 @@ export interface TailWindowOpts {
 export type TranscriptAppendHook = (
   sessionId: string,
   entries: SeqEntry[]
-) => void;
+) => void | Promise<void>;
 
 const g = globalThis as unknown as {
   __osTranscriptStore?: TranscriptStore;
@@ -676,9 +676,11 @@ export class TranscriptStore {
     const hook = g.__osTranscriptAppendHook;
     if (hook) {
       try {
-        hook(sessionId, outcome.affected);
-      } catch (e) {
-        console.warn("[transcript-store] append hook threw:", e);
+        void Promise.resolve(hook(sessionId, outcome.affected)).catch((error) => {
+          console.warn("[transcript-store] append hook threw:", error);
+        });
+      } catch (error) {
+        console.warn("[transcript-store] append hook threw:", error);
       }
     }
     return result;
@@ -930,7 +932,14 @@ export class TranscriptStore {
     const hook = g.__osTranscriptAppendHook;
     if (hook) {
       try {
-        hook(request.sessionId, outcome.affected);
+        void Promise.resolve(hook(request.sessionId, outcome.affected)).catch(
+          (error) => {
+            console.warn(
+              "[transcript-store] destination append hook threw:",
+              error,
+            );
+          },
+        );
       } catch (error) {
         console.warn(
           "[transcript-store] destination append hook threw:",

@@ -2149,11 +2149,19 @@ describe("SessionKernel", () => {
 	});
 
 	test("recovers an ambiguous prepared steer without duplicate queue delivery", async () => {
+		store.setRunState({
+			sessionId: "steer-recovery",
+			state: "running",
+			event: "run_registered",
+			currentRunId: "run-one",
+			generation: 1,
+		});
+		const target = { token: "token-one", runId: "run-one", generation: 1 };
 		store.setDeliverySlot("steer-recovery", "queued", [
 			{ id: "steer-one", content: "fold me in" },
 		]);
 		expect(
-			store.prepareSteerDelivery("steer-recovery", "steer-one"),
+			store.prepareSteerDelivery("steer-recovery", "steer-one", target),
 		).toMatchObject({ id: "steer-one" });
 		expect(store.deliverySnapshot("steer-recovery")).toMatchObject({
 			queued: [],
@@ -2173,6 +2181,41 @@ describe("SessionKernel", () => {
 		expect(store.deliverySnapshot("steer-recovery")).toMatchObject({
 			queued: [{ id: "steer-one", content: "fold me in" }],
 			steered: [],
+		});
+	});
+
+	test("does not accept a prepared steer after run ownership changes", () => {
+		const sessionId = "steer-owner-swap";
+		const oldTarget = { token: "token-old", runId: "run-old", generation: 1 };
+		store.setRunState({
+			sessionId,
+			state: "running",
+			event: "run_registered",
+			currentRunId: oldTarget.runId,
+			generation: oldTarget.generation,
+		});
+		store.setDeliverySlot(sessionId, "queued", [{ id: "steer-one" }]);
+		expect(store.prepareSteerDelivery(sessionId, "steer-one", oldTarget))
+			.toMatchObject({ id: "steer-one" });
+		store.setRunState({
+			sessionId,
+			state: "running",
+			event: "run_registered",
+			currentRunId: "run-new",
+			generation: 2,
+		});
+
+		expect(store.acceptSteerDelivery(sessionId, "steer-one", oldTarget)).toBe(false);
+		expect(store.deliverySnapshot(sessionId)).toMatchObject({
+			queued: [],
+			steered: [],
+			pendingSteers: [{ target: oldTarget }],
+		});
+		expect(store.rejectSteerDelivery(sessionId, "steer-one", oldTarget)).toBe(true);
+		expect(store.deliverySnapshot(sessionId)).toMatchObject({
+			queued: [{ id: "steer-one" }],
+			steered: [],
+			pendingSteers: [],
 		});
 	});
 

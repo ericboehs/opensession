@@ -16,6 +16,7 @@ import {
   type DurableOutboxItem,
   type DeliverySlot,
   type DurableRunState,
+  type DurableSteerTarget,
   type DurableTimer,
   type RunEventDecision,
   type RunEventDecisionResult,
@@ -464,7 +465,7 @@ export class SessionKernelActorClient {
           body?: string;
           length?: number;
         };
-        if (response.status !== 1 || !response.body)
+        if (!response.body)
           throw new SessionKernelActorError(
             `Session kernel ${label} returned no result`,
             true,
@@ -1189,19 +1190,43 @@ class RemoteStore implements SessionKernelStoreApi {
   clearDeliverySlot(slot: DeliverySlot) {
     this.actor.decideDelivery({ op: "clear_slot", slot });
   }
-  prepareSteerDelivery(sessionId: string, itemId: string, item?: unknown) {
+  prepareSteerDelivery(
+    sessionId: string,
+    itemId: string,
+    target: DurableSteerTarget,
+    item?: unknown,
+  ) {
     return this.actor.decideDelivery({
       op: "prepare_steer",
       sessionId,
       itemId,
+      target,
       item,
     });
   }
-  acceptSteerDelivery(sessionId: string, itemId: string) {
-    return this.actor.decideDelivery({ op: "accept_steer", sessionId, itemId });
+  acceptSteerDelivery(
+    sessionId: string,
+    itemId: string,
+    target: DurableSteerTarget,
+  ) {
+    return this.actor.decideDelivery({
+      op: "accept_steer",
+      sessionId,
+      itemId,
+      target,
+    });
   }
-  rejectSteerDelivery(sessionId: string, itemId: string) {
-    return this.actor.decideDelivery({ op: "reject_steer", sessionId, itemId });
+  rejectSteerDelivery(
+    sessionId: string,
+    itemId: string,
+    target: DurableSteerTarget,
+  ) {
+    return this.actor.decideDelivery({
+      op: "reject_steer",
+      sessionId,
+      itemId,
+      target,
+    });
   }
   settlePendingSteers() {
     return this.actor.decideDelivery({ op: "settle_pending_steers" });

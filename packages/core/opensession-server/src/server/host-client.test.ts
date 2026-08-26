@@ -444,12 +444,23 @@ describe("HostHandle model recovery", () => {
     registerTestRun(spec.osSessionId, spec.hostId);
     const handle = makeHandle(spec);
     const events = handle.events();
+    let steerFailures = 0;
+    (handle as any).cb.onSteerFailed = () => steerFailures++;
     try {
       (handle as any).handleMsg({
         t: "transcript",
         engineSessionId: spec.osSessionId,
         lines: [transcriptLineUser("hello", "prompt-1")],
       });
+      await (handle as any).projectionTail;
+      expect((handle as any).projectionTail).toBeUndefined();
+
+      // The failure is permanent even after the active tail has drained.
+      (handle as any).handleMsg({ t: "steer_failed", text: "late frame" });
+      await (handle as any).projectionTail;
+      expect(steerFailures).toBe(0);
+
+      // Terminal cleanup still runs through the permanent failed fence.
       (handle as any).handleMsg({
         t: "end",
         done: { type: "done", result: "finished" },

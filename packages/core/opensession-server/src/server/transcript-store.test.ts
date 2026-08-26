@@ -525,16 +525,17 @@ describe("bus + append hook", () => {
     }
   });
 
-  test("append hook fires post-commit; a throwing hook never breaks appends", async () => {
+  test("append hook fires post-commit; a rejected hook never breaks appends", async () => {
     const sid = "bks-hook";
     const seen: [string, number][] = [];
-    setAppendHook((sessionId, entries) => {
+    setAppendHook(async (sessionId, entries) => {
       seen.push([sessionId, entries.length]);
       throw new Error("hook boom");
     });
     try {
       const res = await store.appendTranscriptEvents(sid, [entry("hk1", "user msg", { type: "user" })]);
       expect(res!.inserted).toBe(1);
+      await Promise.resolve();
       expect(seen).toEqual([[sid, 1]]);
     } finally {
       setAppendHook(null);

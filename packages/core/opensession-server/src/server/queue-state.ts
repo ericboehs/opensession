@@ -31,6 +31,7 @@ import {
 	sessionKernelStore,
   sessionTurn,
 } from "./session-kernel";
+import type { DurableSteerTarget } from "./session-kernel/store";
 
 export type QueueItem = {
 	id?: string;
@@ -809,21 +810,28 @@ export async function broadcastQueue(sessionId: string): Promise<void> {
 export async function prepareQueuedSteer(
 	sessionId: string,
 	itemId: string,
+	target: DurableSteerTarget,
 	directItem?: QueueItem,
 ): Promise<QueueItem | undefined> {
 	return await sessionDelivery({
 		op: "prepare_steer",
 		sessionId,
 		itemId,
+		target,
 		...(directItem ? { item: directItem } : {}),
 	}) as QueueItem | undefined;
 }
 
-export async function acceptQueuedSteer(sessionId: string, itemId: string): Promise<boolean> {
+export async function acceptQueuedSteer(
+	sessionId: string,
+	itemId: string,
+	target: DurableSteerTarget,
+): Promise<boolean> {
 	const accepted = await sessionDelivery({
 		op: "accept_steer",
 		sessionId,
 		itemId,
+		target,
 	});
 	if (accepted) {
 		persistQueues();
@@ -832,11 +840,16 @@ export async function acceptQueuedSteer(sessionId: string, itemId: string): Prom
 	return accepted;
 }
 
-export async function rejectQueuedSteer(sessionId: string, itemId: string): Promise<boolean> {
+export async function rejectQueuedSteer(
+	sessionId: string,
+	itemId: string,
+	target: DurableSteerTarget,
+): Promise<boolean> {
 	const rejected = await sessionDelivery({
 		op: "reject_steer",
 		sessionId,
 		itemId,
+		target,
 	});
 	if (rejected) {
 		persistQueues();

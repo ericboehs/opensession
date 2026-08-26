@@ -1,4 +1,8 @@
-import { currentAgentRunToken, steerAgentRunToken } from "./agent-runner";
+import {
+  currentAgentRunToken,
+  interruptAndSteerAgentRunToken,
+  steerAgentRunToken,
+} from "./agent-runner";
 import {
   acceptQueuedSteer,
   prepareQueuedSteer,
@@ -19,6 +23,7 @@ export type QueuedSteerDeps = {
   prepare(
     sessionId: string,
     itemId: string,
+    target: QueuedSteerFence,
     directItem?: QueueItem,
   ): Promise<QueueItem | undefined>;
   steer(
@@ -27,8 +32,16 @@ export type QueuedSteerDeps = {
     images: ImageInput[] | undefined,
     itemId: string,
   ): boolean;
-  accept(sessionId: string, itemId: string): Promise<boolean>;
-  reject(sessionId: string, itemId: string): Promise<boolean>;
+  accept(
+    sessionId: string,
+    itemId: string,
+    target: QueuedSteerFence,
+  ): Promise<boolean>;
+  reject(
+    sessionId: string,
+    itemId: string,
+    target: QueuedSteerFence,
+  ): Promise<boolean>;
 };
 
 const queuedSteerDeps: QueuedSteerDeps = {
@@ -67,17 +80,57 @@ export async function prepareAndSteerQueuedPrompt(
 ): Promise<"steered" | "rejected" | "not_prepared"> {
   const before = deps.target(input.sessionId);
   if (!before) return "not_prepared";
-  const prepared = await deps.prepare(input.sessionId, input.itemId, input.item);
+  const prepared = await deps.prepare(
+    input.sessionId,
+    input.itemId,
+    before,
+    input.item,
+  );
   if (!prepared) return "not_prepared";
   if (!sameFence(before, deps.target(input.sessionId))) {
-    await deps.reject(input.sessionId, input.itemId);
+    if (!await deps.reject(input.sessionId, input.itemId, before))
+      throw new Error("Pending steer changed before fenced rejection");
     return "rejected";
   }
   if (!deps.steer(before.token, input.text, input.images, input.itemId)) {
-    await deps.reject(input.sessionId, input.itemId);
+    if (!await deps.reject(input.sessionId, input.itemId, before))
+      throw new Error("Pending steer changed before fenced rejection");
     return "rejected";
   }
-  if (!await deps.accept(input.sessionId, input.itemId))
+  if (!await deps.accept(input.sessionId, input.itemId, before))
     throw new Error("Pending steer changed before runner acceptance");
   return "steered";
+}
+
+/** Prepare durably, then interrupt only the immutable run captured before await. */
+export async function prepareAndInterruptQueuedPrompt(
+  input: {
+    sessionId: string;
+    itemId: string;
+    text: string;
+    images?: ImageInput[];
+  },
+  deps: QueuedSteerDeps = {
+    ...queuedSteerDeps,
+    steer: (token, text, images) =>
+      interruptAndSteerAgentRunToken(token, text, images),
+  },
+): Promise<"interrupted" | "target_changed" | "unsupported" | "not_prepared"> {
+  const before = deps.target(input.sessionId);
+  if (!before) return "not_prepared";
+  const prepared = await deps.prepare(input.sessionId, input.itemId, before);
+  if (!prepared) return "not_prepared";
+  if (!sameFence(before, deps.target(input.sessionId))) {
+    if (!await deps.reject(input.sessionId, input.itemId, before))
+      throw new Error("Pending interrupt steer changed before fenced rejection");
+    return "target_changed";
+  }
+  if (!deps.steer(before.token, input.text, input.images, input.itemId)) {
+    if (!await deps.reject(input.sessionId, input.itemId, before))
+      throw new Error("Pending interrupt steer changed before fenced rejection");
+    return "unsupported";
+  }
+  if (!await deps.accept(input.sessionId, input.itemId, before))
+    throw new Error("Pending interrupt steer changed before runner acceptance");
+  return "interrupted";
 }

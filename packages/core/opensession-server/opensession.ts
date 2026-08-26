@@ -176,8 +176,8 @@ let agents: AgentModule[] = (g.__agents as AgentModule[] | undefined) ?? [];
 // live maps and skip this branch.
 if (!g.__opensessionBooted && !isDevInstance()) {
 	initHumanAsks();
-	restorePendingAsks();
-	hydratePersistedQueueState();
+	await restorePendingAsks();
+	await hydratePersistedQueueState();
 }
 
 console.log(`Starting Open Session server on ${HOST}:${PORT}...`);
@@ -888,7 +888,7 @@ if (!g.__opensessionBooted) {
 		}
 		resumeDrainedSessions(new Set(resumedIds), shutdownRecords);
 		// Re-deliver messages that were queued/steered when the process went down.
-		restorePromptQueues(new Set(resumedIds));
+		await restorePromptQueues(new Set(resumedIds));
 		const ownedSessionIds = new Set(
 			activeRunRecords()
 				.map((run) => run.osSessionId)

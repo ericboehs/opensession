@@ -119,17 +119,20 @@ export function startSessionKernelActorWorker(): void {
             result = store.prepareSteerDelivery(
               delivery.sessionId,
               delivery.itemId,
+              delivery.target,
               delivery.item,
             );
           else if (delivery.op === "accept_steer")
             result = store.acceptSteerDelivery(
               delivery.sessionId,
               delivery.itemId,
+              delivery.target,
             );
           else if (delivery.op === "reject_steer")
             result = store.rejectSteerDelivery(
               delivery.sessionId,
               delivery.itemId,
+              delivery.target,
             );
           else if (delivery.op === "settle_pending_steers")
             result = host.call("settlePendingSteers", []);

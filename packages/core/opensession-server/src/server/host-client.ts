@@ -1086,9 +1086,14 @@ export class HostHandle {
   }
 
   private handleMsg(msg: HostToClientMsg): void {
-    if (msg.t !== "transcript" && this.projectionTail) {
+    if (
+      msg.t !== "transcript" &&
+      (this.projectionTail || this.projectionFailure)
+    ) {
       // End is cleanup, not another projection. It must close the stream even
-      // when the transcript projection ahead of it failed.
+      // when the transcript projection ahead of it failed. Every other frame
+      // remains fenced after the failed tail settles: projectionFailure is a
+      // permanent authority failure for this handle, not just queue state.
       this.enqueueProjectionFrame(() => this.handleMsgNow(msg), msg.t === "end");
       return;
     }

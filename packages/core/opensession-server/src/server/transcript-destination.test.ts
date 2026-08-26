@@ -85,7 +85,9 @@ describe("destination-idempotent transcript append receipts", () => {
     const { dir, path, store } = fixture();
     let hooks = 0;
     let bus = 0;
-    setAppendHook(() => hooks++);
+    setAppendHook(() => {
+      hooks++;
+    });
     const unsubscribe = subscribeTranscript("os-destination", () => bus++);
     try {
       const first = store.commitTranscriptDestinationAppend(request());

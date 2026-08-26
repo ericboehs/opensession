@@ -260,12 +260,21 @@ export async function sessionDelivery<T extends DeliveryActorRequest>(
     result = store.prepareSteerDelivery(
       request.sessionId,
       request.itemId,
+      request.target,
       request.item,
     );
   else if (request.op === "accept_steer")
-    result = store.acceptSteerDelivery(request.sessionId, request.itemId);
+    result = store.acceptSteerDelivery(
+      request.sessionId,
+      request.itemId,
+      request.target,
+    );
   else if (request.op === "reject_steer")
-    result = store.rejectSteerDelivery(request.sessionId, request.itemId);
+    result = store.rejectSteerDelivery(
+      request.sessionId,
+      request.itemId,
+      request.target,
+    );
   else if (request.op === "settle_pending_steers")
     result = store.settlePendingSteers();
   else if (request.op === "requeue_steers")

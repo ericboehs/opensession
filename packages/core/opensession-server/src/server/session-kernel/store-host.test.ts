@@ -392,9 +392,17 @@ describe("per-session session kernel storage", () => {
       state: "idle",
       event: "seed",
     }]);
+    host.call("setRunState", [{
+      sessionId: "pending-session",
+      state: "running",
+      event: "run_registered",
+      currentRunId: "run-one",
+      generation: 1,
+    }]);
     host.call("prepareSteerDelivery", [
       "pending-session",
       "steer-one",
+      { token: "token-one", runId: "run-one", generation: 1 },
       { id: "steer-one", content: "recover me" },
     ]);
     Object.defineProperty(host.storeForSession("empty-session"), "settlePendingSteers", {
