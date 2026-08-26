@@ -367,22 +367,21 @@ function v2StoreTranscript(
   // read as growth next time instead of being silently covered.
   const totalSize = v2MirrorFiles(session).reduce((sum, f) => sum + f.size, 0);
   const legacy = session.transcriptPath ? parseTranscript(session.transcriptPath) : [];
-  try {
-    store.importLegacyTranscript(
-      sessionId,
-      legacy,
-      store.getImportInfo(sessionId)?.src || "merged",
-      totalSize
-    );
-    // The full re-import restored every entry the store had missed — release
-    // the failure-side marker (no-op for ids that never carried it).
+  void store.importLegacyTranscript(
+    sessionId,
+    legacy,
+    store.getImportInfo(sessionId)?.src || "merged",
+    totalSize
+  ).then(() => {
+    // The full re-import restored every entry the store had missed. Release
+    // the failure marker only after actor completion.
     clearTranscriptStoreDegraded(sessionId);
-  } catch (e) {
+  }).catch((error) => {
     console.warn(
       `[sessions] transcript v2 drift re-import failed for ${sessionId}:`,
-      e instanceof Error ? e.message : e
+      error instanceof Error ? error.message : error
     );
-  }
+  });
   return legacy;
 }
 
@@ -1371,8 +1370,8 @@ function removeSessionArtifacts(session: UnifiedSession): void {
     void removeSessionScratch(id);
 }
 
-export function deleteSession(session: UnifiedSession): void {
-  executeSessionProjection(session.id, "session_delete", () => {
+export async function deleteSession(session: UnifiedSession): Promise<void> {
+  await executeSessionProjection(session.id, "session_delete", () => {
     removeSessionArtifacts(session);
   });
 }

@@ -391,10 +391,10 @@ describe("HostHandle model recovery", () => {
 		expect(handle.ended).toBe(true);
 	});
 
-	test("applies proxied transcript frames in the server store", () => {
+	test("applies proxied transcript frames in the server store", async () => {
 		const root = mkdtempSync(join(tmpdir(), "host-client-transcript-test-"));
 		roots.push(root);
-		const store = new TranscriptStore(join(root, "transcripts.db"));
+		const store = new TranscriptStore(join(root, "transcripts.db"), { actorOwned: true });
 		const previous = __setTranscriptStoreForTest(store);
 		const kernelStore = new SessionKernelStore(join(root, "kernel.db"));
 		const previousKernel = __setSessionKernelStoreForTest(kernelStore);
@@ -412,6 +412,7 @@ describe("HostHandle model recovery", () => {
 				engineSessionId: spec.osSessionId,
 				lines: [transcriptLineUser("hello", "prompt-1")],
 			});
+      await handle.waitForPendingProjections();
 
 			expect(store.readTail(spec.osSessionId, 10).entries).toMatchObject([
 				{ id: "prompt-1", type: "user", content: "hello" },
@@ -424,10 +425,46 @@ describe("HostHandle model recovery", () => {
 		}
 	});
 
-	test("applies transcript frames after the run settled (reattach backfill)", () => {
+  test("serializes consecutive transcript frames through exact actor receipts", async () => {
+    const root = mkdtempSync(join(tmpdir(), "host-client-transcript-order-test-"));
+    roots.push(root);
+    const store = new TranscriptStore(join(root, "transcripts.db"), { actorOwned: true });
+    const previous = __setTranscriptStoreForTest(store);
+    const kernelStore = new SessionKernelStore(join(root, "kernel.db"));
+    const previousKernel = __setSessionKernelStoreForTest(kernelStore);
+    const spec: RunHostSpec = {
+      hostId: "rh-transcript-order",
+      osSessionId: "os-transcript-order",
+      prompt: "test",
+      cwd: "/tmp",
+    };
+    registerTestRun(spec.osSessionId, spec.hostId);
+    const handle = makeHandle(spec);
+    try {
+      for (const [id, content] of [["prompt-1", "first"], ["prompt-2", "second"]]) {
+        (handle as any).handleMsg({
+          t: "transcript",
+          engineSessionId: spec.osSessionId,
+          lines: [transcriptLineUser(content, id)],
+        });
+      }
+      await handle.waitForPendingProjections();
+      expect(store.readTail(spec.osSessionId, 10).entries).toMatchObject([
+        { id: "prompt-1", content: "first" },
+        { id: "prompt-2", content: "second" },
+      ]);
+    } finally {
+      (handle as any).finish();
+      __setTranscriptStoreForTest(previous);
+      __setSessionKernelStoreForTest(previousKernel);
+      kernelStore.close();
+    }
+  });
+
+	test("applies transcript frames after the run settled (reattach backfill)", async () => {
 		const root = mkdtempSync(join(tmpdir(), "host-client-settled-transcript-test-"));
 		roots.push(root);
-		const store = new TranscriptStore(join(root, "transcripts.db"));
+		const store = new TranscriptStore(join(root, "transcripts.db"), { actorOwned: true });
 		const previous = __setTranscriptStoreForTest(store);
 		const kernelStore = new SessionKernelStore(join(root, "kernel.db"));
 		const previousKernel = __setSessionKernelStoreForTest(kernelStore);
@@ -449,6 +486,7 @@ describe("HostHandle model recovery", () => {
 				engineSessionId: spec.osSessionId,
 				lines: [transcriptLineUser("late summary", "prompt-late")],
 			});
+      await handle.waitForPendingProjections();
 			expect(store.readTail(spec.osSessionId, 10).entries).toMatchObject([
 				{ id: "prompt-late", type: "user", content: "late summary" },
 			]);
@@ -463,7 +501,7 @@ describe("HostHandle model recovery", () => {
 	test("rejects transcript frames while a different live run owns the session", () => {
 		const root = mkdtempSync(join(tmpdir(), "host-client-superseded-transcript-test-"));
 		roots.push(root);
-		const store = new TranscriptStore(join(root, "transcripts.db"));
+		const store = new TranscriptStore(join(root, "transcripts.db"), { actorOwned: true });
 		const previous = __setTranscriptStoreForTest(store);
 		const kernelStore = new SessionKernelStore(join(root, "kernel.db"));
 		const previousKernel = __setSessionKernelStoreForTest(kernelStore);
@@ -493,7 +531,7 @@ describe("HostHandle model recovery", () => {
 	test("rejects transcript frames from a stale host generation", () => {
 		const root = mkdtempSync(join(tmpdir(), "host-client-stale-transcript-test-"));
 		roots.push(root);
-		const store = new TranscriptStore(join(root, "transcripts.db"));
+		const store = new TranscriptStore(join(root, "transcripts.db"), { actorOwned: true });
 		const previous = __setTranscriptStoreForTest(store);
 		const kernelStore = new SessionKernelStore(join(root, "kernel.db"));
 		const previousKernel = __setSessionKernelStoreForTest(kernelStore);
@@ -691,7 +729,7 @@ describe("HostHandle model recovery", () => {
         },
       }),
     };
-    const transcriptStore = new TranscriptStore(join(root, "transcripts.db"));
+    const transcriptStore = new TranscriptStore(join(root, "transcripts.db"), { actorOwned: true });
     const previousTranscript = __setTranscriptStoreForTest(transcriptStore);
     const kernelStore = new SessionKernelStore(join(root, "kernel.db"));
     const previousKernel = __setSessionKernelStoreForTest(kernelStore);
@@ -717,6 +755,7 @@ describe("HostHandle model recovery", () => {
       engineSessionId: spec.osSessionId,
       lines: [transcriptLineUser("after respawn", "prompt-respawn")],
     });
+    await handle.waitForPendingProjections();
     expect(transcriptStore.readTail(spec.osSessionId, 10).entries).toMatchObject([
       { id: "prompt-respawn", content: "after respawn" },
     ]);

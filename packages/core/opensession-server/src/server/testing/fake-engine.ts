@@ -215,7 +215,7 @@ export function makeFakeEngine(
       for (const text of turn.text ?? []) {
         yield { type: "text_chunk", text };
         if (options.persistTranscript)
-          appendTranscriptEntries(engineSessionId, [
+          await appendTranscriptEntries(engineSessionId, [
             transcriptLineAssistantText(
               text,
               `fake-text-${++fakeEntrySeq}`,
@@ -238,7 +238,7 @@ export function makeFakeEngine(
           toolUseId,
         };
         if (options.persistTranscript)
-          appendTranscriptEntries(engineSessionId, [
+          await appendTranscriptEntries(engineSessionId, [
             transcriptLineToolUse(toolUseId, tool.name, tool.input ?? {}),
             transcriptLineToolResult(toolUseId, tool.result ?? "(ok)"),
           ]);

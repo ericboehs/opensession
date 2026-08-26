@@ -46,14 +46,14 @@ function offerDemoAsk(state: DemoState): void {
   const sessionId = DEMO_ASK_SESSION_ID;
   const questions = demoAskQuestions() as AskQuestionInput[];
   recordEngineSessionOwner(DEMO_ASK_ENGINE_SESSION_ID, sessionId);
-  offerAskCard(sessionId, questions, (answers) => {
+  offerAskCard(sessionId, questions, async (answers) => {
     try {
       if (answers) {
         // Land the answer in the transcript through the real engine write
         // path (import-first gate pulls the seeded jsonl history in), so the
         // Answer flow visibly completes end-to-end.
         const picked = Object.values(answers).join("; ");
-        appendTranscriptEntries(DEMO_ASK_ENGINE_SESSION_ID, [
+        await appendTranscriptEntries(DEMO_ASK_ENGINE_SESSION_ID, [
           transcriptLineUser(`[Demo viewer] ${picked}`),
           transcriptLineAssistantText(
             `Noted — going with **${picked}**. I'll draft the rollout plan on that basis. (Demo session: the card re-arms in a moment.)`,

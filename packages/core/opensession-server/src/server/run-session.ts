@@ -2922,7 +2922,7 @@ async function runSessionPromptInner(
 					const ocId = finalSessionId || session.claudeSessionId;
 					if (ocId) {
 						try {
-							appendTranscriptEntries(ocId, [
+							await appendTranscriptEntries(ocId, [
 								transcriptLineRunnerNotice(
 									cacheMissNotice(event.usage?.cacheCreationTokens),
 								),

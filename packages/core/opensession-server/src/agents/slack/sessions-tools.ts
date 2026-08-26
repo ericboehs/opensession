@@ -1047,7 +1047,7 @@ export function createSessionsMcpServer(
               );
             }
           } catch {}
-          const res = migrateSessionEngine(args.sessionId, args.model, ctx.createdBy);
+          const res = await migrateSessionEngine(args.sessionId, args.model, ctx.createdBy);
           if (!res.ok) return text(res.error);
           return text(
             `Migrated \`${res.sessionId}\` to ${res.to}` +

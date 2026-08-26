@@ -233,7 +233,7 @@ export async function sweepOrphanTranscripts(
 
 	for (const candidate of candidates) {
 		try {
-			if (!summary.dryRun) store.deleteSessionTranscript(candidate.sessionId);
+			if (!summary.dryRun) await store.deleteSessionTranscript(candidate.sessionId);
 			summary.removed++;
 			summary.removedEvents += candidate.events;
 			removedIds.push(candidate.sessionId);

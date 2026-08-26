@@ -247,16 +247,16 @@ async function sendTranscriptIndex(
  *  only transcriptPath would leave pi sessions permanently
  *  grown-beyond-watermark). Also the drift RE-import: idempotent upserts, and
  *  a completed import releases the failure-side store-degraded marker. */
-function v2ImportSession(
+async function v2ImportSession(
 	session: NonNullable<Awaited<ReturnType<typeof findSessionAsync>>>,
-): void {
+): Promise<void> {
 	// Deliberately id-less ref: guarantees the legacy merge — an id-carrying
 	// ref would route mergedSessionTranscript back into the v2 store path,
 	// which on a drift re-import is exactly what we're refreshing.
 	const entries = mergedSessionTranscript({
 		transcriptPath: session.transcriptPath ?? null,
 	});
-	v2FinishImport(session, entries);
+	await v2FinishImport(session, entries);
 }
 
 /** v2ImportSession for the background queue: the merge parse yields to the
@@ -269,19 +269,19 @@ async function v2ImportSessionAsync(
 	const entries = await mergedSessionTranscriptAsync({
 		transcriptPath: session.transcriptPath ?? null,
 	});
-	v2FinishImport(session, entries);
+	await v2FinishImport(session, entries);
 }
 
-function v2FinishImport(
+async function v2FinishImport(
 	session: NonNullable<Awaited<ReturnType<typeof findSessionAsync>>>,
 	entries: ReturnType<typeof mergedSessionTranscript>,
-): void {
+): Promise<void> {
 	let watermark: number | null = null;
 	try {
 		const files = v2MirrorFiles(session);
 		if (files.length) watermark = files.reduce((sum, f) => sum + f.size, 0);
 	} catch {}
-	transcriptStore().importLegacyTranscript(
+	await transcriptStore().importLegacyTranscript(
 		session.id,
 		entries,
 		entries.length ? "merged" : "live-only",
@@ -318,12 +318,12 @@ function v2QueueBackgroundImport(sessionId: string, reimport = false): void {
  * eligible / import deferred / flag off — fall through to the untouched
  * legacy path.
  */
-function serveTranscriptV2(
+async function serveTranscriptV2(
 	ws: any,
 	sessionId: string,
 	session: NonNullable<Awaited<ReturnType<typeof findSessionAsync>>>,
 	msg: any,
-): boolean {
+): Promise<boolean> {
 	if (msg.supportsSeq !== true) return false;
 	// Plain loop runs don't thread a unified session id to the runner (§3), so
 	// their store rows would be forever partial — refuse v2, keep legacy.
@@ -363,7 +363,7 @@ function serveTranscriptV2(
 				v2QueueBackgroundImport(sessionId);
 				return false;
 			}
-			v2ImportSession(session);
+			await v2ImportSession(session);
 		} else if (v2TranscriptHasDrift(store, sessionId, session)) {
 			// Imported but stale (§8): the mirror grew in a way the store can't
 			// explain — external CLI/tmux runs while we were idle, unmapped oc
@@ -871,7 +871,7 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 				// client got no init and no error).
 				let v2Served = false;
 				try {
-					v2Served = serveTranscriptV2(ws, sessionId, session, msg);
+					v2Served = await serveTranscriptV2(ws, sessionId, session, msg);
 				} catch (e) {
 					console.error(
 						`[ws] transcript v2 serve threw for ${sessionId} — falling back to legacy watch:`,
@@ -1557,7 +1557,7 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
             // Projection remains idempotent by its stable request-derived id.
             if (session.claudeSessionId) {
               try {
-                appendTranscriptEntries(session.claudeSessionId, [
+                await appendTranscriptEntries(session.claudeSessionId, [
                   transcriptLineRunnerNotice(
                     `Stopped by ${data.user || "someone"}.`,
                     `stop-${msg.requestId}`,

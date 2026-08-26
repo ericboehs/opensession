@@ -698,10 +698,10 @@ export const runErrors: Map<string, { message: string; at: string }> =
  *
  * `require` rather than a static import: pi-transcript lazily requires
  * this module back (its own cycle-breaker), and the transcript write must be
- * synchronous so it lands before the client re-reads the transcript.
- * Never throws — a dead transcript store must not break outcome recording.
+ * ordered so it lands before the client re-reads the transcript.
+ * Never throws unless strict projection ownership requires fail-closed behavior.
  */
-function persistRunFailureNotice(
+async function persistRunFailureNotice(
 	sessionId: string,
 	engineSessionId: string | null | undefined,
 	message: string,
@@ -709,7 +709,7 @@ function persistRunFailureNotice(
 	projectionId?: string,
 	projectedAt?: string,
 	strict = false,
-): void {
+): Promise<void> {
 	try {
 		const m = require("./transcript-persistence") as typeof import("./transcript-persistence");
 		const line = m.transcriptLineRunnerNotice(
@@ -718,13 +718,13 @@ function persistRunFailureNotice(
 			projectedAt,
 		);
 		if (strict)
-			m.applyForwardedTranscriptStrict(
+			await m.applyForwardedTranscriptStrict(
 				sessionId,
 				engineSessionId || sessionId,
 				[line],
 			);
 		else
-			m.applyForwardedTranscript(sessionId, engineSessionId || sessionId, [line]);
+			await m.applyForwardedTranscript(sessionId, engineSessionId || sessionId, [line]);
 	} catch (error) {
 		if (strict) throw error;
 	}
@@ -819,7 +819,7 @@ export async function applyRunOutcomeProjection(
 					: session?.codexThreadId
 						? "codex"
 						: "claude");
-			persistRunFailureNotice(
+			await persistRunFailureNotice(
 				id,
 				opts?.engineSessionId ||
 					(session ? engineSessionIdFor(session, provider) : undefined),
