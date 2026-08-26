@@ -79,6 +79,7 @@ import {
 import { ownedWorktree } from "./session-workspace";
 import { engineSessionPatch } from "./sessions";
 import { commitAuthorFor, userMatchesAny } from "./shared/user-mappings";
+import { envCapacity } from "./shared/env-capacity";
 import { sanitizeBranchSlug } from "./suggest-branch";
 import { type NativeSessionFile, type SessionUsage, type UnifiedSession, } from "./types";
 import { storeAppendUserLineEarly, transcriptLineUser } from "./transcript-persistence";
@@ -414,7 +415,15 @@ const activeOpeningCreates = new Map<
 	}
 >();
 
-const OPENING_TURN_CONCURRENCY = 8;
+// Bounds concurrent opening turns (worktree materialization, deps install,
+// repo attach and the opening engine turn). Gateway process: configurable via
+// ~/.opensession.env or a systemd drop-in.
+const OPENING_TURN_CONCURRENCY = envCapacity(
+	"OPENSESSION_OPENING_TURN_CONCURRENCY",
+	8,
+	1,
+	64,
+);
 type OpeningTurnGate = {
 	active: number;
 	waiters: Array<(release: () => void) => void>;
