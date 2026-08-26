@@ -7,6 +7,7 @@ import type { CoreActorRequest } from "./core-protocol";
 import type { CreationActorEffect } from "./creation-effect-protocol";
 import type { TurnActorRequest } from "./turn-protocol";
 import type { TimerActorRequest } from "./timer-protocol";
+import type { TranscriptActorRequest } from "./transcript-protocol";
 import type {
   CreationEventDecision,
   RunEventDecision,
@@ -67,6 +68,11 @@ export type SessionActorReducerCommand =
       kind: "core";
       commandId: string;
       request: CoreActorRequest;
+    }
+  | {
+      kind: "transcript";
+      commandId: string;
+      request: TranscriptActorRequest;
     };
 
 export type SessionActorCommand =

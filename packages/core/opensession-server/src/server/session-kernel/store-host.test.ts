@@ -63,6 +63,66 @@ describe("per-session session kernel storage", () => {
     isolated.close();
   });
 
+  test("stores kernel and transcript tables in the same actor database", () => {
+    const path = paths();
+    const sessionId = "co-located-transcript";
+    const host = new SessionKernelStoreHost(path.central, path.isolated);
+    host.call("setRunState", [{ sessionId, state: "idle", event: "seed" }]);
+
+    const appended = host.transcript({
+      op: "append",
+      sessionId,
+      requestId: "append-one",
+      entries: [{
+        id: "entry-one",
+        type: "user",
+        timestamp: "2026-01-01T00:00:00.000Z",
+        content: "hello",
+      }],
+    });
+    expect(appended).toMatchObject({
+      replay: false,
+      result: { firstSeq: 1, lastSeq: 1, inserted: 1, updated: 0 },
+    });
+    expect(host.transcript({ op: "tail", sessionId, limit: 10 })).toMatchObject({
+      firstSeq: 1,
+      lastSeq: 1,
+      entries: [{ id: "entry-one", seq: 1 }],
+    });
+    expect(host.transcript({
+      op: "append",
+      sessionId,
+      requestId: "append-one",
+      entries: [{
+        id: "entry-one",
+        type: "user",
+        timestamp: "2026-01-01T00:00:00.000Z",
+        content: "hello",
+      }],
+    })).toMatchObject({ replay: true });
+    host.close();
+
+    const actorDb = new Database(
+      sessionKernelSessionDbPath(sessionId, path.isolated),
+      { readonly: true },
+    );
+    const tables = (actorDb.query(
+      "SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name",
+    ).all() as Array<{ name: string }>).map(({ name }) => name);
+    expect(tables).toContain("session_kernel_state");
+    expect(tables).toContain("transcript_events");
+    expect(actorDb.query(
+      "SELECT COUNT(*) AS count FROM transcript_events WHERE session_id = ?",
+    ).get(sessionId)).toEqual({ count: 1 });
+    actorDb.close();
+
+    const catalog = new Database(path.central, { readonly: true });
+    expect(catalog.query(
+      "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'transcript_events'",
+    ).get()).toBeNull();
+    catalog.close();
+  });
+
   test("keeps a legacy session on the central database without dual writing", () => {
     const path = paths();
     const seed = new SessionKernelStore(path.central);

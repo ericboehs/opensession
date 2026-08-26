@@ -26,6 +26,10 @@ import type { TurnActorRequest, TurnActorResult } from "./turn-protocol";
 import type { TimerActorRequest, TimerActorResult } from "./timer-protocol";
 import type { GatewayCommandRequest, GatewayCommandResult } from "./gateway-command-protocol";
 import type { CoreActorRequest, CoreActorResult } from "./core-protocol";
+import type {
+  TranscriptActorRequest,
+  TranscriptActorResult,
+} from "./transcript-protocol";
 import {
 	SessionKernelActorError,
 	type SessionKernelActorClient,
@@ -197,6 +201,13 @@ export async function sessionCoreAsync<T extends CoreActorRequest>(
 ): Promise<CoreActorResult<T>> {
   if (state.actor) return state.actor.decideCoreAsync(request);
   return sessionCore(request);
+}
+
+export async function sessionTranscript<T extends TranscriptActorRequest>(
+  request: T,
+): Promise<TranscriptActorResult<T>> {
+  if (state.actor) return state.actor.decideTranscriptAsync(request);
+  throw new Error("Session transcript operation requires the authoritative actor");
 }
 
 export async function sessionGatewayCommand<T extends GatewayCommandRequest>(

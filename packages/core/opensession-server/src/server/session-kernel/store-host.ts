@@ -10,6 +10,11 @@ import {
   type SessionKernelStoreApi,
 } from "./store";
 import { sessionKernelStoreRoute } from "./store-routing";
+import { TranscriptStore } from "../transcript-store";
+import type {
+  TranscriptActorRequest,
+  TranscriptActorResult,
+} from "./transcript-protocol";
 
 function minDefined(values: Array<number | undefined>): number | undefined {
   const present = values.filter((value): value is number => value !== undefined);
@@ -87,6 +92,7 @@ function centralStoreFailure(error: unknown): Error & { code: string } {
 export class SessionKernelStoreHost {
   readonly central: SessionKernelStore;
   private readonly isolated = new Map<string, SessionKernelStore>();
+  private readonly transcripts = new Map<string, TranscriptStore>();
   private runtimeCursor = "";
   private maintenanceSessionCursor = "";
   private outboxRouteMaintenanceCursor = 0;
@@ -104,6 +110,8 @@ export class SessionKernelStoreHost {
   }
 
   close(): void {
+    for (const store of this.transcripts.values()) store.close();
+    this.transcripts.clear();
     for (const store of this.isolated.values()) store.close();
     this.isolated.clear();
     this.central.close();
@@ -215,6 +223,62 @@ export class SessionKernelStoreHost {
         () => this.central.markIsolatedSessionProjectionDirty(sessionId),
       );
     return this.openIsolated(sessionId);
+  }
+
+  transcript<T extends TranscriptActorRequest>(
+    request: T,
+  ): TranscriptActorResult<T> {
+    const placement = this.centralOperation(
+      () => this.central.sessionPlacement(request.sessionId),
+    );
+    if (!placement || placement.placement !== "isolated" ||
+        placement.transcriptAuthority !== "actor")
+      throw new Error(
+        `Session ${request.sessionId} has no isolated actor transcript placement`,
+      );
+    const mutation = "requestId" in request || request.op === "ack_wake";
+    if (mutation)
+      this.centralOperation(() => this.central.markIsolatedSessionDirty(request.sessionId));
+    const store = this.openTranscript(request.sessionId);
+    let result: unknown;
+    switch (request.op) {
+      case "append":
+      case "append_destination":
+      case "import":
+      case "replace":
+      case "delete":
+        result = store.applyActorRequest(request);
+        break;
+      case "needs_import": result = store.needsImport(request.sessionId); break;
+      case "import_info": result = store.getImportInfo(request.sessionId); break;
+      case "tail": result = store.readTail(request.sessionId, request.limit); break;
+      case "tail_window": result = store.readTailWindow(request.sessionId, request.options); break;
+      case "since": result = store.readSince(request.sessionId, request.sinceSeq, request.limit); break;
+      case "changes_since": result = store.readChangesSince(request.sessionId, request.changeSeq, request.limit); break;
+      case "before": result = store.readBefore(request.sessionId, request.beforeSeq, request.limit); break;
+      case "range":
+        result = store.readRange(
+          request.sessionId,
+          request.fromSeq,
+          request.toSeq,
+          request.fromSeq - 1,
+          request.limit,
+        );
+        break;
+      case "outline": result = store.readTranscriptIndex(request.sessionId); break;
+      case "full_entry": result = store.getFullEntry(request.sessionId, request.entryId); break;
+      case "last_seq": result = store.getLastSeq(request.sessionId); break;
+      case "last_change_seq": result = store.getLastChangeSeq(request.sessionId); break;
+      case "last_reset_change_seq": result = store.getLastResetChangeSeq(request.sessionId); break;
+      case "count": result = store.countEvents(request.sessionId); break;
+      case "pending_wake": result = store.pendingActorWake(request.sessionId); break;
+      case "ack_wake": result = store.ackActorWake(request.sessionId, request.cursor); break;
+      default: {
+        const exhaustive: never = request;
+        throw new Error(`Unsupported transcript request ${(exhaustive as { op?: string }).op}`);
+      }
+    }
+    return result as TranscriptActorResult<T>;
   }
 
   private outboxRoute(id: number): { central?: string; isolated?: string } {
@@ -585,6 +649,29 @@ export class SessionKernelStoreHost {
         placements.length === SESSION_STORE_MAINTENANCE_BATCH || pending;
     }
     return pending;
+  }
+
+  private openTranscript(sessionId: string): TranscriptStore {
+    let store = this.transcripts.get(sessionId);
+    if (store) {
+      this.transcripts.delete(sessionId);
+      this.transcripts.set(sessionId, store);
+      return store;
+    }
+    while (this.transcripts.size >= this.maxOpenSessionStores) {
+      const oldest = this.transcripts.keys().next().value as string | undefined;
+      if (!oldest) break;
+      this.transcripts.get(oldest)?.close();
+      this.transcripts.delete(oldest);
+    }
+    if (this.centralPath === ":memory:")
+      throw new Error("Actor transcript storage requires an isolated file database");
+    store = new TranscriptStore(
+      sessionKernelSessionDbPath(sessionId, this.isolatedRoot),
+      { actorOwned: false },
+    );
+    this.transcripts.set(sessionId, store);
+    return store;
   }
 
   private openIsolated(sessionId: string): SessionKernelStore {

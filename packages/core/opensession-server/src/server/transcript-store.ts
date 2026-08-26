@@ -72,6 +72,11 @@ import type {
   TranscriptIndexEntry,
   TranscriptIndexRole,
 } from "@tellahq/opensession-protocol/session";
+import type {
+  TranscriptActorRequest,
+  TranscriptMutationResult,
+  TranscriptWake,
+} from "./session-kernel/transcript-protocol";
 
 export type { SeqEntry, TranscriptBusEvent };
 
@@ -405,6 +410,13 @@ export class TranscriptStore {
   ) => DestinationWriteOutcome) & {
     immediate: (request: ValidatedDestinationAppend) => DestinationWriteOutcome;
   };
+  private txActorMutation: ((
+    request: Extract<TranscriptActorRequest, { requestId: string }>,
+  ) => TranscriptMutationResult<unknown>) & {
+    immediate: (
+      request: Extract<TranscriptActorRequest, { requestId: string }>,
+    ) => TranscriptMutationResult<unknown>;
+  };
 
   constructor(
     public readonly dbPath: string,
@@ -472,6 +484,15 @@ export class TranscriptStore {
         created_at INTEGER NOT NULL,
         PRIMARY KEY (session_id, append_id)
       );
+      CREATE TABLE IF NOT EXISTS session_kernel_transcript_wakes (
+        session_id TEXT PRIMARY KEY,
+        cursor INTEGER NOT NULL DEFAULT 0,
+        acked_cursor INTEGER NOT NULL DEFAULT 0,
+        first_change_seq INTEGER NOT NULL DEFAULT 0,
+        last_change_seq INTEGER NOT NULL DEFAULT 0,
+        reset_epoch INTEGER NOT NULL DEFAULT 0,
+        updated_at INTEGER NOT NULL
+      );
     `);
     this.migrateChangeSequence();
     type Tx = typeof this.txWrite;
@@ -503,6 +524,9 @@ export class TranscriptStore {
         return this.writeEntriesInTx(sessionId, entries);
       }
     ) as unknown as typeof this.txReplace;
+    this.txActorMutation = this.db.transaction((request) =>
+      this.applyActorMutationInTx(request)
+    ) as unknown as typeof this.txActorMutation;
     this.txDestinationAppend = this.db.transaction(
       (request: ValidatedDestinationAppend) => {
         const receiptRow = this.db
@@ -948,6 +972,209 @@ export class TranscriptStore {
       }
     }
     return outcome.result;
+  }
+
+  /** Actor-only request entrypoint. Mutations, immutable exact result receipts,
+   * and replayable wake cursors settle in one SQLite transaction. */
+  applyActorRequest(request: TranscriptActorRequest): unknown {
+    if (!request.sessionId || Buffer.byteLength(request.sessionId) > 1_024)
+      throw new TypeError("Transcript actor request has an invalid session ID");
+    if ("entries" in request && request.entries.length > 10_000)
+      throw new RangeError("Transcript actor request has too many entries");
+    if ("limit" in request && request.limit !== undefined &&
+      (!Number.isSafeInteger(request.limit) || request.limit < 1 || request.limit > 10_000))
+      throw new RangeError("Transcript actor read limit is invalid");
+
+    if ("requestId" in request) return this.txActorMutation.immediate(request);
+    if (request.op === "needs_import") return this.needsImport(request.sessionId);
+    if (request.op === "import_info") return this.getImportInfo(request.sessionId);
+    if (request.op === "tail") return this.readTail(request.sessionId, request.limit);
+    if (request.op === "tail_window") return this.readTailWindow(request.sessionId, request.options);
+    if (request.op === "since")
+      return this.readSince(request.sessionId, request.sinceSeq, request.limit);
+    if (request.op === "changes_since")
+      return this.readChangesSince(request.sessionId, request.changeSeq, request.limit);
+    if (request.op === "before")
+      return this.readBefore(request.sessionId, request.beforeSeq, request.limit);
+    if (request.op === "range")
+      return this.readRange(
+        request.sessionId,
+        request.fromSeq,
+        request.toSeq,
+        request.fromSeq - 1,
+        request.limit,
+      );
+    if (request.op === "outline") return this.readTranscriptIndex(request.sessionId);
+    if (request.op === "full_entry") return this.getFullEntry(request.sessionId, request.entryId);
+    if (request.op === "last_seq") return this.getLastSeq(request.sessionId);
+    if (request.op === "last_change_seq") return this.getLastChangeSeq(request.sessionId);
+    if (request.op === "last_reset_change_seq")
+      return this.getLastResetChangeSeq(request.sessionId);
+    if (request.op === "count") return this.countEvents(request.sessionId);
+    if (request.op === "pending_wake") return this.pendingActorWake(request.sessionId);
+    return this.ackActorWake(request.sessionId, request.cursor);
+  }
+
+  private applyActorMutationInTx(
+    request: Extract<TranscriptActorRequest, { requestId: string }>,
+  ): TranscriptMutationResult<unknown> {
+    if (!request.sessionId || !request.requestId)
+      throw new TypeError("Transcript actor mutation requires session and request IDs");
+    if (Buffer.byteLength(request.sessionId) > 1_024 || Buffer.byteLength(request.requestId) > 256)
+      throw new RangeError("Transcript actor mutation identity is too large");
+    const requestJson = canonicalDestinationJson(request);
+    const digest = new Bun.CryptoHasher("sha256")
+      .update("opensession.transcript-actor-command.v1\0")
+      .update(requestJson)
+      .digest("hex");
+    const receipt = this.db.query(`
+      SELECT request_digest, result_json FROM transcript_append_receipts
+      WHERE session_id = ? AND append_id = ?
+    `).get(request.sessionId, request.requestId) as {
+      request_digest: string;
+      result_json: string;
+    } | null;
+    if (receipt) {
+      if (receipt.request_digest !== digest)
+        throw new TranscriptAppendConflictError(request.sessionId, request.requestId);
+      return {
+        ...(JSON.parse(receipt.result_json) as TranscriptMutationResult<unknown>),
+        replay: true,
+      };
+    }
+
+    const currentEpoch = this.getLastResetChangeSeq(request.sessionId);
+    const beforeChangeSeq = this.getLastChangeSeq(request.sessionId);
+    if (request.expectedEpoch !== undefined && request.expectedEpoch !== currentEpoch)
+      throw new Error(
+        `Transcript epoch fence rejected ${request.sessionId}: expected ${request.expectedEpoch}, current ${currentEpoch}`,
+      );
+
+    let result: unknown;
+    if (request.op === "append" || request.op === "append_destination") {
+      const outcome = this.writeEntriesInTx(request.sessionId, request.entries);
+      this.db.run(`
+        UPDATE transcript_sessions SET
+          imported_at = COALESCE(imported_at, ?),
+          import_src = COALESCE(import_src, 'live-only')
+        WHERE session_id = ?
+      `, [Date.now(), request.sessionId]);
+      result = request.op === "append_destination"
+        ? destinationResult(outcome)
+        : appendResult(outcome);
+    } else if (request.op === "import") {
+      const outcome = this.writeEntriesInTx(request.sessionId, request.entries);
+      this.markImported(request.sessionId, request.src, request.watermark);
+      result = { inserted: outcome.inserted, updated: outcome.updated };
+    } else if (request.op === "replace") {
+      this.db.run("DELETE FROM transcript_events WHERE session_id = ?", [request.sessionId]);
+      this.db.run("DELETE FROM transcript_outline WHERE session_id = ?", [request.sessionId]);
+      this.db.run("DELETE FROM transcript_blobs WHERE session_id = ?", [request.sessionId]);
+      this.db.run(`
+        INSERT INTO transcript_sessions (session_id, next_seq, next_change_seq)
+        VALUES (?, 1, 1)
+        ON CONFLICT(session_id) DO UPDATE SET
+          next_seq = 1,
+          reset_change_seq = transcript_sessions.next_change_seq,
+          next_change_seq = transcript_sessions.next_change_seq + 1
+      `, [request.sessionId]);
+      const outcome = this.writeEntriesInTx(request.sessionId, request.entries);
+      result = { inserted: outcome.inserted, updated: outcome.updated };
+    } else {
+      this.db.run("DELETE FROM transcript_events WHERE session_id = ?", [request.sessionId]);
+      this.db.run("DELETE FROM transcript_outline WHERE session_id = ?", [request.sessionId]);
+      this.db.run("DELETE FROM transcript_blobs WHERE session_id = ?", [request.sessionId]);
+      this.db.run("DELETE FROM transcript_sessions WHERE session_id = ?", [request.sessionId]);
+      result = null;
+    }
+
+    const previousWake = this.pendingActorWake(request.sessionId, true);
+    const cursor = (previousWake?.cursor ?? 0) + 1;
+    const lastChangeSeq = this.getLastChangeSeq(request.sessionId);
+    const resetEpoch = request.op === "delete"
+      ? currentEpoch + 1
+      : this.getLastResetChangeSeq(request.sessionId);
+    const firstChangeSeq = previousWake && previousWake.cursor > previousWake.ackedCursor
+      ? previousWake.firstChangeSeq
+      : Math.min(lastChangeSeq, beforeChangeSeq + 1);
+    this.db.run(`
+      INSERT INTO session_kernel_transcript_wakes
+        (session_id, cursor, acked_cursor, first_change_seq, last_change_seq,
+         reset_epoch, updated_at)
+      VALUES (?, ?, 0, ?, ?, ?, ?)
+      ON CONFLICT(session_id) DO UPDATE SET
+        cursor = excluded.cursor,
+        first_change_seq = CASE
+          WHEN session_kernel_transcript_wakes.cursor > session_kernel_transcript_wakes.acked_cursor
+          THEN session_kernel_transcript_wakes.first_change_seq
+          ELSE excluded.first_change_seq
+        END,
+        last_change_seq = excluded.last_change_seq,
+        reset_epoch = excluded.reset_epoch,
+        updated_at = excluded.updated_at
+    `, [
+      request.sessionId,
+      cursor,
+      firstChangeSeq,
+      lastChangeSeq,
+      resetEpoch,
+      Date.now(),
+    ]);
+    const commandResult: TranscriptMutationResult<unknown> = {
+      result,
+      wakeCursor: cursor,
+      replay: false,
+    };
+    const resultJson = canonicalDestinationJson(commandResult);
+    this.db.run(`
+      INSERT INTO transcript_append_receipts
+        (session_id, append_id, request_digest, fence_json, result_json, created_at)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `, [
+      request.sessionId,
+      request.requestId,
+      digest,
+      canonicalDestinationJson({
+        expectedEpoch: request.expectedEpoch ?? null,
+        generation: request.generation ?? null,
+        runId: request.runId ?? null,
+        turnId: request.turnId ?? null,
+      }),
+      resultJson,
+      Date.now(),
+    ]);
+    return commandResult;
+  }
+
+  pendingActorWake(sessionId: string, includeAcked = false): TranscriptWake | null {
+    const row = this.db.query(`
+      SELECT cursor, acked_cursor, first_change_seq, last_change_seq, reset_epoch
+      FROM session_kernel_transcript_wakes WHERE session_id = ?
+    `).get(sessionId) as {
+      cursor: number;
+      acked_cursor: number;
+      first_change_seq: number;
+      last_change_seq: number;
+      reset_epoch: number;
+    } | null;
+    if (!row || (!includeAcked && row.cursor <= row.acked_cursor)) return null;
+    return {
+      cursor: Number(row.cursor),
+      ackedCursor: Number(row.acked_cursor),
+      firstChangeSeq: Number(row.first_change_seq),
+      lastChangeSeq: Number(row.last_change_seq),
+      resetEpoch: Number(row.reset_epoch),
+    };
+  }
+
+  ackActorWake(sessionId: string, cursor: number): boolean {
+    if (!Number.isSafeInteger(cursor) || cursor < 0) return false;
+    const result = this.db.run(`
+      UPDATE session_kernel_transcript_wakes
+      SET acked_cursor = ?, updated_at = ?
+      WHERE session_id = ? AND cursor = ? AND acked_cursor < ?
+    `, [cursor, Date.now(), sessionId, cursor, cursor]);
+    return result.changes === 1;
   }
 
   // ── Import (legacy history) ────────────────────────────────────────────────
@@ -2347,6 +2574,22 @@ function canonicalDestinationJson(value: unknown): string {
         `${JSON.stringify(key)}:${canonicalDestinationJson(record[key])}`,
     )
     .join(",")}}`;
+}
+
+function appendResult(outcome: WriteOutcome): AppendResult | null {
+  if (outcome.affected.length === 0) return null;
+  let firstSeq = outcome.affected[0].seq;
+  let lastSeq = firstSeq;
+  for (const entry of outcome.affected) {
+    firstSeq = Math.min(firstSeq, entry.seq);
+    lastSeq = Math.max(lastSeq, entry.seq);
+  }
+  return {
+    firstSeq,
+    lastSeq,
+    inserted: outcome.inserted,
+    updated: outcome.updated,
+  };
 }
 
 function destinationResult(

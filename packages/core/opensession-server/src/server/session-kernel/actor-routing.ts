@@ -5,6 +5,7 @@ import type {
 import { isDeliveryReadRequest } from "./delivery-protocol";
 import type { SessionActorReducerCommand } from "./lifecycle-protocol";
 import { sessionKernelStoreRoute } from "./store-routing";
+import { isTranscriptRead } from "./transcript-protocol";
 
 export type SessionActorRoute =
   | { scope: "global" }
@@ -15,6 +16,7 @@ export function isReadReducer(command: SessionActorReducerCommand): boolean {
   if (command.kind === "ask")
     return command.request.op === "snapshot" || command.request.op === "entries";
   if (command.kind === "delivery") return isDeliveryReadRequest(command.request);
+  if (command.kind === "transcript") return isTranscriptRead(command.request);
   return command.kind === "turn" && command.request.op === "snapshot";
 }
 
@@ -53,6 +55,7 @@ export function sessionActorReducerRoute(
     case "turn":
     case "timer":
     case "gateway":
+    case "transcript":
       return "sessionId" in command.request
         ? {
             scope: "session",
