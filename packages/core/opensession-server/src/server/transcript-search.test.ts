@@ -59,6 +59,20 @@ describe("transcript search", () => {
     expect(result.searchedSessions).toBe(3);
   });
 
+  test("pages beyond the newest 24 rows within the global budget", () => {
+    append("deep", Array.from({ length: 60 }, (_, i) =>
+      entry(`deep-${i}`, i === 10 ? "older needle survives paging" : `ordinary row ${i}`),
+    ));
+    const result = searchStoredTranscripts({
+      isolatedRoot: root,
+      query: "older needle",
+      sessionIds: ["deep"],
+      maxRows: 60,
+    });
+    expect(result.matches).toMatchObject([{ id: "deep" }]);
+    expect(result.candidateRows).toBeGreaterThan(24);
+  });
+
   test("enforces total session and candidate-row budgets", () => {
     for (const id of ["one", "two", "three"])
       append(id, Array.from({ length: 4 }, (_, i) => entry(`${id}-${i}`, "shared phrase")));
@@ -105,6 +119,9 @@ describe("transcript search", () => {
     expect(search).toContain("transcriptSearchWorkerArgv");
     expect(search).not.toContain("transcript.search");
     expect(search).toContain("signal?.addEventListener");
+    expect(search).toContain("exhausted");
+    expect(route).toContain("stored.exhausted !== null");
+    expect(route).toContain("stored.searchedSessions < recentIds.length");
   });
 
   test("builds one-line context around a match", () => {

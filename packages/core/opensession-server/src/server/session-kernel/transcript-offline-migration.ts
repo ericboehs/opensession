@@ -10,6 +10,7 @@ import {
   SessionKernelStore,
   sessionKernelSessionDbPath,
 } from "./store";
+import { assertTranscriptActorResponse } from "./transcript-protocol";
 
 const TABLES = [
   {
@@ -171,6 +172,16 @@ function verifySourceCoherence(db: Database, sessionId: string): void {
   `, sessionId);
   if (blobMismatch !== 0 || danglingBlobs !== 0)
     throw new Error(`${sessionId} transcript blob references are incoherent`);
+  const blobs = db.query(`
+    SELECT data FROM source.transcript_blobs WHERE session_id = ? ORDER BY id
+  `).all(sessionId) as Array<{ data: string }>;
+  for (const blob of blobs) {
+    try {
+      assertTranscriptActorResponse(JSON.parse(blob.data));
+    } catch {
+      throw new Error(`${sessionId} transcript blob exceeds the actor read contract`);
+    }
+  }
 
   const receipts = db.query(`
     SELECT session_id, append_id, request_digest, fence_json, result_json, created_at

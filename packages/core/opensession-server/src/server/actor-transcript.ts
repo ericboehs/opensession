@@ -16,6 +16,7 @@ import {
 import {
   actorTranscriptSessionIds,
   sessionTranscript,
+  TRANSCRIPT_ACTOR_MAX_REQUEST_BYTES,
   type TranscriptActorRequest,
   type TranscriptMutationResult,
 } from "./session-kernel";
@@ -146,6 +147,28 @@ export async function appendTranscriptDestination(
   });
 }
 
+function importChunks(entries: TranscriptEntry[]): TranscriptEntry[][] {
+  if (entries.length === 0) return [[]];
+  // Leave room for the request envelope, ids and import metadata. The actor
+  // still performs the canonical exact-byte preflight on every final request.
+  const byteBudget = TRANSCRIPT_ACTOR_MAX_REQUEST_BYTES - 64 * 1024;
+  const chunks: TranscriptEntry[][] = [];
+  let chunk: TranscriptEntry[] = [];
+  let bytes = 2;
+  for (const entry of entries) {
+    const entryBytes = Buffer.byteLength(JSON.stringify(entry)) + 1;
+    if (chunk.length > 0 && (chunk.length >= 500 || bytes + entryBytes > byteBudget)) {
+      chunks.push(chunk);
+      chunk = [];
+      bytes = 2;
+    }
+    chunk.push(entry);
+    bytes += entryBytes;
+  }
+  chunks.push(chunk);
+  return chunks;
+}
+
 export async function importLegacyTranscript(
   sessionId: string,
   entries: TranscriptEntry[],
@@ -156,10 +179,7 @@ export async function importLegacyTranscript(
   let inserted = 0;
   let updated = 0;
   let finalMutation: TranscriptMutationResult<{ inserted: number; updated: number }> | null = null;
-  const chunks = entries.length
-    ? Array.from({ length: Math.ceil(entries.length / 500) }, (_, index) =>
-        entries.slice(index * 500, (index + 1) * 500))
-    : [[]];
+  const chunks = importChunks(entries);
   for (let index = 0; index < chunks.length; index++) {
     const final = index === chunks.length - 1;
     const mutation = await callTranscript({

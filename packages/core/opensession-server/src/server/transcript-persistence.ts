@@ -133,6 +133,7 @@ async function appendLines(engineSessionId: string, lines: JsonlLine[]): Promise
 export async function storeAppendUserLineEarly(
   sessionId: string,
   line: Record<string, unknown>,
+  options: { required?: boolean } = {},
 ): Promise<void> {
   if (!sessionId) return;
   const forward = transcriptForwarder();
@@ -145,6 +146,7 @@ export async function storeAppendUserLineEarly(
     if (entries.length) await appendTranscriptEvents(sessionId, entries);
   } catch (error) {
     warnFailureOnce(sessionId, `[transcript] early user-line persist failed for ${sessionId}`, error);
+    if (options.required) throw error;
   }
 }
 

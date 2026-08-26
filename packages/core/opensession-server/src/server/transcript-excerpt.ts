@@ -22,6 +22,7 @@
 import { isContextInjection } from "@tellahq/opensession-protocol/notices";
 import type { TranscriptEntry } from "./types";
 import { transcript } from "./actor-transcript";
+import { TRANSCRIPT_ACTOR_MAX_READ_LIMIT } from "./session-kernel/transcript-protocol";
 
 /** A transcript entry with the display order it holds in its session. */
 export type ExcerptEntry = TranscriptEntry & { seq: number };
@@ -83,7 +84,7 @@ export interface ExcerptOpts {
  *  interesting region of a searched session is nearly always in the recent
  *  part of it. */
 const MAX_SCAN = 4000;
-const PAGE = 1000;
+const PAGE = TRANSCRIPT_ACTOR_MAX_READ_LIMIT;
 
 export function excerptTerms(query: string): string[] {
 	return (query || "")
@@ -187,7 +188,12 @@ async function loadEntries(
 				if (out.length)
 					return { entries: out, source: "store", lastSeq, truncated: from > 0 };
 			}
-		} catch {}
+		} catch {
+			// An authoritative actor read failure is not evidence that the session
+			// is legacy. Falling through would hydrate its entire transcript through
+			// mergedSessionTranscriptAsync and defeat this scan's hard row budget.
+			return { entries: [], source: "none", lastSeq: 0, truncated: true };
+		}
 	}
 	const legacy = deps.legacy ? await deps.legacy(sessionId) : [];
 	if (!legacy.length)

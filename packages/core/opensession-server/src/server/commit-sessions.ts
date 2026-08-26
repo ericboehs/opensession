@@ -47,6 +47,7 @@ const KEEP_DAYS = 60;
 /** Sessions read between yields. The sweep can walk hundreds of megabytes on
  *  its first run, and it must not hold the loop while it does. */
 const YIELD_EVERY = 20;
+const TRANSCRIPT_PAGE_SIZE = 200;
 
 /** Hex runs that could be a sha. Bounded by word edges, so the hex inside a
  *  longer token is not one; 7 is git's shortest abbreviation here. */
@@ -159,6 +160,28 @@ export function readableThrough(
 	return read;
 }
 
+export async function readCommitTranscriptRows(
+	sessionId: string,
+	cursor: number,
+	readSince: typeof transcript.readSince = transcript.readSince,
+): Promise<Array<{ seq: number; ts: number; data: string }>> {
+	const rows: Array<{ seq: number; ts: number; data: string }> = [];
+	let pageCursor = cursor;
+	for (;;) {
+		const page = await readSince(sessionId, pageCursor, TRANSCRIPT_PAGE_SIZE);
+		for (const entry of page.entries) {
+			rows.push({
+				seq: entry.seq,
+				ts: Date.parse(entry.timestamp || "") || 0,
+				data: JSON.stringify(entry),
+			});
+		}
+		if (page.entries.length < TRANSCRIPT_PAGE_SIZE) break;
+		pageCursor = page.entries.at(-1)!.seq;
+	}
+	return rows;
+}
+
 let sweeping: Promise<void> | null = null;
 
 /**
@@ -191,20 +214,7 @@ async function sweep(
 	let walked = 0;
 	for (const session of sessions) {
 		const cursor = index.cursors[session]?.seq ?? 0;
-		const rows: Array<{ seq: number; ts: number; data: string }> = [];
-		let pageCursor = cursor;
-		for (;;) {
-			const page = await transcript.readSince(session, pageCursor, 200);
-			for (const entry of page.entries) {
-				rows.push({
-					seq: entry.seq,
-					ts: Date.parse(entry.timestamp || "") || 0,
-					data: JSON.stringify(entry),
-				});
-			}
-			if (page.entries.length < 1000) break;
-			pageCursor = page.entries.at(-1)!.seq;
-		}
+		const rows = await readCommitTranscriptRows(session, cursor);
 
 		if (rows.length) {
 			const found = firstMentions(

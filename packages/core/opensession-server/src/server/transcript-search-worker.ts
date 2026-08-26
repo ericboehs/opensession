@@ -12,7 +12,7 @@ import { transcriptEntryMatchSnippet } from "./transcript-search";
 import { sessionKernelSessionDbPath } from "./session-kernel/store";
 import type { TranscriptEntry } from "./types";
 
-const CANDIDATES_PER_SESSION = 24;
+const SEARCH_PAGE_ROWS = 200;
 export const TRANSCRIPT_SEARCH_MAX_SESSIONS = 250;
 export const TRANSCRIPT_SEARCH_MAX_ROWS = 6_000;
 export const TRANSCRIPT_SEARCH_MAX_MS = 5_000;
@@ -41,6 +41,7 @@ export interface StoredTranscriptSearchResult {
 }
 
 interface CandidateRow {
+  seq: number;
   data: string;
 }
 
@@ -71,7 +72,7 @@ export function searchStoredTranscripts(
 
   const startedAt = now();
   const ids = input.sessionIds.slice(0, maxSessions);
-  for (const id of ids) {
+  sessionLoop: for (const id of ids) {
     if (now() - startedAt >= maxMs) {
       exhausted = "time";
       break;
@@ -89,29 +90,47 @@ export function searchStoredTranscripts(
     if (!existsSync(path)) continue;
     const db = new Database(path, { readonly: true, strict: true });
     try {
-      const remainingRows = maxRows - candidateRows;
-      const rows = db.query(`
-        SELECT data FROM transcript_events
-        WHERE session_id = ?
-        ORDER BY seq DESC LIMIT ?
-      `).all(id, Math.min(CANDIDATES_PER_SESSION, remainingRows)) as CandidateRow[];
-      candidateRows += rows.length;
-      for (const row of rows) {
-        try {
-          const snippet = transcriptEntryMatchSnippet(
-            JSON.parse(row.data) as TranscriptEntry,
-            query,
-          );
-          if (snippet) {
-            matches.push({ id, snippet });
-            break;
-          }
-        } catch {}
+      let beforeSeq = Number.MAX_SAFE_INTEGER;
+      while (true) {
+        if (now() - startedAt >= maxMs) {
+          exhausted = "time";
+          break sessionLoop;
+        }
+        const remainingRows = maxRows - candidateRows;
+        if (remainingRows <= 0) {
+          exhausted = "rows";
+          break sessionLoop;
+        }
+        const limit = Math.min(SEARCH_PAGE_ROWS, remainingRows);
+        const rows = db.query(`
+          SELECT seq, data FROM transcript_events
+          WHERE session_id = ? AND seq < ?
+          ORDER BY seq DESC LIMIT ?
+        `).all(id, beforeSeq, limit) as CandidateRow[];
+        candidateRows += rows.length;
+        let matched = false;
+        for (const row of rows) {
+          try {
+            const snippet = transcriptEntryMatchSnippet(
+              JSON.parse(row.data) as TranscriptEntry,
+              query,
+            );
+            if (snippet) {
+              matches.push({ id, snippet });
+              matched = true;
+              break;
+            }
+          } catch {}
+        }
+        if (matched || rows.length < limit) break;
+        beforeSeq = rows.at(-1)!.seq;
       }
     } finally {
       db.close();
     }
   }
+  if (!exhausted && candidateRows >= maxRows) exhausted = "rows";
+  if (!exhausted && matches.length >= maxMatches) exhausted = "matches";
   if (!exhausted && input.sessionIds.length > ids.length) exhausted = "sessions";
   return { matches, searchedSessions, candidateRows, exhausted };
 }

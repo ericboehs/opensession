@@ -171,7 +171,7 @@ export function logInjectedContext(input: InjectedContextInput): void {
 		// The ordinary entry path — same helper the intake user line uses, so
 		// the import-first gate, the 32KB blob split and the bus publish all
 		// behave exactly as they do for any other entry.
-		storeAppendUserLineEarly(
+		void storeAppendUserLineEarly(
 			sessionId,
 			transcriptLineContextInjection(
 				block.body,

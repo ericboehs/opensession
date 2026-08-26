@@ -684,9 +684,19 @@ export function archivedIndexRow(
  * when nothing matches, which we treat as "no hits", not an error. Chunked so a
  * very long file list can't overflow the argv limit.
  */
+type StoredTranscriptSearchExhaustion =
+	| "sessions"
+	| "rows"
+	| "time"
+	| "matches"
+	| "error"
+	| null;
+
 interface StoredTranscriptSearchResult {
 	matches: Array<{ id: string; snippet: string }>;
 	searchedSessions: number;
+	candidateRows: number;
+	exhausted: StoredTranscriptSearchExhaustion;
 }
 
 /** Global search uses bounded read-only handles in a child process. It never
@@ -696,7 +706,8 @@ async function searchStoredTranscripts(
 	sessionIds: string[],
 	signal?: AbortSignal,
 ): Promise<StoredTranscriptSearchResult> {
-	if (sessionIds.length === 0) return { matches: [], searchedSessions: 0 };
+	if (sessionIds.length === 0)
+		return { matches: [], searchedSessions: 0, candidateRows: 0, exhausted: null };
 	const proc = Bun.spawn(
 		transcriptSearchWorkerArgv(
 			process.execPath,
@@ -725,15 +736,32 @@ async function searchStoredTranscripts(
 		if (code !== 0 || signal?.aborted) {
 			if (!signal?.aborted)
 				console.warn(`[transcript-search] worker failed: ${error.trim().slice(0, 300)}`);
-			return { matches: [], searchedSessions: 0 };
+			return {
+				matches: [],
+				searchedSessions: 0,
+				candidateRows: 0,
+				exhausted: "error",
+			};
 		}
 		const parsed = JSON.parse(output) as StoredTranscriptSearchResult;
+		const exhausted = ["sessions", "rows", "time", "matches"].includes(
+			String(parsed.exhausted),
+		)
+			? parsed.exhausted
+			: null;
 		return {
 			matches: Array.isArray(parsed.matches) ? parsed.matches.slice(0, 50) : [],
 			searchedSessions: Number(parsed.searchedSessions) || 0,
+			candidateRows: Number(parsed.candidateRows) || 0,
+			exhausted,
 		};
 	} catch {
-		return { matches: [], searchedSessions: 0 };
+		return {
+			matches: [],
+			searchedSessions: 0,
+			candidateRows: 0,
+			exhausted: "error",
+		};
 	} finally {
 		signal?.removeEventListener("abort", abort);
 	}
@@ -1415,7 +1443,10 @@ export async function handleSessionsRoutes(
 		}
 		return Response.json({
 			matches,
-			truncated: sessions.length > recentIds.length && matches.length < 50,
+			truncated:
+				stored.exhausted !== null ||
+				stored.searchedSessions < recentIds.length ||
+				(sessions.length > recentIds.length && matches.length < 50),
 		});
 	}
 

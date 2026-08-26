@@ -54,6 +54,8 @@ describe("single session ownership", () => {
 		expect(queue).toContain("sessionDeliveryMigrationComplete()");
 		expect(asks).toContain("removeLegacyAskStore(storePath)");
 		expect(asks).toContain("sessionAskMigrationComplete()");
+		// Once the actor acknowledges either one-time import, production JSON
+		// persistence stays fail-closed instead of becoming a second writer.
 		expect(queue).toContain("queueMigrationState.complete");
 		expect(asks).toContain("askMigrationState.complete");
 	});

@@ -1671,7 +1671,9 @@ async function* runPiAttempt(
           kind: journal.kind,
         })
       );
-      storeAppendUserLineEarly(journal.osSessionId, userLine);
+      await storeAppendUserLineEarly(journal.osSessionId, userLine, {
+        required: true,
+      });
     }
 
     const policy = runToolPolicy({

@@ -1084,7 +1084,7 @@ export async function openCreatedSession(
 			// a titled but empty session. The runner later upserts this stable id.
 			const displayPrompt = spec.displayPrompt ?? spec.titlePrompt;
 			if (displayPrompt.trim() || spec.images?.length) {
-				storeAppendUserLineEarly(
+				await storeAppendUserLineEarly(
 					bksId,
 					transcriptLineUser(
 						displayPrompt,
@@ -1092,6 +1092,7 @@ export async function openCreatedSession(
 						spec.createdAt,
 						spec.images,
 					),
+					{ required: true },
 				);
 			}
 			// A session starting in a workspace consumes its draft. The

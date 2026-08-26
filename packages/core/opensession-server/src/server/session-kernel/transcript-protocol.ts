@@ -13,11 +13,12 @@ import type {
 } from "../transcript-store";
 
 export const TRANSCRIPT_ACTOR_MAX_ENTRIES = 10_000;
-export const TRANSCRIPT_ACTOR_MAX_REQUEST_BYTES = 16 * 1024 * 1024;
-export const TRANSCRIPT_ACTOR_MAX_RESPONSE_BYTES = 16 * 1024 * 1024;
+export const TRANSCRIPT_ACTOR_MAX_REQUEST_BYTES = 80 * 1024 * 1024;
+export const TRANSCRIPT_ACTOR_MAX_RESPONSE_BYTES = 80 * 1024 * 1024;
 export const TRANSCRIPT_ACTOR_MAX_READ_LIMIT = 200;
+export const TRANSCRIPT_ACTOR_SNAPSHOT_PAGE_LIMIT = 1_400;
 export const TRANSCRIPT_ACTOR_OUTLINE_PAGE_LIMIT = 2_000;
-const TRANSCRIPT_ACTOR_MAX_STRING_BYTES = 8 * 1024 * 1024;
+const TRANSCRIPT_ACTOR_MAX_STRING_BYTES = 72 * 1024 * 1024;
 const TRANSCRIPT_ACTOR_MAX_SCALARS = 250_000;
 
 export type TranscriptMutationFence = {
@@ -239,8 +240,11 @@ export function assertTranscriptActorRequest(request: TranscriptActorRequest): v
         options.weightProfile !== "v2_snapshot" &&
         options.weightProfile !== "handoff")
     ) throw new TypeError("Transcript actor tail window options are invalid");
-    const maxEntriesCeiling =
-      options.weightProfile === "handoff" ? 512 : TRANSCRIPT_ACTOR_MAX_READ_LIMIT;
+    const maxEntriesCeiling = options.weightProfile === "v2_snapshot"
+      ? TRANSCRIPT_ACTOR_SNAPSHOT_PAGE_LIMIT
+      : options.weightProfile === "handoff"
+        ? 512
+        : TRANSCRIPT_ACTOR_MAX_READ_LIMIT;
     for (const [name, value, ceiling] of [
       ["minEntries", options.minEntries, TRANSCRIPT_ACTOR_MAX_READ_LIMIT],
       ["minMessages", options.minMessages, TRANSCRIPT_ACTOR_MAX_READ_LIMIT],

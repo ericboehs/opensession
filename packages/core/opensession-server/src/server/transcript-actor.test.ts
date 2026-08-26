@@ -13,6 +13,7 @@ import {
   assertTranscriptActorResponse,
   TRANSCRIPT_ACTOR_MAX_ENTRIES,
   TRANSCRIPT_ACTOR_MAX_READ_LIMIT,
+  TRANSCRIPT_ACTOR_MAX_REQUEST_BYTES,
   TRANSCRIPT_ACTOR_MAX_RESPONSE_BYTES,
 } from "./session-kernel/transcript-protocol";
 
@@ -77,6 +78,30 @@ describe("actor transcript request bounds", () => {
       op: "tail_window",
       sessionId: "bounded",
       options: {
+        minEntries: 132,
+        minMessages: 4,
+        minUserMessagesWithToolWork: 1,
+        maxEntries: 1_400,
+        maxEstimatedBytes: 850_000,
+        weightProfile: "v2_snapshot",
+      },
+    })).not.toThrow();
+    expect(() => assertTranscriptActorRequest({
+      op: "tail_window",
+      sessionId: "bounded",
+      options: {
+        minEntries: 132,
+        minMessages: 4,
+        minUserMessagesWithToolWork: 1,
+        maxEntries: 1_401,
+        maxEstimatedBytes: 850_000,
+        weightProfile: "v2_snapshot",
+      },
+    })).toThrow("maxEntries");
+    expect(() => assertTranscriptActorRequest({
+      op: "tail_window",
+      sessionId: "bounded",
+      options: {
         minEntries: 32,
         minMessages: 24,
         minUserMessagesWithToolWork: 4,
@@ -97,6 +122,35 @@ describe("actor transcript request bounds", () => {
         weightProfile: "handoff",
       },
     })).toThrow("maxEntries");
+  });
+
+  test("persists and reads an entry larger than the former 16 MiB envelope", () => {
+    expect(TRANSCRIPT_ACTOR_MAX_REQUEST_BYTES).toBeGreaterThan(16 * 1024 * 1024);
+    expect(TRANSCRIPT_ACTOR_MAX_RESPONSE_BYTES).toBeGreaterThan(16 * 1024 * 1024);
+    const { path, sessionId } = fixture();
+    const store = new TranscriptStore(path, { actorOwned: true });
+    const content = "x".repeat(17 * 1024 * 1024);
+    const request = {
+      op: "append" as const,
+      sessionId,
+      requestId: "large-accepted-entry",
+      entries: [{
+        id: "large-entry",
+        type: "user" as const,
+        timestamp: "2026-01-01T00:00:00.000Z",
+        content,
+      }],
+    };
+    expect(() => assertTranscriptActorRequest(request)).not.toThrow();
+    store.applyActorRequest(request);
+    const full = store.applyActorRequest({
+      op: "full_entry",
+      sessionId,
+      entryId: "large-entry",
+    });
+    expect(() => assertTranscriptActorResponse(full)).not.toThrow();
+    expect((full as { content: string }).content).toHaveLength(content.length);
+    store.close();
   });
 
   test("pages outlines at the actor boundary", () => {
@@ -139,22 +193,11 @@ describe("actor transcript request bounds", () => {
       sessionId: "bounded",
       entryId: "x".repeat(8 * 1024 * 1024 + 1),
     })).toThrow("entryId is invalid");
-    const large = "x".repeat(8 * 1024 * 1024);
-    expect(() => assertTranscriptActorRequest({
-      op: "append",
-      sessionId: "bounded",
-      requestId: "too-many-bytes",
-      entries: [0, 1].map((index) => ({
-        id: String(index),
-        type: "user" as const,
-        timestamp: "2026-01-01T00:00:00.000Z",
-        content: large,
-      })),
-    })).toThrow("wire byte limit");
+    expect(TRANSCRIPT_ACTOR_MAX_REQUEST_BYTES).toBe(80 * 1024 * 1024);
+    expect(TRANSCRIPT_ACTOR_MAX_RESPONSE_BYTES).toBe(80 * 1024 * 1024);
     expect(() => assertTranscriptActorResponse({
-      payload: ["x".repeat(8 * 1024 * 1024), "y".repeat(8 * 1024 * 1024)],
-      padding: TRANSCRIPT_ACTOR_MAX_RESPONSE_BYTES,
-    })).toThrow("response exceeds");
+      payload: Array.from({ length: 250_001 }, () => 0),
+    })).toThrow("too many scalar values");
   });
 });
 

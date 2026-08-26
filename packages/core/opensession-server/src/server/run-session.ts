@@ -2189,9 +2189,10 @@ async function runSessionPromptInner(
 	// entry, which previously made an accepted prompt disappear completely.
 	const durablePromptEntryId = promptEntryId || crypto.randomUUID();
 	if (content?.trim()) {
-		storeAppendUserLineEarly(
+		await storeAppendUserLineEarly(
 			sessionId,
 			transcriptLineUser(content, durablePromptEntryId, undefined, images),
+			{ required: true },
 		);
 	}
 

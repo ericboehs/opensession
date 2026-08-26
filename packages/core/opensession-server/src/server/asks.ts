@@ -401,7 +401,7 @@ export function recordAskAnswer(
 ): void {
 	if (!answers || !questions.length) return;
 	try {
-		storeAppendUserLineEarly(
+		void storeAppendUserLineEarly(
 			sessionId,
 			transcriptLineAskRecord(
 				askRecordEntryContent(questions, answers),
