@@ -9,6 +9,17 @@ function memoryStorage() {
 	};
 }
 
+function serialLocks() {
+	const tails = new Map<string, Promise<void>>();
+	return {
+		request<T>(name: string, callback: () => Promise<T>): Promise<T> {
+			const turn = (tails.get(name) ?? Promise.resolve()).then(callback);
+			tails.set(name, turn.then(() => undefined, () => undefined));
+			return turn;
+		},
+	};
+}
+
 test("persists before returning and delivers each session in order", async () => {
 	const storage = memoryStorage();
 	const delivered: string[] = [];
@@ -69,6 +80,52 @@ test("keeps the item state as the only in-tab send lock", async () => {
 	expect(delivered).toEqual(["first", "second"]);
 	expect(outbox.list()).toEqual([]);
 	outbox.dispose();
+});
+
+test("serializes one durable prompt across browser tabs", async () => {
+	const storage = memoryStorage();
+	const locks = serialLocks();
+	let deliveries = 0;
+	let deliveryStarted!: () => void;
+	const started = new Promise<void>((resolve) => {
+		deliveryStarted = resolve;
+	});
+	let releaseDelivery!: () => void;
+	const held = new Promise<void>((resolve) => {
+		releaseDelivery = resolve;
+	});
+	const deliver = async () => {
+		deliveries += 1;
+		deliveryStarted();
+		await held;
+		return { status: "started" as const, message: "ok" };
+	};
+	const firstTab = new PromptOutbox({
+		storage,
+		locks,
+		scope: "cross-tab",
+		deliver,
+	});
+	firstTab.enqueue({ sessionId: "s1", content: "once" });
+	const secondTab = new PromptOutbox({
+		storage,
+		locks,
+		scope: "cross-tab",
+		deliver,
+	});
+	const secondFlush = secondTab.flush();
+
+	await started;
+	expect(deliveries).toBe(1);
+	releaseDelivery();
+	await secondFlush;
+	await firstTab.flush();
+
+	expect(deliveries).toBe(1);
+	expect(firstTab.list()).toEqual([]);
+	expect(secondTab.list()).toEqual([]);
+	firstTab.dispose();
+	secondTab.dispose();
 });
 
 test("reports a handled command before retiring its durable row", async () => {

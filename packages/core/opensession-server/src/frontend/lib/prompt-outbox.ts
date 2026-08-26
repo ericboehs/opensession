@@ -35,6 +35,9 @@ export type PromptOutboxInput = Omit<
 type StoredOutbox = { version: 1; items: PromptOutboxItem[] };
 type DeliveryObserver = (item: PromptOutboxItem, result: PromptDelivery) => void;
 type Listener = () => void;
+interface OutboxLockManager {
+	request<T>(name: string, callback: () => Promise<T>): Promise<T>;
+}
 
 export const PROMPT_OUTBOX_MAX_ITEMS = 100;
 export const PROMPT_OUTBOX_RETRY_BASE_MS = 1_000;
@@ -85,6 +88,7 @@ export class PromptOutbox {
 			storage?: Pick<Storage, "getItem" | "setItem">;
 			scope?: string;
 			now?: () => number;
+			locks?: OutboxLockManager;
 			deliver?: (sessionId: string, body: Omit<PromptOutboxItem, "sessionId" | "state" | "attempts" | "createdAt" | "nextAttemptAt" | "error">) => Promise<PromptDelivery>;
 		} = {},
 	) {
@@ -179,6 +183,27 @@ export class PromptOutbox {
 	}
 
 	private async flushSession(sessionId: string): Promise<void> {
+		const locks =
+			this.opts.locks ??
+			(typeof navigator !== "undefined" ? navigator.locks : undefined);
+		if (!locks) {
+			await this.flushSessionOwned(sessionId);
+			return;
+		}
+		// localStorage shares the durable queue across tabs, but its in-memory
+		// `sending` guard does not. Without an origin-wide lock every open tab
+		// submits the same client id, and the actor correctly rejects all but the
+		// winner as "already in progress". Those retry writes are what made one
+		// optimistic message flash through "Waiting to send". Re-read storage only
+		// after ownership transfers: the prior tab usually removed the item while
+		// this caller waited, so there is then nothing left to deliver.
+		await locks.request(`${this.key}:deliver:${sessionId}`, async () => {
+			this.reload(false);
+			await this.flushSessionOwned(sessionId);
+		});
+	}
+
+	private async flushSessionOwned(sessionId: string): Promise<void> {
 		while (true) {
 			const item = this.items.find((candidate) => candidate.sessionId === sessionId && candidate.state === "pending" && candidate.nextAttemptAt <= this.now());
 			if (!item) return;
