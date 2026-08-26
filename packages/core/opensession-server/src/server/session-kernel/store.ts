@@ -624,12 +624,26 @@ function migrateQuarantineProjectionSchema30(
 ): void {
   if (schemaVersion >= 30) return;
   const tx = db.transaction(() => {
-    const columns = db.query(
-      "PRAGMA table_info(session_kernel_sparse_projections)",
-    ).all() as Array<{ name: string }>;
-    if (!columns.some((column) => column.name === "quarantine_state"))
-      db.exec(`ALTER TABLE session_kernel_sparse_projections
-        ADD COLUMN quarantine_state TEXT`);
+    const quarantine = (db
+      .query("PRAGMA table_info(session_kernel_sparse_projections)")
+      .all() as Array<{
+        name: string;
+        type: string;
+        notnull: number;
+        dflt_value: string | null;
+      }>).find((column) => column.name === "quarantine_state");
+    if (!quarantine) {
+      db.exec(`
+        ALTER TABLE session_kernel_sparse_projections
+          ADD COLUMN quarantine_state TEXT;
+      `);
+    } else if (
+      quarantine.type !== "TEXT" ||
+      quarantine.notnull !== 0 ||
+      quarantine.dflt_value !== null
+    ) {
+      throw new Error("Schema 30 requires exact quarantine projection storage");
+    }
     db.exec(`
       UPDATE session_kernel_sparse_projections SET dirty = 1;
       PRAGMA user_version = 30;

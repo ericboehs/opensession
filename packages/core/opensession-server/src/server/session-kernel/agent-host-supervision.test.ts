@@ -5,7 +5,10 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { createAgentHostSupervisionSigner } from "./agent-host-supervision-signer";
-import { SessionKernelStore } from "./store";
+import {
+  SESSION_KERNEL_SCHEMA_VERSION,
+  SessionKernelStore,
+} from "./store";
 import {
   decodeAgentHostSupervisionClaim,
   type AgentHostPlanRegistration,
@@ -249,7 +252,7 @@ describe("schema 27 signed Agent Host receipts", () => {
     expect(
       (validDb.query("PRAGMA user_version").get() as { user_version: number })
         .user_version,
-    ).toBe(30);
+    ).toBe(SESSION_KERNEL_SCHEMA_VERSION);
     validDb.close();
 
     const corruptPath = join(dir, "corrupt.sqlite");
