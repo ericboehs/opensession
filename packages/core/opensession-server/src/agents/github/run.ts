@@ -316,7 +316,7 @@ async function discardGithubRunRecord(
     throw new GithubRunRecoveryUncertainError(run.hostId || run.runKey);
   }
   if (events) {
-    cancelAgentRun(bksId, run.claudeSessionId, run.runKey);
+    void cancelAgentRun(bksId, run.claudeSessionId, run.runKey);
     for await (const _event of events) {}
   }
   journalClearIfLineage(run);

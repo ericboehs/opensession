@@ -245,7 +245,7 @@ export function isUserStopped(sessionId: string): boolean {
  * is parked forever and reads as lost (most visible right after a create, when
  * the opening turn is stopped before it settles).
  */
-export function liftUserStop(sessionId: string): void {
+export async function liftUserStop(sessionId: string): Promise<void> {
   stoppedSessions.delete(sessionId);
   if (sessionKernel(sessionId).runState().state === "stopped")
     // Intake only releases the durable Stop latch. The later physical run
@@ -253,7 +253,7 @@ export function liftUserStop(sessionId: string): void {
     // Advancing to `starting` here makes the intake busy-check observe its own
     // half-created run, queue the message, and wait forever for an engine owner
     // that was never started.
-    sessionKernel(sessionId).applyRunEvent({ event: "stop_lifted" });
+    await sessionKernel(sessionId).applyRunEvent({ event: "stop_lifted" });
 }
 
 // Both maps are persisted to disk so a real restart/crash (not just a hot
@@ -776,10 +776,9 @@ export function clientVisibleQueuedCounts(): Map<string, number> {
 }
 
 export async function queueDisplayState(sessionId: string) {
-	const queued = queueWithIds(promptQueues.get(sessionId));
-	const steered = queueWithIds(steeredReceipts.get(sessionId));
-	if (queued.length > 0) await promptQueues.set(sessionId, queued);
-	if (steered.length > 0) await steeredReceipts.set(sessionId, steered);
+	const snapshot = await sessionDelivery({ op: "snapshot", sessionId });
+	const queued = queueWithIds(snapshot.queued as QueueItem[]);
+	const steered = queueWithIds(snapshot.steered as QueueItem[]);
 	// Display copy only: automated turns remain in the internal queue until
 	// dispatch but never enter a client's message surface. Strip fenced
 	// <opensession:context> blocks from the remaining human-authored rows. The

@@ -2874,6 +2874,8 @@ export class SessionKernelStore {
 		const since = new Date(now).toISOString();
 		let result!: RunEventDecisionResult;
 		const tx = this.db.transaction(() => {
+      if (this.isTombstoned(input.sessionId))
+        throw new Error(`Session ${input.sessionId} was deleted`);
 			const prior = this.runState(input.sessionId);
 			const from = prior.state as RunState;
       if (
@@ -3663,6 +3665,20 @@ export class SessionKernelStore {
         state.steered = Array.isArray(value) ? value : [];
       else state.dispatch = value;
     });
+  }
+
+  enqueueDelivery(sessionId: string, item: unknown, front = false): boolean {
+    return this.mutateDelivery(sessionId, "delivery_queued_enqueue", (state) => {
+      const queue = state.queued as Array<{ id?: string }>;
+      const id = item && typeof item === "object"
+        ? (item as { id?: unknown }).id
+        : undefined;
+      if (typeof id === "string" && queue.some((queued) => queued.id === id))
+        return false;
+      if (front) queue.unshift(item as { id?: string });
+      else queue.push(item as { id?: string });
+      return true;
+    }).result as boolean;
   }
 
   deleteDeliverySlot(sessionId: string, slot: DeliverySlot): boolean {

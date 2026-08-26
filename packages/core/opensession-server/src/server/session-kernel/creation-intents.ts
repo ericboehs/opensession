@@ -1,5 +1,5 @@
 import { sessionKernel } from "./kernel";
-import type { DurableCreationState } from "./store";
+import type { CreationEventDecisionResult, DurableCreationState } from "./store";
 
 export type CreationWorkspaceIntent = {
   sessionId: string;
@@ -77,10 +77,12 @@ export type CreationOpeningIntent = {
   openingPlan: Record<string, unknown>;
 };
 
-type CreationIntentKernel = Pick<
-  ReturnType<typeof sessionKernel>,
-  "creationState" | "applyCreationEvent"
->;
+type CreationIntentKernel = {
+  creationState: ReturnType<typeof sessionKernel>["creationState"];
+  applyCreationEvent: (
+    input: Parameters<ReturnType<typeof sessionKernel>["applyCreationEvent"]>[0],
+  ) => CreationEventDecisionResult | Promise<CreationEventDecisionResult>;
+};
 
 type CreationIntentOptions = {
   kernel?: CreationIntentKernel;
@@ -100,14 +102,14 @@ function assertIdentity(
     throw new Error("Session creation has already been cancelled");
 }
 
-export function patchCreationSetupPlan(
+export async function patchCreationSetupPlan(
   sessionId: string,
   identity: string,
   patch: Partial<CreationSetupPlan>,
   kernel: CreationIntentKernel = sessionKernel(sessionId),
-): CreationSetupPlan {
-  const state = ensureCreationPlanned(sessionId, identity, kernel);
-  const decided = kernel.applyCreationEvent({
+): Promise<CreationSetupPlan> {
+  const state = await ensureCreationPlanned(sessionId, identity, kernel);
+  const decided = await kernel.applyCreationEvent({
     identity,
     event: "plan",
     planPatch: patch,
@@ -119,32 +121,32 @@ export function patchCreationSetupPlan(
   return (decided.state.setupPlan ?? state.setupPlan ?? {}) as CreationSetupPlan;
 }
 
-export function ensureCreationPlanned(
+export async function ensureCreationPlanned(
   sessionId: string,
   identity: string,
   kernel: CreationIntentKernel = sessionKernel(sessionId),
-): DurableCreationState {
+): Promise<DurableCreationState> {
   const existing = kernel.creationState();
   if (existing) {
     assertIdentity(existing, identity);
     return existing;
   }
-  const planned = kernel.applyCreationEvent({ identity, event: "plan" });
+  const planned = await kernel.applyCreationEvent({ identity, event: "plan" });
   if (!planned.accepted || !planned.state)
     throw new Error(`Creation plan was rejected: ${planned.reason || "unknown"}`);
   return planned.state;
 }
 
-export function settleCreationSucceeded(
+export async function settleCreationSucceeded(
   sessionId: string,
   identity: string,
   kernel: CreationIntentKernel = sessionKernel(sessionId),
   effectId?: string,
-): DurableCreationState {
-  const state = ensureCreationPlanned(sessionId, identity, kernel);
+): Promise<DurableCreationState> {
+  const state = await ensureCreationPlanned(sessionId, identity, kernel);
   if (state.state === "ready") return state;
   assertIdentity(state, identity);
-  const settled = kernel.applyCreationEvent({
+  const settled = await kernel.applyCreationEvent({
     identity,
     event: "succeeded",
     effectId,
@@ -156,12 +158,12 @@ export function settleCreationSucceeded(
   return settled.state;
 }
 
-export function settleCreationCancelled(
+export async function settleCreationCancelled(
   sessionId: string,
   identity: string,
   kernel: CreationIntentKernel = sessionKernel(sessionId),
   effectId?: string,
-): DurableCreationState {
+): Promise<DurableCreationState> {
   const existing = kernel.creationState();
   if (existing?.identity !== undefined && existing.identity !== identity)
     throw new Error("Create request identity crossed durable session ownership");
@@ -174,8 +176,8 @@ export function settleCreationCancelled(
     existing?.state === "failed"
   )
     return existing;
-  ensureCreationPlanned(sessionId, identity, kernel);
-  const settled = kernel.applyCreationEvent({
+  await ensureCreationPlanned(sessionId, identity, kernel);
+  const settled = await kernel.applyCreationEvent({
     identity,
     event: "cancelled",
     effectId,
@@ -188,20 +190,20 @@ export function settleCreationCancelled(
   return settled.state;
 }
 
-export function settleCreationFailed(
+export async function settleCreationFailed(
   sessionId: string,
   identity: string,
   error: unknown,
   kernel: CreationIntentKernel = sessionKernel(sessionId),
   effectId?: string,
-): DurableCreationState {
+): Promise<DurableCreationState> {
   const existing = kernel.creationState();
   if (existing?.identity !== undefined && existing.identity !== identity)
     throw new Error("Create request identity crossed durable session ownership");
   if (existing?.state === "failed" || existing?.state === "cancelled")
     return existing;
-  ensureCreationPlanned(sessionId, identity, kernel);
-  const settled = kernel.applyCreationEvent({
+  await ensureCreationPlanned(sessionId, identity, kernel);
+  const settled = await kernel.applyCreationEvent({
     identity,
     event: "failed",
     effectId,
@@ -220,7 +222,7 @@ export async function requestCreationAttachment(
   options: CreationIntentOptions = {},
 ): Promise<DurableCreationState> {
   const kernel = options.kernel ?? sessionKernel(input.sessionId);
-  let state = ensureCreationPlanned(input.sessionId, input.identity, kernel);
+  let state = await ensureCreationPlanned(input.sessionId, input.identity, kernel);
   const effectId = `attachment:${input.attachmentId}`;
   if (state.completedEffectIds.includes(effectId)) return state;
   if (state.currentEffectId && state.currentEffectId !== effectId)
@@ -228,7 +230,7 @@ export async function requestCreationAttachment(
       `Creation effect ${state.currentEffectId} must settle before ${effectId}`,
     );
   if (!state.currentEffectId) {
-    const emitted = kernel.applyCreationEvent({
+    const emitted = await kernel.applyCreationEvent({
       identity: input.identity,
       event: "preparation_started",
       nextEffectId: effectId,
@@ -274,7 +276,7 @@ export async function requestCreationOpening(
   options: CreationIntentOptions = {},
 ): Promise<DurableCreationState> {
   const kernel = options.kernel ?? sessionKernel(input.sessionId);
-  let state = ensureCreationPlanned(input.sessionId, input.identity, kernel);
+  let state = await ensureCreationPlanned(input.sessionId, input.identity, kernel);
   const effectId = `opening:${input.openingPromptEntryId}`;
   const deadline = Date.now() + (options.timeoutMs ?? 24 * 60 * 60_000);
   if (state.state === "ready") return state;
@@ -300,7 +302,7 @@ export async function requestCreationOpening(
   if (state.state === "cancelled")
     throw new Error("Session creation was cancelled before opening dispatch");
   if (state.state === "planned") {
-    const preparing = kernel.applyCreationEvent({
+    const preparing = await kernel.applyCreationEvent({
       identity: input.identity,
       event: "preparation_started",
     });
@@ -311,7 +313,7 @@ export async function requestCreationOpening(
     state = preparing.state;
   }
   if (state.state === "preparing" && !state.currentEffectId) {
-    const emitted = kernel.applyCreationEvent({
+    const emitted = await kernel.applyCreationEvent({
       identity: input.identity,
       event: "opening_dispatched",
       openingPlan: input.openingPlan,
@@ -364,7 +366,7 @@ export async function requestCreationWorkspace(
   options: CreationIntentOptions = {},
 ): Promise<DurableCreationState> {
   const kernel = options.kernel ?? sessionKernel(input.sessionId);
-  let state = ensureCreationPlanned(input.sessionId, input.identity, kernel);
+  let state = await ensureCreationPlanned(input.sessionId, input.identity, kernel);
   const effectId = `workspace:${input.workspaceId}`;
   if (state.completedEffectIds.includes(effectId)) return state;
   if (state.currentEffectId && state.currentEffectId !== effectId)
@@ -372,7 +374,7 @@ export async function requestCreationWorkspace(
       `Creation effect ${state.currentEffectId} must settle before ${effectId}`,
     );
   if (!state.currentEffectId) {
-    const emitted = kernel.applyCreationEvent({
+    const emitted = await kernel.applyCreationEvent({
       identity: input.identity,
       event: "preparation_started",
       nextEffectId: effectId,
@@ -421,7 +423,7 @@ export async function requestCreationBranch(
   options: CreationIntentOptions = {},
 ): Promise<DurableCreationState> {
   const kernel = options.kernel ?? sessionKernel(input.sessionId);
-  let state = ensureCreationPlanned(input.sessionId, input.identity, kernel);
+  let state = await ensureCreationPlanned(input.sessionId, input.identity, kernel);
   const effectId = `branch:${input.project}:${input.branch}`;
   if (state.completedEffectIds.includes(effectId)) return state;
   if (state.currentEffectId && state.currentEffectId !== effectId)
@@ -429,7 +431,7 @@ export async function requestCreationBranch(
       `Creation effect ${state.currentEffectId} must settle before ${effectId}`,
     );
   if (!state.currentEffectId) {
-    const emitted = kernel.applyCreationEvent({
+    const emitted = await kernel.applyCreationEvent({
       identity: input.identity,
       event: "preparation_started",
       nextEffectId: effectId,
@@ -476,7 +478,7 @@ export async function requestCreationCredential(
   options: CreationIntentOptions = {},
 ): Promise<DurableCreationState> {
   const kernel = options.kernel ?? sessionKernel(input.sessionId);
-  let state = ensureCreationPlanned(input.sessionId, input.identity, kernel);
+  let state = await ensureCreationPlanned(input.sessionId, input.identity, kernel);
   const effectId = `credential:${input.principal}:${input.scope}`;
   if (state.completedEffectIds.includes(effectId)) return state;
   if (state.currentEffectId && state.currentEffectId !== effectId)
@@ -484,7 +486,7 @@ export async function requestCreationCredential(
       `Creation effect ${state.currentEffectId} must settle before ${effectId}`,
     );
   if (!state.currentEffectId) {
-    const emitted = kernel.applyCreationEvent({
+    const emitted = await kernel.applyCreationEvent({
       identity: input.identity,
       event: "preparation_started",
       nextEffectId: effectId,
@@ -530,7 +532,7 @@ export async function requestCreationSandbox(
   options: CreationIntentOptions = {},
 ): Promise<DurableCreationState> {
   const kernel = options.kernel ?? sessionKernel(input.sessionId);
-  let state = ensureCreationPlanned(input.sessionId, input.identity, kernel);
+  let state = await ensureCreationPlanned(input.sessionId, input.identity, kernel);
   const effectId = `sandbox:${input.provider}:${input.sessionId}`;
   if (state.completedEffectIds.includes(effectId)) return state;
   if (state.currentEffectId && state.currentEffectId !== effectId)
@@ -538,7 +540,7 @@ export async function requestCreationSandbox(
       `Creation effect ${state.currentEffectId} must settle before ${effectId}`,
     );
   if (!state.currentEffectId) {
-    const emitted = kernel.applyCreationEvent({
+    const emitted = await kernel.applyCreationEvent({
       identity: input.identity,
       event: "preparation_started",
       nextEffectId: effectId,

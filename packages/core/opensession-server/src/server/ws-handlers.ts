@@ -98,7 +98,7 @@ async function sendWatchExtras(
 	sessionId: string,
 	session: NonNullable<Awaited<ReturnType<typeof findSessionAsync>>>,
 ): Promise<void> {
-	const pendingAsk = pendingAskAwaitingAnswer(sessionId);
+	const pendingAsk = await pendingAskAwaitingAnswer(sessionId);
 	if (pendingAsk) {
 		ws.send(
 			JSON.stringify({
@@ -1271,7 +1271,7 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 				// An explicit send is the user's next action after a Stop, so it lifts the
 				// stop latch here rather than inside the run the latch prevents. Without
 				// this the message below queues durably and the drain parks it forever.
-				liftUserStop(sessionId);
+				await liftUserStop(sessionId);
 
 				// Busy sends queue by default, so the user can still delete/edit or
 				// manually steer the message. Settings can opt the composer into
@@ -1285,7 +1285,7 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 					)
 				) {
 					if (msg.busyMode === "queue") {
-						enqueuePrompt(sessionId, {
+						await enqueuePrompt(sessionId, {
 							id: msg.requestId,
 							content,
 							user,
@@ -1334,7 +1334,7 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 						}
 						break;
 					}
-					enqueuePrompt(sessionId, {
+					await enqueuePrompt(sessionId, {
 						id: msg.requestId,
 						content,
 						user,
@@ -1350,7 +1350,7 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 				// a per-session single-flight lock, so the first queued message owns
 				// the wake and later messages remain FIFO behind it.
 				if (session.sandbox?.sandboxId && session.sandbox.provider !== "local") {
-					enqueuePrompt(sessionId, {
+					await enqueuePrompt(sessionId, {
 						id: msg.requestId,
 						content, user, images: imageUrls, files: msg.files, contextSessions,
 					});
@@ -1363,7 +1363,7 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 				// Every accepted prompt enters the durable queue first. drainQueue moves
 				// it into a dispatch record that survives a restart until the engine has
 				// written its own active-run journal.
-				enqueuePrompt(sessionId, {
+				await enqueuePrompt(sessionId, {
 					id: msg.requestId,
 					content,
 					user,
@@ -1389,8 +1389,8 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 				unarchiveForHumanTurn(session);
 				maybePersistEffort(session, msg.effort);
 				maybePersistFastMode(session, msg.fastMode);
-				liftUserStop(sessionId);
-				enqueuePrompt(sessionId, {
+				await liftUserStop(sessionId);
+				await enqueuePrompt(sessionId, {
 					id: msg.requestId,
 					content,
 					user,
@@ -1404,7 +1404,7 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 						session.id,
 					)
 				) {
-					if (!abortTurnAndDrain(sessionId, session, undefined, msg.requestId))
+					if (!await abortTurnAndDrain(sessionId, session, undefined, msg.requestId))
 						watchExternalRunAndDrain(sessionId);
 				} else {
 					void drainQueue(sessionId).catch((error) =>
@@ -1485,7 +1485,7 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 
 			case "steer_queued_prompt": {
 				const { sessionId, queueId, queueIndex } = msg;
-				if (!steerQueuedPrompt(sessionId, queueId, queueIndex)) {
+				if (!await steerQueuedPrompt(sessionId, queueId, queueIndex)) {
 					ws.send(
 						JSON.stringify({
 							type: "notice",
@@ -1500,7 +1500,7 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 
 			case "interrupt_queued_prompt": {
 				const { sessionId, queueId, queueIndex } = msg;
-				if (!interruptQueuedPrompt(sessionId, queueId, queueIndex)) {
+				if (!await interruptQueuedPrompt(sessionId, queueId, queueIndex)) {
 					ws.send(
 						JSON.stringify({
 							type: "notice",
@@ -1578,9 +1578,9 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 
 			case "answer_question": {
 				const { sessionId, questionId, answers } = msg;
-				const pending = pendingAskAwaitingAnswer(sessionId);
+				const pending = await pendingAskAwaitingAnswer(sessionId);
 				if (pending && pending.questionId === questionId) {
-					pending.resolve(
+					await pending.resolve(
 						answers && typeof answers === "object" ? answers : null,
 					);
 				}

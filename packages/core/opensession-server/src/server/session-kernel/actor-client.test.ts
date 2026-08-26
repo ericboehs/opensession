@@ -401,6 +401,53 @@ describe("session kernel actor boundary", () => {
     });
   });
 
+  test("does not replay a mutation whose committed response exceeds the buffer", async () => {
+    const host = await actor();
+    const sessionId = "large-async-dispatch";
+    const content = "x".repeat(300 * 1024);
+    await host.decideDeliveryAsync({
+      op: "set",
+      sessionId,
+      slot: "queued",
+      value: [{ id: "large", content }],
+    });
+    const claimed = await host.decideDeliveryAsync({
+      op: "claim_next_dispatch",
+      sessionId,
+      promptEntryId: "large-entry",
+    });
+    expect(claimed).toMatchObject({
+      kind: "deliver",
+      promptEntryId: "large-entry",
+      items: [{ id: "large", content }],
+    });
+    expect(host.store.deliverySnapshot(sessionId)).toMatchObject({
+      queued: [],
+      dispatch: {
+        promptEntryId: "large-entry",
+        items: [{ id: "large", content }],
+      },
+    });
+  });
+
+  test("atomically preserves concurrent queue enqueues", async () => {
+    const host = await actor();
+    const sessionId = "concurrent-enqueues";
+    await Promise.all(
+      Array.from({ length: 20 }, (_, index) =>
+        host.decideDeliveryAsync({
+          op: "enqueue",
+          sessionId,
+          item: { id: `item-${index}`, content: `prompt-${index}` },
+        })
+      ),
+    );
+    const snapshot = await host.decideDeliveryAsync({ op: "snapshot", sessionId });
+    expect(snapshot.queued).toHaveLength(20);
+    expect(new Set((snapshot.queued as Array<{ id: string }>).map((item) => item.id)).size)
+      .toBe(20);
+  });
+
   test("hydrates persisted run state into the gateway projection", async () => {
     const host = await actor();
     host.callStore("setRunState", [

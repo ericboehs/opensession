@@ -240,7 +240,7 @@ export function journalSet(record: ActiveRunRecord): void {
   // A fallback hop re-journals the same runKey mid-run — that's the running
   // self-edge, not a new registration, so keep the event but tag it.
   if (record.osSessionId)
-    transitionRunState(record.osSessionId, "run_registered", {
+    void transitionRunState(record.osSessionId, "run_registered", {
       run_key: record.runKey,
       kind: record.kind,
       rejournal: rejournal || undefined,
@@ -525,7 +525,7 @@ export function takeInterruptedRuns(
   }
   for (const r of entries) {
     if (r.osSessionId)
-      transitionRunState(r.osSessionId, "boot_journal_found", {
+      void transitionRunState(r.osSessionId, "boot_journal_found", {
         run_key: r.runKey,
         kind: r.kind,
       });

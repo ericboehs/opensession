@@ -26,7 +26,7 @@
  * feature): everything here is work the user themselves started, surfaced only
  * when they summon the Desk.
  */
-import { pendingAskAwaitingAnswer } from "./asks";
+import { pendingAsks } from "./asks";
 import { listAsks as listHumanAsks } from "./human-asks";
 import { findSession, getCachedSessions } from "./session-cache";
 import { getReads, isUnread } from "./reads";
@@ -120,7 +120,7 @@ function isRunningSession(s: UnifiedSession): boolean {
 
 /** Flatten a pending AskUserQuestion payload into one line + its options. */
 function askSummary(sessionId: string): DeskWorkItem["question"] | undefined {
-	const pending = pendingAskAwaitingAnswer(sessionId);
+	const pending = pendingAsks.get(sessionId);
 	if (!pending) return undefined;
 	const questions = (pending.questions || []) as Array<{
 		question?: unknown;

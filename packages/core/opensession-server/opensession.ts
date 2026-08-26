@@ -771,14 +771,14 @@ if (!g.__opensessionBooted) {
 		void (async () => {
 		try {
 		const shutdownRecords = readActiveShutdownSnapshot();
-		const resumedIds = resumeInterruptedRuns(
-			(bksSessionId, terminalEvent, recoveredRun) => {
+		const resumedIds = await resumeInterruptedRuns(
+			async (bksSessionId, terminalEvent, recoveredRun) => {
 				if (bksSessionId && terminalEvent) {
 					const failed =
 						terminalEvent.type === "error" ||
 						!!terminalEvent.usageLimitExhausted;
 					if (recoveredRun?.promptEntryId) {
-						settleRecoveredCreationOpening(
+						await settleRecoveredCreationOpening(
 							bksSessionId,
 							recoveredRun.promptEntryId,
 							failed
@@ -895,7 +895,7 @@ if (!g.__opensessionBooted) {
 				.filter((id): id is string => !!id),
 		);
 		for (const id of resumedIds) ownedSessionIds.add(id);
-		const staleKernelOwners = reconcileSessionKernelOwnership(ownedSessionIds);
+		const staleKernelOwners = await reconcileSessionKernelOwnership(ownedSessionIds);
 		if (staleKernelOwners.length)
 			console.warn(
 				`[session-kernel] Settled ${staleKernelOwners.length} session(s) without a recoverable run owner`,

@@ -179,6 +179,7 @@ import {
 	settleCreationFailed,
 	settleCreationSucceeded,
 	sessionIsQuarantined,
+  sessionDelivery,
 	sessionKernel,
 	sessionKernelStore,
   sessionTurn,
@@ -244,8 +245,8 @@ if (!interruptExecutorGlobal.__opensessionInterruptExecutorRegistered) {
 			return;
 		}
     const aborted = dispatchId
-      ? cancelAgentRunToken(dispatchId)
-      : cancelAgentRun(...(runIds || []));
+      ? await cancelAgentRunToken(dispatchId)
+      : await cancelAgentRun(...(runIds || []));
 		// A retry follows a durably recorded executing phase. False then means
 		// either the first attempt already cancelled the owner or this retry found
 		// it terminal, so the accepted interrupt is conservatively confirmed.
@@ -370,7 +371,7 @@ export async function requestTurnCancel(
   // (see settleCreationCancelled), so only genuine invariant failures throw.
   // Bookkeeping below always runs, even when the error propagates.
   try {
-    settleCreationOpeningForStop(sessionId);
+    await settleCreationOpeningForStop(sessionId);
   } finally {
     stoppedSessions.add(sessionId);
     persistQueues();
@@ -388,7 +389,7 @@ export async function settleCreationOpeningForStop(sessionId: string): Promise<b
 		!effectId?.startsWith("opening:")
 	)
 		return false;
-	settleCreationCancelled(
+	await settleCreationCancelled(
 		sessionId,
 		creation.identity,
 		kernel,
@@ -423,14 +424,14 @@ export async function settleRecoveredCreationOpening(
 		return false;
 	const cancel = sessionKernelStore().turnSnapshot(sessionId).cancel;
 	if (runId && cancel?.runId === runId) {
-		settleCreationCancelled(
+		await settleCreationCancelled(
 			sessionId,
 			creation.identity,
 			sessionKernel(sessionId),
 			effectId,
 		);
 	} else if (failure) {
-		settleCreationFailed(
+		await settleCreationFailed(
 			sessionId,
 			creation.identity,
 			new Error(failure),
@@ -438,7 +439,7 @@ export async function settleRecoveredCreationOpening(
 			effectId,
 		);
 	} else {
-		settleCreationSucceeded(
+		await settleCreationSucceeded(
 			sessionId,
 			creation.identity,
 			sessionKernel(sessionId),
@@ -523,35 +524,25 @@ export function runningChildCount(sessionId: string): number {
 /** Append a message to a session's drainable queue and persist + broadcast.
  *  `front` puts it ahead of everything already queued — used by the run-end
  *  actor queue hold so its auto-continue delivers before queued user messages. */
-export function enqueuePrompt(
+export async function enqueuePrompt(
 	sessionId: string,
 	item: QueueItem,
 	opts?: { front?: boolean },
-): void {
-	const queue = promptQueues.get(sessionId) || [];
+): Promise<void> {
 	const owned = durableQueueItem(sessionId, queueItem(item));
-	// A durable command can be replayed after the queue write committed but
-	// before its command receipt did. Stable ids make that retry an adoption,
-	// not a second prompt.
-	const committed =
-		!owned.id || !queue.some((queued) => queued.id === owned.id)
-			? (() => {
-				if (opts?.front) queue.unshift(owned);
-				else queue.push(owned);
-				return promptQueues.set(sessionId, queue);
-			})()
-			: Promise.resolve();
-	committed
-		.then(async () => {
-			persistQueues();
-			await broadcastQueue(sessionId);
-			// Queueing is a delivery promise, not just a UI state. Arm the idle
-			// watcher only after the durable queue write commits.
-			watchExternalRunAndDrain(sessionId);
-		})
-		.catch((error) =>
-			console.error(`[queue] Failed to enqueue prompt for ${sessionId}:`, error),
-		);
+	// Actor-owned enqueue makes concurrent producers atomic. Stable ids make a
+	// replay after commit an adoption rather than a second prompt.
+	await sessionDelivery({
+		op: "enqueue",
+		sessionId,
+		item: owned,
+		front: opts?.front,
+	});
+	persistQueues();
+	await broadcastQueue(sessionId);
+	// Queueing is a delivery promise, not just a UI state. Arm the idle
+	// watcher only after the durable queue write commits.
+	watchExternalRunAndDrain(sessionId);
 }
 
 /**
@@ -587,7 +578,7 @@ export async function requeueFailedSteer(
 		content: prefix && text.startsWith(prefix) ? text.slice(prefix.length) : text,
 		user,
 	};
-	enqueuePrompt(sessionId, item, { front: true });
+	await enqueuePrompt(sessionId, item, { front: true });
 	watchExternalRunAndDrain(sessionId);
 }
 
@@ -629,9 +620,9 @@ export async function steerQueuedPrompt(
 			item.user,
 			parseImageDataUrls(item.images || []),
 			files,
-		).catch((e) => {
+		).catch(async (e) => {
 			console.error(`[queue] Steer-deliver failed for ${sessionId}:`, e);
-			enqueuePrompt(sessionId, item);
+			await enqueuePrompt(sessionId, item);
 		});
 		return true;
 	}
@@ -1826,7 +1817,7 @@ export async function maybeLaunchSandboxedRun(
  * Callers own delivery: the prompt path drains via runSessionPromptAndDrain,
  * the create path arms watchExternalRunAndDrain when this returns true.
  */
-export function maybeQueueAutoContinue(opts: {
+export async function maybeQueueAutoContinue(opts: {
 	sessionId: string;
 	assistantText: string;
 	toolUseCount: number;
@@ -1834,7 +1825,7 @@ export function maybeQueueAutoContinue(opts: {
 	runFailure: string | null;
 	/** Skip the lookup when the caller already holds the session. */
 	session?: UnifiedSession | null;
-}): boolean {
+}): Promise<boolean> {
 	const { sessionId, assistantText, toolUseCount, endedWithError, runFailure } = opts;
 	// When a turn that plainly announced a next step is NOT nudged, record why:
 	// 2026-08-03 bks-019fc75f ended on "Now let me correlate…" with no nudge and
@@ -1898,7 +1889,7 @@ export function maybeQueueAutoContinue(opts: {
 					message:
 						"The interrupted turn never read the latest message(s) — auto-continuing so they're addressed.",
 				});
-				enqueuePrompt(
+				await enqueuePrompt(
 					sessionId,
 					{
 						content: wrapContext(ORPHANED_STEER_PROMPT, "auto-continue"),
@@ -1927,7 +1918,7 @@ export function maybeQueueAutoContinue(opts: {
 						message:
 							"Turn was cut short by an engine stall — auto-continuing (state preserved).",
 					});
-					enqueuePrompt(
+					await enqueuePrompt(
 						sessionId,
 						{
 							content: wrapContext(WEDGE_RETRY_PROMPT, "auto-continue"),
@@ -1971,7 +1962,7 @@ export function maybeQueueAutoContinue(opts: {
 	// strip <opensession:context> from user text and skip the then-empty entry,
 	// while the engine still sees the full instruction. The notice above (and
 	// the audit event) are the human-visible trace.
-	enqueuePrompt(
+	await enqueuePrompt(
 		sessionId,
 		{
 			content: wrapContext(
@@ -2030,7 +2021,7 @@ export async function runSessionPrompt(
 	// title gen, upload staging) register the run with the runner — otherwise two
 	// racing prompts both pass isAgentSessionBusy and the loser's message is
 	// dropped as a "Session is busy" error toast.
-	const startToken = markSessionStarting(sessionId);
+	const startToken = await markSessionStarting(sessionId);
   if (currentAgentRunToken(sessionId) !== startToken) {
     // A queue-drain caller restores its own claimed dispatch in the catch
     // below. A direct sandbox dispatch was created here and must be restored
@@ -2038,7 +2029,7 @@ export async function runSessionPrompt(
     if (!promptEntryId && durablePromptEntryId) {
       await failPromptDispatch(sessionId, durablePromptEntryId);
     } else if (!durablePromptEntryId) {
-      enqueuePrompt(sessionId, {
+      await enqueuePrompt(sessionId, {
         content,
         user,
         ...(images?.length
@@ -2078,7 +2069,7 @@ export async function runSessionPrompt(
 		// run-state watchdog flags. Settle it; later throws have their own
 		// terminal transitions and are left alone.
 		if (getRunState(sessionId) === "starting")
-			transitionRunState(sessionId, "start_failed", {
+			await transitionRunState(sessionId, "start_failed", {
 				source: "prompt_throw",
 				error: String(e),
 			});
@@ -2949,7 +2940,7 @@ async function runSessionPromptInner(
 				// the tail below (steer-receipt clearing, stream_done) belongs to the
 				// run that actually owns the session.
 				if (event.content === "Session is busy") {
-					enqueuePrompt(sessionId, { content, user });
+					await enqueuePrompt(sessionId, { content, user });
 					watchExternalRunAndDrain(sessionId);
 					broadcastToSession(sessionId, {
 						type: "notice",
@@ -3069,7 +3060,7 @@ async function runSessionPromptInner(
 
 	// Announce-then-stop guard (shared with the create path — see
 	// maybeQueueAutoContinue). runSessionPromptAndDrain delivers what it queues.
-	maybeQueueAutoContinue({
+	await maybeQueueAutoContinue({
 		sessionId,
 		session,
 		assistantText,

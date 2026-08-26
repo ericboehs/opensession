@@ -596,6 +596,31 @@ export class SessionKernelActorClient {
     return (response as DeliveryMutationReply<DeliveryActorResult<T>>).result;
   }
 
+  async decideAgentHostSupervisionAsync<T extends AgentHostSupervisionRequest>(
+    request: T,
+  ): Promise<T extends AgentHostPlanRegistration
+    ? AgentHostPlanRegistrationResult
+    : AgentHostSupervisionResult> {
+    return this.callAsync<
+      AgentHostPlanRegistrationResult | AgentHostSupervisionResult
+    >(
+      {
+        t: "reduce",
+        command: {
+          kind: "agent_host_supervision",
+          commandId:
+            request.op === "register_plan"
+              ? request.registrationId
+              : request.claimId,
+          request,
+        },
+      },
+      "Agent Host supervision claim",
+    ) as Promise<T extends AgentHostPlanRegistration
+      ? AgentHostPlanRegistrationResult
+      : AgentHostSupervisionResult>;
+  }
+
   async decideCreationEventAsync(
     decision: CreationEventDecision,
   ): Promise<CreationEventDecisionResult> {
@@ -1154,6 +1179,9 @@ class RemoteStore implements SessionKernelStoreApi {
   }
   setDeliverySlot(sessionId: string, slot: DeliverySlot, value: unknown) {
     this.actor.decideDelivery({ op: "set", sessionId, slot, value });
+  }
+  enqueueDelivery(sessionId: string, item: unknown, front?: boolean) {
+    return this.actor.decideDelivery({ op: "enqueue", sessionId, item, front });
   }
   deleteDeliverySlot(sessionId: string, slot: DeliverySlot) {
     return this.actor.decideDelivery({ op: "delete", sessionId, slot });

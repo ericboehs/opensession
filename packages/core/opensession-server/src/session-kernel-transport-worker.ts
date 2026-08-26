@@ -11,6 +11,8 @@ import {
   type KernelActorSyncRequest,
   type KernelActorTransportEnvelope,
 } from "./server/session-kernel/actor-protocol";
+import { isReadReducer } from "./server/session-kernel/actor-routing";
+import { READ_METHODS } from "./server/session-kernel/store-routing";
 import {
   readSessionKernelCredential,
   sessionKernelServiceUrl,
@@ -156,15 +158,18 @@ self.onmessage = (
             } satisfies KernelActorAsyncResponse);
             return;
           }
+          const retryableRead = request.t === "reduce"
+            ? isReadReducer(request.command)
+            : READ_METHODS.has(request.method);
           if (
-            request.t === "store" &&
+            retryableRead &&
             response.status === 2 &&
             typeof response.length === "number" &&
             response.length > outputBytes &&
             response.length <= ASYNC_MAX_OUTPUT_BYTES
           ) {
-            // Exactly-sized retry for large read-only snapshots. Reductions
-            // are never retried, so this cannot replay a committed mutation.
+            // Exactly-sized retry for provable reads. A mutation may already
+            // have committed before its encoded response overflowed.
             outputBytes = response.length;
             continue;
           }

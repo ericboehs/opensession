@@ -56,10 +56,10 @@ async function timerRuntimeFailure(
 	return new SessionTimerExecutionError(error, deadLetteredNow);
 }
 
-function failDeadCreationEffect(
+async function failDeadCreationEffect(
 	item: DurableOutboxItem,
 	error: string,
-): void {
+): Promise<void> {
 	if (!item.kind.startsWith("creation_")) return;
 	const payload = item.payload as
 		| { creationIdentity?: unknown; creationGeneration?: unknown }
@@ -70,7 +70,7 @@ function failDeadCreationEffect(
 		!Number.isSafeInteger(payload.creationGeneration)
 	)
 		return;
-	const result = sessionKernel(item.sessionId).applyCreationEvent({
+	const result = await sessionKernel(item.sessionId).applyCreationEvent({
 		identity: payload.creationIdentity,
 		event: "failed",
 		effectId: item.effectKey,
@@ -154,7 +154,7 @@ export async function fireSessionTimer(timer: DurableTimer): Promise<boolean> {
 		} catch (settlementError) {
 			if (settlementError instanceof SessionTimerExecutionError)
 				throw settlementError;
-			throw timerRuntimeFailure(timer, settlementError);
+			throw await timerRuntimeFailure(timer, settlementError);
 		}
 	}
 	try {
@@ -271,7 +271,7 @@ export async function drainSessionKernelRuntime(): Promise<void> {
 								error instanceof CreationEffectIndeterminateError ? 1 : 20,
 						});
 						if (settled.deadLetteredNow) {
-							failDeadCreationEffect(item, message);
+							await failDeadCreationEffect(item, message);
 							audit({
 								msg: "session_kernel_dead_lettered",
 								kind: "outbox",
@@ -357,9 +357,9 @@ export function stopSessionKernelRuntime(): void {
 }
 
 /** Settle durable ownership left behind without a recoverable journal. */
-export function reconcileSessionKernelOwnership(
+export async function reconcileSessionKernelOwnership(
 	ownedSessionIds: ReadonlySet<string>,
-): string[] {
+): Promise<string[]> {
 	const unsettled = new Set([
 		"preparing",
 		"starting",
@@ -376,7 +376,7 @@ export function reconcileSessionKernelOwnership(
 			sessionKernelStore().quarantinedSession(state.sessionId)
 		)
 			continue;
-		sessionKernel(state.sessionId).applyRunEvent({
+		await sessionKernel(state.sessionId).applyRunEvent({
 			event: "boot_owner_missing",
 			detail: { previousState: state.state },
 		});

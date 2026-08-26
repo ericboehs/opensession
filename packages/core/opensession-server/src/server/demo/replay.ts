@@ -50,7 +50,7 @@ interface DemoReplayState {
 
 const g = globalThis as { __osDemoReplay?: DemoReplayState };
 
-export function startDemoReplayer(): void {
+export async function startDemoReplayer(): Promise<void> {
   const state: DemoReplayState = (g.__osDemoReplay ??= {
     timer: null,
     running: false,
@@ -69,8 +69,8 @@ export function startDemoReplayer(): void {
   }
 
   // Busy-mark + FSM: prompt → starting, run_registered → running.
-  markSessionStarting(sessionId);
-  transitionRunState(sessionId, "run_registered", { demo: true });
+  await markSessionStarting(sessionId);
+  await transitionRunState(sessionId, "run_registered", { demo: true });
 
   const script = demoReplayScript();
   let step = 0;

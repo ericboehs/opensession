@@ -399,7 +399,7 @@ export async function runAgentHeadless(
     session?.lastActiveUser?.email || session?.issueCreator?.email || undefined;
 
   abortController.signal.addEventListener("abort", () => {
-    cancelAgentRun(claudeSessionId);
+    void cancelAgentRun(claudeSessionId);
   });
 
   try {

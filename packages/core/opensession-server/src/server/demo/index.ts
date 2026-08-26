@@ -141,7 +141,7 @@ export async function startDemo(): Promise<void> {
   }
 
   try {
-    startDemoReplayer();
+    await startDemoReplayer();
   } catch (e) {
     console.error("[demo] replayer start failed:", e);
   }

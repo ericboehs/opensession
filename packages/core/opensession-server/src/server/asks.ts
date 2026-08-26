@@ -74,10 +74,10 @@ export const pendingAsks = new AskOwnedMap<PendingAsk>();
 /** The durable map may retain a restored ask after its answer arrives, until
  * the detached run host reconnects and adopts that answer. That recovery
  * record is not still actionable and must never be projected back as a card. */
-export function pendingAskAwaitingAnswer(
+export async function pendingAskAwaitingAnswer(
 	sessionId: string,
-): PendingAsk | undefined {
-	const pending = pendingAsks.get(sessionId);
+): Promise<PendingAsk | undefined> {
+	const pending = await pendingAsks.getAsync(sessionId);
 	return pending?.answerReceived ? undefined : pending;
 }
 
@@ -164,7 +164,7 @@ async function clearAskTimer(sessionId: string): Promise<void> {
 }
 
 async function retirePendingAsk(sessionId: string, questionId: string): Promise<void> {
-	clearAskTimer(sessionId);
+	await clearAskTimer(sessionId);
 	const ask = pendingAsks.get(sessionId);
 	if (ask?.questionId === questionId) {
 		await pendingAsks.delete(sessionId);
@@ -206,7 +206,7 @@ async function resolveRestoredAsk(
 ): Promise<void> {
 	const ask = pendingAsks.get(sessionId);
 	if (ask?.questionId !== questionId || ask.answerReceived) return;
-	clearAskTimer(sessionId);
+	await clearAskTimer(sessionId);
 	ask.answerReceived = true;
 	ask.earlyAnswer = answers;
 	await pendingAsks.set(sessionId, ask);
@@ -441,27 +441,33 @@ function waitForEscalatedAnswer(
 	if (!stored || stored.state === "answered" || stored.state === "cancelled") {
 		const answer = stored?.state === "answered" ? stored.answer || null : null;
 		queueMicrotask(() => {
-			const current = pendingAsks.get(sessionId);
-			if (current?.questionId !== questionId) return;
-			current.resolve(
-				answer == null ? null : slackAnswerToAnswers(questions, answer),
-			);
+      void (async () => {
+        const current = pendingAsks.get(sessionId);
+        if (current?.questionId !== questionId) return;
+        await current.resolve(
+          answer == null ? null : slackAnswerToAnswers(questions, answer),
+        );
+      })().catch((error) => {
+        console.error(`[asks] Failed to resolve restored Slack answer for ${sessionId}:`, error);
+      });
 		});
 		return;
 	}
-	void awaitBlockingAnswer(askId).then((slackAnswer) => {
+	void awaitBlockingAnswer(askId).then(async (slackAnswer) => {
 		const current = pendingAsks.get(sessionId);
 		if (current?.questionId !== questionId) return;
 		if (slackAnswer == null) {
-			current.resolve(null);
+			await current.resolve(null);
 			return;
 		}
 		broadcastToSession(sessionId, {
 			type: "notice",
 			message: `💬 **${personName}** answered (via Slack): ${slackAnswer}`,
 		});
-		current.resolve(slackAnswerToAnswers(questions, slackAnswer));
-	});
+		await current.resolve(slackAnswerToAnswers(questions, slackAnswer));
+	}).catch((error) => {
+    console.error(`[asks] Failed to resolve Slack answer for ${sessionId}:`, error);
+  });
 }
 
 async function escalatePendingAsk(
@@ -496,7 +502,7 @@ async function escalatePendingAsk(
 		return;
 	}
 	if (!escalated) {
-		latest.resolve(null);
+		await latest.resolve(null);
 		return;
 	}
 	latest.escalatedAskId = escalated.askId;
@@ -525,7 +531,7 @@ async function armAskEscalation(
 	questions: AskQuestionInput[],
 	now = Date.now(),
 ): Promise<void> {
-	clearAskTimer(sessionId);
+	await clearAskTimer(sessionId);
 	if (!ask.askedAt) return;
 	if (ask.escalatedAskId) {
 		if (!ask.escalationWaitStarted) {
@@ -658,7 +664,7 @@ export async function restorePendingAsks(
 		};
 		await pendingAsks.set(saved.sessionId, ask);
 		if (!ask.answerReceived) {
-      armAskEscalation(saved.sessionId, ask, saved.questions, options.now);
+      await armAskEscalation(saved.sessionId, ask, saved.questions, options.now);
 			broadcastToSession(saved.sessionId, {
 				type: "ask_question",
 				sessionId: saved.sessionId,
@@ -780,7 +786,7 @@ export function makeAskHandler(sessionId: string) {
 				const finish = async (a: Record<string, string> | null) => {
 					if (settled) return;
 					settled = true;
-					clearAskTimer(sessionId);
+					await clearAskTimer(sessionId);
 					const durableAnswer = pendingAsks.get(sessionId);
 					if (durableAnswer?.questionId === questionId) {
 						durableAnswer.answerReceived = true;
@@ -790,7 +796,7 @@ export function makeAskHandler(sessionId: string) {
 					}
 					// Before the card goes: the transcript's only trace of it.
 					recordAskAnswer(sessionId, questions, a);
-					transitionRunState(sessionId, "ask_resolved", {
+					await transitionRunState(sessionId, "ask_resolved", {
 						answered: a !== null,
 					});
 					// If the web UI answered after we'd already pinged Slack, retract the
@@ -829,11 +835,15 @@ export function makeAskHandler(sessionId: string) {
 				};
 				await pendingAsks.set(sessionId, ask);
 				persistPendingAsks(ask.storePath);
-				transitionRunState(sessionId, "ask_posed");
+				await transitionRunState(sessionId, "ask_posed");
 				if (ask.answerReceived) {
-					queueMicrotask(() => ask.resolve(ask.earlyAnswer ?? null));
+					queueMicrotask(() => {
+            void Promise.resolve(ask.resolve(ask.earlyAnswer ?? null)).catch((error) => {
+              console.error(`[asks] Failed to resolve early answer for ${sessionId}:`, error);
+            });
+          });
 				} else {
-					armAskEscalation(sessionId, ask, questions);
+					await armAskEscalation(sessionId, ask, questions);
 					broadcastToSession(sessionId, {
 						type: "ask_question",
 						sessionId,

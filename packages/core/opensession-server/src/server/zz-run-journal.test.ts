@@ -39,21 +39,21 @@ afterEach(() => {
 });
 
 describe("run journal", () => {
-	it("keeps interrupted and reattaching sessions busy until recovery settles", () => {
+	it("keeps interrupted and reattaching sessions busy until recovery settles", async () => {
 		const sessionId = `recovery-${crypto.randomUUID()}`;
 		try {
-			transitionRunState(sessionId, "boot_journal_found", undefined, () => {});
+			await transitionRunState(sessionId, "boot_journal_found", undefined, () => {});
 			expect(agent.isAgentSessionBusy(sessionId)).toBe(true);
-			transitionRunState(sessionId, "reattach_start", undefined, () => {});
+			await transitionRunState(sessionId, "reattach_start", undefined, () => {});
 			expect(agent.isAgentSessionBusy(sessionId)).toBe(true);
-			transitionRunState(sessionId, "run_failed", undefined, () => {});
+			await transitionRunState(sessionId, "run_failed", undefined, () => {});
 			expect(agent.isAgentSessionBusy(sessionId)).toBe(false);
 		} finally {
-			clearRunState(sessionId);
+			await clearRunState(sessionId);
 		}
 	});
 
-	it("settles an exhausted recovery with a visible terminal error", () => {
+	it("settles an exhausted recovery with a visible terminal error", async () => {
 		const sessionId = `exhausted-${crypto.randomUUID()}`;
 		const runKey = `run-${crypto.randomUUID()}`;
 		const startedAt = new Date().toISOString();
@@ -69,12 +69,12 @@ describe("run journal", () => {
 		});
 		// Simulate the fresh process: journalSet marked the old process running,
 		// while restart recovery rebuilds state from the journal on boot.
-		clearRunState(sessionId);
+		await clearRunState(sessionId);
 		expect(agent.isAgentSessionBusy(sessionId)).toBe(true);
 		let terminal: StreamEvent | undefined;
 		const errorLog = spyOn(console, "error").mockImplementation(() => {});
 		try {
-			const handled = agent.resumeInterruptedRuns((_id, event) => {
+			const handled = await agent.resumeInterruptedRuns((_id, event) => {
 				terminal = event;
 				throw new Error("observer failed");
 			});
@@ -88,11 +88,11 @@ describe("run journal", () => {
 			expect(mod.activeRunRecords()).toEqual([]);
 		} finally {
 			errorLog.mockRestore();
-			clearRunState(sessionId);
+			await clearRunState(sessionId);
 		}
 	});
 
-	it("leaves a detached GitHub review journal for its posting workflow", () => {
+	it("leaves a detached GitHub review journal for its posting workflow", async () => {
 		const sessionId = `github-review-${crypto.randomUUID()}`;
 		const runKey = `rh-${crypto.randomUUID()}`;
 		try {
@@ -105,19 +105,19 @@ describe("run journal", () => {
 				kind: "github-review",
 				startedAt: new Date().toISOString(),
 			});
-			clearRunState(sessionId);
+			await clearRunState(sessionId);
 
-			expect(agent.resumeInterruptedRuns()).toContain(sessionId);
+			expect(await agent.resumeInterruptedRuns()).toContain(sessionId);
 			expect(
 				mod.activeRunRecords().some((run) => run.runKey === runKey),
 			).toBe(true);
 		} finally {
 			mod.journalClear(runKey);
-			clearRunState(sessionId);
+			await clearRunState(sessionId);
 		}
 	});
 
-	it("keeps an unclaimed journal owner fenced until recovery proves it absent", () => {
+	it("keeps an unclaimed journal owner fenced until recovery proves it absent", async () => {
 		const sessionId = `queued-recovery-${crypto.randomUUID()}`;
 		const runKey = `run-${crypto.randomUUID()}`;
 		try {
@@ -130,17 +130,17 @@ describe("run journal", () => {
 			});
 			expect(agent.isAgentSessionBusy(sessionId)).toBe(true);
 
-			expect(agent.cancelAgentRun(sessionId)).toBe(true);
+			expect(await agent.cancelAgentRun(sessionId)).toBe(true);
 
       expect(agent.isAgentSessionBusy(sessionId)).toBe(true);
       expect(mod.activeRunRecords().some((run) => run.runKey === runKey)).toBe(true);
 		} finally {
       mod.journalClear(runKey);
-			clearRunState(sessionId);
+			await clearRunState(sessionId);
 		}
 	});
 
-  it("preserves a stopped journal owned by a durable cancel effect", () => {
+  it("preserves a stopped journal owned by a durable cancel effect", async () => {
     const sessionId = `durable-stop-recovery-${crypto.randomUUID()}`;
     const runKey = `rh-${crypto.randomUUID()}`;
     const store = sessionKernelStore();
@@ -172,7 +172,7 @@ describe("run journal", () => {
       });
       // A boot after actor settlement still restores the exact cancellation
       // latch before the detached control reconnects.
-      expect(agent.reissueDurableRecoveryCancel(recovery)).toBe(false);
+      expect(await agent.reissueDurableRecoveryCancel(recovery)).toBe(false);
       expect(agent.isAgentSessionCancelled(sessionId, runKey)).toBe(true);
       mod.journalSet(recovery);
       mod.journalRecordAbnormalCompletion(recovery);
@@ -185,7 +185,7 @@ describe("run journal", () => {
     }
   });
 
-  it("retires abnormal ownership when actor settlement wins the reverse race", () => {
+  it("retires abnormal ownership when actor settlement wins the reverse race", async () => {
     const sessionId = `cancel-abnormal-reverse-${crypto.randomUUID()}`;
     const runKey = `rh-${crypto.randomUUID()}`;
     const store = sessionKernelStore();
@@ -230,7 +230,7 @@ describe("run journal", () => {
     }
   });
 
-  it("retires confirmed interrupt abnormal ownership in both race orders", () => {
+  it("retires confirmed interrupt abnormal ownership in both race orders", async () => {
     const store = sessionKernelStore();
     for (const sourceFirst of [true, false]) {
       const sessionId = `interrupt-abnormal-${sourceFirst}-${crypto.randomUUID()}`;
@@ -306,52 +306,52 @@ describe("run journal", () => {
 			model: "claude-fable-5",
 			startedAt: new Date().toISOString(),
 		});
-		clearRunState(sessionId);
+		await clearRunState(sessionId);
 
 		try {
-			agent.resumeInterruptedRuns();
+			await agent.resumeInterruptedRuns();
 			while (fake.calls.length === 0) await Bun.sleep(5);
 
-			expect(agent.cancelAgentRun(sessionId)).toBe(true);
+			expect(await agent.cancelAgentRun(sessionId)).toBe(true);
 			expect(getRunState(sessionId)).toBe("stopped");
 			expect(agent.isAgentSessionBusy(sessionId)).toBe(true);
 
 			release();
 			while (agent.isAgentSessionBusy(sessionId)) await Bun.sleep(5);
 
-			agent.markSessionStarting(sessionId);
+			await agent.markSessionStarting(sessionId);
 			expect(getRunState(sessionId)).toBe("starting");
 			agent.unmarkSessionStarting(sessionId);
-			transitionRunState(sessionId, "start_aborted", undefined, () => {});
+			await transitionRunState(sessionId, "start_aborted", undefined, () => {});
 		} finally {
 			release();
-			clearRunState(sessionId);
+			await clearRunState(sessionId);
 		}
 	});
 
-  it("settles a pre-journal terminal against its reserved dispatch token", () => {
+  it("settles a pre-journal terminal against its reserved dispatch token", async () => {
     const sessionId = `pre-journal-terminal-${crypto.randomUUID()}`;
-    const token = agent.markSessionStarting(sessionId);
+    const token = await agent.markSessionStarting(sessionId);
     try {
       expect(sessionKernelStore().runState(sessionId)).toMatchObject({
         state: "starting",
         currentRunId: token,
       });
-      transitionRunState(sessionId, "run_failed", {
+      await transitionRunState(sessionId, "run_failed", {
         run_key: token,
         source: "pre_journal_failure",
       });
       expect(getRunState(sessionId)).toBe("failed");
     } finally {
       agent.unmarkSessionStarting(sessionId, token);
-      clearRunState(sessionId);
+      await clearRunState(sessionId);
     }
   });
 
-  it("keeps process and actor ownership on the first concurrent preparation", () => {
+  it("keeps process and actor ownership on the first concurrent preparation", async () => {
     const sessionId = `preparation-winner-${crypto.randomUUID()}`;
-    const firstToken = agent.markSessionStarting(sessionId);
-    const secondToken = agent.markSessionStarting(sessionId);
+    const firstToken = await agent.markSessionStarting(sessionId);
+    const secondToken = await agent.markSessionStarting(sessionId);
     const store = sessionKernelStore();
     try {
       expect(secondToken).not.toBe(firstToken);
@@ -380,11 +380,11 @@ describe("run journal", () => {
     }
   });
 
-  it("uses one stable physical token without admitting a concurrent duplicate", () => {
+  it("uses one stable physical token without admitting a concurrent duplicate", async () => {
     const sessionId = `stable-preparation-${crypto.randomUUID()}`;
     const stableToken = `rh-opening-${crypto.randomUUID()}`;
-    const admitted = agent.markSessionStarting(sessionId, stableToken);
-    const rejected = agent.markSessionStarting(sessionId, stableToken);
+    const admitted = await agent.markSessionStarting(sessionId, stableToken);
+    const rejected = await agent.markSessionStarting(sessionId, stableToken);
     try {
       expect(admitted).toBe(stableToken);
       expect(rejected).not.toBe(stableToken);
@@ -396,15 +396,15 @@ describe("run journal", () => {
     } finally {
       agent.unmarkSessionStarting(sessionId, rejected);
       agent.unmarkSessionStarting(sessionId, stableToken);
-      clearRunState(sessionId);
+      await clearRunState(sessionId);
     }
   });
 
-  it("does not let a stale gateway projection replace the actor's start owner", () => {
+  it("does not let a stale gateway projection replace the actor's start owner", async () => {
     const sessionId = `actor-preparation-winner-${crypto.randomUUID()}`;
-    const firstToken = agent.markSessionStarting(sessionId);
+    const firstToken = await agent.markSessionStarting(sessionId);
     agent.unmarkSessionStarting(sessionId, firstToken);
-    const rejectedToken = agent.markSessionStarting(sessionId);
+    const rejectedToken = await agent.markSessionStarting(sessionId);
     try {
       expect(agent.isAgentSessionCancelled(sessionId, rejectedToken)).toBe(true);
       expect(agent.currentAgentRunToken(sessionId)).toBeUndefined();
@@ -414,7 +414,7 @@ describe("run journal", () => {
       });
     } finally {
       agent.unmarkSessionStarting(sessionId, rejectedToken);
-      clearRunState(sessionId);
+      await clearRunState(sessionId);
     }
   });
 
@@ -422,8 +422,8 @@ describe("run journal", () => {
     const sessionId = `preparation-engine-winner-${crypto.randomUUID()}`;
     const fake = makeFakeEngine([{ kind: "clean" }]);
     agent.__setEngineForTest(fake.engine);
-    const firstToken = agent.markSessionStarting(sessionId);
-    const rejectedToken = agent.markSessionStarting(sessionId);
+    const firstToken = await agent.markSessionStarting(sessionId);
+    const rejectedToken = await agent.markSessionStarting(sessionId);
     const run = (startToken: string) => agent.runAgent({
       prompt: "continue",
       cwd: "/tmp",
@@ -443,7 +443,7 @@ describe("run journal", () => {
     } finally {
       agent.unmarkSessionStarting(sessionId, rejectedToken);
       agent.unmarkSessionStarting(sessionId, firstToken);
-      clearRunState(sessionId);
+      await clearRunState(sessionId);
     }
   });
 
@@ -462,9 +462,9 @@ describe("run journal", () => {
 		});
 
 		try {
-			const stoppedToken = agent.markSessionStarting(sessionId);
-			expect(agent.cancelAgentRun(sessionId)).toBe(true);
-			const replacementToken = agent.markSessionStarting(sessionId);
+			const stoppedToken = await agent.markSessionStarting(sessionId);
+			expect(await agent.cancelAgentRun(sessionId)).toBe(true);
+			const replacementToken = await agent.markSessionStarting(sessionId);
 			for await (const _event of run(stoppedToken)) {}
 			expect(fake.calls).toHaveLength(0);
 			agent.unmarkSessionStarting(sessionId, stoppedToken);
@@ -475,7 +475,7 @@ describe("run journal", () => {
 			agent.unmarkSessionStarting(sessionId, replacementToken);
 		} finally {
 			agent.unmarkSessionStarting(sessionId);
-			clearRunState(sessionId);
+			await clearRunState(sessionId);
 		}
 	});
 
@@ -493,17 +493,17 @@ describe("run journal", () => {
 			startToken,
 		});
 
-		const firstToken = agent.markSessionStarting(sessionId);
-		const secondToken = agent.markSessionStarting(sessionId);
+		const firstToken = await agent.markSessionStarting(sessionId);
+		const secondToken = await agent.markSessionStarting(sessionId);
 		try {
-			expect(agent.cancelAgentRun(sessionId)).toBe(true);
+			expect(await agent.cancelAgentRun(sessionId)).toBe(true);
 			for await (const _event of run(firstToken)) {}
 			for await (const _event of run(secondToken)) {}
 			expect(fake.calls).toHaveLength(0);
 		} finally {
 			agent.unmarkSessionStarting(sessionId, firstToken);
 			agent.unmarkSessionStarting(sessionId, secondToken);
-			clearRunState(sessionId);
+			await clearRunState(sessionId);
 		}
 	});
 
@@ -520,18 +520,18 @@ describe("run journal", () => {
       journal: { osSessionId: sessionId, kind: "prompt" },
       startToken,
     });
-    const firstToken = agent.markSessionStarting(sessionId);
+    const firstToken = await agent.markSessionStarting(sessionId);
     for await (const _event of run(firstToken)) {}
     agent.unmarkSessionStarting(sessionId, firstToken);
-    const successorToken = agent.markSessionStarting(sessionId);
+    const successorToken = await agent.markSessionStarting(sessionId);
     try {
-      expect(agent.cancelAgentRunToken(firstToken)).toBe(false);
+      expect(await agent.cancelAgentRunToken(firstToken)).toBe(false);
       expect(agent.isAgentSessionCancelled(sessionId, successorToken)).toBe(false);
       for await (const _event of run(successorToken)) {}
       expect(fake.calls).toHaveLength(2);
     } finally {
       agent.unmarkSessionStarting(sessionId, successorToken);
-      clearRunState(sessionId);
+      await clearRunState(sessionId);
     }
   });
 
@@ -543,7 +543,7 @@ describe("run journal", () => {
     });
     const fake = makeFakeEngine([{ kind: "clean", gate }]);
     agent.__setEngineForTest(fake.engine);
-    const token = agent.markSessionStarting(sessionId);
+    const token = await agent.markSessionStarting(sessionId);
     const running = (async () => {
       try {
         for await (const _event of agent.runAgent({
@@ -570,7 +570,7 @@ describe("run journal", () => {
       release();
       await running;
       agent.unmarkSessionStarting(sessionId, token);
-      clearRunState(sessionId);
+      await clearRunState(sessionId);
     }
   });
 
@@ -591,11 +591,11 @@ describe("run journal", () => {
       expect(mod.activeRunRecords().some((run) => run.runKey === runKey)).toBe(true);
     } finally {
       mod.journalClear(runKey);
-      clearRunState(sessionId);
+      await clearRunState(sessionId);
     }
   });
 
-	it("bridges pending preparations left by the pre-token hot-reload global", () => {
+	it("bridges pending preparations left by the pre-token hot-reload global", async () => {
 		const sessionId = `legacy-preparing-${crypto.randomUUID()}`;
 		const g = globalThis as any;
 		const previousPending = g.__pendingSessionStarts;
@@ -604,16 +604,16 @@ describe("run journal", () => {
 			g.__pendingSessionStarts = new Set([sessionId]);
 			g.__cancelledSessionRuns = new Set();
 			expect(agent.isAgentSessionBusy(sessionId)).toBe(true);
-			expect(agent.cancelAgentRun(sessionId)).toBe(true);
+			expect(await agent.cancelAgentRun(sessionId)).toBe(true);
 			expect(g.__cancelledSessionRuns.has(sessionId)).toBe(true);
 		} finally {
 			g.__pendingSessionStarts = previousPending;
 			g.__cancelledSessionRuns = previousCancelled;
-			clearRunState(sessionId);
+			await clearRunState(sessionId);
 		}
 	});
 
-	it("does not clear a replacement journal that reuses a cancelled recovery run key", () => {
+	it("does not clear a replacement journal that reuses a cancelled recovery run key", async () => {
 		const sessionId = `replacement-${crypto.randomUUID()}`;
 		const runKey = `engine-${crypto.randomUUID()}`;
 		const oldStartedAt = new Date(Date.now() - 1000).toISOString();
@@ -634,11 +634,11 @@ describe("run journal", () => {
 			);
 		} finally {
 			mod.journalClear(runKey);
-			clearRunState(sessionId);
+			await clearRunState(sessionId);
 		}
 	});
 
-	it("resets the consecutive recovery fuse after resumed work progresses", () => {
+	it("resets the consecutive recovery fuse after resumed work progresses", async () => {
 		const sessionId = `attached-${crypto.randomUUID()}`;
 		const runKey = `engine-${crypto.randomUUID()}`;
 		const startedAt = new Date().toISOString();
@@ -670,11 +670,11 @@ describe("run journal", () => {
 			expect(nextBoot.resumeAttempts).toBe(1);
 		} finally {
 			mod.journalClear(runKey);
-			clearRunState(sessionId);
+			await clearRunState(sessionId);
 		}
 	});
 
-	it("does not reset the recovery fuse on a replacement lineage", () => {
+	it("does not reset the recovery fuse on a replacement lineage", async () => {
 		const sessionId = `attached-replacement-${crypto.randomUUID()}`;
 		const runKey = `engine-${crypto.randomUUID()}`;
 		try {
@@ -698,11 +698,11 @@ describe("run journal", () => {
 			expect(mod.activeRunRecords()[0]).toMatchObject({ cwd: "/replacement", resumeAttempts: 2 });
 		} finally {
 			mod.journalClear(runKey);
-			clearRunState(sessionId);
+			await clearRunState(sessionId);
 		}
 	});
 
-	it("copies account and reviewer policy into every journal shape", () => {
+	it("copies account and reviewer policy into every journal shape", async () => {
 		const record = mod.buildRunJournalRecord(
 			{
 				accountId: "account-1",
@@ -762,7 +762,7 @@ describe("run journal", () => {
 		try {
 			while (fake.calls.length < 1) await Bun.sleep(5);
 			expect(agent.isAgentSessionBusy(sessionId)).toBe(true);
-			expect(agent.cancelAgentRun(sessionId)).toBe(true);
+			expect(await agent.cancelAgentRun(sessionId)).toBe(true);
 		} finally {
 			release();
 			await running;
@@ -791,14 +791,14 @@ describe("run journal", () => {
 			startToken,
 		});
 
-		const winnerToken = agent.markSessionStarting(sessionId);
+		const winnerToken = await agent.markSessionStarting(sessionId);
 		const winner = (async () => {
 			for await (const _event of run(winnerToken)) {}
 			agent.unmarkSessionStarting(sessionId, winnerToken);
 		})();
 		try {
 			while (fake.calls.length < 1) await Bun.sleep(5);
-			const loserToken = agent.markSessionStarting(sessionId);
+			const loserToken = await agent.markSessionStarting(sessionId);
 			for await (const _event of run(loserToken)) {}
 			agent.unmarkSessionStarting(sessionId, loserToken);
 			expect(getRunState(sessionId)).toBe("running");
@@ -810,11 +810,11 @@ describe("run journal", () => {
 			release();
 			await winner;
 			agent.unmarkSessionStarting(sessionId);
-			clearRunState(sessionId);
+			await clearRunState(sessionId);
 		}
 	});
 
-	it("does not notify for a rejected record when the same session will recover", () => {
+	it("does not notify for a rejected record when the same session will recover", async () => {
 		const sessionId = `mixed-recovery-${crypto.randomUUID()}`;
 		const startedAt = new Date().toISOString();
 		const valid: mod.ActiveRunRecord = {
@@ -839,7 +839,7 @@ describe("run journal", () => {
 		});
 	});
 
-	it("deduplicates and recovers every valid run while rejecting recursive records", () => {
+	it("deduplicates and recovers every valid run while rejecting recursive records", async () => {
 		const now = Date.now();
 		const records: mod.ActiveRunRecord[] = Array.from({ length: 40 }, (_, i) => ({
 			runKey: `run-${i}`,
@@ -863,7 +863,7 @@ describe("run journal", () => {
 		expect(result.quarantined.some((r) => r.run.runKey === "recursive" && r.reason === "recursive_recovery_kind")).toBe(true);
 	});
 
-	it("recovers the oldest unique runs first so repeated restarts cannot starve them", () => {
+	it("recovers the oldest unique runs first so repeated restarts cannot starve them", async () => {
 		const now = Date.now();
 		const result = agent.sanitizeInterruptedRuns(
 			[
@@ -889,7 +889,7 @@ describe("run journal", () => {
 		]);
 	});
 
-	it("accepts interleaved fallback recovery markers with a bounded durable counter", () => {
+	it("accepts interleaved fallback recovery markers with a bounded durable counter", async () => {
 		const now = Date.now();
 		const run: mod.ActiveRunRecord = {
 			runKey: "interleaved",
@@ -905,7 +905,7 @@ describe("run journal", () => {
 		expect(result.quarantined).toEqual([]);
 	});
 
-	it("rejects expired lineage and exhausted durable resume attempts", () => {
+	it("rejects expired lineage and exhausted durable resume attempts", async () => {
 		const now = Date.now();
 		const base: mod.ActiveRunRecord = {
 			runKey: "base",
@@ -925,7 +925,7 @@ describe("run journal", () => {
 		]);
 	});
 
-	it("keeps recovery kinds and prompts bounded across repeated restarts", () => {
+	it("keeps recovery kinds and prompts bounded across repeated restarts", async () => {
 		expect(agent.recoveryKind("prompt", "resume")).toBe("prompt-resume");
 		expect(agent.recoveryKind("prompt-resume", "resume")).toBe("prompt-resume");
 		expect(agent.recoveryKind("prompt-resume-rerun", "rerun")).toBe("prompt-rerun");
@@ -1031,7 +1031,7 @@ describe("run journal", () => {
 		expect(mod.takeInterruptedRuns()).toEqual([]);
 	});
 
-	it("leaves filtered recovery journals unclaimed for a later boot", () => {
+	it("leaves filtered recovery journals unclaimed for a later boot", async () => {
 		mod.journalSet({
 			runKey: "quarantined-run",
 			osSessionId: "quarantined-session",
@@ -1046,7 +1046,7 @@ describe("run journal", () => {
 		expect(preserved.claimedAt).toBeUndefined();
 	});
 
-	it("defers actor-owned opening journals to the durable effect executor", () => {
+	it("defers actor-owned opening journals to the durable effect executor", async () => {
 		mod.journalSet({
 			runKey: "opening-run",
 			osSessionId: "opening-session",
@@ -1057,7 +1057,7 @@ describe("run journal", () => {
 			startedAt: new Date().toISOString(),
 		});
 		expect(
-			agent.resumeInterruptedRuns(
+			await agent.resumeInterruptedRuns(
 				undefined,
 				undefined,
 				undefined,
@@ -1072,7 +1072,7 @@ describe("run journal", () => {
 		]);
 	});
 
-	it("adopts a durable abnormal-completion receipt without relaunching", () => {
+	it("adopts a durable abnormal-completion receipt without relaunching", async () => {
 		const runKey = "abnormal-opening";
 		const record: mod.ActiveRunRecord = {
 			runKey,
@@ -1090,7 +1090,7 @@ describe("run journal", () => {
 		);
 		let terminal: StreamEvent | undefined;
 		expect(
-			agent.resumeInterruptedRuns((_sessionId, event) => {
+			await agent.resumeInterruptedRuns((_sessionId, event) => {
 				terminal = event;
 			}),
 		).toEqual(["abnormal-session"]);
@@ -1119,7 +1119,7 @@ describe("run journal", () => {
 		]);
 	});
 
-	it("quarantines ambiguous Runner admission out of boot recovery", () => {
+	it("quarantines ambiguous Runner admission out of boot recovery", async () => {
 		const run: mod.ActiveRunRecord = {
 			runKey: "ambiguous-runner-opening",
 			osSessionId: "ambiguous-runner-session",
@@ -1148,7 +1148,7 @@ describe("run journal", () => {
 		]);
 	});
 
-	it("preserves first-journaled time while incrementing recovery attempts", () => {
+	it("preserves first-journaled time while incrementing recovery attempts", async () => {
 		const first = new Date(Date.now() - 10_000).toISOString();
 		mod.journalSet({ runKey: "lineage", cwd: "/tmp", startedAt: first });
 		const prepared = mod.journalStartRecovery(mod.activeRunRecords()[0]);
@@ -1178,8 +1178,8 @@ describe("run journal", () => {
 		const terminal = new Promise<{ id?: string; event?: StreamEvent }>((resolve) => {
 			resolveTerminal = resolve;
 		});
-		const observed = new Promise<{ id: string; event: unknown }>((resolve) => {
-			const resumed = agent.resumeInterruptedRuns(
+		const observed = new Promise<{ id: string; event: unknown }>(async (resolve) => {
+			const resumed = await agent.resumeInterruptedRuns(
 				(id, event) => resolveTerminal({ id, event }),
 				undefined,
 				undefined,
@@ -1217,7 +1217,7 @@ describe("run journal", () => {
 		});
 	});
 
-	it("recognizes malformed recovered tool-output envelopes without matching real answers", () => {
+	it("recognizes malformed recovered tool-output envelopes without matching real answers", async () => {
 		expect(
 			agent.recoveredResultNeedsContinuation({
 				type: "done",
@@ -1269,7 +1269,7 @@ describe("run journal", () => {
 		).toBe(true);
 	});
 
-	it("flags fabricated tool transcripts in assistant text (both observed costumes)", () => {
+	it("flags fabricated tool transcripts in assistant text (both observed costumes)", async () => {
 		// Costume 1 (2026-07-29 morning): Meridian's result-delivery envelope
 		// authored by the model, MCP tool name included.
 		expect(
@@ -1337,7 +1337,7 @@ describe("restart recovery queue", () => {
 			{ length: 5 },
 			(_, i) => `starved-${i}-${crypto.randomUUID()}`,
 		);
-		sessions.forEach((sessionId, i) => {
+		await Promise.all(sessions.map(async (sessionId, i) => {
 			mod.journalSet({
 				runKey: `run-${sessionId}`,
 				osSessionId: sessionId,
@@ -1347,11 +1347,11 @@ describe("restart recovery queue", () => {
 				model: "claude-fable-5",
 				startedAt: new Date(Date.now() - i * 1000).toISOString(),
 			});
-			clearRunState(sessionId);
-		});
+			await clearRunState(sessionId);
+		}));
 		const terminals: StreamEvent[] = [];
 		try {
-			agent.resumeInterruptedRuns((_id, event) => {
+			await agent.resumeInterruptedRuns((_id, event) => {
 				if (event) terminals.push(event);
 			});
 			// Each fake emits `init` before its gate. That proves the replacement
@@ -1364,7 +1364,7 @@ describe("restart recovery queue", () => {
 			for (const open of gates) open();
 			for (const sessionId of sessions) {
 				while (agent.isAgentSessionBusy(sessionId)) await Bun.sleep(5);
-				clearRunState(sessionId);
+				await clearRunState(sessionId);
 			}
 		}
 	});
@@ -1393,7 +1393,7 @@ describe("restart recovery reattach", () => {
 			startedAt: new Date().toISOString(),
 		};
 		try {
-			agent.resumeInterruptedRuns(
+			await agent.resumeInterruptedRuns(
 				() => {},
 				undefined,
 				undefined,
@@ -1406,7 +1406,7 @@ describe("restart recovery reattach", () => {
 			expect(fake.calls).toHaveLength(0);
 			expect(agent.isAgentSessionBusy(sessionId)).toBe(true);
 		} finally {
-			clearRunState(sessionId);
+			await clearRunState(sessionId);
 		}
 	});
 
@@ -1429,7 +1429,7 @@ describe("restart recovery reattach", () => {
     };
     const terminal = Promise.withResolvers<StreamEvent>();
     try {
-      agent.resumeInterruptedRuns(
+      await agent.resumeInterruptedRuns(
         (_id, event) => event && terminal.resolve(event),
         undefined,
         undefined,
@@ -1445,7 +1445,7 @@ describe("restart recovery reattach", () => {
       expect(fake.calls[0].opts.startToken).toBe(hostId);
     } finally {
       mod.journalClear(hostId);
-      clearRunState(sessionId);
+      await clearRunState(sessionId);
     }
   });
 
@@ -1489,7 +1489,7 @@ describe("restart recovery reattach", () => {
         cancelId: `stop:${hostId}`,
         outcome: "confirmed",
       });
-      agent.resumeInterruptedRuns(
+      await agent.resumeInterruptedRuns(
         () => {},
         undefined,
         undefined,
@@ -1549,7 +1549,7 @@ describe("restart recovery reattach", () => {
 		});
 
 		try {
-			const resumed = agent.resumeInterruptedRuns(
+			const resumed = await agent.resumeInterruptedRuns(
 				(_id, event) => event && resolveTerminal(event),
 				undefined,
 				undefined,
@@ -1569,7 +1569,7 @@ describe("restart recovery reattach", () => {
 			expect(fake.calls).toHaveLength(0);
 			expect(mod.activeRunRecords()).toEqual([]);
 		} finally {
-			clearRunState(sessionId);
+			await clearRunState(sessionId);
 		}
 	});
 
@@ -1590,19 +1590,19 @@ describe("restart recovery reattach", () => {
 			startedAt,
 		};
 		mod.journalSet(run);
-		clearRunState(sessionId);
+		await clearRunState(sessionId);
 		const streamEnded = Promise.withResolvers<void>();
 		agent.__setLocalHostResumeForTest(async () =>
 			(async function* () {
 				mod.journalClear(hostId);
-				transitionRunState(sessionId, "turn_end", { run_key: hostId });
+				await transitionRunState(sessionId, "turn_end", { run_key: hostId });
 				streamEnded.resolve();
 			})(),
 		);
 		const terminals: StreamEvent[] = [];
 
 		try {
-			expect(agent.resumeInterruptedRuns((_id, event) => {
+			expect(await agent.resumeInterruptedRuns((_id, event) => {
 				if (event) terminals.push(event);
 			})).toEqual([sessionId]);
 			await streamEnded.promise;
@@ -1610,7 +1610,7 @@ describe("restart recovery reattach", () => {
 			expect(terminals).toEqual([]);
 			expect(mod.activeRunRecords()).toEqual([]);
 		} finally {
-			clearRunState(sessionId);
+			await clearRunState(sessionId);
 		}
 	});
 

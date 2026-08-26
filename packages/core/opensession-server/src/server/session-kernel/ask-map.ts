@@ -39,6 +39,13 @@ export class AskOwnedMap<V> {
   }
   get(sessionId: string): V | undefined {
     const durable = sessionKernelStore().askSnapshot(sessionId);
+    return this.mergeRuntimeFields(sessionId, durable);
+  }
+  async getAsync(sessionId: string): Promise<V | undefined> {
+    const durable = await sessionAsk({ op: "snapshot", sessionId });
+    return this.mergeRuntimeFields(sessionId, durable);
+  }
+  private mergeRuntimeFields(sessionId: string, durable: unknown): V | undefined {
     if (durable === undefined) return undefined;
     return immutableCopy({
       ...(durable as Record<string, unknown>),

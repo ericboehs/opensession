@@ -303,7 +303,7 @@ function handleClientMsg(msg: ClientToHostMsg): void {
     }
     case "cancel": {
       log("cancel requested");
-      cancelAgentRun(spec.osSessionId, meta.engineSessionId);
+      void cancelAgentRun(spec.osSessionId, meta.engineSessionId);
       break;
     }
     case "shutdown": {

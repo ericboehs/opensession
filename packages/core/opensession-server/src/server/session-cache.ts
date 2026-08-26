@@ -763,7 +763,7 @@ export async function recordRunOutcome(
 	// persistence choke point compatible with non-runner callers without
 	// emitting a false double-teardown rejection for the normal path.
 	if (isRunStateUnsettled(getRunState(id)))
-		transitionRunState(id, errorMessage ? "run_failed" : "turn_end", {
+		await transitionRunState(id, errorMessage ? "run_failed" : "turn_end", {
 			...(opts?.runId ? { run_key: opts.runId } : {}),
 		});
 	if (opts?.projectionId && opts.runId && sessionKernelActorActive()) {

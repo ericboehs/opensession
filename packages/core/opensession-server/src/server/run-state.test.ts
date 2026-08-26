@@ -232,11 +232,11 @@ describe("engine death settles through interrupted", () => {
 describe("transitionRunState (stateful wrapper)", () => {
 	const sid = () => `test-${crypto.randomUUID()}`;
 
-	test("legal transition updates the map and emits run_state_transition", () => {
+	test("legal transition updates the map and emits run_state_transition", async () => {
 		const id = sid();
 		const events: Record<string, unknown>[] = [];
 		try {
-			const to = transitionRunState(id, "prompt", { user: "test" }, (e) =>
+			const to = await transitionRunState(id, "prompt", { user: "test" }, (e) =>
 				events.push(e),
 			);
 			expect(to).toBe("starting");
@@ -252,15 +252,15 @@ describe("transitionRunState (stateful wrapper)", () => {
 			});
 			expect(runStates.get(id)?.lastEvent).toBe("prompt");
 		} finally {
-			clearRunState(id);
+			await clearRunState(id);
 		}
 	});
 
-	test("rejected transition leaves state untouched and emits run_state_rejected", () => {
+	test("rejected transition leaves state untouched and emits run_state_rejected", async () => {
 		const id = sid();
 		const events: Record<string, unknown>[] = [];
 		try {
-			const to = transitionRunState(id, "turn_end", undefined, (e) =>
+			const to = await transitionRunState(id, "turn_end", undefined, (e) =>
 				events.push(e),
 			);
 			expect(to).toBe("idle");
@@ -273,11 +273,11 @@ describe("transitionRunState (stateful wrapper)", () => {
 				event: "turn_end",
 			});
 		} finally {
-			clearRunState(id);
+			await clearRunState(id);
 		}
 	});
 
-	test("parked prompts during recovery reject silently; other rejections warn", () => {
+	test("parked prompts during recovery reject silently; other rejections warn", async () => {
 		const id = sid();
 		const events: Record<string, unknown>[] = [];
 		const warnings: string[] = [];
@@ -286,12 +286,12 @@ describe("transitionRunState (stateful wrapper)", () => {
 			warnings.push(args.join(" "));
 		};
 		try {
-			transitionRunState(id, "boot_journal_found", undefined, (e) =>
+			await transitionRunState(id, "boot_journal_found", undefined, (e) =>
 				events.push(e),
 			);
 			expect(getRunState(id)).toBe("interrupted");
 			// The designed park: rejected, audited, but not warned.
-			transitionRunState(id, "prompt", undefined, (e) => events.push(e));
+			await transitionRunState(id, "prompt", undefined, (e) => events.push(e));
 			expect(getRunState(id)).toBe("interrupted");
 			expect(events.at(-1)).toMatchObject({
 				msg: "run_state_rejected",
@@ -300,23 +300,23 @@ describe("transitionRunState (stateful wrapper)", () => {
 			});
 			expect(warnings).toHaveLength(0);
 			// Unexpected rejections still warn.
-			transitionRunState(id, "ask_resolved", undefined, (e) =>
+			await transitionRunState(id, "ask_resolved", undefined, (e) =>
 				events.push(e),
 			);
 			expect(warnings).toHaveLength(1);
 			expect(warnings[0]).toContain("ask_resolved while interrupted");
 		} finally {
 			console.warn = original;
-			clearRunState(id);
+			await clearRunState(id);
 		}
 	});
 
-	test("unknown session defaults to idle; clearRunState drops tracking", () => {
+	test("unknown session defaults to idle; clearRunState drops tracking", async () => {
 		const id = sid();
 		expect(getRunState(id)).toBe("idle");
-		transitionRunState(id, "prompt", undefined, () => {});
+		await transitionRunState(id, "prompt", undefined, () => {});
 		expect(getRunState(id)).toBe("starting");
-		clearRunState(id);
+		await clearRunState(id);
 		expect(getRunState(id)).toBe("idle");
 	});
 });

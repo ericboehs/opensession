@@ -83,7 +83,7 @@ function buildSummary(s: UnifiedSession): SessionSummary {
 	// External runs (CLI in tmux, another process) show as running via PID but
 	// aren't in our activeRuns — observe-only, can't steer/cancel them.
 	const runningExternal = !!s.isRunning && !busyHere;
-	const pending = pendingAskAwaitingAnswer(s.id);
+	const pending = pendingAsks.get(s.id);
 	const queuedCount = promptQueues.get(s.id)?.length || 0;
 
 	let state: SessionState;
@@ -151,7 +151,7 @@ registerSessionControl({
 
 	answerQuestion: async (id, answers, opts) => {
 		const requestId = opts?.requestId || randomUUIDv7();
-		const questionId = pendingAskAwaitingAnswer(id)?.questionId || null;
+		const questionId = (await pendingAskAwaitingAnswer(id))?.questionId || null;
 		// The actor records the answer durably under the caller's retry
 		// identity; the aggregate makes replay idempotent. The gateway-side
 		// resolver then runs its live side effects (escalation cancel,
@@ -169,13 +169,13 @@ registerSessionControl({
 		const effective =
 			settled.answers ?? (answers && typeof answers === "object" ? answers : null);
 		const pending = pendingAsks.get(id) as
-			| { questionId?: string; resolve?: (value: unknown) => void }
+			| { questionId?: string; resolve?: (value: unknown) => void | Promise<void> }
 			| undefined;
 		if (
 			pending?.resolve &&
 			(questionId === null || pending.questionId === questionId)
 		)
-			pending.resolve(effective);
+			await pending.resolve(effective);
 		return true;
 	},
 
@@ -250,7 +250,7 @@ registerSessionControl({
 			// prior Stop here rather than inside the run the Stop prevents: the busy
 			// branch below only enqueues, and drainQueue parks at the latch, which
 			// would leave the message queued forever.
-			liftUserStop(id);
+			await liftUserStop(id);
 
 			const attributed = user ? `[${user}] ${content}` : content;
 			// Disk-staged files can only be supplied to a fresh turn. Never fold them
@@ -311,7 +311,7 @@ registerSessionControl({
 						deliveryId,
 					};
 				}
-				enqueuePrompt(id, {
+				await enqueuePrompt(id, {
 					id: deliveryId,
 					content,
 					user,
@@ -345,7 +345,7 @@ registerSessionControl({
 
 			// Every accepted prompt is durable before any engine or workspace wake.
 			// A crash after this write but before dispatch replays the same queue id.
-			enqueuePrompt(id, {
+			await enqueuePrompt(id, {
 				id: deliveryId,
 				content,
 				user,
@@ -523,7 +523,7 @@ registerSessionControl({
 					new Date(durableCreation.updatedAt).toISOString(),
 			};
 		}
-		let createPlan = actorCreationSetupPlan(bksId, createIdentity);
+		let createPlan = await actorCreationSetupPlan(bksId, createIdentity);
 		if (
 			completedCreate?.claudeSessionId ||
 			completedCreate?.codexThreadId
@@ -710,7 +710,7 @@ registerSessionControl({
 					else {
 						sessionBranch = await branchNameFromPrompt(prompt);
 						sessionBranch = await resolveUniqueBranch(sessionBranch, repo.id);
-						createPlan = patchCreationSetupPlan(bksId, createIdentity, {
+						createPlan = await patchCreationSetupPlan(bksId, createIdentity, {
 							branch: sessionBranch,
 						});
 					}
@@ -837,7 +837,7 @@ registerSessionControl({
 				const plannedWorkspaceId =
 					createPlan.workspaceId || createPlanWorkspaceId(bksId);
 				if (!createPlan.workspaceId)
-					createPlan = patchCreationSetupPlan(bksId, createIdentity, {
+					createPlan = await patchCreationSetupPlan(bksId, createIdentity, {
 						workspaceId: plannedWorkspaceId,
 					});
 				const branchForWs = wsParent?.branch || sessionBranch;
@@ -886,7 +886,7 @@ registerSessionControl({
 		const attachmentSources =
 			createPlan.attachments ?? prepareCreationAttachmentSources(bksId, rawFiles);
 		if (!createPlan.attachments && attachmentSources.length)
-			createPlan = patchCreationSetupPlan(bksId, createIdentity, {
+			createPlan = await patchCreationSetupPlan(bksId, createIdentity, {
 				attachments: attachmentSources,
 			});
 		for (const attachment of attachmentSources)
@@ -1082,7 +1082,7 @@ ${createMentionsNote}`;
 				}
 			: computedSpec;
 		if (!createPlan.resolved) {
-			createPlan = patchCreationSetupPlan(bksId, createIdentity, {
+			createPlan = await patchCreationSetupPlan(bksId, createIdentity, {
 				resolved: snapshotOpeningCreate(computedSpec),
 			});
 		}

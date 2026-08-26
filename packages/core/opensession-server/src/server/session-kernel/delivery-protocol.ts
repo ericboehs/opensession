@@ -53,6 +53,7 @@ export type DeliveryActorRequest =
     }
   | { op: "entries"; slot: DeliverySlot }
   | { op: "set"; sessionId: string; slot: DeliverySlot; value: unknown }
+  | { op: "enqueue"; sessionId: string; item: unknown; front?: boolean }
   | { op: "delete"; sessionId: string; slot: DeliverySlot }
   | { op: "clear_slot"; slot: DeliverySlot }
   | { op: "prepare_steer"; sessionId: string; itemId: string; item?: unknown }
@@ -136,6 +137,7 @@ export type DeliveryActorResult<T extends DeliveryActorRequest> =
                   ? unknown | undefined
                   : T extends {
                         op:
+                          | "enqueue"
                           | "delete"
                           | "ack_dispatch"
                           | "fail_dispatch"

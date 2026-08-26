@@ -468,16 +468,16 @@ export async function waitForCreatedSessionProjection(
 	}
 }
 
-export function actorCreationSetupPlan(
+export async function actorCreationSetupPlan(
 	sessionId: string,
 	identity: string,
-): CreationSetupPlan {
-	const state = ensureCreationPlanned(sessionId, identity);
+): Promise<CreationSetupPlan> {
+	const state = await ensureCreationPlanned(sessionId, identity);
 	if (state.setupPlan || !["planned", "preparing"].includes(state.state))
 		return (state.setupPlan ?? {}) as CreationSetupPlan;
 	const legacy = readCreatePlan(sessionId, identity);
 	if (!legacy) return {};
-	return patchCreationSetupPlan(sessionId, identity, {
+	return await patchCreationSetupPlan(sessionId, identity, {
 		...(legacy.branch ? { branch: legacy.branch } : {}),
 		...(legacy.workspaceId ? { workspaceId: legacy.workspaceId } : {}),
 		...(legacy.attachments ? { attachments: legacy.attachments } : {}),
@@ -645,7 +645,7 @@ async function restorePlannedOpening(sessionId: string): Promise<{
 			],
 			kind: "create" as const,
 		};
-		promptDispatches.set(sessionId, recoveredDispatch);
+		await promptDispatches.set(sessionId, recoveredDispatch);
 		dispatch = recoveredDispatch;
 	}
 	if (dispatch?.kind !== "create") return null;
@@ -726,7 +726,7 @@ export async function settleStoppedCreationOpening(item: CreationOpeningEffectIt
 			runnerOpeningHostId(item.payload.runId, item.payload.runGeneration) &&
 		cancel.runGeneration === item.payload.runGeneration;
 	if (kernel.runState().state !== "stopped" && !exactCancel) return false;
-	settleCreationCancelled(
+	await settleCreationCancelled(
 		item.sessionId,
 		item.payload.creationIdentity,
 		kernel,
@@ -774,7 +774,7 @@ export async function executeCreationOpeningEffect(
 			run.promptEntryId === item.payload.openingPromptEntryId,
 	);
 	if (openingJournal?.terminalFailure) {
-		settleCreationFailed(
+		await settleCreationFailed(
 			item.sessionId,
 			item.payload.creationIdentity,
 			new Error(openingJournal.terminalFailure.content),
@@ -1041,7 +1041,7 @@ export async function openCreatedSession(
 		// engine is up. The starting mark keeps a prompt typed in that
 		// window from double-starting a run (same race as
 		// runSessionPrompt).
-		startToken = markSessionStarting(
+		startToken = await markSessionStarting(
 			bksId,
 			openingRun
 				? runnerOpeningHostId(openingRun.runId, openingRun.generation)
@@ -1281,14 +1281,14 @@ export async function openCreatedSession(
 				// the generator's next item. Backend generator finally blocks may now
 				// retire their journal/host only after the actor has the receipt.
 				if (openingTurnWasCancelled())
-					settleCreationCancelled(
+					await settleCreationCancelled(
 						bksId,
 						creationIdentity,
 						undefined,
 						creationEffectId,
 					);
 				else
-					settleCreationSucceeded(
+					await settleCreationSucceeded(
 						bksId,
 						creationIdentity,
 						undefined,
@@ -1539,7 +1539,7 @@ export async function openCreatedSession(
 			// here too. Nothing wraps this run in runSessionPromptAndDrain, so a
 			// queued nudge needs the drain watcher to deliver it.
 			if (
-				maybeQueueAutoContinue({
+				await maybeQueueAutoContinue({
 					sessionId: bksId,
 					assistantText,
 					toolUseCount,
@@ -1564,7 +1564,7 @@ export async function openCreatedSession(
 			return;
 		}
 		if (openingTurnWasCancelled()) {
-			settleCreationCancelled(
+			await settleCreationCancelled(
 				bksId,
 				creationIdentity,
 				undefined,
@@ -1612,7 +1612,7 @@ export async function openCreatedSession(
 		} else {
 			io.fail(e.message || String(e));
 		}
-		settleCreationFailed(
+		await settleCreationFailed(
 			bksId,
 			creationIdentity,
 			e,
@@ -1742,7 +1742,7 @@ export async function handleCreateSessionMessage(
 		finishCreate();
 		return response;
 	}
-	let createPlan = actorCreationSetupPlan(bksId, createIdentity);
+	let createPlan = await actorCreationSetupPlan(bksId, createIdentity);
 	if (
 		recoveringSession?.claudeSessionId ||
 		recoveringSession?.codexThreadId
@@ -1943,7 +1943,7 @@ export async function handleCreateSessionMessage(
 		const plannedWorkspaceId =
 			createPlan.workspaceId || createPlanWorkspaceId(bksId);
 		if (!createPlan.workspaceId)
-			createPlan = patchCreationSetupPlan(bksId, createIdentity, {
+			createPlan = await patchCreationSetupPlan(bksId, createIdentity, {
 				workspaceId: plannedWorkspaceId,
 			});
 		// A code create landing on a branch whose worktree an existing
@@ -2197,7 +2197,7 @@ export async function handleCreateSessionMessage(
 			const plannedWorkspaceId =
 				createPlan.workspaceId || createPlanWorkspaceId(bksId);
 			if (!createPlan.workspaceId)
-				createPlan = patchCreationSetupPlan(bksId, createIdentity, {
+				createPlan = await patchCreationSetupPlan(bksId, createIdentity, {
 					workspaceId: plannedWorkspaceId,
 				});
 			await requestCreationWorkspace({
@@ -2239,7 +2239,7 @@ export async function handleCreateSessionMessage(
 		const attachmentSources =
 			createPlan.attachments ?? prepareCreationAttachmentSources(bksId, msg.files);
 		if (!createPlan.attachments && attachmentSources.length)
-			createPlan = patchCreationSetupPlan(bksId, createIdentity, {
+			createPlan = await patchCreationSetupPlan(bksId, createIdentity, {
 				attachments: attachmentSources,
 			});
 		for (const attachment of attachmentSources)
@@ -2332,7 +2332,7 @@ export async function handleCreateSessionMessage(
 		}
 
 		if (branch && branch !== createPlan.branch)
-			createPlan = patchCreationSetupPlan(bksId, createIdentity, { branch });
+			createPlan = await patchCreationSetupPlan(bksId, createIdentity, { branch });
 		const computedSpec: ResolvedCreate = {
 			id: bksId,
 			title,
@@ -2476,7 +2476,7 @@ export async function handleCreateSessionMessage(
 				}
 			: computedSpec;
 		if (!createPlan.resolved) {
-			createPlan = patchCreationSetupPlan(bksId, createIdentity, {
+			createPlan = await patchCreationSetupPlan(bksId, createIdentity, {
 				resolved: snapshotOpeningCreate(computedSpec),
 			});
 		}

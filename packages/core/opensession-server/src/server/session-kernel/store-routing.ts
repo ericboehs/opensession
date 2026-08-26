@@ -104,7 +104,7 @@ const OUTBOX_ID_METHODS = new Set([
   "retryDeadOutbox",
 ]);
 
-const READ_METHODS = new Set([
+export const READ_METHODS = new Set([
   "command",
   "quarantinedSession",
   "creationState",
@@ -112,10 +112,20 @@ const READ_METHODS = new Set([
   "changesSince",
   "isTombstoned",
   "askSnapshot",
+  "askEntries",
   "turnSnapshot",
   "deliverySnapshot",
+  "deliveryEntries",
+  "runStates",
+  "quarantinedSessions",
+  "dueTimers",
+  "pendingOutbox",
+  "stats",
+  "deadLetters",
   "timer",
   "outboxSessionId",
+  "askMigrationComplete",
+  "deliveryMigrationComplete",
 ]);
 
 /** The single routing registry for the compatibility store surface. */

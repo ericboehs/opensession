@@ -473,10 +473,10 @@ describe("SessionKernel", () => {
 		const { transitionRunState } = await import("../run-state");
 		const id = `fence-${crypto.randomUUID()}`;
 		try {
-			transitionRunState(id, "prompt");
-			transitionRunState(id, "run_registered", { run_key: "run-new" });
+			await transitionRunState(id, "prompt");
+			await transitionRunState(id, "run_registered", { run_key: "run-new" });
 			const generation = sessionKernel(id).runState().generation;
-			transitionRunState(id, "run_registered", { run_key: "run-old" });
+			await transitionRunState(id, "run_registered", { run_key: "run-old" });
 			expect(sessionKernel(id).runState()).toMatchObject({
 				state: "running",
 				currentRunId: "run-new",
@@ -496,6 +496,15 @@ describe("SessionKernel", () => {
 			),
 		).toBe(true);
 	});
+
+  test("rejects a run event after a writable preflight races deletion", () => {
+    const sessionId = "deleted-before-run-event";
+    expect(store.isTombstoned(sessionId)).toBe(false);
+    store.tombstoneSession(sessionId);
+    expect(() => store.applyRunEvent({ sessionId, event: "prompt" }))
+      .toThrow(`Session ${sessionId} was deleted`);
+    expect(store.runState(sessionId).state).toBe("idle");
+  });
 
 	test("persists run state and monotonic change sequence", async () => {
 		const kernel = sessionKernel("s1");
@@ -1454,7 +1463,7 @@ describe("SessionKernel", () => {
     ]);
     const { isUserStopped, liftUserStop } = await import("../queue-state");
     expect(isUserStopped("cancel-starting")).toBe(true);
-    liftUserStop("cancel-starting");
+    await liftUserStop("cancel-starting");
     expect(store.runState("cancel-starting").state).toBe("idle");
     expect(isUserStopped("cancel-starting")).toBe(true);
     expect(store.applyRunEvent({

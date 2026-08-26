@@ -74,12 +74,12 @@ export type RunStateTransitionDecision = {
 };
 
 /** Apply one run event and retain the actor's admission decision. */
-export function decideRunStateTransition(
+export async function decideRunStateTransition(
 	sessionId: string,
 	event: RunEvent,
 	detail?: Record<string, unknown>,
 	emit: AuditEmit = audit,
-): RunStateTransitionDecision {
+): Promise<RunStateTransitionDecision> {
 	if (detachedRunHost()) {
 		const from = getRunState(sessionId);
 		const next = nextRunState(from, event);
@@ -98,7 +98,7 @@ export function decideRunStateTransition(
 	}
 
 	const runKey = typeof detail?.run_key === "string" ? detail.run_key : undefined;
-	const decision = sessionKernel(sessionId).applyRunEvent({
+	const decision = await sessionKernel(sessionId).applyRunEvent({
 		event,
 		detail,
 		runKey,
@@ -151,13 +151,13 @@ export function decideRunStateTransition(
  * durable state and emits `run_state_transition`; an undefined one leaves the
  * state untouched and emits `run_state_rejected`.
  */
-export function transitionRunState(
+export async function transitionRunState(
 	sessionId: string,
 	event: RunEvent,
 	detail?: Record<string, unknown>,
 	emit: AuditEmit = audit,
-): RunState {
-	const decision = decideRunStateTransition(sessionId, event, detail, emit);
+): Promise<RunState> {
+	const decision = await decideRunStateTransition(sessionId, event, detail, emit);
 	return decision.accepted ? decision.to : decision.from;
 }
 

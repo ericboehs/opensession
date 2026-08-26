@@ -316,6 +316,59 @@ describe("session kernel actor service", () => {
     });
   });
 
+  test("returns the first committed mutation result when it exceeds the service buffer", async () => {
+    const sessionId = "large-service-dispatch";
+    const content = "x".repeat(9 * 1024 * 1024);
+    const seeded = await rpc({
+      t: "call",
+      rpcId: "seed-large-service-dispatch",
+      outputBytes: 256 * 1024,
+      request: {
+        t: "reduce",
+        command: {
+          kind: "delivery",
+          commandId: "seed-large-service-dispatch",
+          request: {
+            op: "set",
+            sessionId,
+            slot: "queued",
+            value: [{ id: "large", content }],
+          },
+        },
+      },
+    });
+    expect(seeded).toMatchObject({ t: "call_result", status: 1 });
+
+    const claimed = await rpc({
+      t: "call",
+      rpcId: "claim-large-service-dispatch",
+      outputBytes: 8 * 1024 * 1024,
+      request: {
+        t: "reduce",
+        command: {
+          kind: "delivery",
+          commandId: "claim-large-service-dispatch",
+          request: {
+            op: "claim_next_dispatch",
+            sessionId,
+            promptEntryId: "large-entry",
+          },
+        },
+      },
+    });
+    expect(claimed).toMatchObject({ t: "call_result", status: 1 });
+    expect(JSON.parse(claimed.body)).toMatchObject({
+      ok: true,
+      result: {
+        result: {
+          kind: "deliver",
+          promptEntryId: "large-entry",
+          items: [{ id: "large", content }],
+        },
+      },
+    });
+  });
+
   test("a locked session database does not block another session mailbox", async () => {
     for (const sessionId of ["locked-pool-session", "healthy-pool-session"]) {
       const created = await rpc({

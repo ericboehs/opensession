@@ -345,7 +345,7 @@ export async function dispatchSlackInteractive(payload: any): Promise<void> {
     );
     if (stopPrefix) {
       const bksId = actionId.slice(stopPrefix.length);
-      const didCancel = cancelAgentRun(bksId);
+      const didCancel = await cancelAgentRun(bksId);
 
       const msgChannel = payload.channel?.id;
       const msgTs = payload.message?.ts;
