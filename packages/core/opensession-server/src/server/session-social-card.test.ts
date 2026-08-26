@@ -104,12 +104,12 @@ describe("session social card", () => {
 		expect(data).not.toHaveProperty("accent");
 	});
 
-	test("stacks walkthrough, featured, then person-attached screenshots", () => {
+	test("stacks walkthrough, featured, then person-attached screenshots", async () => {
 		const opening = testImage("opening.png");
 		const featured = testImage("featured.png");
 		const walkthrough = testImage("walkthrough.png");
 		const sessionId = "sess-social-shot-priority";
-		transcriptStore().appendTranscriptEvents(sessionId, [
+		await transcriptStore().appendTranscriptEvents(sessionId, [
 			{
 				id: "opening",
 				type: "user",
@@ -146,7 +146,7 @@ describe("session social card", () => {
 		).toEqual([walkthrough, featured, opening]);
 
 		const personOnlyId = "sess-social-person-shot";
-		transcriptStore().appendTranscriptEvents(personOnlyId, [
+		await transcriptStore().appendTranscriptEvents(personOnlyId, [
 			{
 				id: "person-shot",
 				type: "user",
@@ -169,10 +169,10 @@ describe("session social card", () => {
 		).toEqual([opening]);
 	});
 
-	test("restores transcript-owned chat screenshots from bounded rows", () => {
+	test("restores transcript-owned chat screenshots from bounded rows", async () => {
 		const sessionId = "sess-social-data-shot";
 		const dataUrl = `data:image/png;base64,${imageBytes.toString("base64")}`;
-		transcriptStore().appendTranscriptEvents(sessionId, [
+		await transcriptStore().appendTranscriptEvents(sessionId, [
 			{
 				id: "data-shot",
 				type: "user",
@@ -405,7 +405,7 @@ describe("session social card", () => {
 	});
 
 	test("serves a signed Slack-style session id", async () => {
-		transcriptStore().appendTranscriptEvents(signedRouteSessionId, [
+		await transcriptStore().appendTranscriptEvents(signedRouteSessionId, [
 			{
 				id: "signed-shot",
 				type: "user",

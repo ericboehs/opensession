@@ -81,6 +81,16 @@ export async function pendingAskAwaitingAnswer(
 	return pending?.answerReceived ? undefined : pending;
 }
 
+/** Sync projection variant for read-only summary surfaces that cannot await.
+ * Applies the same answerReceived filter so an answered-but-not-yet-adopted
+ * recovery record is never projected back as an actionable question. */
+export function pendingAskAwaitingAnswerSync(
+	sessionId: string,
+): PendingAsk | undefined {
+	const pending = pendingAsks.get(sessionId);
+	return pending?.answerReceived ? undefined : pending;
+}
+
 /** One actor snapshot for list rendering, instead of one RPC per session. */
 export function pendingAskIdsAwaitingAnswer(): Set<string> {
 	const ids = new Set<string>();

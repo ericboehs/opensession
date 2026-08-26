@@ -16,7 +16,7 @@ import {
 import { archiveOlderThan, isArchivedId, setArchived, unpinArchivedSessions, } from "../archive";
 import { audit } from "../audit";
 import {
-	pendingAsks,
+	pendingAskAwaitingAnswerSync,
 	pendingAskIdsAwaitingAnswer,
 } from "../asks";
 import { transcriptMatchSnippet } from "../jsonl-parser";
@@ -426,7 +426,7 @@ function enrichSession(
 		waitingForInput: signals
 			? signals.waitingForInput.has(s.id)
 			: !!sessionProjectionOr(
-					() => pendingAsks.get(s.id),
+					() => pendingAskAwaitingAnswerSync(s.id),
 					undefined,
 				),
 		queuedCount: signals

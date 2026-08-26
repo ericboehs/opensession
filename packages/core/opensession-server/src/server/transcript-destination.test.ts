@@ -359,7 +359,9 @@ describe("destination-idempotent transcript append receipts", () => {
     const transcriptAnchor = emptyAnchor();
     let hooks = 0;
     let bus = 0;
-    setAppendHook(() => hooks++);
+    setAppendHook(() => {
+      hooks++;
+    });
     const unsubscribe = subscribeTranscript("os-destination", () => bus++);
     const input = request({
       transcriptAnchor,

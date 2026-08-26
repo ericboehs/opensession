@@ -475,13 +475,13 @@ describe("fake-engine session runs (consumer loop end-to-end)", () => {
 		// latch park the queue (ws-handlers "cancel"). This actor state is
 		// load-bearing: advancing it to `starting` during intake makes the drain
 		// mistake the new message for an already-owned run and park forever.
-		runState.transitionRunState(sid, "prompt", { run_key: "stopped-run" });
-		runState.transitionRunState(sid, "run_registered", {
+		await runState.transitionRunState(sid, "prompt", { run_key: "stopped-run" });
+		await runState.transitionRunState(sid, "run_registered", {
 			run_key: "stopped-run",
 		});
-		runState.transitionRunState(sid, "cancel", { run_key: "stopped-run" });
+		await runState.transitionRunState(sid, "cancel", { run_key: "stopped-run" });
 		queueState.stoppedSessions.add(sid);
-		runSession.enqueuePrompt(
+		await runSession.enqueuePrompt(
 			sid,
 			queueState.queueItem({ content: "parked", user: "Test" }),
 		);
@@ -492,8 +492,8 @@ describe("fake-engine session runs (consumer loop end-to-end)", () => {
 		// The next explicit send lifts it at intake, the way every human send
 		// path does. Without that lift the message below is queued forever:
 		// only runSessionPrompt clears the latch, and the drain is what calls it.
-		queueState.liftUserStop(sid);
-		runSession.enqueuePrompt(
+		await queueState.liftUserStop(sid);
+		await runSession.enqueuePrompt(
 			sid,
 			queueState.queueItem({ content: "second try", user: "Test" }),
 		);

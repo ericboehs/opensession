@@ -18,7 +18,7 @@
 import { AUTO_CONTINUE_USER } from "./auto-continue";
 import { personaName } from "./config";
 import { currentAgentRunToken, isAgentSessionBusy } from "./agent-runner";
-import { pendingAskAwaitingAnswer, pendingAsks } from "./asks";
+import { pendingAskAwaitingAnswer, pendingAskAwaitingAnswerSync, pendingAsks } from "./asks";
 import { relinkAskThreads } from "./human-asks";
 import { SESSION_EFFORTS, type SessionEffort, providerFor, resolveModel } from "./models";
 import { configuredInteractiveDefaultModel } from "./model-catalog";
@@ -84,7 +84,7 @@ function buildSummary(s: UnifiedSession): SessionSummary {
 	// External runs (CLI in tmux, another process) show as running via PID but
 	// aren't in our activeRuns — observe-only, can't steer/cancel them.
 	const runningExternal = !!s.isRunning && !busyHere;
-	const pending = pendingAsks.get(s.id);
+	const pending = pendingAskAwaitingAnswerSync(s.id);
 	const queuedCount = promptQueues.get(s.id)?.length || 0;
 
 	let state: SessionState;
