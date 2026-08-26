@@ -170,7 +170,7 @@ export interface SessionControl {
   /** One session's summary including creator identity, or undefined if no such id. */
   getSession(id: string): SessionSummary | undefined;
   /** Last `n` transcript entries for a session (for the "what's it doing" view). */
-  transcriptTail(id: string, n: number): TranscriptEntry[];
+  transcriptTail(id: string, n: number): Promise<TranscriptEntry[]>;
   /**
    * Resolve a session's pending AskUserQuestion. `answers` maps each question's
    * header to the chosen option label. Returns false if nothing was waiting.

@@ -164,9 +164,9 @@ export async function readEngineTranscriptAsync(
   engineSessionId: string,
   provider: "claude" | "codex" | "pi"
 ): Promise<TranscriptEntry[]> {
-  if (provider === "pi") return engineStoreTranscript(engineSessionId);
+  if (provider === "pi") return engineStoreTranscriptAsync(engineSessionId);
   const path = getEngineTranscriptPath(worktreeDir, engineSessionId, provider);
-  if (!path || !existsSync(path)) return engineStoreTranscript(engineSessionId);
+  if (!path || !existsSync(path)) return engineStoreTranscriptAsync(engineSessionId);
   return parseTranscriptAsync(path);
 }
 
@@ -180,10 +180,10 @@ export async function readEngineHandoffTranscriptAsync(
   engineSessionId: string,
   provider: "claude" | "codex" | "pi"
 ): Promise<TranscriptEntry[]> {
-  if (provider === "pi") return engineStoreHandoffTranscript(engineSessionId);
+  if (provider === "pi") return engineStoreHandoffTranscriptAsync(engineSessionId);
   const path = getEngineTranscriptPath(worktreeDir, engineSessionId, provider);
   if (!path || !existsSync(path))
-    return engineStoreHandoffTranscript(engineSessionId);
+    return engineStoreHandoffTranscriptAsync(engineSessionId);
   return parseTranscriptAsync(path);
 }
 
@@ -217,6 +217,7 @@ export async function readEngineHandoffTranscriptAsync(
  */
 function engineStoreOwner(engineSessionId: string): UnifiedSession | undefined {
   if (!engineSessionId) return undefined;
+  try {
     // Call-time require, not a static import: session-cache imports this
     // module (getAllSessions), so the static edge must stay one-directional.
     // By the time a transcript is read the cache module is long-loaded —
@@ -243,31 +244,41 @@ function engineStoreOwner(engineSessionId: string): UnifiedSession | undefined {
           s.claudeSessionId === engineSessionId
       )
     );
-}
-
-function engineStoreTranscript(engineSessionId: string): TranscriptEntry[] {
-  try {
-    const owner = engineStoreOwner(engineSessionId);
-    return owner ? mergedSessionTranscript(owner) : [];
   } catch (e) {
     console.warn(
-      `[sessions] engine store transcript read failed for ${engineSessionId}:`,
+      `[sessions] engine store owner resolution failed for ${engineSessionId}:`,
       e instanceof Error ? e.message : e
     );
-    return [];
+    return undefined;
   }
 }
 
+function engineStoreTranscript(engineSessionId: string): TranscriptEntry[] {
+  const owner = engineStoreOwner(engineSessionId);
+  return owner ? mergedSessionTranscript(owner) : [];
+}
+
+async function engineStoreTranscriptAsync(engineSessionId: string): Promise<TranscriptEntry[]> {
+  const owner = engineStoreOwner(engineSessionId);
+  return owner ? mergedSessionTranscriptAsync(owner) : [];
+}
+
 /** The handoff renderer clips each conversational row to 8 KB and the whole
- * note to 180 KB. Read just enough bounded store rows to satisfy that budget;
- * never resolve full_ref blobs for history the renderer will discard. */
-function engineStoreHandoffTranscript(engineSessionId: string): TranscriptEntry[] {
+ * note to 180 KB. Read a bounded actor page and never resolve full_ref blobs
+ * for history the renderer will discard. */
+async function engineStoreHandoffTranscriptAsync(
+  engineSessionId: string,
+): Promise<TranscriptEntry[]> {
+  const owner = engineStoreOwner(engineSessionId);
+  if (!owner || owner.id.startsWith("plain-")) return [];
   try {
-    const owner = engineStoreOwner(engineSessionId);
-    if (!owner || owner.id.startsWith("plain-")) return [];
-    const store = transcriptStore();
-    if (!store.hasImported(owner.id)) return mergedSessionTranscript(owner);
-    return store.readHandoffTail(owner.id).entries;
+    return (await transcript.readTailWindow(owner.id, {
+      minEntries: 32,
+      minMessages: 24,
+      minUserMessagesWithToolWork: 4,
+      maxEntries: 512,
+      maxEstimatedBytes: 180_000,
+    })).entries;
   } catch (e) {
     console.warn(
       `[sessions] engine handoff transcript read failed for ${engineSessionId}:`,
@@ -324,27 +335,22 @@ export function v2MirrorFiles(
 
 /**
  * Every stored entry for the session, ascending seq (paged readSince),
- * hydrated to FULL forms: rows whose 32KB-bounded `data` is a stripped wire
- * form resolve their original entry from transcript_blobs via getFullEntry
- * (which falls back to the row's own data, so non-stripped entries round-trip
- * unchanged). This feeds FTS distill / get_session / the HTTP transcript
- * route — not the WS hot path — and legacy served those consumers unstripped
- * content; wire-level clamping stays the serializers' job
- * (clampEntriesForWire at the send sites).
+ * hydrated to FULL forms in bounded actor pages. Blob joins and byte accounting
+ * happen inside the read-only actor operation, avoiding one RPC per entry.
+ * This feeds FTS distill / get_session / the HTTP transcript route — not the WS
+ * hot path — and legacy served those consumers unstripped content; wire-level
+ * clamping stays the serializers' job (clampEntriesForWire at send sites).
  */
 async function v2ReadAll(sessionId: string): Promise<TranscriptEntry[]> {
-  const PAGE = 2000;
   const out: SeqEntry[] = [];
   let since = 0;
   for (;;) {
-    const page = await transcript.readSince(sessionId, since, PAGE);
-    if (!page.entries.length) break;
-    for (const e of page.entries) {
-      const full = await transcript.getFullEntry(sessionId, e.id);
-      out.push(full ? { ...full, seq: e.seq, changeSeq: e.changeSeq } : e);
-    }
-    since = page.entries[page.entries.length - 1].seq;
-    if (page.entries.length < PAGE) break;
+    const page = await transcript.readHydratedSince(sessionId, since);
+    out.push(...page.entries);
+    if (page.complete) break;
+    if (page.coveredThroughSeq <= since)
+      throw new Error(`Hydrated transcript page made no progress for ${sessionId}`);
+    since = page.coveredThroughSeq;
   }
   return out;
 }
@@ -434,16 +440,16 @@ async function v2StoreTranscript(
  * stays optional so old callers (and runner closures pre-restart) keep
  * working unchanged.
  */
-export function engineUserTexts(session: {
+export async function engineUserTexts(session: {
 	id?: string;
 	transcriptPath?: string | null;
 	claudeSessionId?: string | null;
-}): string[] {
+}): Promise<string[]> {
 	try {
-		return mergedSessionTranscript({
+		return (await mergedSessionTranscriptAsync({
 			id: session.id,
 			transcriptPath: session.transcriptPath ?? null,
-		})
+		}))
 			.filter((e) => e.type === "user")
 			.map((e) => e.content.trim());
 	} catch {
@@ -460,13 +466,13 @@ export function engineUserTexts(session: {
  * don't count as a response: the run-failure notice lands after the stranded
  * message and would otherwise mask it.
  */
-export function trailingUserTexts(session: {
+export async function trailingUserTexts(session: {
 	id?: string;
 	transcriptPath?: string | null;
 	claudeSessionId?: string | null;
-}): string[] {
+}): Promise<string[]> {
 	try {
-		const entries = mergedSessionTranscript({
+		const entries = await mergedSessionTranscriptAsync({
 			id: session.id,
 			transcriptPath: session.transcriptPath ?? null,
 		});

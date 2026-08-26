@@ -243,9 +243,9 @@ function truncate(s: string, n: number): string {
 
 /** Recent Desk text-mode conversation, inlined so the voice engine picks the
  *  conversation up mid-thread instead of starting blank. */
-function recentDeskContext(sessionId: string): string {
+async function recentDeskContext(sessionId: string): Promise<string> {
 	try {
-		const tail = getSessionControl().transcriptTail(sessionId, 12);
+		const tail = await getSessionControl().transcriptTail(sessionId, 12);
 		const lines = tail
 			.filter((e) => (e.type === "user" || e.type === "assistant") && e.content)
 			.map(
@@ -265,7 +265,7 @@ export async function buildVoiceSessionConfig(sessionId: string, user = "Open Se
 	return {
 		type: "realtime",
 		model: DESK_VOICE_MODEL,
-		instructions: VOICE_INSTRUCTIONS + recentDeskContext(sessionId),
+		instructions: VOICE_INSTRUCTIONS + await recentDeskContext(sessionId),
 		tools: [...VOICE_TOOLS, ...(await listVoiceMcpTools(user, sessionId))],
 		tool_choice: "auto",
 		audio: {
@@ -368,7 +368,7 @@ export async function executeVoiceTool(
 				repo: s.repo,
 				branch: s.branch,
 				pendingQuestion: s.pendingQuestion,
-				recent: control.transcriptTail(id, 10).map((e) => ({
+				recent: (await control.transcriptTail(id, 10)).map((e) => ({
 					type: e.type,
 					tool: e.toolName,
 					content: truncate((e.content || "").replace(/\s+/g, " "), 300),

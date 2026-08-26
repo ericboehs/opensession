@@ -40,7 +40,7 @@ import {
 } from "./session-control";
 import { type ResolvedCreate, actorCreationSetupPlan, forkHandoffContext, runOpeningCreateOnce, resolveForkContext, resolvePinnedAccountId, waitForCreatedSessionProjection } from "./session-create";
 import { resolveSessionRepoContext, workspaceOwningWorktree } from "./session-repos";
-import { getAllSessions, mergedSessionTranscript } from "./sessions";
+import { getAllSessions, mergedSessionTranscriptAsync } from "./sessions";
 import { rebuildIndex } from "./slack-links";
 import { handleSlashCommand } from "./slash-commands";
 import { type UnifiedSession } from "./types";
@@ -196,12 +196,12 @@ registerSessionControl({
 		return s ? summaryState.byId.get(s.id) ?? buildSummary(s) : undefined;
 	},
 
-	transcriptTail: (id, n) => {
+	transcriptTail: async (id, n) => {
 		const s = findSession(id);
 		if (!s) return [];
-		// Engine-spanning read (file + pi store) — same as the transcript
-		// route, so get_session works on pi/migrated sessions too.
-		return mergedSessionTranscript(s).slice(-Math.max(0, n));
+		// Engine-spanning read (file + actor store) — same as the transcript
+		// route, so get_session works after shared-store retirement.
+		return (await mergedSessionTranscriptAsync(s)).slice(-Math.max(0, n));
 	},
 
 	answerQuestion: async (id, answers, opts) => {

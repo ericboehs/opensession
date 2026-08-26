@@ -290,7 +290,7 @@ describe("pending ask restart persistence", () => {
 		registerSessionControl({
 			listSessions: () => [],
 			getSession: () => undefined,
-			transcriptTail: () => [],
+			transcriptTail: async () => [],
 			answerQuestion: () => false,
 			deliverToSession: async (_id, content) => {
 				deliveries.push(content);

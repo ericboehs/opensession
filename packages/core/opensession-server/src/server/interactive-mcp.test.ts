@@ -36,7 +36,7 @@ describe("interactive opensession-sessions MCP", () => {
 		const control = {
 			listSessions: () => sessions,
 			getSession: (id: string) => sessions.find((s) => s.id === id),
-			transcriptTail: () => [],
+			transcriptTail: async () => [],
 			answerQuestion: () => false,
 			deliverToSession: async () => ({
 				status: "error" as const,

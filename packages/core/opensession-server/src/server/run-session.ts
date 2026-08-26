@@ -350,7 +350,7 @@ export async function requestTurnCancel(
       ? existingCancel
       : undefined;
   const steered = steeredReceipts.get(sessionId) || [];
-  const requeued = undeliveredSteers(steered, engineUserTexts(session));
+  const requeued = undeliveredSteers(steered, await engineUserTexts(session));
   const requeueIds =
     exactReplay?.requeueIds ??
     requeued
@@ -675,7 +675,7 @@ export async function interruptQueuedPrompt(
 		// user entry is written at the same engine event that folds a steer into
 		// history, so a receipt whose text already landed needs nothing forced
 		// (the reconcile retires it on its own — report success, not a notice).
-		if (undeliveredSteers([receipt], engineUserTexts(session)).length === 0) {
+		if (undeliveredSteers([receipt], await engineUserTexts(session)).length === 0) {
 			return true;
 		}
 		// Still unread: abort the turn. An aborted run never drains its steering
@@ -753,7 +753,7 @@ export async function restorePromptQueues(resumedSessionIds: Set<string>): Promi
 		runOwnsSteers: (sessionId) =>
 			resumedSessionIds.has(sessionId) &&
 			active.some((run) => run.osSessionId === sessionId),
-		deliveredUserTexts: (sessionId) => {
+		deliveredUserTexts: async (sessionId) => {
 			const session = findSession(sessionId);
 			return session ? engineUserTexts(session) : [];
 		},
@@ -1071,7 +1071,7 @@ export async function recordRecoveredRunEvent(osSessionId: string, event: Stream
 		} else {
 			const requeued = await requeueSteerReceipts(
 				osSessionId,
-				engineUserTexts(session),
+				await engineUserTexts(session),
 			);
 			if (requeued > 0) watchExternalRunAndDrain(osSessionId);
 		}
@@ -1903,7 +1903,7 @@ export async function maybeQueueAutoContinue(opts: {
 			!session.automation &&
       !await isUserStopped(sessionId)
 		) {
-			const trailing = trailingUserTexts(session).filter(
+			const trailing = (await trailingUserTexts(session)).filter(
 				(t) =>
 					!t.includes("<opensession:context>") &&
 					!t.startsWith(`[${AUTO_CONTINUE_USER}]`),

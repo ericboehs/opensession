@@ -7,6 +7,7 @@
  */
 
 import { executeSessionProjection } from "../session-projection-executor";
+import { transcriptSearchWorkerArgv } from "../../runner-host/exe";
 import { requestUser, type RouteContext } from "./context";
 import {
 	cancelAgentRunAndWait,
@@ -688,22 +689,54 @@ interface StoredTranscriptSearchResult {
 	searchedSessions: number;
 }
 
-/** Search each bounded actor-owned store in activity order. The coordinator
- * performs no SQLite work and stops as soon as the response cap is full. */
+/** Global search uses bounded read-only handles in a child process. It never
+ * queues synchronous SQLite scans through authoritative actor mailboxes. */
 async function searchStoredTranscripts(
 	query: string,
 	sessionIds: string[],
 	signal?: AbortSignal,
 ): Promise<StoredTranscriptSearchResult> {
-	const matches: StoredTranscriptSearchResult["matches"] = [];
-	let searchedSessions = 0;
-	for (const id of sessionIds) {
-		if (signal?.aborted || matches.length >= 50) break;
-		const snippet = await transcript.search(id, query);
-		searchedSessions++;
-		if (snippet) matches.push({ id, snippet });
+	if (sessionIds.length === 0) return { matches: [], searchedSessions: 0 };
+	const proc = Bun.spawn(
+		transcriptSearchWorkerArgv(
+			process.execPath,
+			`${import.meta.dir}/../transcript-search-worker.ts`,
+		),
+		{ stdin: "pipe", stdout: "pipe", stderr: "pipe", timeout: 6_000 },
+	);
+	const abort = () => proc.kill();
+	if (signal?.aborted) abort();
+	signal?.addEventListener("abort", abort, { once: true });
+	proc.stdin.write(JSON.stringify({
+		query,
+		sessionIds,
+		maxMatches: 50,
+		maxSessions: 250,
+		maxRows: 6_000,
+		maxMs: 5_000,
+	}));
+	proc.stdin.end();
+	try {
+		const [output, error, code] = await Promise.all([
+			new Response(proc.stdout).text(),
+			new Response(proc.stderr).text(),
+			proc.exited,
+		]);
+		if (code !== 0 || signal?.aborted) {
+			if (!signal?.aborted)
+				console.warn(`[transcript-search] worker failed: ${error.trim().slice(0, 300)}`);
+			return { matches: [], searchedSessions: 0 };
+		}
+		const parsed = JSON.parse(output) as StoredTranscriptSearchResult;
+		return {
+			matches: Array.isArray(parsed.matches) ? parsed.matches.slice(0, 50) : [],
+			searchedSessions: Number(parsed.searchedSessions) || 0,
+		};
+	} catch {
+		return { matches: [], searchedSessions: 0 };
+	} finally {
+		signal?.removeEventListener("abort", abort);
 	}
-	return { matches, searchedSessions };
 }
 
 async function ripgrepFiles(

@@ -446,7 +446,7 @@ export async function restorePersistedQueueState(options: {
 	journalOwnsPrompt: (sessionId: string, promptEntryId: string) => boolean;
 	creationOwnsPrompt?: (sessionId: string, promptEntryId: string) => boolean | Promise<boolean>;
 	runOwnsSteers: (sessionId: string) => boolean;
-	deliveredUserTexts: (sessionId: string) => string[];
+	deliveredUserTexts: (sessionId: string) => string[] | Promise<string[]>;
 	effects?: boolean;
 }): Promise<{ queuedSessionIds: string[]; queuedCount: number; steeredCount: number }> {
 	const storePath = options.storePath ?? QUEUE_STORE;
@@ -530,7 +530,7 @@ export async function restorePersistedQueueState(options: {
 				await steeredReceipts.delete(sessionId);
 				continue;
 			}
-			const delivered = options.deliveredUserTexts(sessionId);
+			const delivered = await options.deliveredUserTexts(sessionId);
 			const pending = queueWithIds(undeliveredSteers(items, delivered), sessionId);
 			if (options.runOwnsSteers(sessionId)) {
 				if (pending.length) await steeredReceipts.set(sessionId, pending);
@@ -632,7 +632,7 @@ export async function restorePersistedQueueState(options: {
 	let steeredCount = 0;
 	for (const [sessionId, items] of Object.entries(data.steered || {})) {
 		if (!options.sessionExists(sessionId) || !items?.length) continue;
-		const delivered = options.deliveredUserTexts(sessionId);
+		const delivered = await options.deliveredUserTexts(sessionId);
 		const pending = queueWithIds(undeliveredSteers(items, delivered), sessionId);
 		if (!pending.length) continue;
 		if (options.runOwnsSteers(sessionId)) {

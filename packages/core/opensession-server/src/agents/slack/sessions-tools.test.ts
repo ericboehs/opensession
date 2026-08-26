@@ -112,7 +112,7 @@ function makeHarness(childId?: string): Harness {
 	const control = {
 		listSessions: () => [...sessions.values()] as SessionSummary[],
 		getSession: (sid: string) => sessions.get(sid) as SessionSummary | undefined,
-		transcriptTail: () => [],
+		transcriptTail: async () => [],
 		answerQuestion: () => false,
 		deliverToSession: async (sid, content, user, opts) => {
 			deliveries.push({ id: sid, content, user, opts });

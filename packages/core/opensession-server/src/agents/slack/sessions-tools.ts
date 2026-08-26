@@ -541,7 +541,7 @@ export async function taskStatusImpl(
     }
   } catch {}
   if (!evidenced && s.prUrl) parts.push(`*PR:* ${s.prState || ""} ${s.prUrl}`.trim());
-  const tail = deps.control.transcriptTail(args.taskId, args.transcript_lines ?? 12);
+  const tail = await deps.control.transcriptTail(args.taskId, args.transcript_lines ?? 12);
   parts.push(`*Recent transcript:*\n${fmtTranscriptTail(tail)}`);
   return parts.join("\n");
 }
@@ -622,7 +622,7 @@ export function createSessionsMcpServer(
               `\nUse answer_session_question to respond.`
           );
         }
-        const tail = ctrl.transcriptTail(args.id, args.transcript_lines ?? 12);
+        const tail = await ctrl.transcriptTail(args.id, args.transcript_lines ?? 12);
         parts.push(`\n*Recent transcript:*\n${fmtTranscriptTail(tail)}`);
         return text(parts.join("\n"));
       }
