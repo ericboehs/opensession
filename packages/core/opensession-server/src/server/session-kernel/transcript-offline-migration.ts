@@ -32,6 +32,7 @@ const TABLES = [
 export interface TranscriptMigrationResult {
   migrated: number;
   adopted: number;
+  skippedUnplaced: number;
   sessions: Array<{ sessionId: string; receipt: string }>;
 }
 
@@ -140,15 +141,25 @@ export function migrateActorTranscriptsOffline(options: {
   const source = new Database(options.sourceTranscriptPath, { readonly: true });
   const isolatedRoot = options.isolatedRoot ??
     `${dirname(options.centralPath)}/session-kernel-sessions`;
-  const result: TranscriptMigrationResult = { migrated: 0, adopted: 0, sessions: [] };
+  const result: TranscriptMigrationResult = {
+    migrated: 0,
+    adopted: 0,
+    skippedUnplaced: 0,
+    sessions: [],
+  };
   try {
     const sessionIds = (source.query(
       "SELECT session_id FROM transcript_sessions ORDER BY session_id",
     ).all() as Array<{ session_id: string }>).map((row) => row.session_id);
     for (const sessionId of sessionIds) {
       const placement = central.sessionPlacement(sessionId);
-      if (!placement || placement.placement !== "isolated")
-        throw new Error(`Session ${sessionId} has no isolated kernel placement`);
+      if (!placement || placement.placement !== "isolated") {
+        // Shared stores contain old test probes, removed sessions, and plain
+        // file-backed runs. They have no actor authority to move and remain
+        // only in the untouched rollback source.
+        result.skippedUnplaced++;
+        continue;
+      }
       const targetPath = sessionKernelSessionDbPath(sessionId, isolatedRoot);
       new TranscriptStore(targetPath).close();
       const target = new Database(targetPath);

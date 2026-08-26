@@ -34,6 +34,12 @@ async function fixture() {
     timestamp: "2026-01-01T00:00:00.000Z",
     content: oversized,
   }], "merged", 123);
+  await source.importLegacyTranscript("orphan-without-placement", [{
+    id: "orphan",
+    type: "system",
+    timestamp: "2026-01-01T00:00:00.000Z",
+    content: "rollback evidence only",
+  }], "merged", 10);
   await source.appendTranscriptDestination({
     sessionId,
     appendId: "destination-one",
@@ -73,7 +79,11 @@ describe("offline actor transcript migration", () => {
     source.close();
 
     const result = migrateActorTranscriptsOffline(paths);
-    expect(result).toMatchObject({ migrated: 1, adopted: 0 });
+    expect(result).toMatchObject({
+      migrated: 1,
+      adopted: 0,
+      skippedUnplaced: 1,
+    });
     expect(readFileSync(paths.sourceTranscriptPath)).toEqual(beforeBytes);
 
     const target = new TranscriptStore(
@@ -106,7 +116,11 @@ describe("offline actor transcript migration", () => {
     expect(readFileSync(paths.sourceTranscriptPath)).toEqual(beforeBytes);
 
     const adopted = migrateActorTranscriptsOffline(paths);
-    expect(adopted).toMatchObject({ migrated: 0, adopted: 1 });
+    expect(adopted).toMatchObject({
+      migrated: 0,
+      adopted: 1,
+      skippedUnplaced: 1,
+    });
     central = new SessionKernelStore(paths.centralPath);
     expect(central.sessionPlacement(paths.sessionId)?.transcriptAuthority).toBe("actor");
     central.close();
