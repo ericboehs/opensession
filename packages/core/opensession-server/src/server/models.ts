@@ -745,6 +745,29 @@ export const DEFAULT_FALLBACK_MODEL: string | undefined = (() => {
   return v || "claude-opus-5";
 })();
 
+/** Haiku is primarily used for fast/cheap work. When its Claude pool is dry,
+ * keep that work automatic and cross providers to the matching OpenAI tier. */
+export const DEFAULT_HAIKU_FALLBACK_MODEL = "gpt-5.6-luna";
+
+export function configuredHaikuFallbackModel(): string | undefined {
+  const configured = (
+    process.env.OPENSESSION_HAIKU_FALLBACK_MODEL || DEFAULT_HAIKU_FALLBACK_MODEL
+  ).trim();
+  if (!configured || configured.toLowerCase() === "none") return undefined;
+  const routed = toPiModel(configured);
+  return routed?.startsWith("pi/openai/") ? routed : undefined;
+}
+
+/** Default provider failover for any run kind. Explicit per-run fallbacks may
+ * still override this, but an otherwise-default Haiku run always crosses to
+ * OpenAI instead of spending another attempt in the exhausted Claude pool. */
+export function automaticFallbackModel(primaryModel?: string): string | undefined {
+  if (toPiModel(primaryModel)?.startsWith("pi/anthropic/claude-haiku-")) {
+    return configuredHaikuFallbackModel();
+  }
+  return DEFAULT_FALLBACK_MODEL;
+}
+
 /**
  * Whether interactive sessions auto-switch when they have an explicit fallback
  * model. On (the default) = use that configured fallback; off ("manual") = stop
@@ -795,13 +818,11 @@ export function resolveConcreteModel(
   return DEFAULT_CODEX_MODEL;
 }
 
-/**
- * Fallback model for an interactive session, or undefined when no fallback is
- * explicitly configured. This no longer invents a Claude → Codex fallback.
- */
-export function interactiveFallbackModel(_primaryModel?: string): string | undefined {
+/** Fallback model for an interactive session. Haiku crosses to its explicit
+ * OpenAI peer; other models retain the configured global preference. */
+export function interactiveFallbackModel(primaryModel?: string): string | undefined {
   if (!getModelFallbackAuto()) return undefined;
-  return DEFAULT_FALLBACK_MODEL;
+  return automaticFallbackModel(primaryModel);
 }
 
 /** Retired OpenAI slugs map onto their 5.6 equivalents. */

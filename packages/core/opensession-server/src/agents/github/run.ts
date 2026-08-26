@@ -23,7 +23,7 @@ import {
   type ActiveRunRecord,
 } from "../../server/run-journal";
 import { listAutomations } from "../../server/automations";
-import { providerFor, DEFAULT_FALLBACK_MODEL, modelLabel } from "../../server/models";
+import { automaticFallbackModel, providerFor, modelLabel } from "../../server/models";
 import { engineSessionPatch } from "../../server/sessions";
 import { STRIPE_CONFIRM_TOOLS } from "../../server/runner-shared";
 import { gitIdentityFor, type GitIdentity } from "../../server/shared/user-mappings";
@@ -472,7 +472,7 @@ export async function runGithubAgent(opts: GithubRunOpts): Promise<GithubRunResu
           confirmTools: STRIPE_CONFIRM_TOOLS,
           aws: true,
           author: opts.author,
-          fallbackModel: DEFAULT_FALLBACK_MODEL,
+          fallbackModel: automaticFallbackModel(effectiveModel),
           mcpServers: githubFlowMcpServers(),
           trustProfile: "automation",
           journalKind: `github-${opts.kind}`,
@@ -492,7 +492,7 @@ export async function runGithubAgent(opts: GithubRunOpts): Promise<GithubRunResu
         confirmTools: STRIPE_CONFIRM_TOOLS,
         aws: true,
         author: opts.author,
-        fallbackModel: DEFAULT_FALLBACK_MODEL,
+        fallbackModel: automaticFallbackModel(effectiveModel),
         mcpServers: githubFlowMcpServers(),
         trustProfile: "automation",
         journalKind: `github-${opts.kind}`,
@@ -507,7 +507,7 @@ export async function runGithubAgent(opts: GithubRunOpts): Promise<GithubRunResu
         confirmTools: STRIPE_CONFIRM_TOOLS,
         aws: true,
         author: opts.author,
-        fallbackModel: DEFAULT_FALLBACK_MODEL,
+        fallbackModel: automaticFallbackModel(effectiveModel),
         mcpServers: githubFlowMcpServers(),
         githubEnv,
         journal: { osSessionId: bksId, kind: `github-${opts.kind}` },

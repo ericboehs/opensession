@@ -82,6 +82,10 @@ is used, then `claude-fable-5`.
 Interactive auto-fallback is on by default. Its preferred model comes from
 `OPENSESSION_FALLBACK_MODEL`, defaulting to `claude-opus-5`; set the variable to
 `none` to disable fallback. Environment changes require a service restart.
+Haiku-backed runs and derived one-shots instead cross providers to
+`gpt-5.6-luna` when the Claude pool is exhausted or unavailable. Override that
+with `OPENSESSION_HAIKU_FALLBACK_MODEL`, or set it to `none` to disable the
+Haiku-specific fallback.
 When the current model's whole account pool is unavailable, the runner tries
 configured fallback providers. Equal or stronger hops proceed automatically;
 an interactive downgrade asks first. A cross-provider hop starts a fresh Pi

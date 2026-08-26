@@ -78,7 +78,10 @@ import {
   observeToolCall,
   turnKeyFor,
 } from "./turn-outcome";
-import { readEngineTranscriptAsync } from "./sessions";
+import {
+  readEngineHandoffTranscriptAsync,
+  readEngineTranscriptAsync,
+} from "./sessions";
 import { ensureSessionScratch } from "./session-scratch";
 import type { GitIdentity } from "./shared/user-mappings";
 import type { TranscriptEntry } from "./types";
@@ -718,7 +721,7 @@ async function* runAgentInner(opts: RunAgentOpts): AsyncGenerator<StreamEvent> {
       // Requiring sawInit here dropped that history and started the fallback
       // model on a blank session (the "history lost after fallback" bug).
       const entries = currentEngineId
-        ? await readEngineTranscriptAsync(
+        ? await readEngineHandoffTranscriptAsync(
             currentOpts.cwd,
             currentEngineId,
             transcriptProviderFor(currentModel)

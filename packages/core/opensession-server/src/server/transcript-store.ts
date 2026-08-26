@@ -1169,6 +1169,25 @@ export class TranscriptStore {
     return this.readTail(sessionId, count);
   }
 
+  /** Bounded recent history for an engine handoff. The renderer clips each
+   * conversational row to 8 KB and the whole note to 180 KB, so resolving a
+   * session's full_ref blobs or reading beyond this window cannot improve the
+   * result. Tool-heavy tails may extend to the row ceiling to recover recent
+   * user boundaries, but returned rows always remain in their bounded form. */
+  readHandoffTail(sessionId: string): TranscriptPage {
+    return this.readTailWindow(sessionId, {
+      minEntries: 32,
+      minMessages: 24,
+      minUserMessagesWithToolWork: 4,
+      maxEntries: 512,
+      maxEstimatedBytes: 180_000,
+      weigh: (kind, bytes) =>
+        kind === "user" || kind === "assistant" || kind === "system"
+          ? Math.min(bytes, 8_000)
+          : 0,
+    });
+  }
+
   /** Last `limit` entries in ascending seq order. */
   readTail(sessionId: string, limit: number = 50): TranscriptPage {
     const rows = this.db

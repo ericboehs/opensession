@@ -229,6 +229,16 @@
 	   The sidebar's hover is a layer over this, so pointing at the selected row
 	   still lifts it. */
 	--selected: rgba(255, 255, 255, 0.08);
+	/* Opaque equivalents of the sidebar row's translucent washes. Avatar rings
+	   cannot inherit the pixels behind them, so these reproduce the exact sRGB
+	   composites for resting selection, hover, and both layers together. */
+	--sidebar-row-hover: color-mix(in srgb, #ffffff 7%, var(--sidebar-bg));
+	--sidebar-row-selected: color-mix(in srgb, #ffffff 8%, var(--sidebar-bg));
+	--sidebar-row-selected-hover: color-mix(
+		in srgb,
+		#ffffff 14.44%,
+		var(--sidebar-bg)
+	);
 	/* The one interaction fill that is NOT a wash: an action chip floating over
 	   a row (the pin/archive cluster). A chip is a LID, not a tint — what is
 	   behind it is the row it covers, so a translucent one shows that row's own
@@ -579,6 +589,13 @@ html[data-theme="light"] {
 	--hover: rgba(0, 0, 0, 0.055);
 	--hover-strong: rgba(0, 0, 0, 0.095);
 	--selected: rgba(0, 0, 0, 0.065);
+	--sidebar-row-hover: color-mix(in srgb, #000000 5.5%, var(--sidebar-bg));
+	--sidebar-row-selected: color-mix(in srgb, #000000 6.5%, var(--sidebar-bg));
+	--sidebar-row-selected-hover: color-mix(
+		in srgb,
+		#000000 11.6425%,
+		var(--sidebar-bg)
+	);
 	--row-chip: color-mix(in srgb, #000000 9.5%, var(--sidebar-bg));
 	--row-chip-hover: color-mix(in srgb, #000000 5.5%, var(--row-chip));
 	--border: #e2e2e2;

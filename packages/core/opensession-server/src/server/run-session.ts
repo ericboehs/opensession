@@ -76,6 +76,7 @@ import {
 	getEngineTranscriptPath,
 	mergedSessionTranscript,
 	mergedSessionTranscriptAsync,
+	readEngineHandoffTranscriptAsync,
 	readEngineTranscriptAsync,
 	trailingUserTexts,
 } from "./sessions";
@@ -2178,7 +2179,7 @@ async function runSessionPromptInner(
 		// the same way). No-op for engine-native reads, which predate the prompt.
 		const prevEntries = (
 			prevEngineId
-				? await readEngineTranscriptAsync(
+				? await readEngineHandoffTranscriptAsync(
 						session.worktreeDir || defaultRepo().repo,
 						prevEngineId,
 						lastProvider,

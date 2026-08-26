@@ -23,6 +23,7 @@ import {
   webhookBodyTooLargeResponse,
 } from "../../server/shared/bounded-body";
 import { handleMessageEvent, handleMentionEvent } from "./handlers";
+import { SlackEventInbox } from "./event-inbox";
 import {
   shouldHandleAppMention,
   shouldHandleDirectMessage,
@@ -91,6 +92,16 @@ import {
 const SLACK_BOT_TOKEN = process.env.SLACK_BOT_TOKEN;
 const SLACK_SIGNING_SECRET = process.env.SLACK_SIGNING_SECRET || "";
 
+const slackEventInbox = new SlackEventInbox(
+  `${SESSION_DIR}/event-inbox.json`,
+  {
+    handleDirectMessage: handleMessageEvent,
+    handleMention: handleMentionEvent,
+    isProcessed: isEventProcessed,
+    markProcessed: markEventProcessed,
+  },
+);
+
 async function readWebhookBody(req: Request, maxBytes = MAX_WEBHOOK_BODY_BYTES): Promise<string | Response> {
   try {
     return await readRequestTextWithinLimit(req, maxBytes);
@@ -145,19 +156,12 @@ export async function dispatchSlackEvent(payload: any): Promise<void> {
   // Handle message.im events (DMs)
   if (shouldHandleDirectMessage(event)) {
     const eventId = `${event.channel}-${event.ts}`;
-    if (isEventProcessed(eventId)) {
+    const result = slackEventInbox.enqueue("direct_message", event);
+    if (result === "processed") {
       console.log(`[slack] Duplicate event: ${eventId}`);
-      return;
+    } else if (result === "pending") {
+      console.log(`[slack] Pending event retry: ${eventId}`);
     }
-
-    // Mark processed only AFTER the handler has enqueued the message —
-    // marking first meant a handler throw made Slack's retry look like a
-    // duplicate and the message was silently dropped.
-    handleMessageEvent(event)
-      .then(() => markEventProcessed(eventId))
-      .catch((e) => {
-        console.error("[slack] Error handling message:", e);
-      });
   }
 
   // Channel-watch automations: one run per top-level message in a
@@ -198,18 +202,12 @@ export async function dispatchSlackEvent(payload: any): Promise<void> {
   // Handle app_mention events
   if (shouldHandleAppMention(event)) {
     const eventId = `${event.channel}-${event.ts}`;
-    if (isEventProcessed(eventId)) {
+    const result = slackEventInbox.enqueue("mention", event);
+    if (result === "processed") {
       console.log(`[slack] Duplicate mention event: ${eventId}`);
-      return;
+    } else if (result === "pending") {
+      console.log(`[slack] Pending mention retry: ${eventId}`);
     }
-
-    // Same as DMs above: only mark processed once the handler succeeded,
-    // so a throw leaves the retry eligible instead of dropping the event.
-    handleMentionEvent(event)
-      .then(() => markEventProcessed(eventId))
-      .catch((e) => {
-        console.error("[slack] Error handling mention:", e);
-      });
   }
 
   // Unfurl this instance's session links. A private host (tailnet-only,
@@ -583,7 +581,14 @@ export class SlackAgent implements AgentModule {
         return Response.json({ challenge: payload.challenge });
       }
 
-      await dispatchSlackEvent(payload);
+      try {
+        // DMs and mentions are atomically persisted inside dispatch before we
+        // acknowledge Slack. Slow API/model work runs from that durable inbox.
+        await dispatchSlackEvent(payload);
+      } catch (error) {
+        console.error("[slack] Failed to persist or dispatch event:", error);
+        return Response.json({ error: "Slack event intake failed" }, { status: 503 });
+      }
 
       return Response.json({ ok: true });
     });
@@ -808,10 +813,19 @@ export class SlackAgent implements AgentModule {
       console.warn("[slack] Failed to fetch Slack team info:", e);
     }
 
+    const pendingEvents = slackEventInbox.pendingCount();
+    void slackEventInbox.start().catch((error) => {
+      console.error("[slack] Failed to start durable event replay:", error);
+    });
+    if (pendingEvents > 0) {
+      console.log(`[slack] Replaying ${pendingEvents} durable event(s)`);
+    }
+
     console.log("[slack] Agent started");
   }
 
   async shutdown(): Promise<void> {
+    slackEventInbox.stop();
     // A server restart must not masquerade as a person's Stop action. Keep the
     // queue head on disk and let startup continue it against the saved engine
     // session; handlers render the existing card as "Restarting".
@@ -846,6 +860,8 @@ export class SlackAgent implements AgentModule {
       transport: "http",
       activeSessions: activeSessions.size,
       activeQueues: sessionQueues.size,
+      pendingInboundEvents: slackEventInbox.pendingCount(),
+      inFlightInboundEvents: slackEventInbox.inFlightCount(),
       pendingQuestions: pendingAnswers.size,
       ...githubWebhookHealth,
       queueDetails,

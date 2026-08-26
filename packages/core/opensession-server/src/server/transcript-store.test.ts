@@ -266,6 +266,28 @@ describe("paging: readSince / readBefore", () => {
 });
 
 describe("message-aware tail windows", () => {
+	test("bounds engine handoffs without hydrating full blobs", async () => {
+		const sid = "bks-handoff-window";
+		await store.appendTranscriptEvents(sid, [
+			entry("handoff-old-user", "old question", { type: "user" }),
+			...Array.from({ length: 520 }, (_, i) =>
+				entry(`handoff-tool-${i}`, `step ${i}`, { type: "tool_use" })
+			),
+			entry("handoff-recent-user", "recent question", { type: "user" }),
+			entry("handoff-large-assistant", "x".repeat(TRANSCRIPT_DATA_MAX_BYTES * 2)),
+		]);
+
+		const page = store.readHandoffTail(sid);
+		expect(page.entries.length).toBeLessThanOrEqual(512);
+		expect(page.entries.some((row) => row.id === "handoff-old-user")).toBe(false);
+		expect(page.entries.some((row) => row.id === "handoff-recent-user")).toBe(true);
+		const assistant = page.entries.find(
+			(row) => row.id === "handoff-large-assistant"
+		)!;
+		expect(assistant.content.length).toBeLessThan(TRANSCRIPT_DATA_MAX_BYTES * 2);
+		expect(assistant.contentClamped).toBe(true);
+	});
+
   test("extends past the entry floor until it reaches conversation", async () => {
     const sid = "bks-tail-window-messages";
     await store.appendTranscriptEvents(sid, [
