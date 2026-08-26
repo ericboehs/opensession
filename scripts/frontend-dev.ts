@@ -29,17 +29,22 @@
  * - Big working-tree churn (rebase/checkout) can leave the watcher serving a
  *   stale build with no error — restart this server after git surgery.
  */
-import { readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
-import spaEntry from "../src/frontend/index.html";
+import { dirname, join } from "node:path";
+import spaEntry from "../packages/core/opensession-server/src/frontend/index.html";
 
 const UPSTREAM = process.env.OS1_UPSTREAM || "http://127.0.0.1:3850";
 const WS_UPSTREAM = UPSTREAM.replace(/^http/, "ws") + "/ws";
 const LOGIN = process.env.OS1_LOGIN || process.env.USER || "developer";
 const SSH_HOST = process.env.OS1_SSH_HOST || "";
 const PORT = Number(process.env.PORT || 3851);
-const TOKEN_CACHE = join(homedir(), ".opensession-frontend-dev-token.json");
+const TOKEN_CACHE = (() => {
+	const home = homedir();
+	const current = join(home, ".opensession", "frontend-dev-token.json");
+	const legacy = join(home, ".opensession-frontend-dev-token.json");
+	return existsSync(current) || !existsSync(legacy) ? current : legacy;
+})();
 
 async function tokenValid(candidate: string): Promise<boolean> {
 	try {
@@ -66,6 +71,7 @@ async function loadToken(): Promise<string> {
 		}
 	} catch {}
 	const fresh = fetchTokenViaSsh();
+	mkdirSync(dirname(TOKEN_CACHE), { recursive: true });
 	writeFileSync(
 		TOKEN_CACHE,
 		JSON.stringify({ login: LOGIN, upstream: UPSTREAM, token: fresh, fetchedAt: Date.now() }),
@@ -81,7 +87,7 @@ function fetchTokenViaSsh(): string {
 		"-o",
 		"BatchMode=yes",
 		SSH_HOST,
-		"cat ~/.opensession-web-sessions.json",
+		"cat ~/.opensession/web-sessions.json 2>/dev/null || cat ~/.opensession-web-sessions.json",
 	]);
 	if (proc.exitCode !== 0) {
 		console.error(proc.stderr.toString());
@@ -135,15 +141,8 @@ const spaRoutes = [
 	"/automations",
 	"/security",
 	"/goals",
-	"/wiki",
-	"/wiki/*",
-	"/notes",
-	"/notes/*",
-	"/docs",
-	"/docs/*",
 	"/connections",
 	"/settings",
-	"/actions",
 	"/archived",
 	"/catchup",
 	"/reviews",
@@ -173,7 +172,7 @@ async function tailwindCss(): Promise<Response> {
 		[
 			"node_modules/.bin/tailwindcss",
 			"-i",
-			"src/frontend/styles/tailwind.css",
+			"packages/core/opensession-server/src/frontend/styles/tailwind.css",
 			"-o",
 			out,
 		],
@@ -192,9 +191,10 @@ async function tailwindCss(): Promise<Response> {
 
 // Serve the SPA shell through a rewriter: fetch Bun's HTML-import output from
 // the internal /__shell route and add the Tailwind link (after the bundled
-// global.css so utilities keep winning source-order ties, as in prod), plus a
+// base.css + legacy.css so utilities keep winning source-order ties, as in
+// prod), plus a
 // watcher that hot-swaps that link when the compiled output changes — Bun's
-// HMR covers the bundle (App.tsx, global.css) but knows nothing about our
+// HMR covers the bundle (App.tsx, the stylesheets) but knows nothing about our
 // injected stylesheet.
 const TW_REFRESH = `<script>
 (() => {
@@ -226,7 +226,7 @@ async function shell(req: Request): Promise<Response> {
 
 const server = Bun.serve<Bridge>({
 	port: PORT,
-	// hmr: edits to App.tsx/global.css hot-apply without a manual Cmd+R
+	// hmr: edits to App.tsx or the stylesheets hot-apply without a manual Cmd+R
 	// (React Fast Refresh through Bun's dev pipeline).
 	development: { hmr: true, console: true },
 	idleTimeout: 240,

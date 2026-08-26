@@ -1,7 +1,7 @@
 {
   "id": "instance-health",
   "label": "Instance health monitor",
-  "description": "Hourly check that this Open Session install is alive and not running out of disk or memory. Alarms only when something is wrong.",
+  "description": "Hourly check of disk, memory, and uptime. Alarms only when something is wrong.",
   "requires": [],
   "recommended": true,
   "automation": {

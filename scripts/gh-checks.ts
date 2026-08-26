@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 
-import { githubAppEnv } from "../src/server/github-app";
+import { githubAppEnv } from "../packages/core/opensession-server/src/server/github-app";
 
 const args = process.argv.slice(2);
 if (!args.length) {

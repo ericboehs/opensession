@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+  <dict>
+    <!-- Hardened-runtime exceptions Electron's V8 needs. -->
+    <key>com.apple.security.cs.allow-jit</key>
+    <true/>
+    <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+    <true/>
+    <!-- Dictation. Under the hardened runtime macOS refuses microphone access
+         outright — no prompt — without this, and the helper processes that do
+         the actual capture inherit this same file. Pairs with
+         NSMicrophoneUsageDescription in electron-builder.yml. -->
+    <key>com.apple.security.device.audio-input</key>
+    <true/>
+    <!-- Universal links (https://os.tella.dev opening the app) additionally need
+         com.apple.developer.associated-domains = applinks:os.tella.dev plus a
+         Developer ID provisioning profile — see README "Universal links". -->
+  </dict>
+</plist>

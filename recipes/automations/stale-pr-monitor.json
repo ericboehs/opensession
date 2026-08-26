@@ -1,7 +1,7 @@
 {
   "id": "stale-pr-monitor",
   "label": "Stale PR monitor",
-  "description": "Weekly nudge listing open pull requests that have gone quiet, so nothing rots unnoticed.",
+  "description": "Weekly list of pull requests that have gone quiet.",
   "requires": [
     "github"
   ],

@@ -36,10 +36,42 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="${OPENSESSION_DEPLOY_CHECKOUT:-$(dirname "$SCRIPT_DIR")}"
-STATE_DIR="${OPENSESSION_DEPLOY_STATE:-$HOME/.opensession-deploy}"
-HEALTH_URL="${OPENSESSION_HEALTH_URL:-http://127.0.0.1:3850/api/health}"
+
+read_env_value() {
+  local name="$1" file="$2" value
+  [ -r "$file" ] || return 0
+  value="$(sed -n "s/^${name}=//p" "$file" | tail -n 1)"
+  case "$value" in
+    \"*\") value="${value#\"}"; value="${value%\"}" ;;
+    \'*\') value="${value#\'}"; value="${value%\'}" ;;
+  esac
+  printf '%s' "$value"
+}
+
+GATEWAY_ENV_FILE="$(sed -n 's/^EnvironmentFile=//p' "$REPO_DIR/opensession.service" | tail -n 1)"
+MIGRATION_STATE_DIR="${OPENSESSION_STATE_DIR:-$(read_env_value OPENSESSION_STATE_DIR "$GATEWAY_ENV_FILE")}"
+MIGRATION_SESSIONS_DIR="${OPENSESSION_SESSIONS_DIR:-$(read_env_value OPENSESSION_SESSIONS_DIR "$GATEWAY_ENV_FILE")}"
+if [ -n "${OPENSESSION_DEPLOY_STATE:-}" ]; then
+  STATE_DIR="$OPENSESSION_DEPLOY_STATE"
+elif [ -e "$HOME/.opensession/deploy" ] || [ ! -e "$HOME/.opensession-deploy" ]; then
+  STATE_DIR="$HOME/.opensession/deploy"
+else
+  STATE_DIR="$HOME/.opensession-deploy"
+fi
+HEALTH_URL="${OPENSESSION_HEALTH_URL:-http://127.0.0.1:3850/ready}"
+LEGACY_HEALTH_URL="${OPENSESSION_LEGACY_HEALTH_URL:-http://127.0.0.1:3850/api/health}"
 ALLOW_RESET="${OPENSESSION_DEPLOY_ALLOW_RESET:-0}"
 SERVICE_NAME="${OPENSESSION_SERVICE_NAME:-opensession.service}"
+EXECUTOR_SERVICE_NAME="opensession-executor.service"
+SESSION_KERNEL_SERVICE_NAME="opensession-session-kernel.service"
+SESSION_KERNEL_READY_URL="http://127.0.0.1:3849/ready"
+EXECUTOR_READY_FILE="/run/opensession-executor/ready"
+RUN_HOST_HELPER_VERSION=2
+BUN_BIN="${OPENSESSION_BUN_BIN:-$(command -v bun || true)}"
+[ -n "$BUN_BIN" ] && [ -x "$BUN_BIN" ] || {
+  echo "Open Session deploy requires Bun" >&2
+  exit 1
+}
 
 # Health gate: 30 x 2s = 60s budget, matching deploy.sh's post-restart gate.
 HEALTH_TRIES=30
@@ -57,6 +89,8 @@ RESULTS_DIR="$STATE_DIR/results"
 FAIL_COUNT_FILE="$STATE_DIR/watchdog-fail-count"
 LOG_FILE="$STATE_DIR/self-deploy.log"
 WATCHDOG_LOG="$STATE_DIR/watchdog.log"
+KERNEL_SCHEMA_REL="packages/core/opensession-server/src/server/session-kernel/schema-version"
+KERNEL_SCHEMA_FLOOR_FILE="$STATE_DIR/minimum-kernel-schema"
 
 STARTED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 STARTED_EPOCH="$(date +%s)"
@@ -122,11 +156,153 @@ run_systemctl() {
   if [ "$(id -u)" = "0" ]; then systemctl "$@"; else sudo -n systemctl "$@"; fi
 }
 
+# Once this script stops the gateway, every exit path owns bringing it back.
+# A failed actor migration/readiness check must degrade the deploy, not leave
+# an explicitly stopped unit that Restart=always will never recover.
+GATEWAY_STOPPED_BY_DEPLOY=0
+restore_gateway_on_exit() {
+  local rc=$?
+  if [ "$GATEWAY_STOPPED_BY_DEPLOY" = "1" ]; then
+    log "deploy exiting with gateway stopped — starting ${SERVICE_NAME}"
+    run_systemctl start "$SERVICE_NAME" || true
+  fi
+  return "$rc"
+}
+trap restore_gateway_on_exit EXIT
+
+stop_gateway() {
+  # Set the guard before invoking systemctl: a partial/ambiguous stop still
+  # requires a best-effort start when the script exits.
+  GATEWAY_STOPPED_BY_DEPLOY=1
+  run_systemctl stop "$SERVICE_NAME"
+}
+
+preflight_session_kernel() {
+  local load_state
+  load_state="$(run_systemctl show --property=LoadState --value \
+    "$SESSION_KERNEL_SERVICE_NAME" 2>/dev/null || true)"
+  if [ "$load_state" != "loaded" ]; then
+    log "ERROR: installed session kernel unit is unavailable; run the root deploy before this revision"
+    return 1
+  fi
+  if ! run_systemctl is-active --quiet "$SESSION_KERNEL_SERVICE_NAME" \
+    || ! curl -fs --max-time 2 "$SESSION_KERNEL_READY_URL" >/dev/null 2>&1; then
+    log "ERROR: installed session kernel is not healthy; refusing to stop the gateway"
+    return 1
+  fi
+  # Do not stat /etc/opensession/session-kernel-token here. It is deliberately
+  # root-only and self-deploy runs as the service user. systemd LoadCredential
+  # validates and exposes it only to the kernel service when that unit starts.
+}
+
+refresh_executor() {
+  # Privileged artifacts are installed only by `opensession service install`
+  # or the root-run deploy script. Self-deploy may restart those fixed units,
+  # but never copies executable code from the user-writable checkout as root.
+  if [ ! -f "$REPO_DIR/packages/core/opensession-server/src/executor/main.ts" ]; then
+    return
+  fi
+  if [ ! -f "/etc/systemd/system/$EXECUTOR_SERVICE_NAME" ] \
+    || [ ! -x /usr/local/libexec/opensession-run-host ]; then
+    log "ERROR: executor system artifacts are missing; run opensession service install or the root deploy before this revision"
+    return 1
+  fi
+  if [ "$(id -u)" = "0" ]; then
+    /usr/local/libexec/opensession-run-host check-version "$RUN_HOST_HELPER_VERSION"
+  else
+    sudo -n /usr/local/libexec/opensession-run-host check-version "$RUN_HOST_HELPER_VERSION"
+  fi
+  run_systemctl restart "$EXECUTOR_SERVICE_NAME"
+  local i
+  for i in $(seq 1 30); do
+    if run_systemctl is-active --quiet "$EXECUTOR_SERVICE_NAME" \
+      && [ -s "$EXECUTOR_READY_FILE" ] \
+      && [ "$(cat "$EXECUTOR_READY_FILE" 2>/dev/null || true)" = \
+        "$(run_systemctl show -p MainPID --value "$EXECUTOR_SERVICE_NAME" 2>/dev/null || true)" ]; then
+      return
+    fi
+    sleep 1
+  done
+  log "ERROR: installed executor launcher did not become healthy"
+  return 1
+}
+
+refresh_session_kernel() {
+  # Like the executor, this privileged unit is installed only through the root
+  # deploy path. Self-deploy restarts the fixed unit but never copies a unit or
+  # credential out of the user-writable checkout.
+  preflight_session_kernel || return 1
+  run_systemctl stop "$SESSION_KERNEL_SERVICE_NAME"
+  log "migrating legacy session-kernel rows offline"
+  local -a migration_env
+  migration_env=("HOME=$HOME")
+  if [ -n "$MIGRATION_STATE_DIR" ]; then
+    migration_env+=("OPENSESSION_STATE_DIR=$MIGRATION_STATE_DIR")
+  fi
+  if [ -n "$MIGRATION_SESSIONS_DIR" ]; then
+    migration_env+=("OPENSESSION_SESSIONS_DIR=$MIGRATION_SESSIONS_DIR")
+  fi
+  env "${migration_env[@]}" \
+    "$BUN_BIN" "$REPO_DIR/scripts/migrate-session-kernel-storage.ts"
+  run_systemctl start "$SESSION_KERNEL_SERVICE_NAME"
+  local i
+  for i in $(seq 1 30); do
+    if run_systemctl is-active --quiet "$SESSION_KERNEL_SERVICE_NAME" \
+      && curl -fs --max-time 2 "$SESSION_KERNEL_READY_URL" >/dev/null 2>&1; then
+      return
+    fi
+    sleep 1
+  done
+  log "ERROR: installed session kernel service did not become healthy"
+  return 1
+}
+
 git_repo() { git -C "$REPO_DIR" "$@"; }
 
 tree_clean() { [ -z "$(git_repo status --porcelain 2>/dev/null)" ]; }
 
+kernel_schema_at() {
+  local ref="$1" value
+  value="$(git_repo show "$ref:$KERNEL_SCHEMA_REL" 2>/dev/null || echo 0)"
+  case "$value" in
+    ''|*[!0-9]*) echo 0 ;;
+    *) echo "$value" ;;
+  esac
+}
+
+record_kernel_schema_floor() {
+  local current floor
+  current="$(cat "$REPO_DIR/$KERNEL_SCHEMA_REL" 2>/dev/null || echo 0)"
+  floor="$(cat "$KERNEL_SCHEMA_FLOOR_FILE" 2>/dev/null || echo 0)"
+  if [ "$current" -gt "$floor" ]; then
+    printf '%s\n' "$current" > "$KERNEL_SCHEMA_FLOOR_FILE"
+  fi
+}
+
+rollback_schema_compatible() {
+  local ref="$1" required target
+  required="$(cat "$KERNEL_SCHEMA_FLOOR_FILE" 2>/dev/null || echo 0)"
+  target="$(kernel_schema_at "$ref")"
+  if [ "$target" -lt "$required" ]; then
+    log "REFUSING rollback to ${ref:0:10}: kernel schema $target is below durable floor $required"
+    return 1
+  fi
+}
+
 health_ok() { curl -fs --max-time 4 "$HEALTH_URL" >/dev/null 2>&1; }
+legacy_health_ok() { curl -fs --max-time 4 "$LEGACY_HEALTH_URL" >/dev/null 2>&1; }
+poll_rollback_health() {
+  if grep -q 'path === "/ready"' "$REPO_DIR/packages/core/opensession-server/src/server/routes/system.ts" 2>/dev/null; then
+    poll_health
+    return
+  fi
+  local target="$HEALTH_URL"
+  HEALTH_URL="$LEGACY_HEALTH_URL"
+  poll_health
+  local result=$?
+  HEALTH_URL="$target"
+  return "$result"
+}
 
 # Poll the health endpoint until it answers or the budget runs out. A single
 # 200 can be a crash-looping instance's brief liveness window, so the gate
@@ -159,6 +335,7 @@ poll_health() {
 restart_service() {
   log "restarting ${SERVICE_NAME}"
   run_systemctl restart "$SERVICE_NAME"
+  GATEWAY_STOPPED_BY_DEPLOY=0
 }
 
 # Opening the window also zeroes the consecutive-failure counter: a stale
@@ -209,6 +386,11 @@ rollback_to_pin() {
   local pin head_now
   pin="$(cat "$PIN_FILE")"
   head_now="$(git_repo rev-parse HEAD)"
+  if ! rollback_schema_compatible "$pin"; then
+    write_result false rollback-blocked "$head_now" "$pin" \
+      "rollback target cannot read the durable session-kernel schema"
+    return 1
+  fi
   if [ "$head_now" = "$pin" ]; then
     # Already on the pin — the process is unhealthy, not the tree. Restart only.
     log "HEAD already at pin ${pin:0:10} — restarting without touching the tree"
@@ -229,8 +411,21 @@ rollback_to_pin() {
       "unhealthy after deploy; tree left at $head_now — roll back to pin $pin manually"
     return 1
   fi
+  if ! refresh_executor; then
+    log "ERROR: executor failed readiness after rollback"
+    return 1
+  fi
+  if ! preflight_session_kernel; then
+    log "ERROR: session kernel preflight failed after rollback"
+    return 1
+  fi
+  stop_gateway
+  if ! refresh_session_kernel; then
+    log "ERROR: session kernel failed readiness after rollback"
+    return 1
+  fi
   restart_service
-  if poll_health; then
+  if poll_rollback_health; then
     ROLLBACK_HEALTHY=1
     log "healthy after rollback restart"
     return 0
@@ -285,9 +480,54 @@ do_deploy() {
 
   maybe_bun_install
 
-  # Open the watchdog window just before the restart, so the watchdog only
-  # ever acts on failures caused by THIS deploy.
+  if ! refresh_executor; then
+    log "ERROR: target executor failed readiness; attempting rollback to pin"
+    if rollback_to_pin; then
+      write_result false deploy "$(git_repo rev-parse HEAD)" "$current" \
+        "deploy of $target_sha failed executor readiness; rolled back and healthy again"
+    elif [ ! -f "$RESULT_FILE" ] || ! grep -q '"action":"rollback-needed"' "$RESULT_FILE" 2>/dev/null; then
+      write_result false deploy "$(git_repo rev-parse HEAD)" "$current" \
+        "deploy of $target_sha failed executor readiness; rollback failed"
+    fi
+    exit 1
+  fi
+
+  # Validate privileged service installation while the current gateway is
+  # still serving. The credential itself is intentionally unreadable here;
+  # systemd validates it when refresh_session_kernel starts the unit.
+  if ! preflight_session_kernel; then
+    log "ERROR: target session kernel preflight failed; attempting rollback to pin"
+    if rollback_to_pin; then
+      write_result false deploy "$(git_repo rev-parse HEAD)" "$current" \
+        "deploy of $target_sha failed session kernel preflight; rolled back and healthy again"
+    elif [ ! -f "$RESULT_FILE" ] || ! grep -q '"action":"rollback-needed"' "$RESULT_FILE" 2>/dev/null; then
+      write_result false deploy "$(git_repo rev-parse HEAD)" "$current" \
+        "deploy of $target_sha failed session kernel preflight; rollback failed"
+    fi
+    exit 1
+  fi
+
+  # The actor service opens and migrates the durable database, so establish the
+  # rollback floor before replacing it. A failed target must never boot an older
+  # protocol against a database the target may already have advanced.
+  record_kernel_schema_floor
+  # Open the watchdog recovery window before the first destructive lifecycle
+  # action. If this transient deploy unit is killed outright, the external
+  # watchdog can still recover instead of observing an unmarked stopped unit.
   write_marker
+  stop_gateway
+  if ! refresh_session_kernel; then
+    log "ERROR: target session kernel failed readiness; attempting rollback to pin"
+    if rollback_to_pin; then
+      write_result false deploy "$(git_repo rev-parse HEAD)" "$current" \
+        "deploy of $target_sha failed session kernel readiness; rolled back and healthy again"
+    elif [ ! -f "$RESULT_FILE" ] || ! grep -q '"action":"rollback-needed"' "$RESULT_FILE" 2>/dev/null; then
+      write_result false deploy "$(git_repo rev-parse HEAD)" "$current" \
+        "deploy of $target_sha failed session kernel readiness; rollback failed"
+    fi
+    exit 1
+  fi
+
   restart_service
 
   if poll_health; then

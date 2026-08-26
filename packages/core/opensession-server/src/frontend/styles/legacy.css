@@ -1,0 +1,20 @@
+/* ─────────────────────────────────────────────────────────────
+   legacy.css — empty, and staying that way.
+
+   This file held the app's component styling before the Tailwind
+   system landed. It is now at zero rules: every class that lived
+   here is either a utility string beside its component (src/frontend/
+   lib/*-classes.ts), a primitive in src/frontend/ui/, or a genuinely
+   global rule in base.css.
+
+   Nothing goes back in. New UI is written as utilities on the markup;
+   the only rules that belong in a stylesheet at all are the global and
+   theme-level ones base.css owns — tokens, resets, platform chrome,
+   keyframes and @property registrations, which have no element to hang
+   on. See AGENTS.md, "Frontend UI system".
+
+   The file itself stays for now, still concatenated after base.css by
+   src/server/frontend-build.ts, so scripts/css-audit.ts keeps a target
+   and the "never add here" contract keeps a home. An empty file costs
+   nothing at runtime: the two sheets are concatenated into one.
+   ───────────────────────────────────────────────────────────── */

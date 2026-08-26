@@ -1,0 +1,36 @@
+diff --git a/floating-ui-react/safePolygon.js b/floating-ui-react/safePolygon.js
+index 63dc8e8..dd6c849 100644
+--- a/floating-ui-react/safePolygon.js
++++ b/floating-ui-react/safePolygon.js
+@@ -238,7 +238,12 @@ function safePolygon(options = {}) {
+       if (!isInsidePolygon) {
+         closeIfNoOpenChild();
+       } else if (!hasLanded) {
+-        timeout.start(40, closeIfNoOpenChild);
++        // Open Session: was 40ms. Every pointer event clears and re-arms this
++        // timer, so it only fires when the cursor comes to REST inside the safe
++        // wedge. On a busy main thread our pointer events arrive 55-65ms apart,
++        // which tripped it mid-traverse: the submenu you were moving toward
++        // closed, and the row under the cursor opened its own instead.
++        timeout.start(150, closeIfNoOpenChild);
+       }
+       return undefined;
+     };
+diff --git a/floating-ui-react/safePolygon.mjs b/floating-ui-react/safePolygon.mjs
+index 5dffb4f..09ec1a5 100644
+--- a/floating-ui-react/safePolygon.mjs
++++ b/floating-ui-react/safePolygon.mjs
+@@ -233,7 +233,12 @@ export function safePolygon(options = {}) {
+       if (!isInsidePolygon) {
+         closeIfNoOpenChild();
+       } else if (!hasLanded) {
+-        timeout.start(40, closeIfNoOpenChild);
++        // Open Session: was 40ms. Every pointer event clears and re-arms this
++        // timer, so it only fires when the cursor comes to REST inside the safe
++        // wedge. On a busy main thread our pointer events arrive 55-65ms apart,
++        // which tripped it mid-traverse: the submenu you were moving toward
++        // closed, and the row under the cursor opened its own instead.
++        timeout.start(150, closeIfNoOpenChild);
+       }
+       return undefined;
+     };

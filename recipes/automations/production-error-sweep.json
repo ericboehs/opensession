@@ -1,7 +1,7 @@
 {
   "id": "production-error-sweep",
   "label": "Production error sweep",
-  "description": "Weekday triage of new production errors, grouped by root cause with a recommended owner.",
+  "description": "Weekday triage of new production errors, grouped by cause.",
   "requires": [],
   "notes": "Expects a Sentry (or equivalent) MCP server; set `mcpServers` on the automation to match yours.",
   "automation": {

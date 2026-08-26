@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Open Session</title>
+    <link rel="stylesheet" href="shell.css" />
+  </head>
+  <body>
+    <main>
+      <img class="mark" src="mark.png" width="76" height="76" alt="" />
+      <h1 id="title">Can’t reach Open Session</h1>
+      <p class="message" id="message">
+        The server isn’t responding. Check your network connection.
+      </p>
+      <p class="host" id="host"></p>
+      <div class="actions">
+        <button class="button" id="retry">Try again</button>
+        <button class="button ghost" id="change">Change server</button>
+      </div>
+      <p id="status" role="status" aria-live="polite"></p>
+    </main>
+    <script>
+      const params = new URLSearchParams(location.search);
+      const APP_URL = params.get("url") || "http://127.0.0.1:3850/";
+      const status = document.getElementById("status");
+
+      // Which server it is trying: the shell takes it from OS1_URL or what was
+      // chosen on first launch, so the person cannot see it anywhere else.
+      try {
+        document.getElementById("host").textContent = new URL(APP_URL).host;
+      } catch {}
+
+      let attempt = 0;
+      async function probe() {
+        attempt++;
+        status.textContent = "Retrying automatically · attempt " + attempt;
+        try {
+          await fetch(APP_URL, { method: "HEAD", mode: "no-cors" });
+          location.href = APP_URL;
+        } catch {}
+      }
+      document.getElementById("retry").addEventListener("click", () => {
+        location.href = APP_URL;
+      });
+      // An address that is wrong and a server that is down look the same from
+      // here, and only one of them is fixed by waiting.
+      document.getElementById("change").addEventListener("click", () => {
+        if (window.os1 && window.os1.server) window.os1.server.open();
+      });
+      probe();
+      setInterval(probe, 5000);
+    </script>
+  </body>
+</html>

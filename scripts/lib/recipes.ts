@@ -40,6 +40,10 @@ export type Recipe = {
     mode?: "ask" | "code";
     enabled?: boolean;
     mcpServers?: string[];
+    /** Reviewer requested on PRs a `code` recipe opens — a GitHub login, an
+     *  `org/team` slug, or a comma-separated list. Set it on every code
+     *  recipe; a PR nobody is asked to review is one nobody sees. */
+    prReviewer?: string;
     [key: string]: unknown;
   };
 };
@@ -102,7 +106,13 @@ export async function isInstalled(recipe: Recipe): Promise<boolean> {
  * Append a recipe to the config seed list. Idempotent: seeding itself is
  * create-if-absent, and this refuses to add a duplicate entry.
  */
-export async function installRecipe(recipe: Recipe): Promise<"added" | "already-present"> {
+export async function installRecipe(
+  recipe: Recipe,
+  /** Provenance stamped on the seed. An installable package passes its own
+   *  name here, so an automation stays traceable to what put it there
+   *  (scripts/lib/plugins.ts). */
+  createdBy = `opensession recipe: ${recipe.id}`,
+): Promise<"added" | "already-present"> {
   const config = await readConfig();
   config.integrations ??= {};
   config.integrations.seeds ??= {};
@@ -114,7 +124,7 @@ export async function installRecipe(recipe: Recipe): Promise<"added" | "already-
   const key = keyOf(recipe);
   if (list.some((e) => (e?.eventKey || e?.name) === key)) return "already-present";
 
-  list.push({ ...recipe.automation, createdBy: `opensession recipe: ${recipe.id}` });
+  list.push({ ...recipe.automation, createdBy });
   await Bun.write(CONFIG_PATH, JSON.stringify(config, null, 2) + "\n");
   return "added";
 }

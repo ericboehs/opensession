@@ -1,11 +1,28 @@
+# Local environment and credential files. Keep sanitized templates tracked.
+*.env
+*.env.*
+!*.env.example
+!*.env.*.example
+.envrc
+.envrc.*
 *.key
+*.pem
+*.p12
+*.pfx
+*.pkcs12
+*.ppk
+*.cer
 *.crt
+*.csr
+*.der
+*.jks
+*.keystore
 
 # Local MCP config contains live API tokens — use mcp-config.example.json as a template
 mcp-config.json
 
 # Instance-local operator instructions (appended to every engine run by
-# readLocalInstructions in src/server/opencode-runner.ts) — never tracked
+# readLocalInstructions in src/server/run-policy.ts) — never tracked
 AGENTS.local.md
 CLAUDE.local.md
 
@@ -20,24 +37,41 @@ node_modules/@openai/codex-linux-x64/
 node_modules/.bin/codex
 .frontend-dist/
 .website-dist/
-website/.demo-tailwind.css
+.website-dist-stage/
+packages/clients/website/.demo-tailwind.css
+packages/clients/website/.next/
+packages/clients/website/tsconfig.tsbuildinfo
 node_modules
 __pycache__/
 *.pyc
 
-# output/ holds session deliverables (e.g. the OS1 app icon under
-# output/os1-icons). Sources are tracked — only rendered artifacts are
-# ignored (rebuild via generate.ts + build-fallbacks.sh + ictool).
+# Session captures, reviews, previews, worktrees, and generated deliverables.
+# The OS1 icon source and its build scripts are intentional tracked examples.
+.artifacts/
+.capture/
+.captures/
+.hero-check/
+.opensession-review/
+.review-fix/
+.session-preview/
+.shots/
+.shots-tmp/
+.tmp*/
+.worktrees/
+output/*
+!output/os1-icons/
+!output/os1-icons/**
 output/**/previews/
 output/**/*.icns
 output/**/*.iconset/
 output/os1-icons/icon-512-padded.png
 
-# Downloaded static busybox for the microvm rootfs (re-fetched by
-# deploy/sandbox/microvm/build-rootfs.sh when absent)
+# Downloaded BusyBox binary and corresponding source for the microvm rootfs
+# (re-fetched and checksum-verified by build-rootfs.sh when absent).
 deploy/sandbox/microvm/.cache-busybox
+deploy/sandbox/microvm/.cache-busybox-source.tar.bz2
 
-# Self-preview dev-instance state + preview-flow port seeds (.opensession/start.sh
+# Self-preview dev-instance state + preview-flow port seeds (.agents/start.sh
 # boots a dev instance with OPENSESSION_STATE_DIR=$PWD/.dev-state; the Preview
 # flow writes .ports.conf/.ports/ into the session's working dir)
 .dev-state/
@@ -47,8 +81,30 @@ deploy/sandbox/microvm/.cache-busybox
 # macOS Finder metadata
 .DS_Store
 
-# Vendored third-party agent skills — instance-local, not part of Open Session
-# (MIT content fetched from emilkowalski/skills and jakubkrehel/skills)
+# Vendored third-party agent skills are instance-local. Open Session's own
+# generic skills are tracked below, and every run loads this directory
+# (src/server/skill-paths.ts).
 .agents/skills/
+!.agents/skills/
+.agents/skills/*
+!.agents/skills/simplify/
+!.agents/skills/simplify/**
+!.agents/skills/pr-autofix/
+!.agents/skills/pr-autofix/**
+!.agents/skills/audit-codebase/
+!.agents/skills/audit-codebase/**
+!.agents/skills/bro/
+!.agents/skills/bro/**
+!.agents/skills/react-devtools/
+!.agents/skills/react-devtools/**
 .claude/skills
 skills-lock.json
+.css-shots/
+.css-ab/
+
+# simple-mode harness work dir
+test/simple-mode/.work/
+test/simple-mode/.work-run.log
+
+# Compiled single-executable build (scripts/build-compile.ts)
+/opensession

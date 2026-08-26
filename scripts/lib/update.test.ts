@@ -1,9 +1,24 @@
 import { describe, expect, test } from "bun:test";
-import { classifyTopology, parseRemotes } from "./update";
+import { classifyTopology, parseRemotes, parseSha256Checksum } from "./update";
 
 const UPSTREAM_HTTPS = "https://github.com/tellahq/opensession.git";
 const UPSTREAM_SSH = "git@github.com:tellahq/opensession.git";
 const FORK = "git@github.com:acme/opensession.git";
+
+describe("parseSha256Checksum", () => {
+  const digest = "a".repeat(64);
+
+  test("accepts sha256sum sidecars and bare digests", () => {
+    expect(parseSha256Checksum(`${digest}  opensession-linux-x64.tar.gz\n`)).toBe(digest);
+    expect(parseSha256Checksum(digest.toUpperCase())).toBe(digest);
+  });
+
+  test("rejects malformed or non-SHA-256 values", () => {
+    expect(parseSha256Checksum("not-a-checksum file.tar.gz")).toBeUndefined();
+    expect(parseSha256Checksum("a".repeat(63))).toBeUndefined();
+    expect(parseSha256Checksum("")).toBeUndefined();
+  });
+});
 
 describe("parseRemotes", () => {
   test("parses fetch remotes and ignores push duplicates", () => {

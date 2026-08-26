@@ -1,0 +1,161 @@
+#!/bin/sh
+set -eu
+PATH=/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+
+config="/etc/opensession/run-host.conf"
+if [ "$(id -u)" -ne 0 ] || [ ! -r "$config" ]; then
+  echo "opensession-run-host must run as root with $config installed" >&2
+  exit 1
+fi
+
+line() { sed -n "${1}p" "$config"; }
+service_user="$(line 1)"
+service_uid="$(line 2)"
+service_gid="$(line 3)"
+repo_dir="$(line 4)"
+bun_bin="$(line 5)"
+home_dir="$(line 6)"
+env_file="$(line 7)"
+hosts_root="$(line 8)"
+systemd_run="$(line 9)"
+systemctl_bin="$(line 10)"
+service_path="$(line 11)"
+deploy_checkout="$(line 12)"
+deploy_state="$(line 13)"
+deploy_allow_reset="$(line 14)"
+health_url="$(line 15)"
+runner_mode="$(line 16)"
+runner_bin="$(line 17)"
+
+check_config() {
+  [ -n "$service_user" ]
+  [ "$service_uid" -eq "$service_uid" ] 2>/dev/null
+  [ "$service_gid" -eq "$service_gid" ] 2>/dev/null
+  [ -d "$repo_dir" ]
+  [ "$runner_mode" = "source" ] || [ "$runner_mode" = "compiled" ]
+  [ -x "$runner_bin" ]
+  if [ "$runner_mode" = "source" ]; then
+    [ -x "$bun_bin" ]
+    [ -f "$repo_dir/packages/core/opensession-server/src/runner-host/host.ts" ]
+  fi
+  [ -d "$home_dir" ]
+  [ -x "$systemd_run" ]
+  [ -x "$systemctl_bin" ]
+  [ -n "$service_path" ]
+  [ -d "$deploy_checkout" ]
+  [ "$deploy_allow_reset" = "0" ] || [ "$deploy_allow_reset" = "1" ]
+  [ "$(id -u "$service_user")" = "$service_uid" ]
+  [ "$(id -g "$service_user")" = "$service_gid" ]
+}
+
+check_config || {
+  echo "invalid Open Session run-host configuration" >&2
+  exit 1
+}
+
+action="${1:-}"
+if [ "$action" = "check" ]; then
+  [ "$#" -eq 1 ] || exit 2
+  exit 0
+fi
+
+if [ "$action" = "check-version" ]; then
+  [ "$#" -eq 2 ] || exit 2
+  [ "$2" = "2" ] || {
+    echo "run-host helper version mismatch: installed=2 expected=$2" >&2
+    exit 3
+  }
+  exit 0
+fi
+
+if [ "$action" = "self-deploy" ]; then
+  [ "$#" -eq 3 ] || exit 2
+  unit="$2"
+  target_sha="$3"
+  printf '%s\n' "$unit" | grep -Eq '^opensession-self-deploy-[0-9]{13}$' || {
+    echo "invalid self-deploy unit" >&2
+    exit 2
+  }
+  printf '%s\n' "$target_sha" | grep -Eq '^[0-9a-f]{40,64}$' || {
+    echo "invalid self-deploy target" >&2
+    exit 2
+  }
+  set -- "$systemd_run" \
+    --collect --quiet \
+    "--unit=$unit" \
+    "--description=Open Session self-deploy to $(printf '%.10s' "$target_sha")" \
+    "--uid=$service_uid" \
+    "--gid=$service_gid" \
+    -p "WorkingDirectory=$deploy_checkout" \
+    -p "EnvironmentFile=$env_file" \
+    -p "Environment=HOME=$home_dir" \
+    -p "Environment=PATH=$service_path" \
+    -p "Environment=OPENSESSION_BUN_BIN=$bun_bin" \
+    -p "Environment=OPENSESSION_DEPLOY_CHECKOUT=$deploy_checkout" \
+    -p "Environment=OPENSESSION_DEPLOY_STATE=$deploy_state" \
+    -p "StandardOutput=journal" \
+    -p "StandardError=journal"
+  if [ "$deploy_allow_reset" = "1" ]; then
+    set -- "$@" -p "Environment=OPENSESSION_DEPLOY_ALLOW_RESET=1"
+  fi
+  if [ -n "$health_url" ]; then
+    set -- "$@" -p "Environment=OPENSESSION_HEALTH_URL=$health_url"
+  fi
+  exec "$@" /bin/bash "$deploy_checkout/deploy/self-deploy.sh" --sha "$target_sha"
+fi
+
+host_id="${2:-}"
+if ! printf '%s\n' "$host_id" | grep -Eq '^rh-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'; then
+  echo "invalid run-host id" >&2
+  exit 2
+fi
+unit="bks-run-$host_id"
+
+case "$action" in
+  launch)
+    [ "$#" -eq 4 ] || exit 2
+    dir="$3"
+    spec_hash="$4"
+    [ "$dir" = "$hosts_root/$host_id" ] || {
+      echo "run-host directory is outside the configured state root" >&2
+      exit 2
+    }
+    printf '%s\n' "$spec_hash" | grep -Eq '^[0-9a-f]{64}$' || {
+      echo "invalid run-host spec hash" >&2
+      exit 2
+    }
+    [ -f "$dir/spec.json" ] || {
+      echo "missing run-host spec" >&2
+      exit 2
+    }
+    set -- "$systemd_run" \
+      --collect --quiet \
+      "--unit=$unit" \
+      "--description=Open Session run host $host_id" \
+      "--uid=$service_uid" \
+      "--gid=$service_gid" \
+      -p "WorkingDirectory=$repo_dir" \
+      -p "EnvironmentFile=$env_file" \
+      -p "Environment=HOME=$home_dir" \
+      -p "Environment=PATH=$service_path" \
+      -p "Environment=NODE_ENV=production" \
+      -p "Environment=OPENSESSION_RUN_JOURNAL=$dir/journal.json" \
+      -p "Environment=OPENSESSION_RUN_SPEC_HASH=$spec_hash" \
+      -p "IPAddressDeny=169.254.169.254/32" \
+      -p "StandardOutput=journal" \
+      -p "StandardError=journal"
+    if [ "$runner_mode" = "compiled" ]; then
+      exec "$@" "$runner_bin" runner-host "$dir/spec.json"
+    fi
+    exec "$@" "$runner_bin" run "$repo_dir/packages/core/opensession-server/src/runner-host/host.ts" "$dir/spec.json"
+    ;;
+  stop)
+    [ "$#" -eq 2 ] || exit 2
+    exec "$systemctl_bin" stop "$unit"
+    ;;
+  *)
+    echo "usage: opensession-run-host check | check-version <version> | launch <host-id> <dir> <spec-hash> | stop <host-id>" >&2
+    exit 2
+    ;;
+esac

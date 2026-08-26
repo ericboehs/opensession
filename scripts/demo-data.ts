@@ -39,10 +39,9 @@ if (stateRoot) {
   process.env.HOME = stateRoot;
   process.env.OPENSESSION_SESSIONS_DIR ||= `${stateRoot}/.opensession-sessions`;
 } else {
-  process.env.OPENSESSION_OPENCODE_TRANSCRIPTS_DIR ||= `${process.env.OPENSESSION_SESSIONS_DIR}/demo/engine-transcripts`;
 }
 
-const { generateDemoData } = await import("../src/server/demo/generate");
+const { generateDemoData } = await import("../packages/core/opensession-server/src/server/demo/generate");
 
 const result = generateDemoData({ homeStores: !!stateRoot });
 if (!stateRoot && result.created) {
@@ -50,7 +49,6 @@ if (!stateRoot && result.created) {
     "demo-data: OPENSESSION_SESSIONS_DIR-only run — skipped the HOME-rooted stores " +
       "(automations/audit/notes/goals + PR caches), and transcripts went to " +
       `${result.transcriptsDir} (start the server with the same ` +
-      "OPENSESSION_OPENCODE_TRANSCRIPTS_DIR to see them). " +
       "Set OPENSESSION_STATE_DIR to seed everything.",
   );
 }

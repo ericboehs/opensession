@@ -1,7 +1,7 @@
 {
   "id": "docs-spell-check",
   "label": "Docs spell-check",
-  "description": "Weekly pass over the repository's documentation for typos and broken links, opening a PR with the fixes.",
+  "description": "Weekly PR fixing typos and broken links in the docs.",
   "requires": [],
   "automation": {
     "name": "Docs spell-check",

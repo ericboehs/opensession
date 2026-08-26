@@ -1,7 +1,8 @@
-# Tella's client release pipeline — fork and rebrand (see os1-mac/README).
-name: Release OS¹ for Mac
+# Tella's client release pipeline — fork and rebrand (see packages/clients/mac/README).
+name: Release Open Session for Mac
 
-# Builds, signs, notarizes and publishes the vendored Electron shell.
+# Builds, signs, notarizes and uploads the vendored Electron shell to the
+# shared draft. release-finalize.yml publishes after every producer succeeds.
 on:
   push:
     tags: ["v[0-9]+.[0-9]+.[0-9]+*"]
@@ -9,6 +10,8 @@ on:
 
 permissions:
   contents: write
+  id-token: write
+  attestations: write
 
 concurrency:
   group: os1-mac-release
@@ -16,7 +19,7 @@ concurrency:
 
 defaults:
   run:
-    working-directory: os1-mac
+    working-directory: packages/clients/mac
 
 jobs:
   release:
@@ -24,32 +27,35 @@ jobs:
     runs-on: macos-26
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.2.2
+
+      - name: Prepare release draft
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          if is_draft="$(gh release view "$TAG" --json isDraft --jq '.isDraft' 2>/dev/null)"; then
+            if [ "$is_draft" != "true" ]; then
+              echo "::error title=Release is already immutable::$TAG is already published. Push a new tag and let the release workflows publish it."
+              exit 1
+            fi
+          elif ! gh release create "$TAG" --verify-tag --draft --title "$TAG" --generate-notes; then
+            sleep 2
+            is_draft="$(gh release view "$TAG" --json isDraft --jq '.isDraft')"
+            test "$is_draft" = "true"
+          fi
 
       # SHA-pinned: this job runs with the Developer ID certificate and
       # notarisation credentials present, so a moved tag on a third-party
       # action would execute right next to them. (v2.2.0 at time of pinning.)
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
+        with:
+          bun-version: 1.4.0
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
-
-      - name: Fetch pinned OpenCode binary
-        run: sh scripts/fetch-opencode.sh
-
-      - name: Fetch pinned Bun runtime
-        run: sh scripts/fetch-bun.sh
-
-      # The server sidecar bundles the repository's server for Local Sessions
-      # without a source checkout; the bundler resolves imports from the repo
-      # root's dependencies, and the sidecar's own install runs on this macOS
-      # runner so its native modules match the target platform.
-      - name: Install server dependencies
-        run: bun install --frozen-lockfile
-        working-directory: .
-
-      - name: Build server sidecar
-        run: bun run scripts/build-server-sidecar.ts
 
       - name: Import Developer ID certificate
         uses: apple-actions/import-codesign-certs@5142e029c445c10ffc7149d172e540235a065466 # v7.0.0
@@ -74,13 +80,29 @@ jobs:
       # The repository ships a portable default (localhost) so a fresh clone does
       # not point at someone else's server. Release builds stamp the real one in.
       # Set the OS1_SERVER_URL repository variable to override.
-      - name: Stamp deployment server
+      - name: Stamp release metadata
         env:
           SERVER: ${{ vars.OS1_SERVER_URL || 'https://os.tella.dev/' }}
+          TAG: ${{ github.ref_name }}
         run: |
-          jq --arg s "$SERVER" '.opensession.defaultServer = $s' package.json > /tmp/pkg.json
+          version="$(jq -r .version package.json)"
+          if [[ "$TAG" == v[0-9]* ]]; then version="${TAG#v}"; fi
+          jq --arg s "$SERVER" --arg v "$version" \
+            '.opensession.defaultServer = $s | .version = $v' package.json > /tmp/pkg.json
           mv /tmp/pkg.json package.json
-          jq -r '"default server: " + .opensession.defaultServer' package.json
+          jq -r '"version: " + .version + ", default server: " + .opensession.defaultServer' package.json
+
+      - name: Generate license inventory and SBOM
+        run: |
+          rm -rf build/release-metadata
+          export SOURCE_DATE_EPOCH="$(git show -s --format=%ct HEAD)"
+          bun ../../../scripts/generate-release-metadata.ts \
+            --lock bun.lock \
+            --node-modules node_modules \
+            --out build/release-metadata \
+            --name opensession-mac \
+            --version "$(jq -r .version package.json)" \
+            --include-dev
 
       - name: Build, sign & notarize
         run: |
@@ -103,7 +125,7 @@ jobs:
 
       - name: Verify universal-link signing
         run: |
-          APP='dist/mac-arm64/OS¹.app'
+          APP="dist/mac-arm64/$(jq -r .productName package.json).app"
           test -f "$APP/Contents/embedded.provisionprofile" || { echo '::error::Signed app has no embedded provisioning profile'; ls -la "$APP/Contents"; exit 1; }
           codesign -d --entitlements :- "$APP" > /tmp/os1-entitlements.plist
           /usr/libexec/PlistBuddy -c 'Print :com.apple.developer.associated-domains' /tmp/os1-entitlements.plist | grep -q 'applinks:os.tella.dev'
@@ -121,37 +143,15 @@ jobs:
             fi
           done < <(find "$APP/Contents/Frameworks" -name '*.app' -print0)
 
-      - name: Verify vendored binaries
+      - name: Verify packaged signature
         run: |
-          APP='dist/mac-arm64/OS¹.app'
-          OPENCODE="$APP/Contents/Resources/opencode"
-          test -x "$OPENCODE" || { echo '::error::Bundled OpenCode is missing or not executable'; exit 1; }
-          "$OPENCODE" --version | grep -q '1\.18\.4'
-          codesign --verify --strict --verbose=2 "$OPENCODE"
-          codesign -d --entitlements :- "$OPENCODE" > /tmp/os1-opencode-entitlements.plist
-          /usr/libexec/PlistBuddy -c 'Print :com.apple.security.cs.allow-jit' /tmp/os1-opencode-entitlements.plist | grep -q true
-          codesign -dv --verbose=4 "$OPENCODE" 2>&1 | grep -q 'Authority=Developer ID Application: Tella HQ Inc.'
-          BUN="$APP/Contents/Resources/bun"
-          test -x "$BUN" || { echo '::error::Bundled Bun runtime is missing or not executable'; exit 1; }
-          "$BUN" --version | grep -q '1\.3\.14'
-          codesign --verify --strict --verbose=2 "$BUN"
-          codesign -d --entitlements :- "$BUN" > /tmp/os1-bun-entitlements.plist
-          /usr/libexec/PlistBuddy -c 'Print :com.apple.security.cs.allow-jit' /tmp/os1-bun-entitlements.plist | grep -q true
-          SIDECAR="$APP/Contents/Resources/server"
-          test -f "$SIDECAR/opensession.js" || { echo '::error::Server sidecar is missing'; exit 1; }
-          test -f "$SIDECAR/mcp-proxy.js"
-          test -f "$SIDECAR/opencode-plugin-session-tag.js"
-          test -d "$SIDECAR/node_modules/opencode-with-claude"
-          # --deep also fails on any unsigned Mach-O inside the sidecar's
-          # node_modules, guarding the afterPack signing walk.
-          codesign --verify --deep --strict --verbose=2 "$APP"
-          # First tagged release: also launch the installed app on Apple Silicon,
-          # enable Local Sessions, and confirm opencode runs without a hardened-
-          # runtime/JIT kill. Static codesign checks cannot exercise that path.
+          APP="dist/mac-arm64/$(jq -r .productName package.json).app"
+          codesign --verify --deep --strict --verbose=2 "$APP" ||
+            { echo '::error::Packaged app failed deep signature verification'; exit 1; }
 
       - name: Verify packaged locales and report size
         run: |
-          APP='dist/mac-arm64/OS¹.app'
+          APP="dist/mac-arm64/$(jq -r .productName package.json).app"
           NON_ENGLISH_LOCALES=$(find "$APP/Contents" -type d -name '*.lproj' ! -name 'en.lproj' -print)
           if [[ -n "$NON_ENGLISH_LOCALES" ]]; then
             echo '::error::Non-English Electron locales were packaged:'
@@ -160,9 +160,6 @@ jobs:
           fi
           du -sh "$APP"
           du -sh "$APP/Contents/Frameworks/Electron Framework.framework"
-          du -sh "$APP/Contents/Resources/opencode"
-          du -sh "$APP/Contents/Resources/bun"
-          du -sh "$APP/Contents/Resources/server"
 
       - name: Notarize & staple DMG
         run: |
@@ -178,17 +175,56 @@ jobs:
           xcrun stapler validate dist/mac-arm64/*.app
           spctl --assess --type open --context context:primary-signature -v dist/*.dmg
 
-      - name: Publish GitHub Release
+      - name: Prepare stable aliases and checksums
         if: github.ref_type == 'tag'
-        run: gh release create "$GITHUB_REF_NAME" dist/*.dmg dist/*.zip --generate-notes
+        run: |
+          set -euo pipefail
+          for ext in dmg zip; do
+            versioned=(dist/OpenSession-*-arm64."$ext")
+            if [ "${#versioned[@]}" -ne 1 ]; then
+              echo "::error::Expected one versioned $ext, found ${#versioned[@]}"
+              exit 1
+            fi
+            cp "${versioned[0]}" "dist/OpenSession-arm64.$ext"
+          done
+          cd dist
+          for asset in *.dmg *.zip; do
+            hash="$(shasum -a 256 "$asset" | awk '{ print $1 }')"
+            printf '%s  %s\n' "$hash" "$asset" > "$asset.sha256"
+          done
+
+      - name: Attest release archives
+        if: github.ref_type == 'tag'
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2.4.0
+        with:
+          subject-path: |
+            packages/clients/mac/dist/*.dmg
+            packages/clients/mac/dist/*.zip
+
+      - name: Upload to release draft
+        if: github.ref_type == 'tag'
+        # Signing, notarisation, checksums and attestations finish before upload.
+        # Retry transient API failures, but keep the release mutable until every
+        # producer succeeds.
+        run: |
+          for attempt in 1 2 3 4 5; do
+            if gh release upload "$GITHUB_REF_NAME" dist/*.dmg dist/*.zip dist/*.sha256 --clobber; then
+              echo "uploaded assets to the $GITHUB_REF_NAME draft"
+              exit 0
+            fi
+            echo "::warning::uploading $GITHUB_REF_NAME failed (attempt $attempt/5), retrying"
+            sleep $((attempt * 30))
+          done
+          echo "::error::could not upload $GITHUB_REF_NAME after 5 attempts"
+          exit 1
         env:
           GH_TOKEN: ${{ github.token }}
 
       - name: Upload artifacts (manual run)
         if: github.ref_type != 'tag'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: OS1
           path: |
-            os1-mac/dist/*.dmg
-            os1-mac/dist/*.zip
+            packages/clients/mac/dist/*.dmg
+            packages/clients/mac/dist/*.zip

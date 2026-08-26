@@ -1,22 +1,22 @@
-# Tella's client release pipeline — fork and rebrand (see os1-chrome/README).
+# Tella's client release pipeline — fork and rebrand (see packages/clients/chrome/README).
 name: Release OS¹ for Chrome
 
-# Packs and publishes the internal Chrome extension (os1-chrome/) on every
+# Packs and publishes the internal Chrome extension (packages/clients/chrome/) on every
 # main push that touches it. The signed .crx lands on a GitHub release
 # tagged os1-chrome-v<version>; the backstage server proxies it to Chrome's
-# extension updater via /api/os1-chrome/updates.xml + /download/<tag>.crx
+# extension updater via /api/packages/clients/chrome/updates.xml + /download/<tag>.crx
 # (src/server/routes/os1-update.ts). Releases are marked PRERELEASE on
 # purpose: the os1-mac Squirrel feed uses `releases/latest`, which skips
 # prereleases — that's what lets both release streams share this repo.
 #
 # Versioning is automatic: <major.minor from manifest.json>.<commit count on
-# os1-chrome/>. Chrome only needs the version to increase for clients to
+# packages/clients/chrome/>. Chrome only needs the version to increase for clients to
 # update, so merging to main IS the deploy.
 on:
   push:
     branches: [main]
     paths:
-      - "os1-chrome/**"
+      - "packages/clients/chrome/**"
       - ".github/workflows/os1-chrome-release.yml"
   workflow_dispatch:
 
@@ -33,15 +33,15 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.2.2
         with:
           fetch-depth: 0 # full history — the version derives from commit count
 
       - name: Compute version
         id: v
         run: |
-          COUNT=$(git rev-list --count HEAD -- os1-chrome)
-          BASE=$(jq -r .version os1-chrome/manifest.json | cut -d. -f1-2)
+          COUNT=$(git rev-list --count HEAD -- packages/clients/chrome)
+          BASE=$(jq -r .version packages/clients/chrome/manifest.json | cut -d. -f1-2)
           echo "version=$BASE.$COUNT" >> "$GITHUB_OUTPUT"
           echo "tag=os1-chrome-v$BASE.$COUNT" >> "$GITHUB_OUTPUT"
 
@@ -62,9 +62,9 @@ jobs:
       - name: Stamp version
         if: steps.exists.outputs.skip != 'true'
         run: |
-          jq --arg v "${{ steps.v.outputs.version }}" '.version = $v' os1-chrome/manifest.json > /tmp/manifest.json
-          mv /tmp/manifest.json os1-chrome/manifest.json
-          jq -r '"packing version " + .version' os1-chrome/manifest.json
+          jq --arg v "${{ steps.v.outputs.version }}" '.version = $v' packages/clients/chrome/manifest.json > /tmp/manifest.json
+          mv /tmp/manifest.json packages/clients/chrome/manifest.json
+          jq -r '"packing version " + .version' packages/clients/chrome/manifest.json
 
       # The repository ships a portable default (localhost) so a fresh clone does
       # not point at someone else's server. Release builds stamp the real one in.
@@ -74,9 +74,9 @@ jobs:
         env:
           SERVER: ${{ vars.OS1_SERVER_URL || 'https://os.tella.dev' }}
         run: |
-          jq --arg s "$SERVER" '.defaultServer = $s' os1-chrome/deployment.json > /tmp/dep.json
-          mv /tmp/dep.json os1-chrome/deployment.json
-          jq -r '"default server: " + .defaultServer' os1-chrome/deployment.json
+          jq --arg s "$SERVER" '.defaultServer = $s' packages/clients/chrome/deployment.json > /tmp/dep.json
+          mv /tmp/dep.json packages/clients/chrome/deployment.json
+          jq -r '"default server: " + .defaultServer' packages/clients/chrome/deployment.json
 
       - name: Pack signed CRX
         if: steps.exists.outputs.skip != 'true'
@@ -91,7 +91,7 @@ jobs:
           ID=$(openssl rsa -in /tmp/os1-chrome-key.pem -pubout -outform DER 2>/dev/null | sha256sum | head -c 32 | tr '0123456789abcdef' 'abcdefghijklmnop')
           echo "extension id: $ID"
           test "$ID" = "paoolggkbjkobjblpjgncolaaikcmboe" || { echo '::error::Signing key does not match the pinned extension ID'; exit 1; }
-          npx -y crx3 -p /tmp/os1-chrome-key.pem -o "os1-chrome-${{ steps.v.outputs.version }}.crx" os1-chrome
+          npx -y crx3 -p /tmp/os1-chrome-key.pem -o "os1-chrome-${{ steps.v.outputs.version }}.crx" packages/clients/chrome
           head -c 4 "os1-chrome-${{ steps.v.outputs.version }}.crx" | grep -q 'Cr24' || { echo '::error::Packed file is not a CRX'; exit 1; }
           rm /tmp/os1-chrome-key.pem
 
@@ -105,4 +105,4 @@ jobs:
             --repo "$GITHUB_REPOSITORY" \
             --prerelease \
             --title "OS¹ for Chrome ${{ steps.v.outputs.version }}" \
-            --notes "Internal Chrome extension build from $GITHUB_SHA. Served to Chrome's updater via os.tella.dev/api/os1-chrome/updates.xml."
+            --notes "Internal Chrome extension build from $GITHUB_SHA. Served to Chrome's updater via os.tella.dev/api/packages/clients/chrome/updates.xml."

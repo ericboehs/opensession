@@ -1,7 +1,7 @@
 {
   "id": "code-cleanup-sweep",
   "label": "Code cleanup sweep",
-  "description": "Weekly pass for dead code, duplication and drifted patterns, proposed as a reviewable PR.",
+  "description": "Weekly PR fixing dead code and duplication.",
   "requires": [],
   "automation": {
     "name": "Code cleanup sweep",

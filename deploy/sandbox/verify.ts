@@ -1,9 +1,9 @@
 /**
- * Docker sandbox verification suite (Phases 1 + 2) — run MANUALLY:
+ * Docker sandbox verification suite — run MANUALLY:
  *
  *   bun run deploy/sandbox/verify.ts
  *
- * BIND section (Phase 1): exercises the DockerProvider end-to-end against a
+ * BIND section: exercises the DockerProvider end-to-end against a
  * scratch git repo + worktree (never a real session, never a real worktree):
  * container ensure/reuse, git status+commit THROUGH the bind-mounted worktree
  * + common .git, exec, RPC-socket reachability, the claude CLI, and — when
@@ -11,7 +11,7 @@
  * (cheapest Claude model, "reply with OK", hard timeout). Degrades to a
  * dry-run notice when no account token exists.
  *
- * VOLUME section (Phase 2): a second sbxtest session materializes a
+ * VOLUME section: a second sbxtest session materializes a
  * volume-only workspace (cloned in-container from a scratch LOCAL BARE repo —
  * no real GitHub repo involved), then drives the exec-routed surfaces
  * (workspaceExecFor → searchRepoEntries/getSessionDiff/getGitStatus), the
@@ -20,14 +20,15 @@
  * the destroy-removes-the-workspace-volume contract.
  *
  * SNAPSHOTS section: a fourth sbxtest session (bind mode, snapshots enabled
- * in the scratch config) writes a marker into the CONTAINER LAYER, is
+ * in the scratch config) runs `.agents/setup` to write state into the
+ * CONTAINER LAYER, is
  * idle-snapshotted by the real sweep (scoped to itself — the scratch config
  * must never touch live sandboxes), has its container removed, and is then
  * ensure()d again: the new container must come FROM the snapshot image
  * (marker present) with the bind-mounted workspace still correct. Also
  * checks maxPerSession pruning and that destroy() removes the images.
  *
- * WS-TRANSPORT section (Phase 3): a third sbxtest session runs with
+ * WS-TRANSPORT section: a third sbxtest session runs with
  * `transport: "ws"` — the in-container run host DIALS BACK to a scratch WS
  * server in this process (the same run-ws module opensession.ts wires) instead
  * of serving a unix socket, and the rpc socket isn't mounted at all. Checks:
@@ -36,9 +37,9 @@
  * account gating), steer delivery + cancel over WS, and the in-container
  * rpc-ws bridge via the hostId+wsToken handshake.
  *
- * PREVIEW + LIFECYCLE section (Phase 4A): a fifth sbxtest session exercises
- * the sandboxed Preview flow end-to-end — `.opensession/setup.sh` one-shot,
- * `.opensession/start.sh` bring-up on a port allocated from the pre-published
+ * PREVIEW + LIFECYCLE section: a fifth sbxtest session exercises
+ * the sandboxed Preview flow end-to-end — `.agents/setup` one-shot,
+ * `.agents/start.sh` bring-up on a port allocated from the pre-published
  * range, the namespaced Caddy https route (live Caddy admin; asserted
  * collision-free against the host webapp+6000 scheme AND a second sandbox on
  * the same webapp port), the `.tunnels.env` contract, stop/route teardown,
@@ -69,26 +70,30 @@ process.env.OPENSESSION_SANDBOX_CONFIG = `${SCRATCH}/sandbox-config.json`;
 // live box has no config.json, so this only ADDS the scratch repo over the
 // built-in defaults.
 process.env.OPENSESSION_CONFIG = `${SCRATCH}/opensession-config.json`;
+// Keep the verifier's isolated checkout under its private worktree root so
+// repoForPath recognizes it as an owned worktree without registering that
+// checkout itself as a shared mainline.
+process.env.OPENSESSION_WORKTREES_DIR = `${SCRATCH}/worktrees`;
 
 import { homedir } from "os";
 import { existsSync, mkdirSync, readFileSync, rmSync } from "fs";
 
 const { DockerProvider, containerNameFor, snapshotRepoForSandbox, snapshotSandboxImage, sweepIdleSandboxes } =
-  await import("../../src/server/sandbox/docker");
-const { workspaceExecFor } = await import("../../src/server/sandbox/workspace-exec");
-const { searchRepoEntries } = await import("../../src/server/file-index");
-const { getSessionDiff } = await import("../../src/server/git-diff");
-const { getGitStatus } = await import("../../src/server/git-status");
-const { worktreePathFor } = await import("../../src/server/worktree");
-const { rpcSocketPath } = await import("../../src/runner-host/protocol");
-const { OPENSESSION_SESSIONS_DIR } = await import("../../src/server/paths");
-const { statePath } = await import("../../src/server/paths");
-type RunHostSpec = import("../../src/runner-host/protocol").RunHostSpec;
+  await import("../../packages/core/opensession-server/src/server/sandbox/docker");
+const { workspaceExecFor } = await import("../../packages/core/opensession-server/src/server/sandbox/workspace-exec");
+const { searchRepoEntries } = await import("../../packages/core/opensession-server/src/server/file-index");
+const { getSessionDiff } = await import("../../packages/core/opensession-server/src/server/git-diff");
+const { getGitStatus } = await import("../../packages/core/opensession-server/src/server/git-status");
+const { worktreePathFor } = await import("../../packages/core/opensession-server/src/server/worktree");
+const { rpcSocketPath } = await import("../../packages/core/opensession-server/src/runner-host/protocol");
+const { OPENSESSION_SESSIONS_DIR } = await import("../../packages/core/opensession-server/src/server/paths");
+const { statePath } = await import("../../packages/core/opensession-server/src/server/paths");
+type RunHostSpec = import("../../packages/core/opensession-server/src/runner-host/protocol").RunHostSpec;
 
 const SESSION_ID = `sbxtest-${Date.now().toString(36)}`;
 const CONTAINER = containerNameFor(SESSION_ID);
 const MAIN = `${SCRATCH}/main-repo`;
-const WT = `${SCRATCH}/wt-sbxtest`;
+const WT = `${SCRATCH}/worktrees/sbxtest-sbxtest-branch`;
 const BARE = `${SCRATCH}/origin.git`;
 
 // Volume-mode section resources (own session/container; also sbxtest-*).
@@ -151,7 +156,7 @@ async function cleanup(): Promise<void> {
   // Preview https-port allocations + Caddy routes (live chats dir + live
   // Caddy admin — must not leak sbxtest entries into either).
   try {
-    const { dropSandboxPreviewRoutes } = await import("../../src/server/preview");
+    const { dropSandboxPreviewRoutes } = await import("../../packages/core/opensession-server/src/server/preview");
     for (const id of [CONTAINER, VOL_CONTAINER, WS_CONTAINER, SNAP_CONTAINER, PRE_CONTAINER, COLLISION_SBX_ID]) {
       await dropSandboxPreviewRoutes(id);
     }
@@ -312,7 +317,7 @@ try {
       mode: "ask",
       model: "claude-haiku-4-5",
       mcpServers: [],
-      journalKind: "sandbox-verify",
+      journalKind: "prompt",
     };
     const handle = sandbox.launchRun(spec, {});
     const events: string[] = [];
@@ -347,15 +352,15 @@ try {
   // abandon() — the cleanup launchRunEager/spawnHostRun run in their catch —
   // or hostRunBusy() stays true forever and every future prompt reads busy.
   console.log("\n── failed-launch cleanup (host-registry) ──");
-  const { HostHandle } = await import("../../src/server/host-client");
-  const { hostRunBusy } = await import("../../src/server/host-registry");
+  const { HostHandle } = await import("../../packages/core/opensession-server/src/server/host-client");
+  const { hostRunBusy } = await import("../../packages/core/opensession-server/src/server/host-registry");
   const failSession = `sbxtest-fail-${Date.now().toString(36)}`;
   const failDir = `${SCRATCH}/fail-run`;
   mkdirSync(failDir, { recursive: true });
   const failHandle = new HostHandle(
     failDir,
     { hostId: "rh-sbxtest-fail", osSessionId: failSession, prompt: "x", cwd: WT,
-      mode: "ask", model: "claude-haiku-4-5", mcpServers: [], journalKind: "sandbox-verify" },
+      mode: "ask", model: "claude-haiku-4-5", mcpServers: [], journalKind: "prompt" },
     {},
     // Launcher that "succeeds" but never brings up a socket = unreachable host.
     { alive: () => false, newRunDir: () => failDir, launch: async () => {} },
@@ -389,7 +394,7 @@ try {
   ok("volumes removed", goneV.code !== 0);
   ok("worktree untouched by destroy", existsSync(`${WT}/sandbox-file.txt`));
 
-  // ══ VOLUME MODE (Phase 2) ═════════════════════════════════════════════════
+  // ══ VOLUME MODE ═════════════════════════════════════════════════
   // The workspace lives ONLY in a per-session volume: ensure() clones the
   // scratch bare origin inside the container; nothing appears host-side. The
   // read surfaces are exercised exec-routed (workspaceExecFor), exactly the
@@ -454,9 +459,8 @@ try {
   ok("configured preview port is published to a loopback host port", !!hostPort,
     JSON.stringify(portMap));
   if (hostPort) {
-    // Trivial static server INSIDE the container on the published port (the
-    // tella-fusion dev-server flow needs toolchain the image doesn't carry
-    // yet — gated behind devServerInSandbox; this proves the port+map layer).
+    // Trivial static server INSIDE the container on the published port; this
+    // independently proves the port+map layer before lifecycle Preview below.
     await sh(["docker", "exec", "-d", vol.id, "bun", "-e",
       `Bun.serve({ port: ${PREVIEW_PORT}, hostname: "0.0.0.0", fetch: () => new Response("sbx-preview-ok") });`]);
     let body = "";
@@ -485,14 +489,14 @@ try {
   ok("volume container removed", volGoneC.code !== 0);
   ok("workspace volume removed (documented data loss)", volGoneWs.code !== 0);
 
-  // ══ WS TRANSPORT (Phase 3) ═══════════════════════════════════════════════
+  // ══ WS TRANSPORT ═══════════════════════════════════════════════
   // The run host dials back to a scratch WS server in THIS process (same
   // run-ws module opensession.ts wires), bound on 0.0.0.0 so the container can
   // reach it via the docker bridge gateway. No rpc-socket mount, no host.sock.
   console.log("\n══ ws transport ══");
-  const runWs = await import("../../src/server/run-ws");
+  const runWs = await import("../../packages/core/opensession-server/src/server/run-ws");
   const { registerRunToken: rpcRegister, unregisterRunToken: rpcUnregister } =
-    await import("../../src/server/run-rpc");
+    await import("../../packages/core/opensession-server/src/server/run-rpc");
   const gwRaw = await sh([
     "docker", "network", "inspect", "bridge",
     "-f", "{{(index .IPAM.Config 0).Gateway}}",
@@ -586,7 +590,7 @@ try {
       mode: "ask",
       model: "claude-haiku-4-5",
       mcpServers: [],
-      journalKind: "sandbox-verify",
+      journalKind: "prompt",
     };
     const wsHandle = wsSbx.launchRun(wsSpec, {});
     const wsEvents: string[] = [];
@@ -613,7 +617,7 @@ try {
 
     // Steer delivery + cancel over WS: a long generation we steer, then kill.
     console.log("\n── ws steer / cancel ──");
-    const { hostRunBusy: wsBusy } = await import("../../src/server/host-registry");
+    const { hostRunBusy: wsBusy } = await import("../../packages/core/opensession-server/src/server/host-registry");
     const cancelSpec: RunHostSpec = {
       hostId: `rh-wscancel-${Date.now().toString(36)}`,
       osSessionId: WS_SESSION_ID,
@@ -622,7 +626,7 @@ try {
       mode: "ask",
       model: "claude-haiku-4-5",
       mcpServers: [],
-      journalKind: "sandbox-verify",
+      journalKind: "prompt",
     };
     const cancelHandle = wsSbx.launchRun(cancelSpec, {});
     let cSawInit = false;
@@ -667,9 +671,20 @@ try {
     process.env.OPENSESSION_SANDBOX_CONFIG!,
     JSON.stringify({ provider: "docker", snapshots: { enabled: true, maxPerSession: 2 } }),
   );
+  mkdirSync(`${WT}/.agents`, { recursive: true });
+  await Bun.write(
+    `${WT}/.agents/setup`,
+    "#!/usr/bin/env bash\nprintf post-setup > /home/ubuntu/sbx-post-setup-proof\n",
+  );
   const snapRepo = snapshotRepoForSandbox(SNAP_CONTAINER);
   const snapSbx = await provider.ensure({ sessionId: SNAP_SESSION_ID, cwd: WT });
   ok("ensure() created the snapshots-section container", snapSbx.id === SNAP_CONTAINER, snapSbx.id);
+  const setupProof = await snapSbx.exec(["cat", "/home/ubuntu/sbx-post-setup-proof"]);
+  ok(
+    ".agents/setup produced container-layer state before snapshot",
+    setupProof.exitCode === 0 && setupProof.stdout === "post-setup",
+    (setupProof.stdout || setupProof.stderr).trim(),
+  );
   const mark = await snapSbx.exec(["sh", "-c", "echo snap-layer-state > /home/ubuntu/sbx-snap-marker"]);
   ok("wrote a container-layer marker", mark.exitCode === 0, mark.stderr.trim());
 
@@ -693,6 +708,15 @@ try {
   ok("restored container came from the snapshot (container-layer marker present)",
     marker.exitCode === 0 && marker.stdout.includes("snap-layer-state"),
     (marker.stdout || marker.stderr).trim());
+  const restoredSetupProof = await restored.exec([
+    "cat",
+    "/home/ubuntu/sbx-post-setup-proof",
+  ]);
+  ok(
+    "snapshot restore retained .agents/setup state without rerunning setup",
+    restoredSetupProof.exitCode === 0 && restoredSetupProof.stdout === "post-setup",
+    (restoredSetupProof.stdout || restoredSetupProof.stderr).trim(),
+  );
   const fromImage = await sh(["docker", "inspect", "-f", "{{.Config.Image}}", SNAP_CONTAINER]);
   ok("container image is the snapshot", fromImage.out.trim() === `${snapRepo}:latest`, fromImage.out.trim());
   const snapGit = await restored.exec(["git", "status", "--porcelain"]);
@@ -713,27 +737,27 @@ try {
   const imgsLeft = await sh(["docker", "image", "ls", snapRepo, "--format", "{{.Tag}}"]);
   ok("destroy removed the snapshot images", !imgsLeft.out.trim(), imgsLeft.out.trim() || "none");
 
-  // ══ PREVIEW + LIFECYCLE (Phase 4A) ═══════════════════════════════════════
+  // ══ PREVIEW + LIFECYCLE ═══════════════════════════════════════
   // A bind-mode sandbox with the repo-local lifecycle hooks: setup.sh must run
   // exactly once; startSandboxPreview must allocate a webapp port from the
-  // pre-published range, run .opensession/start.sh with the port/URL env, route
+  // pre-published range, run .agents/start.sh with the port/URL env, route
   // Caddy at a NAMESPACED https port (never the host's webapp+6000 scheme),
   // and write the .tunnels.env contract. Uses the LIVE Caddy admin API — all
   // routes/allocations are cleaned up here and in cleanup().
   console.log("\n══ preview + lifecycle ══");
-  const previewMod = await import("../../src/server/preview");
-  const previewPortsMod = await import("../../src/server/sandbox/preview-ports");
+  const previewMod = await import("../../packages/core/opensession-server/src/server/preview");
+  const previewPortsMod = await import("../../packages/core/opensession-server/src/server/sandbox/preview-ports");
   await Bun.write(
     process.env.OPENSESSION_SANDBOX_CONFIG!,
-    JSON.stringify({ provider: "docker", devServerInSandbox: true, previewPorts: PRE_PORTS }),
+    JSON.stringify({ provider: "docker", previewPorts: PRE_PORTS }),
   );
-  mkdirSync(`${WT}/.opensession`, { recursive: true });
+  mkdirSync(`${WT}/.agents`, { recursive: true });
   await Bun.write(
-    `${WT}/.opensession/setup.sh`,
+    `${WT}/.agents/setup`,
     `#!/usr/bin/env bash\necho "setup boot=$OPENSESSION_BOOT_MODE" >> .opensession-setup-runs\n`,
   );
   await Bun.write(
-    `${WT}/.opensession/start.sh`,
+    `${WT}/.agents/start.sh`,
     `#!/usr/bin/env bash
 echo "start boot=$OPENSESSION_BOOT_MODE port=$WEBAPP_PORT url=$PREVIEW_URL" > .opensession-start-ran
 exec bun -e 'Bun.serve({ port: Number(process.env.WEBAPP_PORT), hostname: "0.0.0.0", fetch: () => new Response("lifecycle-preview-ok") })'
@@ -758,7 +782,7 @@ exec bun -e 'Bun.serve({ port: Number(process.env.WEBAPP_PORT), hostname: "0.0.0
     await new Promise((r) => setTimeout(r, 500));
     pst = await previewMod.getSandboxPreviewStatus(pre, WT);
   }
-  ok("webapp came up in-container via .opensession/start.sh", pst.running,
+  ok("webapp came up in-container via .agents/start.sh", pst.running,
     pst.services.map((s) => `${s.key}=${s.port}:${s.running}`).join(","));
   ok("allocated webapp port came from the published range",
     pst.webappPort != null && PRE_PORTS.includes(pst.webappPort), String(pst.webappPort));
@@ -789,8 +813,11 @@ exec bun -e 'Bun.serve({ port: Number(process.env.WEBAPP_PORT), hostname: "0.0.0
   ok("Caddy route exists and dials the published loopback port",
     routeJson.includes(`127.0.0.1:${publishedWebapp}`), routeJson.slice(0, 120) || `status ${routeRes.status}`);
   const viaCaddy = await sh(["curl", "-ks", "--max-time", "10", pst.previewUrl || "https://invalid"]);
-  ok("preview URL serves the in-container server through Caddy",
-    viaCaddy.out.includes("lifecycle-preview-ok"), JSON.stringify(viaCaddy.out.slice(0, 40)));
+  ok("unauthenticated Portal request fails closed at Caddy",
+    viaCaddy.out.includes("Sign in required"), JSON.stringify(viaCaddy.out.slice(0, 40)));
+  const directPreview = await sh(["curl", "-sS", "--max-time", "10", `http://127.0.0.1:${publishedWebapp}`]);
+  ok("Caddy upstream serves the in-container app",
+    directPreview.out.includes("lifecycle-preview-ok"), JSON.stringify(directPreview.out.slice(0, 40)));
 
   // .tunnels.env contract (bind mount → host-visible).
   const tunnels = await sh(["cat", `${WT}/.tunnels.env`]);
@@ -840,7 +867,7 @@ exec bun -e 'Bun.serve({ port: Number(process.env.WEBAPP_PORT), hostname: "0.0.0
   // exercised against a cheap BARE sandbox (the terminal needs no runner
   // payload) only when credentials are present.
   console.log("\n══ terminal ══");
-  const termMod = await import("../../src/server/terminals");
+  const termMod = await import("../../packages/core/opensession-server/src/server/terminals");
   const termCollect = () => {
     const st = { out: "", notices: 0, exited: false, ready: null as any };
     return {

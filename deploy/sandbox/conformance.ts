@@ -2,7 +2,7 @@
  * Sandbox provider CONFORMANCE suite (the sandbox rollout plan, Phase 3.3) —
  * the verify.ts checks parameterized over providers. Run MANUALLY:
  *
- *   bun run deploy/sandbox/conformance.ts [docker-socket] [docker-ws] [daytona] [e2b] [box] [modal] [lambda-microvm]
+ *   bun run deploy/sandbox/conformance.ts [docker-socket] [docker-ws] [daytona] [e2b] [box] [modal] [microvm] [lambda-microvm]
  *
  * (no args = the full matrix). Per entry: ensure/reuse, exec argv+stderr
  * semantics, workspace git (bind worktree for docker, in-sandbox volume-style
@@ -13,17 +13,18 @@
  *
  * - docker-socket / docker-ws ALWAYS run (docker is the self-host default —
  *   this host must keep them fully green).
- * - daytona / e2b run ONLY when credentials are configured — the suite lifts
- *   them from the LIVE ~/.opensession-sandbox.json provider blocks (or
- *   DAYTONA_API_KEY / E2B_API_KEY). Without credentials the section prints
+ * - daytona / e2b / box run ONLY when credentials are configured — the suite
+ *   reads workspace-owned Daytona/Box credentials through their opaque secret
+ *   references and the experimental E2B key from the live config. Without
+ *   credentials the section prints
  *   `SKIPPED: no credentials` and does NOT fake success; a key-holder gets
- *   the full matrix. Remote entries create at most ONE smallest-size sandbox
- *   each, sbxtest-labeled, and destroy it; the section ends by listing the
- *   provider's sandboxes to prove nothing was left behind.
- * - Remote workspaces clone github.com/octocat/Hello-World (tiny, public);
- *   the runner bundle clones THIS repo's origin, so a private origin needs
- *   `cloneCredential` — the suite auto-wires a GitHub token from
- *   GITHUB_API_TOKEN or ~/.slack-agent.env when present.
+ *   the full matrix. Remote entries create the minimum sandbox set needed for
+ *   the matrix: one source sandbox, plus one distinct restore sandbox for
+ *   snapshot-capable providers. Every sandbox is sbxtest-labeled and destroyed;
+ *   the section ends by listing the provider's sandboxes to prove nothing was
+ *   left behind.
+ * - Remote snapshot-capable providers clone this public Open Session repo so
+ *   the committed `.agents/setup` hook runs before publication.
  *
  * Everything is sbxtest-prefixed; the run journal, sandbox config, chat-store
  * dir AND repo-registry config are redirected to a scratch dir BEFORE any
@@ -37,6 +38,7 @@
 const SCRATCH = `${process.env.HOME || homedir()}/.sandbox-conformance-scratch`;
 process.env.OPENSESSION_RUN_JOURNAL = `${SCRATCH}/active-runs.json`;
 process.env.OPENSESSION_SANDBOX_CONFIG = `${SCRATCH}/sandbox-config.json`;
+process.env.OPENSESSION_WORKSPACE_SECRETS_STORE = `${SCRATCH}/workspace-secrets.json`;
 // Provider state files + sandbox-runs dirs land under OPENSESSION_SESSIONS_DIR —
 // point it at the scratch dir so sbxtest state never lands in the live store.
 process.env.OPENSESSION_SESSIONS_DIR = `${SCRATCH}/sessions`;
@@ -46,24 +48,34 @@ process.env.OPENSESSION_SESSIONS_DIR = `${SCRATCH}/sessions`;
 // verify.ts. The live box has no config.json, so this only ADDS the scratch
 // repos over the built-in defaults.
 process.env.OPENSESSION_CONFIG = `${SCRATCH}/opensession-config.json`;
+// The suite is what earns certification; it must be able to exercise a
+// provider while the production picker correctly keeps it decertified.
+process.env.OPENSESSION_SANDBOX_CERTIFICATION_RUN = "1";
 
 import { homedir } from "os";
 import { existsSync, mkdirSync, readFileSync, rmSync } from "fs";
 
-const { getSandboxProvider } = await import("../../src/server/sandbox/index");
-const runWs = await import("../../src/server/run-ws");
-const { hostRunBusy } = await import("../../src/server/host-registry");
-const { OPENSESSION_SESSIONS_DIR } = await import("../../src/server/paths");
-const { statePath } = await import("../../src/server/paths");
+const { getSandboxProvider } = await import("../../packages/core/opensession-server/src/server/sandbox/index");
+const runWs = await import("../../packages/core/opensession-server/src/server/run-ws");
+const { hostRunBusy } = await import("../../packages/core/opensession-server/src/server/host-registry");
+const { OPENSESSION_SESSIONS_DIR } = await import("../../packages/core/opensession-server/src/server/paths");
+const { statePath } = await import("../../packages/core/opensession-server/src/server/paths");
+const {
+  invalidateRemoteRepoTemplate,
+  readRemoteRepoTemplate,
+  remoteRepoTemplateProofPath,
+} = await import(
+  "../../packages/core/opensession-server/src/server/sandbox/remote-repo-template"
+);
 // The orphan-snapshot sweep (docker.ts, piggybacked on the idle sweep) reads
 // session/state files through the — now scratch-redirected — chats dir, so it
 // would see every LIVE session as gone. Arm its once-an-hour throttle up
 // front so it never runs inside this suite.
 (globalThis as unknown as { __sandboxSnapOrphanSweepAt?: number }).__sandboxSnapOrphanSweepAt =
   Date.now();
-type RunHostSpec = import("../../src/runner-host/protocol").RunHostSpec;
-type Sandbox = import("../../src/server/sandbox/provider").Sandbox;
-type PortMap = import("../../src/server/sandbox/provider").PortMap;
+type RunHostSpec = import("../../packages/core/opensession-server/src/runner-host/protocol").RunHostSpec;
+type Sandbox = import("../../packages/core/opensession-server/src/server/sandbox/provider").Sandbox;
+type PortMap = import("../../packages/core/opensession-server/src/server/sandbox/provider").PortMap;
 
 const RUN_TS = Date.now().toString(36);
 const HOME = process.env.HOME || homedir();
@@ -108,25 +120,38 @@ function liveSandboxFileConfig(): any {
   return {};
 }
 const liveCfg = liveSandboxFileConfig();
-const daytonaKey: string = liveCfg?.daytona?.apiKey || process.env.DAYTONA_API_KEY || "";
+function liveConnection(provider: string): any {
+  return Array.isArray(liveCfg?.connections)
+    ? liveCfg.connections.find((connection: any) => connection?.provider === provider)
+    : undefined;
+}
+function liveWorkspaceSecret(ref?: string): string {
+  if (!ref) return "";
+  try {
+    const store = JSON.parse(readFileSync(`${HOME}/.opensession-workspace-secrets.json`, "utf-8"));
+    return String(store?.secrets?.find((secret: any) => secret?.id === ref)?.value || "");
+  } catch {
+    return "";
+  }
+}
+const daytonaKey: string =
+  liveWorkspaceSecret(liveConnection("daytona")?.credentialRef) ||
+  liveCfg?.daytona?.apiKey ||
+  process.env.DAYTONA_API_KEY ||
+  "";
 const e2bKey: string = liveCfg?.e2b?.apiKey || process.env.E2B_API_KEY || "";
-const boxKey: string = liveCfg?.box?.apiKey || process.env.BOX_API_KEY || "";
-const boxApiUrl: string = liveCfg?.box?.apiUrl || "https://ascii.dev/api/box/v1";
+const boxKey: string =
+  liveWorkspaceSecret(liveConnection("box")?.credentialRef) || "";
+const boxApiUrl: string =
+  liveConnection("box")?.settings?.apiUrl ||
+  "https://ascii.dev/api/box/v1";
 const modalTokenId: string = liveCfg?.modal?.tokenId || process.env.MODAL_TOKEN_ID || "";
 const modalTokenSecret: string =
   liveCfg?.modal?.tokenSecret || process.env.MODAL_TOKEN_SECRET || "";
 const modalProfileAvailable = existsSync(process.env.MODAL_CONFIG_PATH || `${HOME}/.modal.toml`);
 const lambdaMicrovmImage: string = liveCfg?.awsLambdaMicrovm?.imageIdentifier || "";
-
-function githubToken(): string {
-  if (process.env.GITHUB_API_TOKEN) return process.env.GITHUB_API_TOKEN;
-  try {
-    const m = readFileSync(`${HOME}/.slack-agent.env`, "utf-8").match(/^GITHUB_API_TOKEN=(\S+)/m);
-    return m?.[1] || "";
-  } catch {
-    return "";
-  }
-}
+const microvmCallbackBase: string =
+  process.env.SBX_CONF_MICROVM_BASE || liveCfg?.callbackBaseUrl || "";
 
 // ── account pool gate (real model runs) ───────────────────────────────────────
 
@@ -168,9 +193,8 @@ await sh(["git", "remote", "add", "origin", BARE], MAIN);
 await sh(["git", "worktree", "add", "-q", WT, "-b", "sbxtest-conf-branch"], MAIN);
 // Register the scratch repos through the config-driven registry (REPOS is a
 // read-only Proxy now; OPENSESSION_CONFIG points at this scratch file — same
-// pattern as verify.ts). sbxpub is the remote workspace source: tiny public
-// repo whose `repo` path has no git checkout, so remoteCloneUrl falls through
-// to ghRepo's https URL.
+// pattern as verify.ts). sbxpub points at this repo's origin so certification
+// exercises the real `.agents/setup` hook before taking a provider snapshot.
 await Bun.write(
   process.env.OPENSESSION_CONFIG!,
   JSON.stringify({
@@ -179,11 +203,20 @@ await Bun.write(
       [PUB_REPO_ID]: {
         repo: `${SCRATCH}/no-local-checkout`,
         wtPrefix: PUB_REPO_ID,
-        defaultBranch: "master",
-        ghRepo: "octocat/Hello-World",
+        defaultBranch: "main",
+        ghRepo: "tellahq/opensession",
+        // A second deterministic artifact complements the real lifecycle-hook
+        // stamp and is easy for the restored session to assert.
+        depsInstall:
+          "mkdir -p .opensession-conformance && printf post-setup > .opensession-conformance/template-proof",
       },
     },
   }),
+);
+mkdirSync(`${OPENSESSION_SESSIONS_DIR}/warm-templates`, { recursive: true });
+await Bun.write(
+  `${OPENSESSION_SESSIONS_DIR}/warm-templates/config.json`,
+  JSON.stringify({ repos: { [PUB_REPO_ID]: { enabled: true, intervalHours: 24 } } }),
 );
 
 // ── shared dial-back WS server (docker-ws + remote entries) ──────────────────
@@ -198,6 +231,7 @@ await Bun.write(
 //     bun run deploy/sandbox/conformance.ts daytona
 const LISTEN_PORT = parseInt(process.env.SBX_CONF_LISTEN_PORT || "0", 10) || 0;
 const PUBLIC_BASE = (process.env.SBX_CONF_PUBLIC_BASE || "").replace(/\/+$/, "");
+const CADDY_PREFIX = (process.env.SBX_CONF_CADDY_PREFIX || "").replace(/\/+$/, "");
 
 const wsSrv = Bun.serve({
   port: LISTEN_PORT,
@@ -236,6 +270,65 @@ console.log(
   `dial-back listener on 0.0.0.0:${wsSrv.port} (bridge ${bridgeGw}, remote base ${remoteBase || "unknown"})`,
 );
 
+// A production Open Session process already owns the permanent public-ingress
+// listener on many hosts. For certification, expose this scratch listener at
+// a unique path instead of stopping or replacing that process. The route is
+// tagged and removed from the CURRENT Caddy config in finally, so unrelated
+// routes added while this long-running matrix executes are preserved.
+const CADDY_ROUTES_URL =
+  "http://127.0.0.1:2019/config/apps/http/servers/srv1/routes/0/handle/0/routes";
+const caddyRouteId = `sandbox-conformance-${RUN_TS}`;
+
+async function mutateCaddyRoutes(
+  mutate: (routes: Array<Record<string, unknown>>) => Array<Record<string, unknown>>,
+): Promise<void> {
+  const currentRes = await fetch(CADDY_ROUTES_URL);
+  if (!currentRes.ok) throw new Error(`Caddy route read failed (${currentRes.status})`);
+  const current = (await currentRes.json()) as Array<Record<string, unknown>>;
+  const updated = mutate(current);
+  const patchRes = await fetch(CADDY_ROUTES_URL, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(updated),
+  });
+  if (!patchRes.ok) {
+    throw new Error(`Caddy route update failed (${patchRes.status}): ${await patchRes.text()}`);
+  }
+}
+
+async function installScratchIngress(): Promise<void> {
+  if (!CADDY_PREFIX) return;
+  if (!/^\/[A-Za-z0-9._-]+$/.test(CADDY_PREFIX)) {
+    throw new Error("SBX_CONF_CADDY_PREFIX must be one safe path segment beginning with /");
+  }
+  if (!PUBLIC_BASE.endsWith(CADDY_PREFIX)) {
+    throw new Error("SBX_CONF_PUBLIC_BASE must end with SBX_CONF_CADDY_PREFIX");
+  }
+  await mutateCaddyRoutes((routes) => [
+    {
+      "@id": caddyRouteId,
+      terminal: true,
+      match: [{ path: [CADDY_PREFIX, `${CADDY_PREFIX}/*`] }],
+      handle: [
+        { handler: "rewrite", strip_path_prefix: CADDY_PREFIX },
+        { handler: "reverse_proxy", upstreams: [{ dial: `127.0.0.1:${wsSrv.port}` }] },
+      ],
+    },
+    ...routes.filter((route) => route["@id"] !== caddyRouteId),
+  ]);
+  const healthBase = PUBLIC_BASE.replace(/^ws(s?):/, "http$1:");
+  const health = await fetch(`${healthBase}/ingress-health`, { signal: AbortSignal.timeout(10_000) });
+  if (!health.ok || (await health.text()) !== "ok") {
+    throw new Error(`scratch public ingress health failed (${health.status})`);
+  }
+  console.log(`scratch ingress ${CADDY_PREFIX} → 127.0.0.1:${wsSrv.port}`);
+}
+
+async function removeScratchIngress(): Promise<void> {
+  if (!CADDY_PREFIX) return;
+  await mutateCaddyRoutes((routes) => routes.filter((route) => route["@id"] !== caddyRouteId));
+}
+
 // ── matrix entries ────────────────────────────────────────────────────────────
 
 interface Entry {
@@ -246,6 +339,7 @@ interface Entry {
     | "e2b"
     | "box"
     | "modal"
+    | "microvm"
     | "lambda-microvm";
   /** null = run it; string = print SKIPPED reason. */
   skip: string | null;
@@ -259,6 +353,10 @@ interface Entry {
   expectPort: "hostPort" | "url" | "none";
   /** Remote = workspace exists only in-sandbox. */
   remote: boolean;
+  /** Box serializes detached-process admission per VM; it still has a bounded
+   * live launch lane, but cannot meet the parallel-control-plane SLO used by
+   * providers with independent process lanes. */
+  concurrentAttachMaxMs?: number;
 }
 
 const PREVIEW_PORT = 18755;
@@ -297,12 +395,14 @@ const entries: Entry[] = [
       provider: "daytona",
       callbackBaseUrl: remoteBase,
       previewPorts: [8080],
-      daytona: { apiKey: daytonaKey },
+      // Keep the operator's sized snapshot/endpoint. Daytona's default
+      // 1GB/3GiB image cannot install this repo and is not representative of
+      // the production provider configuration being certified.
+      daytona: { ...(liveCfg?.daytona || {}), apiKey: daytonaKey },
       // Warm-on-typing prewarm (src/server/sandbox/prewarm.ts): the section
       // prewarms BEFORE the first ensure, which must then ADOPT the warmed
       // sandbox (same id, seconds not minutes) — total sandbox count stays 1.
       prewarm: { enabled: true, ttlMinutes: 20, maxLive: 2 },
-      ...(githubToken() ? { cloneCredential: { type: "https-token", token: githubToken() } } : {}),
     },
     repoId: PUB_REPO_ID,
     branch: PUB_BRANCH,
@@ -318,7 +418,6 @@ const entries: Entry[] = [
       callbackBaseUrl: remoteBase,
       previewPorts: [8080],
       e2b: { apiKey: e2bKey },
-      ...(githubToken() ? { cloneCredential: { type: "https-token", token: githubToken() } } : {}),
     },
     repoId: PUB_REPO_ID,
     branch: PUB_BRANCH,
@@ -328,18 +427,18 @@ const entries: Entry[] = [
   {
     name: "box",
     providerId: "box",
-    skip: boxKey ? null : "SKIPPED: no credentials (set box.apiKey in ~/.opensession-sandbox.json or BOX_API_KEY)",
+    skip: boxKey ? null : "SKIPPED: connect Box in Workspace → Sandboxes first",
     config: {
       provider: "box",
       callbackBaseUrl: remoteBase,
       previewPorts: [8080],
-      box: { apiKey: boxKey },
-      ...(githubToken() ? { cloneCredential: { type: "https-token", token: githubToken() } } : {}),
+      prewarm: { enabled: true, ttlMinutes: 20, maxLive: 2 },
     },
     repoId: PUB_REPO_ID,
     branch: PUB_BRANCH,
     expectPort: "url",
     remote: true,
+    concurrentAttachMaxMs: 45_000,
   },
   {
     name: "modal",
@@ -352,20 +451,36 @@ const entries: Entry[] = [
       provider: "modal",
       callbackBaseUrl: remoteBase,
       previewPorts: [8080],
+      prewarm: { enabled: true, ttlMinutes: 20, maxLive: 2 },
       modal: {
+        ...(liveCfg?.modal || {}),
         ...(modalTokenId && modalTokenSecret
           ? { tokenId: modalTokenId, tokenSecret: modalTokenSecret }
           : {}),
-        ...(liveCfg?.modal?.profile ? { profile: liveCfg.modal.profile } : {}),
-        ...(liveCfg?.modal?.image ? { image: liveCfg.modal.image } : {}),
-        ...(liveCfg?.modal?.environment ? { environment: liveCfg.modal.environment } : {}),
         publicPreviews: true,
       },
-      ...(githubToken() ? { cloneCredential: { type: "https-token", token: githubToken() } } : {}),
     },
     repoId: PUB_REPO_ID,
     branch: PUB_BRANCH,
     expectPort: "url",
+    remote: true,
+  },
+  {
+    name: "microvm",
+    providerId: "microvm",
+    skip: !liveCfg?.firecrackerMicrovm?.enabled
+      ? "SKIPPED: local Firecracker is not enabled in ~/.opensession-sandbox.json"
+      : !microvmCallbackBase
+        ? "SKIPPED: no private callback URL (set callbackBaseUrl or SBX_CONF_MICROVM_BASE)"
+        : null,
+    config: {
+      provider: "microvm",
+      callbackBaseUrl: microvmCallbackBase,
+      firecrackerMicrovm: liveCfg?.firecrackerMicrovm || {},
+    },
+    repoId: PUB_REPO_ID,
+    branch: PUB_BRANCH,
+    expectPort: "none",
     remote: true,
   },
   {
@@ -378,7 +493,6 @@ const entries: Entry[] = [
       provider: "lambda-microvm",
       callbackBaseUrl: remoteBase,
       awsLambdaMicrovm: liveCfg?.awsLambdaMicrovm || {},
-      ...(githubToken() ? { cloneCredential: { type: "https-token", token: githubToken() } } : {}),
     },
     repoId: PUB_REPO_ID,
     branch: PUB_BRANCH,
@@ -392,6 +506,75 @@ const selected = entries.filter((e) => !wanted.length || wanted.includes(e.name)
 
 // ── the parameterized checks ──────────────────────────────────────────────────
 
+async function waitForPrewarm(entry: Entry, checkPrefix = "prewarm"): Promise<string> {
+  const { requestPrewarm } = await import("../../packages/core/opensession-server/src/server/sandbox/prewarm");
+  const startedAt = Date.now();
+  let st = await requestPrewarm(entry.providerId, entry.repoId, "sbxtest");
+  ok(
+    `${checkPrefix} request accepted`,
+    st.state === "bootstrapping" || st.state === "ready",
+    st.state,
+  );
+  const deadline = Date.now() + 900_000;
+  while (st.state === "bootstrapping" && Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, 5000));
+    st = await requestPrewarm(entry.providerId, entry.repoId, "sbxtest");
+  }
+  ok(
+    `${checkPrefix} reached ready`,
+    st.state === "ready" && !!st.sandboxId,
+    `${st.state} in ${((Date.now() - startedAt) / 1000).toFixed(0)}s`,
+  );
+  return st.sandboxId || "";
+}
+
+async function cleanupCertificationTemplate(entry: Entry): Promise<void> {
+  if (entry.providerId !== "daytona" && entry.providerId !== "box" && entry.providerId !== "modal") return;
+  const template = readRemoteRepoTemplate(entry.providerId, entry.repoId);
+  if (!template) return;
+  try {
+    if (entry.providerId === "daytona") {
+      const { Daytona } = await import("@daytonaio/sdk");
+      const client = new Daytona({ apiKey: daytonaKey });
+      const snapshot = await client.snapshot.get(template.artifactId);
+      await client.snapshot.delete(snapshot);
+    } else if (entry.providerId === "box") {
+      await fetch(`${boxApiUrl}/named-snapshots/${encodeURIComponent(template.artifactId)}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${boxKey}` },
+        signal: AbortSignal.timeout(60_000),
+      });
+    } else {
+      const { ModalClient } = await import("modal");
+      const modalCfg = liveCfg?.modal || {};
+      const previousProfile = process.env.MODAL_PROFILE;
+      if (modalCfg.profile) process.env.MODAL_PROFILE = modalCfg.profile;
+      try {
+        const client = new ModalClient({
+          tokenId: modalTokenId || undefined,
+          tokenSecret: modalTokenSecret || undefined,
+          environment: modalCfg.environment,
+          endpoint: modalCfg.endpoint,
+        });
+        await client.images.delete(template.artifactId);
+      } finally {
+        if (modalCfg.profile) {
+          if (previousProfile === undefined) delete process.env.MODAL_PROFILE;
+          else process.env.MODAL_PROFILE = previousProfile;
+        }
+      }
+    }
+    invalidateRemoteRepoTemplate(entry.providerId, entry.repoId);
+    ok("certification repo-template artifact removed", true, template.artifactId);
+  } catch (error) {
+    ok(
+      "certification repo-template artifact removed",
+      false,
+      String(error).slice(0, 180),
+    );
+  }
+}
+
 async function runEntry(entry: Entry): Promise<void> {
   section = entry.name;
   console.log(`\n══ ${entry.name} ══`);
@@ -400,6 +583,23 @@ async function runEntry(entry: Entry): Promise<void> {
     return;
   }
   await Bun.write(process.env.OPENSESSION_SANDBOX_CONFIG!, JSON.stringify(entry.config));
+  const { connectSandboxProvider, setSandboxConnectionQualification } = await import(
+    "../../packages/core/opensession-server/src/server/sandbox/connections"
+  );
+  if (entry.providerId === "daytona") {
+    connectSandboxProvider("daytona", {
+      secret: daytonaKey,
+      settings: {
+        apiUrl: liveConnection("daytona")?.settings?.apiUrl || liveCfg?.daytona?.apiUrl,
+        target: liveConnection("daytona")?.settings?.target || liveCfg?.daytona?.target,
+        snapshot: liveConnection("daytona")?.settings?.snapshot || liveCfg?.daytona?.snapshot,
+      },
+    });
+    setSandboxConnectionQualification("daytona", { status: "ready" });
+  } else if (entry.providerId === "box") {
+    connectSandboxProvider("box", { secret: boxKey, settings: { apiUrl: boxApiUrl } });
+    setSandboxConnectionQualification("box", { status: "ready" });
+  }
   const provider = getSandboxProvider(entry.providerId);
   const sessionId = `sbxtest-conf-${entry.name}-${RUN_TS}`;
   const spec = {
@@ -417,24 +617,11 @@ async function runEntry(entry: Entry): Promise<void> {
   //    cold runner bootstrap (minutes).
   let prewarmedId = "";
   if (entry.remote && (entry.config as any).prewarm?.enabled) {
-    const { requestPrewarm } = await import("../../src/server/sandbox/prewarm");
-    const tP = Date.now();
-    let st = await requestPrewarm(entry.providerId, entry.repoId, "sbxtest");
-    ok("prewarm request accepted", st.state === "bootstrapping" || st.state === "ready", st.state);
-    const deadline = Date.now() + 900_000;
-    while (st.state === "bootstrapping" && Date.now() < deadline) {
-      await new Promise((r) => setTimeout(r, 5000));
-      st = await requestPrewarm(entry.providerId, entry.repoId, "sbxtest");
-    }
-    ok(
-      "prewarm reached ready",
-      st.state === "ready" && !!st.sandboxId,
-      `${st.state} in ${((Date.now() - tP) / 1000).toFixed(0)}s`,
-    );
-    prewarmedId = st.sandboxId || "";
+    prewarmedId = await waitForPrewarm(entry);
   }
 
   let sandbox: Sandbox | null = null;
+  let restoredSandbox: Sandbox | null = null;
   try {
     // 1. ensure / reuse
     const t0 = Date.now();
@@ -485,6 +672,94 @@ async function runEntry(entry: Entry): Promise<void> {
       ok("no host dir was created (volume-style workspace)", !existsSync(sandbox.cwd), sandbox.cwd);
     }
 
+    // Provider-native post-setup template certification. The first prewarm
+    // published a credential-free snapshot; a SECOND prewarm must create a
+    // different sandbox from it, retain the exact seal nonce + prepared repo
+    // artifact, and be adopted by a second session. Repeating cold setup
+    // cannot satisfy the nonce equality check.
+    if (
+      entry.providerId === "daytona" ||
+      entry.providerId === "box" ||
+      entry.providerId === "modal"
+    ) {
+      const proofPath = remoteRepoTemplateProofPath(entry.repoId);
+      const firstSeal = await sandbox.exec(["cat", proofPath]);
+      const firstPrepared = await sandbox.exec([
+        "cat",
+        ".opensession-conformance/template-proof",
+      ]);
+      const firstSetupLog = await sandbox.exec([
+        "cat",
+        `/home/ubuntu/.opensession/lifecycle/${entry.repoId}-setup.log`,
+      ]);
+      ok(
+        "source sandbox sealed a credential-free repo template",
+        firstSeal.exitCode === 0 && firstSeal.stdout.includes('"nonce"'),
+        firstSeal.stderr.trim().slice(0, 120),
+      );
+      ok(
+        "post-setup repo artifact exists before snapshot restore",
+        firstPrepared.exitCode === 0 &&
+          firstPrepared.stdout === "post-setup" &&
+          firstSetupLog.exitCode === 0,
+      );
+      const restoredPrewarmId = await waitForPrewarm(entry, "snapshot restore prewarm");
+      const restoredSpec = {
+        ...spec,
+        sessionId: `${sessionId}-snapshot-restore`,
+      };
+      restoredSandbox = await provider.ensure(restoredSpec);
+      ok(
+        "snapshot restore used a new provider sandbox",
+        restoredSandbox.id === restoredPrewarmId && restoredSandbox.id !== sandbox.id,
+        `${sandbox.id} → ${restoredSandbox.id}`,
+      );
+      const restoredSeal = await restoredSandbox.exec(["cat", proofPath]);
+      const restoredPrepared = await restoredSandbox.exec([
+        "cat",
+        ".opensession-conformance/template-proof",
+      ]);
+      const restoredSetupLog = await restoredSandbox.exec([
+        "cat",
+        `/home/ubuntu/.opensession/lifecycle/${entry.repoId}-setup.log`,
+      ]);
+      ok(
+        "provider snapshot restored the exact sealed filesystem",
+        restoredSeal.exitCode === 0 && restoredSeal.stdout === firstSeal.stdout,
+      );
+      ok(
+        "provider snapshot restored post-setup repo state without rerunning setup",
+        restoredPrepared.exitCode === 0 &&
+          restoredPrepared.stdout === "post-setup" &&
+          restoredSetupLog.exitCode === 0 &&
+          restoredSetupLog.stdout === firstSetupLog.stdout,
+      );
+      await provider.destroy(restoredSandbox.id);
+      restoredSandbox = null;
+    }
+
+    // Durable lifecycle parity where the provider exposes it: releasing
+    // compute must report stopped, wake transparently, and preserve bytes.
+    if (provider.pause && provider.resume) {
+      await sandbox.exec(["sh", "-c", "printf durable > .sbx-conf-durable"]);
+      const tPause = Date.now();
+      await provider.pause(sandbox.id);
+      ok("pause releases compute", (await sandbox.status()) === "stopped");
+      const resumed = await provider.resume(sandbox.id);
+      ok(
+        "resume returns a running sandbox",
+        !!resumed && (await resumed.status()) === "running",
+        `${Date.now() - tPause}ms pause+wake`,
+      );
+      if (resumed) sandbox = resumed;
+      const durable = await sandbox.exec(["cat", ".sbx-conf-durable"]);
+      ok(
+        "workspace survives pause/resume",
+        durable.exitCode === 0 && durable.stdout === "durable",
+        durable.stderr.trim().slice(0, 120),
+      );
+    }
+
     // 4. ports() shape
     const ports: PortMap = await sandbox.ports();
     const portEntry = ports[entry.expectPort === "url" ? 8080 : PREVIEW_PORT];
@@ -502,8 +777,9 @@ async function runEntry(entry: Entry): Promise<void> {
     //    launchRun; docker reaches it via the bridge gateway).
     // Remote entries probe /ingress-health — the path a publicIngress front
     // (Caddy/tunnel) actually forwards; /ping only exists on direct listeners.
+    const callbackBase = String(entry.config.callbackBaseUrl || "");
     const probeUrl = entry.remote
-      ? remoteBase && `${remoteBase.replace(/^ws(s?):\/\//, "http$1://")}/ingress-health`
+      ? callbackBase && `${callbackBase.replace(/^ws(s?):\/\//, "http$1://")}/ingress-health`
       : `http://${bridgeGw}:${wsSrv.port}/ping`;
     let reachable = false;
     if (probeUrl) {
@@ -540,7 +816,7 @@ async function runEntry(entry: Entry): Promise<void> {
       // certifies everything about launchRun except the provider's egress
       // (e.g. Daytona Tier-1/2 sandboxes cannot reach arbitrary hosts).
       if (entry.remote) {
-        const { HOST_ENTRY, HOST_SPEC_NAME } = await import("../../src/runner-host/protocol");
+        const { HOST_ENTRY, HOST_SPEC_NAME } = await import("../../packages/core/opensession-server/src/runner-host/protocol");
         const smokeDir = `/home/ubuntu/.bks-runs/smoke-${RUN_TS}`;
         const smokeSpec = {
           hostId: `rh-smoke-${RUN_TS}`,
@@ -580,7 +856,9 @@ async function runEntry(entry: Entry): Promise<void> {
         mode: "ask",
         model: "claude-haiku-4-5",
         mcpServers: [],
-        journalKind: "sandbox-conformance",
+        // Exercise the same interactive policy lane a real session uses. The
+        // runner gate is intentionally deny-by-default on unknown journal kinds.
+        journalKind: "prompt",
       };
       // REGRESSION (2026-07-09 launch→attach stalls, bks-019f46e9/bks-019f4729):
       // the launch's attach chain must never wait behind another long-running
@@ -593,11 +871,11 @@ async function runEntry(entry: Entry): Promise<void> {
       let longExec: Promise<unknown> | null = null;
       if (entry.remote) {
         longExec = sandbox
-          .exec(["sh", "-c", "sleep 90; echo long-exec-done"])
+          .exec(["sh", "-c", "sleep 90; echo long-exec-done"], { background: true })
           .catch(() => {});
       }
       const t2 = Date.now();
-      let handle: import("../../src/server/sandbox/provider").RunHandle;
+      let handle: import("../../packages/core/opensession-server/src/server/sandbox/provider").RunHandle;
       try {
         handle = sandbox.launchRunEager
           ? await sandbox.launchRunEager(runSpec, {})
@@ -608,9 +886,10 @@ async function runEntry(entry: Entry): Promise<void> {
       }
       if (entry.remote) {
         const attachMs = Date.now() - t2;
+        const attachBoundMs = entry.concurrentAttachMaxMs || 10_000;
         ok(
-          "launch attaches during a concurrent long exec (<10s)",
-          !!sandbox.launchRunEager && attachMs < 10_000,
+          `launch attaches during a concurrent long exec (<${attachBoundMs / 1000}s)`,
+          !!sandbox.launchRunEager && attachMs < attachBoundMs,
           `${attachMs}ms`,
         );
         void longExec;
@@ -659,6 +938,18 @@ async function runEntry(entry: Entry): Promise<void> {
       while (!cInit && Date.now() < cDeadline) await new Promise((r) => setTimeout(r, 500));
       ok("second run started (for steer/cancel)", cInit);
 
+      // A provider/account-capacity failure to initialize the second model
+      // run is one failure, not four misleading transport failures. The first
+      // run above still certifies launch + streaming; reconnect/steer/cancel
+      // need a live run to exercise.
+      if (!cInit) {
+        cHandle.cancel();
+        await Promise.race([
+          cConsume,
+          new Promise<void>((r) => setTimeout(r, 5_000)),
+        ]);
+      } else {
+
       // WS transport resilience: kill the dialed-in connection server-side
       // mid-run. The host must redial (≤5s backoff), replay the disconnect
       // window (seq/ack — ws-buffer.ts), and the handle must reattach so
@@ -692,6 +983,7 @@ async function runEntry(entry: Entry): Promise<void> {
       ]);
       ok("cancelled run's stream terminated", cEnded === true);
       ok("session not busy after cancel", !hostRunBusy(sessionId));
+      }
     }
 
     // 7. get() reattach
@@ -699,6 +991,7 @@ async function runEntry(entry: Entry): Promise<void> {
     ok("get() reattaches by id", got !== null && got.cwd === sandbox.cwd, got?.cwd);
   } finally {
     // 8. destroy — always, even on failures above (paid remote compute).
+    if (restoredSandbox) await provider.destroy(restoredSandbox.id).catch(() => {});
     if (sandbox) {
       await provider.destroy(sandbox.id);
       const gone = (await (await provider.get(sandbox.id))?.status()?.catch(() => "gone")) ?? "gone";
@@ -709,6 +1002,7 @@ async function runEntry(entry: Entry): Promise<void> {
           !existsSync(`${OPENSESSION_SESSIONS_DIR}/sandboxes/${sandbox.id}.json`),
       );
     }
+    await cleanupCertificationTemplate(entry);
   }
 }
 
@@ -819,37 +1113,51 @@ async function auditBoxLeftovers(): Promise<void> {
   if (!boxKey) return;
   section = "box";
   try {
-    // Box has no labels — the adapter names boxes with their session id, so
-    // suite leftovers are exactly the ones named sbxtest-*. Same live-account
-    // guard as the other audits: never reap a real session's box.
+    // Box has no labels or public hard-delete endpoint. The adapter names
+    // boxes with their session id, so suite leftovers are exactly the ones
+    // named sbxtest-*. Archived boxes release compute and are expected to stay
+    // visible in the Box account; only a still-active test box is a leak.
     const res = await fetch(`${boxApiUrl}/boxes?limit=100`, {
       headers: { Authorization: `Bearer ${boxKey}` },
       signal: AbortSignal.timeout(30_000),
     });
     if (!res.ok) throw new Error(`list boxes: HTTP ${res.status}`);
-    const listLeftovers = (boxes: Array<{ id: string; name?: string; state?: string }>) =>
-      (boxes || []).filter((b) => String(b.name || "").startsWith("sbxtest-"));
-    let leftovers = listLeftovers(((await res.json()) as any).boxes);
+    const listActive = (boxes: Array<{ id: string; name?: string; state?: string }>) =>
+      (boxes || []).filter(
+        (box) =>
+          String(box.name || "").startsWith("sbxtest-") &&
+          String(box.state || "") !== "archived",
+      );
+    let leftovers = listActive(((await res.json()) as any).boxes);
     if (leftovers.length) {
-      // Deletions are async server-side — give in-flight teardowns a moment.
-      await new Promise((r) => setTimeout(r, 15_000));
-      const again = await fetch(`${boxApiUrl}/boxes?limit=100`, {
-        headers: { Authorization: `Bearer ${boxKey}` },
-        signal: AbortSignal.timeout(30_000),
-      });
-      leftovers = again.ok ? listLeftovers(((await again.json()) as any).boxes) : leftovers;
+      // Archival is asynchronous and routinely takes 30-90s for a prepared
+      // repo disk. Poll the provider state instead of misreporting a leak
+      // while destroy()'s stop is still completing.
+      const deadline = Date.now() + 90_000;
+      while (leftovers.length && Date.now() < deadline) {
+        await new Promise((r) => setTimeout(r, 5_000));
+        const again = await fetch(`${boxApiUrl}/boxes?limit=100`, {
+          headers: { Authorization: `Bearer ${boxKey}` },
+          signal: AbortSignal.timeout(30_000),
+        });
+        if (again.ok) leftovers = listActive(((await again.json()) as any).boxes);
+      }
     }
     ok(
-      "no backstage-named boxes left behind",
+      "no active conformance boxes left behind",
       leftovers.length === 0,
       leftovers.map((l) => `${l.id}(${l.state})`).join(",") || "none",
     );
     for (const { id } of leftovers) {
-      console.warn(`  cleaning up leftover box ${id}`);
+      console.warn(`  archiving leftover box ${id}`);
       try {
-        await fetch(`${boxApiUrl}/boxes/${id}`, {
-          method: "DELETE",
-          headers: { Authorization: `Bearer ${boxKey}` },
+        await fetch(`${boxApiUrl}/boxes/${id}/stop`, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${boxKey}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ force: false }),
           signal: AbortSignal.timeout(60_000),
         });
       } catch (e) {
@@ -914,6 +1222,7 @@ async function auditModalLeftovers(): Promise<void> {
 // ── run the matrix ────────────────────────────────────────────────────────────
 
 try {
+  await installScratchIngress();
   for (const entry of selected) {
     try {
       await runEntry(entry);
@@ -927,8 +1236,13 @@ try {
   await auditModalLeftovers();
 } finally {
   console.log("\n── cleanup ──");
+  try {
+    await removeScratchIngress();
+  } catch (e) {
+    console.warn("  scratch ingress cleanup failed:", String(e).slice(0, 200));
+  }
   // Docker scratch containers/volumes/state for both docker entries.
-  const { containerNameFor } = await import("../../src/server/sandbox/docker");
+  const { containerNameFor } = await import("../../packages/core/opensession-server/src/server/sandbox/docker");
   for (const e of entries.filter((x) => x.providerId === "docker")) {
     const c = containerNameFor(`sbxtest-conf-${e.name}-${RUN_TS}`);
     await sh(["docker", "rm", "-f", c]);

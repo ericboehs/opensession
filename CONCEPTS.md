@@ -4,7 +4,7 @@ Open Session is a server that runs coding agents on your own machines. Almost
 everything you do with it is one of five nouns: a **project** that is a source
 of work, a **workspace** that groups the work on one thing, a **session** where an
 agent actually thinks, and the ways a session gets started without you typing —
-**automations**, **goals** and **actions**.
+**automations** and **goals**.
 
 This page is the core model. It is deliberately short on configuration; the
 linked docs go deeper on each part.
@@ -14,31 +14,31 @@ linked docs go deeper on each part.
 | Concept | What it is | Relationship |
 | --- | --- | --- |
 | **Project** | a source of work — a git repository, or a feed like Plain | 1 instance has many projects |
-| **Workspace** | a container grouping the sessions about one piece of work | 1 project has many workspaces |
-| **Session** | one conversation with an agent, with its own transcript | 1 workspace has many sessions |
+| **Workspace** | a container grouping the sessions about one piece of work | a project has many; scratch workspaces have none |
+| **Session** | one conversation with an agent, with its own transcript | a workspace has many; specialized sessions may have none |
 | **Turn** | one prompt → one agent response, with its tool calls | 1 session has many turns |
 
 That is the usual hierarchy you navigate: the sidebar is a list of projects,
 each holding workspaces, each holding sessions. Repo-less scratch workspaces sit
-alongside the projects instead. The URL follows the bottom of it —
-`/workspace/<workspaceId>/session/<sessionId>`.
+alongside the projects instead. Interactive sessions normally use
+`/workspace/<workspaceId>/session/<sessionId>`. Specialized automation and goal
+sessions may be workspace-less and use `/session/<sessionId>`.
 
 Alongside it sits a second, independent axis — *where* a session's work happens:
 
 | Concept | What it is |
 | --- | --- |
-| **Worktree** | the isolated git working directory a code session edits in |
-| **Sandbox** | an optional container the session runs inside instead of on the host |
-| **Node** | another machine (a Mac, a Windows box) attached for platform-locked work |
+| **Worktree** | the git working directory a code session edits in |
+| **Sandbox** | an optional provider-backed environment used instead of the host |
+| **Runner** | a trusted persistent machine attached for specialized work |
 
-And a third — *what starts a session when you are not there*:
+And a third — *what starts or coordinates work when you are not there*:
 
 | Concept | Trigger | Memory across runs |
 | --- | --- | --- |
 | **Automation** | a cron schedule or an external event | none — every run is a fresh session |
-| **Goal** | its own self-set wake time | yes — one session resumed over days |
-| **Action** | a human filling in a form | none — one session per run |
-| **Workflow** | a script fanning out many agents | none — agents report into the script |
+| **Goal** | its own self-set wake time | yes — wakes resume one session over days |
+| **Workflow** | a script fanning out agents and tool calls | successful calls replay when a workflow is resumed |
 
 ## Projects
 
@@ -48,8 +48,8 @@ things inside it become workspaces.
 There are two kinds, and the difference is only where the work comes from:
 
 **Repository projects** are git checkouts on the host that you registered.
-Their workspaces are branches: you start a session, it cuts a worktree, it opens a
-pull request.
+Their code workspaces usually track branches and worktrees. GitHub changes can
+produce pull requests; on code.storage, a pushed branch is the change request.
 
 **Feed projects** are external systems, reached through an integration or an
 MCP server. Plain is a project — its items are support tickets. So are Slack,
@@ -68,21 +68,22 @@ project's workspaces are *adopted* as items arrive.
 
 ### Registering a repository project
 
-A repository entry carries what the server needs to work on it autonomously:
-its default branch, its `owner/name` on GitHub (for pull requests), how to
-install dependencies in a fresh worktree, and how to boot its dev server for
-previews. They live in `~/.opensession/config.json` — see
+A repository entry identifies its checkout and default branch. It can carry
+setup, dependency and preview commands, plus host-specific review metadata:
+`ghRepo` for GitHub, or `host: "codestorage"` plus `csRepo` for code.storage.
+They live in `~/.opensession/config.json` — see
 [docs/instance-configuration.md](docs/instance-configuration.md).
 
-A repo can also commit its own lifecycle scripts (`.opensession/setup.sh`,
-`.opensession/start.sh`) so every worktree provisions and boots itself without
+A repo can also commit its own lifecycle scripts (`.agents/setup`,
+`.agents/start.sh`) so every worktree provisions and boots itself without
 instance config. That convention is what lets an agent open its own change in a
 real browser — see [docs/repo-lifecycle.md](docs/repo-lifecycle.md).
 
-One repository can be marked a **shared checkout**, meaning its sessions work
-directly in the main clone rather than in worktrees. Open Session's own
+One repository can be marked a **shared checkout**, meaning ordinary sessions
+work directly in the main clone rather than in worktrees. Open Session's own
 repository is configured that way so sessions improving it are editing the thing
-that is running. It has sharp edges; read
+that is running. Unattended automations and PR integrations still use dedicated
+worktrees. It has sharp edges; read
 [docs/worktrees.md](docs/worktrees.md#the-shared-checkout-exception) before
 turning it on for anything else.
 
@@ -93,22 +94,22 @@ it, which tool lists its items, and how that tool's fields map onto
 title/preview/timestamp. Add one from Connections → Projects. Any MCP server
 with a list-shaped tool can become a band.
 
-Feed projects also scope their sessions' tools: a project declares which MCP
-servers its sessions get, so a session opened from a video never sees your billing
-tools.
+Config-created feeds default their sessions to the backing MCP server and can
+declare an explicit allowlist instead. Code-provided feeds must set `mcpServers`
+explicitly to be scoped; omitting it currently exposes all configured servers
+available to the user.
 
 ## Workspaces
 
-A workspace groups the sessions about one piece of work. Every session belongs to
-exactly one workspace, and a workspace is what you see as a row in the sidebar —
-its sessions are its children.
+A workspace groups the sessions about one piece of work. Interactive sessions
+normally belong to exactly one workspace, which appears as a row in the sidebar.
+Automation and goal sessions can exist without one.
 
 The important part: **a workspace can own a worktree**. When it does, it holds a
 repo, a branch, a worktree directory and any attached repos, and new sessions
-created in it inherit that worktree by default. So a workspace is usually "this
-branch, and every conversation I had while building it": the session that made the
-change, the follow-up that fixed review comments, the one that debugged CI.
-They share a checkout and add up to one pull request.
+created in it inherit that worktree by default. Sessions that inherit it share a
+checkout and contribute to one review unit. Stacked sessions and integration
+runs can use dedicated worktrees while remaining in the same workspace.
 
 A workspace with no worktree is fine too — that is what an ask-style workspace
 looks like, or a feed workspace for a ticket where there is nothing to check
@@ -127,21 +128,23 @@ A session is one conversation with an agent. It has a transcript, a model, a
 working directory, a queue of pending prompts, and a state you can see from the
 sidebar (running, waiting on you, idle).
 
-Sessions are the unit everything else produces. An automation run is a session. A goal
-wake is a session. An action run is a session. That is deliberate: whatever started
-it, you can open it, read the whole transcript, steer it mid-flight, and fork it
-into a normal conversation.
+Sessions are the unit everything else produces. An automation run creates a fresh
+session. A goal owns one session, and each wake resumes it for another turn. That
+is deliberate: whatever started it, you can open it, read the whole transcript,
+steer it mid-flight, and fork it into a normal conversation.
 
 ### Modes
 
 A session's mode decides what it can touch:
 
 - **`ask`** — read-only. No worktree of its own; it shares a per-repo checkout
-  pinned to the default branch. Cannot write files. Use it for questions,
-  investigation and code reading.
-- **`code`** — its own worktree on its own branch, with write tools. It can
-  commit and open a pull request. This is the default, and the one that costs
-  disk.
+  pinned to the default branch. A shared-checkout repository may use its main
+  clone instead. Cannot write files. Use it for questions, investigation and
+  code reading.
+- **`code`** — write tools in a branch checkout. A new code workspace normally
+  gets an isolated worktree; later sessions share it by default, while stacked
+  sessions request another. Ordinary sessions use the main clone when the
+  shared-checkout exception is active. This is the default mode.
 - **`scratch`** — no repo at all, just a working directory. This is what a session
   in a feed workspace gets when there is nothing to check out.
 
@@ -149,9 +152,9 @@ A session's mode decides what it can touch:
 
 A session has one primary repo and can **attach** more. Each attached repo gets its
 own isolated worktree, branched to match the session's primary branch, so a change
-spanning two repositories lines up and produces two pull requests that match.
-Diffs, file mentions and the PR panel all become repo-aware once a session spans
-more than one.
+spanning two repositories lines up and produces matching review units. Diffs,
+file mentions and review controls become repo-aware once a session spans more
+than one.
 
 ### Turns, queues and steering
 
@@ -166,22 +169,22 @@ the final call. Spawn depth is capped so this cannot run away.
 
 ## Where a session runs
 
-**Worktrees** are the default. Every code session gets its own git worktree — a
-separate working directory sharing one `.git` — so two sessions on the same repo
-never see each other's edits and never fight over the index. Creating one
-installs dependencies up front so the agent does not spend its first two minutes
-on `bun install`. This is also where your disk goes:
+**Worktrees** are the default for new code workspaces. Code sessions added to a
+workspace share its worktree by default; stacked sessions can request another.
+When the shared-checkout exception is active, ordinary sessions use the main
+clone instead. Creating a worktree installs dependencies up front. This is also
+where your disk goes:
 [docs/worktrees.md](docs/worktrees.md).
 
-**Sandboxes** are optional isolation. Instead of running on the host, a session can
-run inside a container — Docker locally, with adapters for hosted providers. Use
-them when you do not want agent-run commands touching the host at all:
+**Sandboxes** are optional provider-backed execution environments used instead
+of the host. Implementations include local Docker containers, local Firecracker
+MicroVMs, and remote container or VM providers:
 [docs/self-hosting-sandboxes.md](docs/self-hosting-sandboxes.md).
 
-**Nodes** are other machines you attach with `opensession connect`. They exist
-for work that physically cannot happen on the server: an iOS build needs macOS
-with Xcode, a Windows build needs MSVC. A session on the server reaches out to a
-node to run commands there. See [docs/nodes.md](docs/nodes.md).
+**Runners** are trusted persistent machines paired with
+`opensession runner connect` for platform-, toolchain-, or GPU-specific work.
+The Runner connects outbound to Open Session, which can delegate bounded
+commands to it. See [docs/runners.md](docs/runners.md).
 
 ## Automations
 
@@ -198,11 +201,18 @@ clean. That is what makes them safe to point at untrusted input — a support
 ticket's text is data the agent reads, never configuration for the run — and it
 is why they are scoped tightly:
 
-- each automation names the MCP servers its runs may see, and gets only those;
-- runs get a minimal environment with none of your tokens;
+- an automation can carry an MCP allowlist. An explicit list restricts the run,
+  and `[]` means none; omitted currently means all configured servers. Sandbox
+  automations require an explicit list;
+- runs get a minimal environment; only explicitly allowed short-lived or opt-in
+  credentials are projected;
 - customer-facing and identity-mutating tools are denied outright;
-- `mode` applies here too — an `ask` automation cannot write; a `code`
-  automation gets a worktree and can open a pull request, never merge one.
+- `mode` applies here too: an `ask` automation cannot write; a `code` automation
+  gets an isolated worktree and can edit and commit. Ordinary automations do
+  not receive GitHub credentials, so they cannot currently push or open a
+  GitHub pull request. Trusted `github-*` code workflows use a separate,
+  repository-scoped credential path. `prReviewer` adds an instruction but does
+  not grant publication authority.
 
 Automations are data, not code: create one from the UI or by talking to the
 agent. Reusable ones can be packaged as **recipes** — a JSON file in
@@ -223,31 +233,22 @@ The mission is just a prompt. Goals are for open-ended, long-horizon work — "g
 this metric under X", "keep this migration moving" — where the value is in
 continuity rather than in a clean slate.
 
-A goal has a mode like a session: `ask` for research and measurement, `code` for a
-persistent worktree it can keep opening pull requests from.
-
-## Actions
-
-An action is a form in front of a script. You register a script that already
-lives in a repository, describe its inputs as form fields, and anyone can run it
-without a terminal.
-
-A run is not a bespoke output panel — it spins up a real session on a fast, cheap
-model that executes the command and reports the output. So it lands in the
-sidebar with a transcript, and if the output is surprising you fork it into a
-full session and dig in.
+A goal has a mode like a session: `ask` for research and measurement, `code` for
+a persistent worktree across wakes. When the shared-checkout exception is
+active, a code goal instead works directly on the default branch, without a
+feature branch or pull request.
 
 ## Workflows
 
-A workflow is a model-authored script that fans out agent runs deterministically
-— `agent()`, `parallel()`, `pipeline()`, `phase()` — and executes in a contained
-worker.
+A workflow is a model-authored script running in an environment-scrubbed Bun
+Worker. It can fan out fresh read agents, call allowed MCP tools directly, and
+opt individual agents into isolated write worktrees. Write-agent changes are
+auto-committed, and `merge()` can land their branches on the parent session's
+branch.
 
-The point is control flow that should not be model-driven: loops, conditionals,
-verify-every-finding fan-outs. A workflow agent is a focused
-read-analyze-report worker; heavier, steerable work stays on a spawned session.
-Limits (concurrent agents, lifetime agent count, per-agent timeout) are enforced
-by the runner.
+Successful agent and MCP calls are journaled and replayed when a workflow is
+resumed. The runner enforces concurrency, call-count and timeout limits. The
+Worker provides containment, not a hard security sandbox.
 
 ## Integrations
 
@@ -276,9 +277,11 @@ model above:
   Fail-closed by design.
 
 **Skills** are prompt-level extensions — a directory with a `SKILL.md` the
-engine loads on demand, invocable as a `/`-command in the composer. They come
-from your user config, from the repository's own checkout, or from the engine
-itself.
+engine loads on demand, invocable as a `/`-command in the composer. They load
+from the session checkout's `.claude/skills/` and `.agents/skills/`, plus Open
+Session's shipped or package-installed skills directory
+(`OPENSESSION_SKILLS_DIR` can override it). Host-account and engine-embedded
+skills are disabled.
 
 See [docs/extending.md](docs/extending.md) for both, plus integrations and
 providers.
@@ -294,7 +297,8 @@ A typical loop, in the vocabulary above:
 3. The agent takes **turns** — reading, editing, running the test suite in the
    worktree, opening a pull request.
 4. Review comments arrive. The GitHub **integration** opens another **session** in
-   the same workspace, on the same worktree, and it pushes fixes.
+   the same PR workspace, checks the PR branch out in a dedicated integration
+   worktree, and pushes fixes back to that branch.
 5. A ticket lands in the Plain project. Opening it gets you its **workspace**;
    a triage **automation** has already run a fresh, amnesiac session there and left
    an internal note.
@@ -306,13 +310,13 @@ A typical loop, in the vocabulary above:
 
 - [docs/worktrees.md](docs/worktrees.md) — how sessions map to git worktrees, and
   where the disk goes
-- [docs/repo-lifecycle.md](docs/repo-lifecycle.md) — the `.opensession/`
+- [docs/repo-lifecycle.md](docs/repo-lifecycle.md) — the `.agents/` lifecycle
   scripts a repository commits so its worktrees provision and boot themselves
 - [docs/instance-configuration.md](docs/instance-configuration.md) —
   repositories, identity, branding, integrations, seeds
 - [docs/extending.md](docs/extending.md) — MCP servers, recipes, integrations,
   providers
-- [docs/nodes.md](docs/nodes.md) — attaching another machine
+- [docs/runners.md](docs/runners.md) — attaching another machine
 - [docs/self-hosting-sandboxes.md](docs/self-hosting-sandboxes.md) — isolated
   execution
 - [docs/setup/](docs/setup/README.md) — installing, and the trust model

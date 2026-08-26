@@ -4,20 +4,24 @@
     "Environment variables override config values. Repositories are authoritative: when `repos` is present, only those entries are registered.",
     "With no `repos` configured, a server install registers this Open Session checkout itself as a shared `opensession` repo. Set `repos` for real team projects.",
     "External integrations and instance seed routines are opt-in (`enabled: true`).",
-    "selfDev controls sessions on the self-hosted Open Session repo itself: 'shared' (default) = all sessions edit the live shared checkout on the default branch; 'worktree' = self-sessions get isolated worktrees + the normal branch/PR flow like every other repo."
+    "selfDev controls sessions on the self-hosted Open Session repo itself: 'shared' (default) = all sessions edit the live shared checkout on the default branch; 'worktree' = self-sessions get isolated worktrees + the normal branch/PR flow like every other repo.",
+    "Repos are GitHub-hosted by default. To host one on code.storage instead, set host: 'codestorage' and csRepo (the repo id/path) on the repo entry \u2014 see the 'widget-cs' example \u2014 and configure integrations.codestorage (org + PKCS8 private key that signs the customer-issued JWTs)."
   ],
+  "onboardingCompleted": true,
   "selfDev": "shared",
   "server": {
     "host": "127.0.0.1",
     "port": 3850,
-    "webhookPort": 3848,
     "publicBaseUrl": "https://sessions.example.com",
     "previewHost": "preview.example.com",
     "caddyAdmin": "http://localhost:2019"
   },
+  "ingress": {
+    "publicBaseUrl": "https://ingress.example.com",
+    "exposure": "custom"
+  },
   "paths": {
     "claudeBin": "claude",
-    "opencodeBin": "opencode",
     "worktreesDir": "/srv/opensession/worktrees",
     "mcpConfig": "/srv/opensession/mcp-config.json"
   },
@@ -47,7 +51,9 @@
       "worktreeSetup": "git submodule update --init --depth 1",
       "depsInstall": "bun install",
       "previewCommand": "/srv/opensession/bin/start-widget-preview",
-      "warmCachePaths": ["dist/generated-client.js"],
+      "warmCachePaths": [
+        "dist/generated-client.js"
+      ],
       "previewAwsProfile": "widget-dev",
       "deploymentTracking": true,
       "securityInstructions": "Read SECURITY.md before triaging findings; run bun test for changed packages.",
@@ -62,6 +68,14 @@
       "defaultBranch": "main",
       "ghRepo": "acme/opensession",
       "sharedCheckout": true
+    },
+    "widget-cs": {
+      "_comment": "Example code.storage-hosted repo (delete or fill in): no ghRepo/PRs \u2014 branches are reviewed against defaultBranch and merged via the code.storage merge API. Requires integrations.codestorage below.",
+      "label": "Widget (code.storage)",
+      "repo": "/srv/repos/widget-cs",
+      "defaultBranch": "main",
+      "host": "codestorage",
+      "csRepo": "acme/widget"
     }
   },
   "identity": {
@@ -70,28 +84,47 @@
       {
         "name": "Alice Example",
         "email": "alice@example.com",
-        "aliases": ["alice"],
+        "aliases": [
+          "alice"
+        ],
         "slackId": "U012345",
         "github": "alice",
-        "linearEmails": ["alice@example.com"],
+        "linearEmails": [
+          "alice@example.com"
+        ],
         "timezone": "UTC"
+      }
+    ],
+    "reviewTeams": [
+      {
+        "name": "Platform reviewers",
+        "github": "acme/platform-reviewers",
+        "members": [
+          "Alice"
+        ]
       }
     ],
     "slackNames": {}
   },
   "policy": {
-    "githubWriteOwners": ["acme"],
-    "githubBotLogins": ["acme-automation"]
+    "githubWriteOwners": [
+      "acme"
+    ]
   },
   "integrations": {
     "github": {
       "enabled": false,
       "userPrAuth": false,
       "oauthClientId": "",
-      "mentionHandles": ["assistant", "acme-automation"],
-      "previewEnvironment": "Preview"
+      "oauthClientSecret": "",
+      "appSlug": "",
+      "installationOwner": "acme",
+      "previewEnvironment": "Preview",
+      "shippedChangesChannel": "C0123456789"
     },
-    "slack": {"enabled": false},
+    "slack": {
+      "enabled": false
+    },
     "linear": {
       "enabled": false,
       "oauthRedirectUrl": "https://sessions.example.com/oauth/callback"
@@ -103,25 +136,53 @@
       "workspaceId": "w_01ABCDEFGHJKMNPQRSTVWXYZ00",
       "apiUrl": "https://core-api.uk.plain.com/graphql/v1"
     },
-    "stripe": {"enabled": false},
-    "grafana": {"enabled": false},
+    "stripe": {
+      "enabled": false
+    },
+    "grafana": {
+      "enabled": false
+    },
+    "codestorage": {
+      "_comment": "code.storage git host (docs/setup/codestorage.md). org = the <org>.code.storage subdomain and JWT issuer; privateKeyPath = PKCS8 PEM (ES256 or RS256) whose public key is registered with code.storage; apiBase is optional and defaults to https://api.<org>.code.storage/api; webhookSecret (optional) verifies inbound POST /codestorage/webhook deliveries.",
+      "enabled": false,
+      "org": "acme",
+      "privateKeyPath": "/srv/opensession/secrets/codestorage-key.pem",
+      "apiBase": "https://api.acme.code.storage/api",
+      "webhookSecret": "whsec_replace_me"
+    },
     "accountHealth": {
       "notifyUser": "alice",
       "slackChannel": "D012345"
     },
-    "seeds": {
-      "enabled": false,
-      "actions": [
+    "runnersBootstrap": {
+      "_comment": "Optional protected operator inventory for Settings \u2192 Runners migration. SSH needs a pinned SHA256 host fingerprint and a dedicated known-hosts file. Kubernetes credentials must be restricted to the named Runner namespace/workload and a reviewed Deployment plus persistent-volume manifest. Do not put private keys, kubeconfig content, pairing tokens, or arbitrary commands here.",
+      "ssh": [
         {
-          "id": "act-seed-maintenance",
-          "name": "Run maintenance",
-          "kind": "repo",
-          "repo": "widget",
-          "scriptPath": "scripts/maintenance.ts",
-          "inputs": [],
-          "confirm": true
+          "id": "office-mac-mini",
+          "label": "Office Mac mini",
+          "host": "mac-mini.tailnet",
+          "user": "runner",
+          "port": 22,
+          "fingerprint": "SHA256:replace-with-pinned-host-key",
+          "knownHostsPath": "/etc/opensession/runner-known-hosts",
+          "runnerCommand": "/usr/local/bin/opensession"
         }
       ],
+      "kubernetes": [
+        {
+          "id": "gpu-devbox",
+          "label": "GPU devbox",
+          "context": "production-gpu",
+          "namespace": "opensession-runners",
+          "workload": "gpu-runner",
+          "manifestPath": "/srv/opensession/runners/gpu-devbox.yaml",
+          "container": "runner",
+          "runnerCommand": "/usr/local/bin/opensession"
+        }
+      ]
+    },
+    "seeds": {
+      "enabled": false,
       "automations": [
         {
           "name": "Weekly dependency review",

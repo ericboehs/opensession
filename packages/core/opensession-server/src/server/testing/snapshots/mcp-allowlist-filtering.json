@@ -1,0 +1,233 @@
+{
+  "engineCalls": [
+    {
+      "confirmTools": [
+        "mcp__stripe__cancel_subscription",
+        "mcp__stripe__create_refund",
+        "mcp__stripe__stripe_api_execute",
+        "mcp__stripe__stripe_api_write",
+        "mcp__stripe__update_subscription"
+      ],
+      "deniedTools": [
+        "mcp__incident__alert_attach",
+        "mcp__incident__alert_detach",
+        "mcp__incident__escalation_respond",
+        "mcp__incident__extension_plugin_create",
+        "mcp__incident__extension_plugin_sync",
+        "mcp__incident__extension_plugin_update",
+        "mcp__incident__extension_skill_feedback_update",
+        "mcp__incident__follow_up_create",
+        "mcp__incident__follow_up_update",
+        "mcp__incident__incident_update",
+        "mcp__incident__investigation_steer",
+        "mcp__incident__investigation_sync",
+        "mcp__plain__mark_thread_done",
+        "mcp__plain__mark_thread_todo",
+        "mcp__plain__reply_to_thread",
+        "mcp__plain__snooze_thread",
+        "mcp__workos__create_organization",
+        "mcp__workos__create_organization_membership",
+        "mcp__workos__create_user",
+        "mcp__workos__delete_organization",
+        "mcp__workos__delete_organization_membership",
+        "mcp__workos__delete_user",
+        "mcp__workos__get_impersonation_url",
+        "mcp__workos__revoke_invitation",
+        "mcp__workos__revoke_session",
+        "mcp__workos__send_invitation",
+        "mcp__workos__send_password_reset_email",
+        "mcp__workos__send_verification_email",
+        "mcp__workos__update_organization",
+        "mcp__workos__update_organization_membership",
+        "mcp__workos__update_user"
+      ],
+      "images": 0,
+      "inProcessMcp": [
+        "opensession-audit",
+        "opensession-health",
+        "opensession-papercuts",
+        "opensession-report",
+        "opensession-turn"
+      ],
+      "journalKind": "prompt",
+      "mcpScope": [
+        "snapshot-alpha",
+        "snapshot-restricted"
+      ],
+      "mode": "scratch",
+      "model": "pi/anthropic/claude-sonnet-5",
+      "prompt": {
+        "injectedContext": [],
+        "visible": "list what you can reach"
+      },
+      "resumesEngineSession": false,
+      "seedTranscriptEntries": 0,
+      "sessionNote": null
+    }
+  ],
+  "enginePolicy": [
+    {
+      "gateReason": null,
+      "mcpConfig": {
+        "snapshot-alpha": {
+          "args": [
+            "--alpha"
+          ],
+          "command": "/bin/true"
+        }
+      },
+      "mountedMcpServers": [
+        "snapshot-alpha"
+      ],
+      "sharedServerEligible": false,
+      "strippedTools": [
+        "*_cancel_subscription",
+        "*_create_refund",
+        "*_stripe_api_execute",
+        "*_stripe_api_write",
+        "*_update_subscription",
+        "cancel_subscription",
+        "create_refund",
+        "incident_alert_attach",
+        "incident_alert_detach",
+        "incident_escalation_respond",
+        "incident_extension_plugin_create",
+        "incident_extension_plugin_sync",
+        "incident_extension_plugin_update",
+        "incident_extension_skill_feedback_update",
+        "incident_follow_up_create",
+        "incident_follow_up_update",
+        "incident_incident_update",
+        "incident_investigation_steer",
+        "incident_investigation_sync",
+        "plain_mark_thread_done",
+        "plain_mark_thread_todo",
+        "plain_reply_to_thread",
+        "plain_snooze_thread",
+        "question",
+        "stripe_api_execute",
+        "stripe_api_write",
+        "stripe_cancel_subscription",
+        "stripe_create_refund",
+        "stripe_stripe_api_execute",
+        "stripe_stripe_api_write",
+        "stripe_update_subscription",
+        "update_subscription",
+        "workos_create_organization",
+        "workos_create_organization_membership",
+        "workos_create_user",
+        "workos_delete_organization",
+        "workos_delete_organization_membership",
+        "workos_delete_user",
+        "workos_get_impersonation_url",
+        "workos_revoke_invitation",
+        "workos_revoke_session",
+        "workos_send_invitation",
+        "workos_send_password_reset_email",
+        "workos_send_verification_email",
+        "workos_update_organization",
+        "workos_update_organization_membership",
+        "workos_update_user"
+      ],
+      "toolStripNotes": [
+        {
+          "message": "This tool isn't available in automation runs — they are read-only toward the customer thread. Put your suggested reply or status change in the internal note (mcp__plain__create_note) for a human to act on instead.",
+          "tools": [
+            "mcp__plain__mark_thread_done",
+            "mcp__plain__mark_thread_todo",
+            "mcp__plain__reply_to_thread",
+            "mcp__plain__snooze_thread"
+          ]
+        },
+        {
+          "message": "This tool isn't available in automation runs — they get read-only WorkOS access for investigation. Use get_*/list_* to look up the user/org; if a change is needed, recommend it in the note for a human to do.",
+          "tools": [
+            "mcp__workos__create_organization",
+            "mcp__workos__create_organization_membership",
+            "mcp__workos__create_user",
+            "mcp__workos__delete_organization",
+            "mcp__workos__delete_organization_membership",
+            "mcp__workos__delete_user",
+            "mcp__workos__get_impersonation_url",
+            "mcp__workos__revoke_invitation",
+            "mcp__workos__revoke_session",
+            "mcp__workos__send_invitation",
+            "mcp__workos__send_password_reset_email",
+            "mcp__workos__send_verification_email",
+            "mcp__workos__update_organization",
+            "mcp__workos__update_organization_membership",
+            "mcp__workos__update_user"
+          ]
+        },
+        {
+          "message": "This tool isn't available in automation runs — they may declare an incident (mcp__incident__incident_create, which starts in triage for a human to accept) and read incident data, nothing more. Put anything else you want done in your internal note or final report for a human to action.",
+          "tools": [
+            "mcp__incident__alert_attach",
+            "mcp__incident__alert_detach",
+            "mcp__incident__escalation_respond",
+            "mcp__incident__extension_plugin_create",
+            "mcp__incident__extension_plugin_sync",
+            "mcp__incident__extension_plugin_update",
+            "mcp__incident__extension_skill_feedback_update",
+            "mcp__incident__follow_up_create",
+            "mcp__incident__follow_up_update",
+            "mcp__incident__incident_update",
+            "mcp__incident__investigation_steer",
+            "mcp__incident__investigation_sync"
+          ]
+        },
+        {
+          "message": "\"Create a refund\" requires per-call human approval, and this run is unattended. This tool is not available; post the exact action you want taken, including the tool name and full parameters, in your internal note for human review.",
+          "tools": [
+            "mcp__stripe__create_refund"
+          ]
+        },
+        {
+          "message": "\"Cancel a subscription\" requires per-call human approval, and this run is unattended. This tool is not available; post the exact action you want taken, including the tool name and full parameters, in your internal note for human review.",
+          "tools": [
+            "mcp__stripe__cancel_subscription"
+          ]
+        },
+        {
+          "message": "\"Update a subscription\" requires per-call human approval, and this run is unattended. This tool is not available; post the exact action you want taken, including the tool name and full parameters, in your internal note for human review.",
+          "tools": [
+            "mcp__stripe__update_subscription"
+          ]
+        },
+        {
+          "message": "\"Execute a raw Stripe API call\" requires per-call human approval, and this run is unattended. This tool is not available; post the exact action you want taken, including the tool name and full parameters, in your internal note for human review.",
+          "tools": [
+            "mcp__stripe__stripe_api_execute"
+          ]
+        },
+        {
+          "message": "\"Execute a mutating Stripe API call\" requires per-call human approval, and this run is unattended. This tool is not available; post the exact action you want taken, including the tool name and full parameters, in your internal note for human review.",
+          "tools": [
+            "mcp__stripe__stripe_api_write"
+          ]
+        }
+      ],
+      "unattended": true
+    }
+  ],
+  "transcript": [
+    {
+      "content": "list what you can reach",
+      "seq": 1,
+      "type": "user"
+    },
+    {
+      "content": "{\n  \"confirmTools\": [\n    \"mcp__stripe__cancel_subscription\",\n    \"mcp__stripe__create_refund\",\n    \"mcp__stripe__stripe_api_execute\",\n    \"mcp__stripe__stripe_api_write\",\n    \"mcp__stripe__update_subscription\"\n  ],\n  \"deniedTools\": [\n    \"mcp__incident__alert_attach\",\n    \"mcp__incident__alert_detach\",\n    \"mcp__incident__escalation_respond\",\n    \"mcp__incident__extension_plugin_create\",\n    \"mcp__incident__extension_plugin_sync\",\n    \"mcp__incident__extension_plugin_update\",\n    \"mcp__incident__extension_skill_feedback_update\",\n    \"mcp__incident__follow_up_create\",\n    \"mcp__incident__follow_up_update\",\n    \"mcp__incident__incident_update\",\n    \"mcp__incident__investigation_steer\",\n    \"mcp__incident__investigation_sync\",\n    \"mcp__plain__mark_thread_done\",\n    \"mcp__plain__mark_thread_todo\",\n    \"mcp__plain__reply_to_thread\",\n    \"mcp__plain__snooze_thread\",\n    \"mcp__workos__create_organization\",\n    \"mcp__workos__create_organization_membership\",\n    \"mcp__workos__create_user\",\n    \"mcp__workos__delete_organization\",\n    \"mcp__workos__delete_organization_membership\",\n    \"mcp__workos__delete_user\",\n    \"mcp__workos__get_impersonation_url\",\n    \"mcp__workos__revoke_invitation\",\n    \"mcp__workos__revoke_session\",\n    \"mcp__workos__send_invitation\",\n    \"mcp__workos__send_password_reset_email\",\n    \"mcp__workos__send_verification_email\",\n    \"mcp__workos__update_organization\",\n    \"mcp__workos__update_organization_membership\",\n    \"mcp__workos__update_user\"\n  ],\n  \"inProcess\": [\n    \"opensession-audit\",\n    \"opensession-health\",\n    \"opensession-papercuts\",\n    \"opensession-report\",\n    \"opensession-turn\"\n  ],\n  \"localWorkspaceToolsDisabled\": false,\n  \"mcpScope\": [\n    \"snapshot-alpha\",\n    \"snapshot-restricted\"\n  ],\n  \"mode\": \"scratch\"\n}",
+      "contextSource": "tools",
+      "noticeKind": "standing-context",
+      "seq": 2,
+      "type": "system"
+    },
+    {
+      "content": "Only alpha.",
+      "model": "pi/anthropic/claude-sonnet-5",
+      "seq": 3,
+      "type": "assistant"
+    }
+  ]
+}

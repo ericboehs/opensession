@@ -1,7 +1,7 @@
 {
   "id": "nightly-reflection",
   "label": "Nightly reflection (Dreaming)",
-  "description": "Reviews yesterday's audit log, writes an honest retro, opens a fix for the clearest finding, and improves its own prompt over time.",
+  "description": "Reads yesterday's audit log and writes a retro with one fix.",
   "requires": [],
   "recommended": false,
   "notes": "Enables selfImprove, which lets this automation rewrite its OWN prompt (backed up and audited, its own record only). Only ever grant that to a scheduled automation reading your own telemetry — never to one triggered by untrusted input such as support tickets.",

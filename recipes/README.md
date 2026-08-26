@@ -6,21 +6,27 @@ installed or enabled by default.
 ```sh
 opensession automations              # what is available, and what you have added
 opensession automations add <id>     # add one
-opensession automations remove <id>
-opensession restart                  # they are created on the next boot
+opensession automations remove <id>  # stop seeding one
+opensession restart                  # create newly added recipes on the next boot
 ```
 
-Adding a recipe appends it to `integrations.seeds.automations` in your
-`config.json`. The server creates it on the next start, **disabled** — you look
-at the prompt, adjust it for your codebase, and enable it in the UI. Seeding is
-create-if-absent and keyed on `eventKey`, so re-running is safe and your edits
-are never overwritten.
+Adding a recipe appends it to `integrations.seeds.automations` and enables
+`integrations.seeds` in `~/.opensession/config.json` (or the path in
+`OPENSESSION_CONFIG`). The server creates it on the next start, **disabled**:
+review the prompt, adjust it for your codebase, then enable it in Automations.
+If the server runs in the foreground, stop and start it instead of using
+`opensession restart`.
+
+Seeding is create-if-absent and keyed on `eventKey`, so later starts never
+overwrite the persisted automation. `remove` only removes the config seed; it
+does not delete an automation already created from it. To remove both, run the
+command first, then delete the automation in the UI.
 
 ## What ships here
 
 | Recipe | What it does | Needs |
 | --- | --- | --- |
-| `github-pr-review` | Reviews every opened/updated PR and posts findings | GitHub integration |
+| `github-pr-review` | Reviews eligible opened/updated PRs and posts findings | GitHub integration |
 | `instance-health` | Hourly check that this install is alive and not out of disk | — |
 | `stale-pr-monitor` | Weekly list of PRs that have gone quiet | GitHub integration |
 | `code-cleanup-sweep` | Weekly dead-code and duplication pass, as a PR | — |
@@ -72,21 +78,43 @@ Drop a JSON file in `automations/`:
   "automation": {
     "name": "Human readable name",
     "eventKey": "sweep:my-thing",
-    "mode": "ask",
+    "mode": "code",
     "schedule": "0 16 * * 1",
     "enabled": false,
+    "mcpServers": [],
+    "prReviewer": "your-org/your-team",
     "prompt": "..."
   }
 }
 ```
 
-- `eventKey` is the identity used for create-if-absent. Give every recipe one,
-  and never reuse another recipe's.
-- `mode`: `ask` is read-only on the main checkout. `code` gets an isolated
-  worktree with write access and can open PRs. Default to `ask`.
-- `schedule` is a UTC cron expression; leave it empty for event-triggered ones.
+- `eventKey` is both the internal-event subscription and the identity used for
+  create-if-absent. Give every recipe one that is unique across automations.
+- `mode`: `ask` is read-only on the selected repository's main checkout.
+  `code` gets an isolated worktree with write access. Ordinary automations
+  currently receive no GitHub credential, so they cannot push or open a GitHub
+  PR. Default to `ask`. Trusted `github-*` code workflows use a separate,
+  repository-scoped credential path.
+- `repo` is an optional registered repository id. Omit it to use the instance's
+  default repository.
+- `mcpServers` is the external MCP allowlist. Use `[]` for none and name only
+  what the prompt needs. Normal automation runs expose all configured servers
+  when this is omitted; specialized event flows may supply narrower defaults.
+- `prReviewer` adds an instruction to request review from a GitHub login, an
+  `org/team` slug, or a comma-separated list, but grants no GitHub authority.
+  Use it only when the run already has an authorized publication path. See
+  [GitHub setup](../docs/setup/github.md#automation-pr-credentials-and-review-requests) for
+  how requests reach humans and the collaborator rule for team slugs.
+- `schedule` is a five-field UTC cron expression: minute, hour, day of month,
+  month, and day of week. It supports `*`, steps, numbers, ranges, stepped
+  ranges, and comma lists; day 0 or 7 is Sunday. Use an empty string for an
+  event-triggered recipe.
 - `enabled` should be `false`. An operator should read a prompt before it runs.
-- `requires` lists integration ids, purely to warn at install time.
+- `selfImprove` grants scoped task-spawning tools and permission to rewrite only
+  that automation's prompt. Use it only for trusted scheduled input, never for
+  untrusted events such as tickets.
+- `requires` lists integration ids only for CLI warnings; it does not enable or
+  validate those integrations.
 
 ### Writing the prompt
 

@@ -1,252 +1,114 @@
-# Engine: OpenCode
+# Pi engine
 
-Every session, automation, agent-loop turn and one-shot utility call runs on
-the OpenCode engine — a per-session `opencode serve` process driven over
-HTTP+SSE by `src/server/opencode-runner.ts` (one-shots go through
-`src/server/opencode-oneshot.ts` on a shared tool-less server). Model ids
-look like `opencode/<provider>/<model>`; bare native ids (`claude-sonnet-5`,
-`gpt-5.6-sol`) are mapped onto that form at dispatch (`toOpencodeModel`).
-After changing engine/runner code, restart with `systemctl restart opensession`
-([install.md](install.md#10-frontend-rebuilds-vs-restart)).
+Open Session sends every production model turn through the bundled Pi runtime;
+there is no separate `pi` executable to install. Model ids use
+`pi/<provider>/<model>`. Recognized bare ids such as `claude-fable-5` and
+`gpt-5.6-sol`, and provider paths such as `openai/gpt-5.6-sol`, normalize to
+that form at dispatch. See the [generated engine catalog](../generated/engines.md)
+for the current routing table.
 
-Binary resolution: `OPENSESSION_OPENCODE_BIN` → `Bun.which("opencode")` → an
-nvm fallback path.
+## Enable Pi
 
-## Engine config
+`opensession onboard` creates the Pi config with `{"enabled": true}` when it is
+absent. A missing or malformed config, or `"enabled": false`, prevents every
+model turn from starting.
 
-`~/.opensession-opencode.json` (override with `OPENSESSION_OPENCODE_CONFIG`),
-schema from `src/server/opencode-config.ts`:
+A fresh installation stores the config at `~/.opensession/pi.json`. To create
+it by hand:
 
-```json
+```sh
+mkdir -p ~/.opensession
+cat > ~/.opensession/pi.json <<'JSON'
 {
-  "enabled": true,
-  "bridge": { "mode": "meridian", "accounts": ["acc-id-1"] },
-  "port": 3456,
-  "pickerModels": ["opencode/anthropic/claude-sonnet-5"],
-  "turnTimeoutMinutes": 60,
-  "bridgeMaxRequestsPerHour": 300
+  "enabled": true
 }
+JSON
+chmod 600 ~/.opensession/pi.json
 ```
 
-- `enabled` gates the whole `opencode/` model surface: the Anthropic bridge,
-  and whether third-party provider models reach the UI picker at all.
-  `opensession onboard` creates the file as `{"enabled": true}` when it does
-  not exist, so a fresh install has the bridge on; Settings → Setup has an
-  Engine row in the Getting-started checklist that reports the OpenCode binary,
-  the bridge state and the Claude/Codex account counts, with a button to turn
-  the bridge on (`GET`/`PUT /api/settings/opencode-engine`, body
-  `{"enabled": boolean}`).
-- The two failure shapes when it is off (missing file, or `"enabled": false`;
-  `bridge.mode: "off"` produces the first one on its own):
-  `opencode/anthropic/*` turns fail with a config error naming
-  `~/.opensession-opencode.json` — there is no fallback engine — and
-  **third-party picker models silently disappear** from the model picker
-  instead of erroring. If a model you configured is simply not in the list,
-  check this flag first.
-- `pickerModels` adds opencode model ids to the UI model picker (folded into
-  the registry at load).
-- Providers beyond the two subscription bridges run on an API key — see
-  [Third-party providers](#third-party-providers-api-keys).
+An existing legacy `~/.opensession-pi.json` remains in use while the grouped
+path does not exist. You can also enable a disabled engine from **Settings →
+Setup**. The gate and transport settings are read for each turn, so these edits
+do not require a restart.
 
-## Account pools — the mental model
+The legacy `pickerModels` field is not required for the built-in subscription
+catalog. It is still parsed, and valid entries can add picker rows when the
+matching provider credentials exist. New provider model lists are stored in
+`model-providers.json` instead.
 
-Open Session runs a whole team on **subscription capacity, not API keys**. For
-each provider you enroll one or more accounts — Claude Max subscriptions,
-ChatGPT-plan logins — into a pool, and every agent turn checks one out:
+Anthropic turns use the native in-process provider by default. Setting
+`"anthropicTransport": "bridge"` selects the loopback bridge as a rollback;
+absent and unrecognized values use the in-process provider.
 
-- **Personal first, shared second.** A Claude account with an `owner` is
-  preferred for that teammate's own runs; automations and everyone else draw
-  from the owner-less shared accounts. Adding capacity means adding another
-  account to the pool.
-- **Limits rotate, exhaustion falls back.** An account that hits its usage
-  window is sidelined and the run rotates to the next account in the same
-  pool. Only when the *whole pool* is exhausted does the model-fallback
-  chain fire (see [Model routing](#model-routing)) — and a fallback taken for
-  transient reasons drives only that turn; the session remembers the model
-  you picked and returns to it once its pool recovers.
-- **Cross-provider fallback is a handoff, not a resume.** An engine session's
-  internal history can't move between providers, so falling back from a
-  Claude model to an OpenAI one (or vice versa) starts a fresh engine session
-  seeded with a transcript handoff note; the worktree and UI transcript carry
-  over, and the switch is visible in the chat.
-- **Paid credits are opt-in.** Runs never intentionally spend extra-usage
-  credits past a subscription's included quota unless explicitly allowed.
+## Configure model access
 
-The two pools differ in mechanics — Claude picks least-utilized with a
-97%-of-window sideline, Codex picks least-recently-used with a rate-limit
-cool-off — details in their sections below, and
-[usage visibility](#usage-visibility--account-health) covers how you see any
-of this happening.
+Enabling Pi only opens the engine gate. Add at least one usable account or API
+key under **Settings → Providers**:
 
-## Anthropic models (the Claude bridge)
+- `pi/anthropic/*` uses the Claude account pool. Add a setup token created with
+  `claude setup-token`; a separate Claude sign-in can provide usage and reset
+  data.
+- `pi/openai/*` uses the OpenAI account pool, which accepts ChatGPT sign-ins or
+  OpenAI API keys.
+- Other providers use one API key, an optional base URL, and the provider's
+  model ids under **Your own providers**. `anthropic` and `openai` cannot be
+  configured there because they use the account pools.
 
-`opencode/anthropic/*` models get Claude subscription capacity through
-**Meridian** — the bundled opencode-with-claude / `@rynfar/meridian` stack
-(pinned in package.json), injected as an OpenCode plugin. This is the default
-mode when the bridge is enabled: flat Max-subscription quota. `accounts`
-optionally restricts which Claude accounts serve it. Per-account
-`CLAUDE_CONFIG_DIR` isolation pins the selected account.
+Accounts assigned to a person are available only to that person's runs and are
+preferred over the shared pool. Ownerless accounts serve shared and unattended
+runs. When an account reaches a provider limit, Open Session sidelines it and
+tries another eligible account before considering a model fallback.
 
-Other `bridge.mode` values exist as non-default escape hatches: `"native"`
-(the in-repo `src/server/anthropic-bridge.ts`, a loopback-only
-Anthropic-Messages endpoint on the official Claude Agent SDK — designated
-accounts only, bills to extra-usage credits; alongside the flag-gated
-experimental claude-direct engine adapter it is the last consumer of
-`@anthropic-ai/claude-agent-sdk`) and `"off"`.
+The UI writes these files with mode `0600`:
 
-### Claude accounts
+| File | Contents |
+| --- | --- |
+| `~/.opensession/claude-accounts.json` | Claude setup tokens and optional usage credentials |
+| `~/.opensession/codex-accounts.json` | ChatGPT sign-ins and OpenAI API keys |
+| `~/.opensession/model-providers.json` | Third-party provider keys, base URLs, picker models, and optional pool restrictions |
 
-`~/.opensession-claude-accounts.json` (override with
-`OPENSESSION_CLAUDE_ACCOUNTS_PATH`; written mode 0600). Shape
-(`src/server/claude-accounts.ts`):
+Legacy top-level counterparts such as `~/.opensession-claude-accounts.json`
+remain supported when the grouped path is absent. Run `opensession doctor`
+after setup to verify that the engine and the default model have usable
+capacity.
 
-```json
-{
-  "accounts": [
-    {
-      "id": "acc-…",
-      "name": "alice-max",
-      "token": "sk-ant-…",
-      "email": "optional",
-      "plan": "optional",
-      "createdAt": "ISO date",
-      "owner": "Alice",
-      "credentialsPath": "/home/user/.claude/accounts/alice/credentials.json"
-    }
-  ]
-}
-```
+## Defaults and fallbacks
 
-- **Minting a token**: run `claude setup-token` on a Max-subscription login;
-  paste the `sk-ant-…` value (whitespace from terminal wrapping is stripped).
-  Setup-tokens lack the `user:profile` scope, so usage polling 403s and the
-  account is marked `usageScope: "missing"`; point `credentialsPath` at a
-  full login-scoped credentials file to restore usage visibility (it's used
-  only for polling — runs still use `token`).
-- **Picking**: personal accounts (`owner` matched through the identity
-  table) are preferred for that user's runs; automations and everyone else
-  draw from owner-less pool accounts, least-utilized first. Accounts at ≥97%
-  of the 5-hour window are sidelined until reset. Sessions can pin an
-  `accountId`; automations can hard-pin (`accountStrict`) as a cost cap.
-  Each account gets an isolated `CLAUDE_CONFIG_DIR` for Meridian's SDK
-  subprocesses, so the selected account is the only reachable credential.
-- Fallback env vars: `OPENSESSION_FALLBACK_MODEL` (global fallback model when
-  a pool is exhausted; `none` disables), `OPENSESSION_FORCE_LIMIT=1`
-  (dev-only: fake a usage limit to exercise the fallback chain).
+**Settings → Providers** controls the default model and whether interactive
+runs switch models automatically. The selected default is stored in
+`~/.opensession/default-model.json`; without an override, `OPENSESSION_MODEL`
+is used, then `claude-fable-5`.
 
-## OpenAI models (ChatGPT OAuth)
+Interactive auto-fallback is on by default. Its preferred model comes from
+`OPENSESSION_FALLBACK_MODEL`, defaulting to `claude-opus-5`; set the variable to
+`none` to disable fallback. Environment changes require a service restart.
+Haiku-backed runs and derived one-shots instead cross providers to
+`gpt-5.6-luna` when the Claude pool is exhausted or unavailable. Override that
+with `OPENSESSION_HAIKU_FALLBACK_MODEL`, or set it to `none` to disable the
+Haiku-specific fallback.
+When the current model's whole account pool is unavailable, the runner tries
+configured fallback providers. Equal or stronger hops proceed automatically;
+an interactive downgrade asks first. A cross-provider hop starts a fresh Pi
+session seeded with a transcript handoff, while the worktree and UI transcript
+stay in place. Fallbacks caused by transient infrastructure errors apply only
+to that turn.
 
-`opencode/openai/*` models run on OpenCode's native ChatGPT OAuth using the
-codex-accounts pool — `~/.opensession-codex-accounts.json` (no env override;
-0600), managed by `src/server/codex-accounts.ts` and seeded into opencode by
-`src/server/opencode-openai-auth.ts` (access-token-only + poisoned refresh so
-the host `codex login` can never be invalidated):
+## Isolation and restarts
 
-```json
-{
-  "accounts": [
-    { "id": "…", "name": "key-1", "kind": "api_key", "value": "sk-…", "createdAt": "…" },
-    { "id": "…", "name": "plan-1", "kind": "home", "value": "/home/user/.codex-homes/plan-1", "createdAt": "…" }
-  ]
-}
-```
+On a Linux system-scope installation, eligible local turns normally run in
+transient run-host units launched by the independent executor. Those hosts
+receive a minimal environment, guarded filesystem access, and only the MCP
+servers allowed for the run. They survive a gateway service restart and are
+reattached when the service starts again. Sessions assigned to a Runner or
+sandbox use that environment's lifecycle instead.
 
-`kind: "api_key"` injects an OpenAI key; `kind: "home"` points at a
-`CODEX_HOME` directory containing `auth.json` from `CODEX_HOME=<dir> codex
-login` on a ChatGPT plan. Rotation is least-recently-picked with a cool-off
-on rate limits.
+The default rootless user service sets `OPENSESSION_PI_DETACH=0` and runs local
+turns inside the gateway process; macOS does the same. Those turns do not
+survive a service restart. A system-scope operator can also set
+`OPENSESSION_PI_DETACH=0` as a rollback for new local turns.
 
-## Third-party providers (API keys)
-
-Everything the OpenCode engine supports beyond the two subscription bridges —
-xAI, OpenRouter, Groq, Mistral, DeepSeek, Google, Cerebras, … — runs on a plain
-API key. There is no pool and no rotation: one key per provider.
-
-Configure them from **Settings → Model providers** in the UI. Add the provider
-by its OpenCode slug (`xai`, `openrouter`, …), paste the key, optionally set a
-`baseURL`, and list the model ids you want in the picker. Keys are stored
-server-side in `~/.opensession-opencode.json` (0600), returned only masked, and
-injected into the engine's config as `provider.<id>.options`. The file shape is
-the same if you would rather write it by hand:
-
-```json
-{
-  "enabled": true,
-  "providers": { "xai": { "apiKey": "xai-…" } },
-  "pickerModels": ["opencode/xai/grok-4"]
-}
-```
-
-`anthropic` and `openai` are rejected here — they run on the subscription
-bridges above, which always override this map.
-
-**The `enabled` flag applies even when you never touch Anthropic.** It gates
-`pickerModels`, so with the bridge config disabled a perfectly good xAI key
-gives you models that never appear in the picker — no error, just an empty
-list. Keep `"enabled": true` whatever provider you run on. (Onboarding writes
-it that way; older installs and hand-edited files are where this bites.)
-
-Providers you would rather not put in Open Session's config can instead use
-OpenCode's own auth — `opencode auth login`, stored in
-`~/.local/share/opencode/auth.json`; HOME is passed through to the engine, so
-the engine picks those credentials up directly. Nothing in the UI manages them,
-and their models still need a `pickerModels` entry to be offered (any opencode
-model id remains routable by typing it in).
-
-## Usage visibility & account health
-
-Pools only work if you can see them. Two mechanisms:
-
-**The Accounts page** (Settings → Accounts) shows every account in both pools
-with its live usage: the 5-hour and 7-day windows, plan, and extra-usage
-credit spend where enabled. For Claude accounts this polling needs a full
-login-scoped credential — a bare `claude setup-token` lacks the
-`user:profile` scope, so the account works for runs but shows "no usage
-scope" until you point its `credentialsPath` at a real login's
-credentials file (used for polling only, never for runs).
-
-**The account-health monitor** (config `integrations.accountHealth:
-{ notifyUser, slackChannel }`, needs the Slack integration) sweeps both
-pools hourly and DMs whoever can fix a problem — the `owner` of a personal
-Claude account, `notifyUser` for shared and Codex accounts. It catches the
-failure mode where credentials rot silently on the shelf: unreadable or
-expired Claude credential files, revoked setup-tokens, refresh tokens
-within a week of expiry, and Codex ChatGPT tokens expired or about to be
-(they only refresh when a turn actually runs, so an idle account decays).
-A standing issue re-alerts daily and clears silently once fixed; transient
-poller noise is never alerted.
-
-## Model routing
-
-`src/server/models.ts`:
-
-- **Default model**: UI override file `~/.opensession-default-model.json`
-  (`{ "model": "<id>" | null }`) → `OPENSESSION_MODEL` env → `claude-fable-5`.
-- **Fallback auto-switch**: `~/.opensession-model-fallback.json`
-  (`{ "auto": boolean }`, default true) — whether interactive sessions
-  auto-fall-back when their model's pool is exhausted. The built-in fallback
-  order: gpt-5.6-sol → gpt-5.6-terra → gpt-5.6-luna → claude-opus-5 →
-  claude-sonnet-5 → claude-sonnet-4-6 → claude-haiku-4-5 (a session's
-  configured `preferredFallbackModel` is tried first). Every fallback is
-  mapped onto opencode too.
-- **Cheap-task models**: several features run small classifier prompts on
-  haiku by default via `opencodeOneShot`, each overridable by env where it's
-  read: `SUGGEST_BRANCH_MODEL`, `NOTE_EDIT_MODEL`, `SCHEDULE_WHEN_MODEL`,
-  `DRAFT_AUTOMATION_MODEL`, `SLACK_MENTION_INTENT_MODEL`,
-  `PLAIN_SPAM_CHECK_MODEL`, `PLAIN_REFUND_INTENT_MODEL` (all default
-  `claude-haiku-4-5`; native ids map onto opencode at dispatch), plus
-  `OPENSESSION_ONESHOT_MODEL` as the one-shot default.
-
-## Run gate + least privilege
-
-The engine is deny-by-default on run kind (`opencodeGateReason`):
-interactive kinds (`prompt`, `goal`, `create`, `linear`, `slack`,
-`workflow`) and unattended kinds (`automation`, `plain`, `action`,
-`security-scan`, `github-*`) are allowed; anything else — including runs
-with no journal kind — is refused. Denied and confirm-listed tools are
-STRIPPED from the model's tool list via OpenCode's `tools` config
-(`opencodeRunPolicy`) — there is no per-call approval card on this engine,
-so a confirm tool is never callable; the run's guidance differs by type
-(unattended runs are told to post the proposed action in their internal
-note, interactive runs to ask the human in the session). The rest of the
-MCP server stays mounted, so reads keep working.
+After changing service environment or gateway/runner code, use
+`opensession restart`, which selects the installed service scope. See
+[service setup](install.md#9-running-it-as-a-service), the
+[restart guidance](install.md#10-frontend-rebuilds-vs-restart), and the
+[executor architecture](../executor-architecture.md).

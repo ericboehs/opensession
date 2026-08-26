@@ -1,0 +1,10 @@
+# One public origin for signed webhooks, remote Sandbox callbacks and workload
+# identity. The local gateway owns the exact method/path allowlist and returns
+# 404 for everything else. Never proxy this hostname to the private app on 3850.
+ingress.example.com {
+    # BEGIN OPENSESSION SANDBOX INGRESS
+    handle {
+        reverse_proxy 127.0.0.1:3860
+    }
+    # END OPENSESSION SANDBOX INGRESS
+}

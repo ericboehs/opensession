@@ -2,6 +2,7 @@
   "name": "opensession",
   "version": "0.1.0",
   "private": true,
+  "packageManager": "bun@1.4.0",
   "description": "Open Session — self-hosted agent session dashboard: run, watch, and steer AI coding sessions from the web UI, Slack, and native clients",
   "license": "MIT",
   "repository": {
@@ -9,45 +10,54 @@
     "url": "git+https://github.com/tellahq/opensession.git"
   },
   "homepage": "https://opensession.com",
-  "workspaces": ["packages/*"],
+  "workspaces": [
+    "packages/clients/website",
+    "packages/core/opensession-server",
+    "packages/core/protocol"
+  ],
   "bin": {
     "opensession": "scripts/cli.ts"
   },
   "scripts": {
     "app:dev": "bun scripts/app-dev.ts",
     "bench:memory": "bun scripts/memory-bench.ts",
-    "dev": "bun --hot opensession.ts",
+    "dev": "bun --hot packages/core/opensession-server/opensession.ts",
     "opensession": "bun scripts/cli.ts",
     "setup": "bun scripts/cli.ts onboard",
-    "start": "bun opensession.ts",
-    "test": "bun test",
+    "start": "bun packages/core/opensession-server/opensession.ts",
+    "test": "bun test packages/core/opensession-server/src scripts",
+    "test:snapshots": "OPENSESSION_SNAPSHOT_STRICT=1 bun test packages/core/opensession-server/src/server/zz-snapshot-runs.test.ts",
+    "lint": "bun run check:compiler && oxlint packages/core/opensession-server/src/frontend",
+    "check:compiler": "bun scripts/check-react-compiler.ts",
     "typecheck": "tsc --noEmit",
-    "website:build": "bun scripts/build-website.ts",
-    "website:dev": "bun --hot scripts/website-dev.ts"
+    "website:build": "bun --cwd packages/clients/website build",
+    "website:dev": "bun --cwd packages/clients/website dev"
+  },
+  "patchedDependencies": {
+    "@base-ui/react@1.6.0": "patches/@base-ui%2Freact@1.6.0.patch",
+    "@pierre/trees@1.0.0-beta.4": "patches/@pierre%2Ftrees@1.0.0-beta.4.patch"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.2.104",
     "@aws-sdk/client-lambda-microvms": "3.1090.0",
     "@base-ui/react": "^1.6.0",
-    "@codemirror/autocomplete": "^6.20.3",
-    "@codemirror/commands": "^6.10.4",
-    "@codemirror/lang-markdown": "^6.5.0",
-    "@codemirror/language": "^6.12.4",
-    "@codemirror/state": "^6.7.0",
-    "@codemirror/view": "^6.43.4",
-    "@daytonaio/sdk": "0.194.0",
-    "@earendil-works/pi-coding-agent": "^0.83.0",
+    "@daytonaio/sdk": "0.201.0",
+    "@earendil-works/pi-ai": "0.84.3",
+    "@earendil-works/pi-coding-agent": "^0.84.3",
+    "@lezer/common": "^1.5.2",
     "@lezer/highlight": "^1.2.3",
-    "@modelcontextprotocol/sdk": "^1.29.0",
-    "@opencode-ai/sdk": "^1.17.15",
+    "@lezer/rust": "^1.0.2",
+    "@modelcontextprotocol/sdk": "^1.30.0",
     "@pierre/diffs": "1.3.2",
     "@pierre/trees": "^1.0.0-beta.4",
-    "@rynfar/meridian": "1.51.0",
-    "@rynfar/meridian-plugin-opencode-scrub": "0.2.0",
+    "@rynfar/meridian": "1.62.5",
+    "@rynfar/meridian-source": "github:rynfar/meridian#948a10a96014ada0649fb771ee799f1196194a48",
+    "@shadcn/react": "^0.3.0",
     "@shikijs/langs": "3.23.0",
     "@shikijs/themes": "3.23.0",
     "@team-plain/typescript-sdk": "^5.12.1",
     "@tellahq/opensession-protocol": "workspace:*",
+    "@tellahq/opensession-server": "workspace:*",
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/xterm": "^6.0.0",
     "clsx": "^2.1.1",
@@ -58,15 +68,14 @@
     "mermaid": "^11.16.1",
     "modal": "0.9.0",
     "motion": "^12.42.2",
-    "opencode-with-claude": "1.6.18",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
+    "sharp": "0.35.4",
     "shiki": "3.23.0",
+    "swr": "^2.3.6",
     "tailwind-merge": "^3.6.0",
+    "typescript": "^5.7.0",
     "web-push": "^3.6.7",
-    "y-codemirror.next": "^0.3.5",
-    "y-protocols": "^1.0.7",
-    "yjs": "^13.6.31",
     "zod": "^4.3.6"
   },
   "devDependencies": {
@@ -76,10 +85,8 @@
     "@types/react-dom": "^19.0.0",
     "@types/web-push": "^3.6.4",
     "agentation": "^3.0.2",
-    "tailwindcss": "^4.3.2",
-    "typescript": "^5.7.0"
-  },
-  "patchedDependencies": {
-    "@rynfar/meridian@1.51.0": "patches/@rynfar%2Fmeridian@1.51.0.patch"
+    "oxc-transform-react": "^0.147.0",
+    "oxlint": "^1.80.0",
+    "tailwindcss": "^4.3.2"
   }
 }

@@ -1,7 +1,7 @@
 {
   "id": "github-pr-review",
   "label": "GitHub PR review",
-  "description": "Reviews every opened/updated pull request and posts findings as a PR review.",
+  "description": "Reviews every pull request and posts its findings.",
   "requires": [
     "github"
   ],
