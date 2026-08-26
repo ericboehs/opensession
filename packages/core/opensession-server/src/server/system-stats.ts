@@ -15,6 +15,78 @@
 import { readFileSync, readdirSync, statfsSync } from "node:fs";
 import { cpus, loadavg } from "node:os";
 
+// ── Gateway event-loop lag ──────────────────────────────────────────────────
+// The session-performance contract measures only the CLIENT (docs/
+// session-performance.md); the server had no equivalent, so gateway loop
+// saturation was only discoverable as unexplained global latency. A 100 ms
+// heartbeat records how late each tick fires; the delta over the expected
+// interval is time the loop spent blocked (synchronous SQLite, big JSON,
+// WS fanout). Parked on globalThis (hot-reload safe), armed only from boot
+// via startEventLoopLagMonitor — never at import (AGENTS.md invariant).
+const LAG_TICK_MS = 100;
+const LAG_WINDOW = 600; // ring buffer ≈ last minute
+
+type LoopLagState = {
+	timer?: ReturnType<typeof setInterval>;
+	lastTick: number;
+	ring: Float64Array;
+	ringNext: number;
+	ringFilled: number;
+	/** Cumulative ticks whose lag exceeded 100 ms since boot. */
+	stalls100: number;
+	/** Worst single lag since boot, ms. */
+	worstMs: number;
+};
+
+const lagGlobal = globalThis as typeof globalThis & {
+	__osLoopLag?: LoopLagState;
+};
+
+/** Idempotent; called once from opensession.ts boot. Timer is unref'd so it
+ *  never keeps the process alive. */
+export function startEventLoopLagMonitor(): void {
+	if (lagGlobal.__osLoopLag?.timer) return;
+	const state: LoopLagState = lagGlobal.__osLoopLag ?? {
+		lastTick: performance.now(),
+		ring: new Float64Array(LAG_WINDOW),
+		ringNext: 0,
+		ringFilled: 0,
+		stalls100: 0,
+		worstMs: 0,
+	};
+	lagGlobal.__osLoopLag = state;
+	state.lastTick = performance.now();
+	state.timer = setInterval(() => {
+		const now = performance.now();
+		const lag = Math.max(0, now - state.lastTick - LAG_TICK_MS);
+		state.lastTick = now;
+		state.ring[state.ringNext] = lag;
+		state.ringNext = (state.ringNext + 1) % LAG_WINDOW;
+		if (state.ringFilled < LAG_WINDOW) state.ringFilled++;
+		if (lag > 100) state.stalls100++;
+		if (lag > state.worstMs) state.worstMs = lag;
+	}, LAG_TICK_MS);
+	state.timer.unref?.();
+}
+
+function eventLoopSnapshot(): Record<string, unknown> | null {
+	const state = lagGlobal.__osLoopLag;
+	if (!state || state.ringFilled === 0) return null;
+	const samples = Array.from(state.ring.subarray(0, state.ringFilled)).sort(
+		(a, b) => a - b,
+	);
+	const pick = (p: number) =>
+		samples[Math.min(samples.length - 1, Math.floor(p * samples.length))];
+	return {
+		windowSeconds: Math.round((state.ringFilled * LAG_TICK_MS) / 1000),
+		lagP50Ms: +pick(0.5).toFixed(2),
+		lagP95Ms: +pick(0.95).toFixed(2),
+		lagMaxMs: +samples[samples.length - 1].toFixed(2),
+		stallsOver100MsSinceBoot: state.stalls100,
+		worstMsSinceBoot: +state.worstMs.toFixed(2),
+	};
+}
+
 /** Host metrics for /api/health and the `read_host_metrics` tool. The
  *  health-monitor automation reads these numbers through the tool: it runs
  *  unattended in ask mode, which has no shell on either engine, and it cannot
@@ -47,6 +119,7 @@ export function systemStats(): Record<string, unknown> {
 				swapUsedGb: +(((mem.SwapTotal || 0) - (mem.SwapFree || 0)) / 1e9).toFixed(2),
 			},
 			load: { "1m": load1, "5m": load5, "15m": load15, cores: cpus().length },
+			eventLoop: eventLoopSnapshot(),
 			processes: processCensus(),
 			cgroups: cgroupCensus(),
 		};

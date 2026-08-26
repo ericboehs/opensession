@@ -170,6 +170,27 @@ function runHostsEnabled(): boolean {
   return localRunHostsSupported() && !existsSync(DISABLE_FILE);
 }
 
+// ── Bounded spawn-failure fallback ─────────────────────────────────────────
+// When run hosts are the configured path, an in-process fallback is meant to
+// save the occasional run from a transient launch hiccup. At fleet scale it
+// inverts: exactly when the executor is unhealthy, every launch would migrate
+// its engine INTO the gateway process, multiplying gateway memory/CPU at the
+// worst possible moment. Cap concurrent fallback runs; beyond the cap the
+// launch fails visibly (lastRunError + queue restore) instead of silently
+// overloading the process every other session depends on. Platforms without
+// run hosts are exempt — there, in-process is the normal path, not a fallback.
+const MAX_IN_PROCESS_FALLBACK_RUNS = (() => {
+  const raw = Number(process.env.OPENSESSION_MAX_INPROCESS_FALLBACKS ?? 8);
+  return Number.isInteger(raw) && raw >= 1 ? raw : 8;
+})();
+const activeInProcessFallbackRuns: Set<string> = ((globalThis as any)
+  .__activeInProcessFallbackRuns ??= new Set());
+
+/** Exported for tests. */
+export function inProcessFallbackSaturated(): boolean {
+  return activeInProcessFallbackRuns.size >= MAX_IN_PROCESS_FALLBACK_RUNS;
+}
+
 /** Options for a hosted run: RunAgentOpts minus the non-serializable bits,
  *  plus the host/session context. */
 export interface HostedRunOpts {
@@ -260,7 +281,40 @@ export async function* runAgentHosted(opts: HostedRunOpts): AsyncGenerator<Strea
       }
       return;
     }
+    // Spawn-failure fallback: bounded so a sick executor degrades launches
+    // instead of migrating the whole fleet's engines into the gateway.
+    if (inProcessFallbackSaturated()) {
+      audit({
+        msg: "in_process_fallback_rejected",
+        session_id: opts.osSessionId,
+        active: activeInProcessFallbackRuns.size,
+        limit: MAX_IN_PROCESS_FALLBACK_RUNS,
+      });
+      throw new Error(
+        `Run host launch failed and ${activeInProcessFallbackRuns.size} in-process fallback runs are already active (limit ${MAX_IN_PROCESS_FALLBACK_RUNS}). Not absorbing this run into the gateway; retry when run hosts recover.`,
+      );
+    }
+    const fallbackKey = `${opts.osSessionId}:${crypto.randomUUID()}`;
+    activeInProcessFallbackRuns.add(fallbackKey);
+    audit({
+      msg: "in_process_fallback_started",
+      session_id: opts.osSessionId,
+      active: activeInProcessFallbackRuns.size,
+      limit: MAX_IN_PROCESS_FALLBACK_RUNS,
+    });
+    try {
+      yield* runAgentInProcess(opts);
+    } finally {
+      activeInProcessFallbackRuns.delete(fallbackKey);
+    }
+    return;
   }
+  yield* runAgentInProcess(opts);
+}
+
+/** The shared in-process execution tail: the normal path on platforms without
+ *  run hosts, and the (bounded) fallback when a host spawn fails. */
+async function* runAgentInProcess(opts: HostedRunOpts): AsyncGenerator<StreamEvent> {
   yield* runAgent({
     prompt: opts.prompt,
     promptEntryId: opts.promptEntryId,

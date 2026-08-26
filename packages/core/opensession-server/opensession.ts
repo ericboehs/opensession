@@ -46,6 +46,7 @@ import {
 } from "./src/server/github-auth";
 import { startGoalTicker } from "./src/server/goal-runner";
 import { startSessionIndexSweeper } from "./src/server/session-index";
+import { startEventLoopLagMonitor } from "./src/server/system-stats";
 import { ensureWarmTemplateScheduler } from "./src/server/warm-template";
 import { handleRunnerWsUpgrade } from "./src/server/runner-ws";
 import { handleSandboxPortalRelayUpgrade } from "./src/server/sandbox-portal-relay";
@@ -738,6 +739,11 @@ if (!g.__opensessionBooted) {
 
 	// Distil finished sessions into the search index (session-index.ts).
 	startSessionIndexSweeper();
+
+	// Gateway event-loop lag telemetry for /api/health and the health MCP tool
+	// (system-stats.ts). The session-performance contract only measures the
+	// client; this is the server-side counterpart.
+	startEventLoopLagMonitor();
 
 	// Re-try sidebar titles whose one-shot died in flight (a restart, or an
 	// engine-spawn outage) — without this they stay raw forever.
