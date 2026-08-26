@@ -268,7 +268,7 @@ const PROCESS_OWNER_ID = (ownerGlobal.__opensessionSessionKernelOwnerId ??=
 		bootId: linuxBootId(),
 		start: linuxProcessStart(process.pid),
 	} satisfies ProcessOwnerIdentity));
-export const SESSION_KERNEL_SCHEMA_VERSION = 30;
+export const SESSION_KERNEL_SCHEMA_VERSION = 31;
 export const SESSION_KERNEL_MAX_AGENT_HOST_SUPERVISION_RECEIPTS = 64;
 export const SESSION_KERNEL_MAX_CREATION_EFFECT_RECEIPTS = 256;
 export const SESSION_KERNEL_MAX_OPENING_PLAN_BYTES = 16 * 1024 * 1024;
@@ -862,6 +862,28 @@ function migrateAgentOperationSchema28(
   tx.immediate();
 }
 
+function migrateTranscriptAuthoritySchema31(
+  db: Database,
+  schemaVersion: number,
+): void {
+  if (schemaVersion >= 31) return;
+  const tx = db.transaction(() => {
+    db.exec(`
+      ALTER TABLE session_kernel_placements
+        ADD COLUMN transcript_authority TEXT NOT NULL DEFAULT 'shared'
+        CHECK (transcript_authority IN ('shared', 'actor'));
+      ALTER TABLE session_kernel_placements
+        ADD COLUMN transcript_migration_receipt TEXT;
+      ALTER TABLE session_kernel_placements
+        ADD COLUMN transcript_published_at INTEGER;
+      CREATE INDEX idx_skp_transcript_authority
+        ON session_kernel_placements(transcript_authority, session_id);
+      PRAGMA user_version = 31;
+    `);
+  });
+  tx.immediate();
+}
+
 function migrateAgentHostSupervisionSchema27(
   db: Database,
   schemaVersion: number,
@@ -1092,6 +1114,9 @@ const SESSION_KERNEL_SESSION_TABLES = [
 export type DurableSessionPlacement = {
 	sessionId: string;
 	placement: "isolated";
+  transcriptAuthority: "shared" | "actor";
+  transcriptMigrationReceipt?: string;
+  transcriptPublishedAt?: number;
 	needsScan: boolean;
 	nextTimerAt?: number;
 	nextOutboxAt?: number;
@@ -1587,6 +1612,7 @@ export class SessionKernelStore {
     migrateAgentOperationSchema28(this.db, schemaVersion);
     migrateSparseProjectionSchema29(this.db, schemaVersion);
     migrateQuarantineProjectionSchema30(this.db, schemaVersion);
+    migrateTranscriptAuthoritySchema31(this.db, schemaVersion);
     assertAgentOperationSchema28(this.db);
     assertAgentOperationRows28(this.db);
 		if (path !== ":memory:") {
@@ -6006,11 +6032,16 @@ export class SessionKernelStore {
 
 	sessionPlacement(sessionId: string): DurableSessionPlacement | undefined {
 		const row = this.db.query(`
-			SELECT session_id, placement, needs_scan, next_timer_at, next_outbox_at, updated_at
+			SELECT session_id, placement, transcript_authority,
+                   transcript_migration_receipt, transcript_published_at,
+                   needs_scan, next_timer_at, next_outbox_at, updated_at
 			FROM session_kernel_placements WHERE session_id = ?
 		`).get(sessionId) as {
 			session_id: string;
 			placement: "isolated";
+      transcript_authority: "shared" | "actor";
+      transcript_migration_receipt: string | null;
+      transcript_published_at: number | null;
 			needs_scan: number;
 			next_timer_at: number | null;
 			next_outbox_at: number | null;
@@ -6020,6 +6051,13 @@ export class SessionKernelStore {
 		return {
 			sessionId: row.session_id,
 			placement: row.placement,
+      transcriptAuthority: row.transcript_authority,
+      ...(row.transcript_migration_receipt === null
+        ? {}
+        : { transcriptMigrationReceipt: row.transcript_migration_receipt }),
+      ...(row.transcript_published_at === null
+        ? {}
+        : { transcriptPublishedAt: Number(row.transcript_published_at) }),
 			needsScan: row.needs_scan === 1,
 			...(row.next_timer_at === null ? {} : { nextTimerAt: Number(row.next_timer_at) }),
 			...(row.next_outbox_at === null ? {} : { nextOutboxAt: Number(row.next_outbox_at) }),
@@ -6040,13 +6078,65 @@ export class SessionKernelStore {
 			.filter(Boolean);
 	}
 
+  actorTranscriptSessionIds(
+    limit = 100,
+    afterSessionId = "",
+  ): string[] {
+    return (this.db.query(`
+      SELECT session_id FROM session_kernel_placements
+      WHERE placement = 'isolated'
+        AND transcript_authority = 'actor'
+        AND session_id > ?
+      ORDER BY session_id LIMIT ?
+    `).all(afterSessionId, Math.max(1, limit)) as Array<{ session_id: string }>)
+      .map((row) => row.session_id);
+  }
+
+  publishActorTranscriptAuthority(
+    sessionId: string,
+    migrationReceipt: string,
+  ): DurableSessionPlacement {
+    if (!migrationReceipt || Buffer.byteLength(migrationReceipt) > 16 * 1024)
+      throw new Error("Invalid transcript migration receipt");
+    const existing = this.sessionPlacement(sessionId);
+    if (!existing) throw new Error(`Session ${sessionId} has no isolated placement`);
+    if (existing.transcriptAuthority === "actor") {
+      if (existing.transcriptMigrationReceipt !== migrationReceipt)
+        throw new Error(`Session ${sessionId} transcript authority receipt conflict`);
+      return existing;
+    }
+    const result = this.db.run(`
+      UPDATE session_kernel_placements
+      SET transcript_authority = 'actor', transcript_migration_receipt = ?,
+          transcript_published_at = ?, needs_scan = 1, updated_at = ?
+      WHERE session_id = ? AND placement = 'isolated'
+        AND transcript_authority = 'shared'
+    `, [migrationReceipt, Date.now(), Date.now(), sessionId]);
+    if (result.changes !== 1)
+      throw new Error(`Session ${sessionId} transcript authority publication raced`);
+    return this.sessionPlacement(sessionId)!;
+  }
+
+  rollbackActorTranscriptAuthority(sessionId: string): DurableSessionPlacement {
+    const result = this.db.run(`
+      UPDATE session_kernel_placements
+      SET transcript_authority = 'shared', transcript_published_at = NULL,
+          needs_scan = 1, updated_at = ?
+      WHERE session_id = ? AND placement = 'isolated'
+        AND transcript_authority = 'actor'
+    `, [Date.now(), sessionId]);
+    if (result.changes !== 1)
+      throw new Error(`Session ${sessionId} has no actor transcript authority`);
+    return this.sessionPlacement(sessionId)!;
+  }
+
 	claimIsolatedSession(sessionId: string): DurableSessionPlacement {
 		if (this.hasSessionDurableState(sessionId))
 			throw new Error(`Session ${sessionId} already has central kernel state`);
 		this.db.run(`
 			INSERT INTO session_kernel_placements
-				(session_id, placement, needs_scan, updated_at)
-			VALUES (?, 'isolated', 1, ?)
+				(session_id, placement, transcript_authority, needs_scan, updated_at)
+			VALUES (?, 'isolated', 'actor', 1, ?)
 			ON CONFLICT(session_id) DO NOTHING
 		`, [sessionId, Date.now()]);
 		const placement = this.sessionPlacement(sessionId);

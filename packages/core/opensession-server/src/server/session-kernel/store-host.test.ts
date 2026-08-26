@@ -47,6 +47,7 @@ describe("per-session session kernel storage", () => {
     expect(host.central.hasSessionDurableState("new-session")).toBe(false);
     expect(host.central.sessionPlacement("new-session")).toMatchObject({
       placement: "isolated",
+      transcriptAuthority: "actor",
       needsScan: true,
     });
     expect(host.storeForSession("new-session").runState("new-session")).toMatchObject({
@@ -118,6 +119,7 @@ describe("per-session session kernel storage", () => {
     expect(host.migrateLegacySessions(1)).toBe(1);
     expect(host.central.sessionPlacement(sessionId)).toMatchObject({
       placement: "isolated",
+      transcriptAuthority: "shared",
       needsScan: true,
     });
     expect(host.central.hasSessionDurableState(sessionId)).toBe(false);
@@ -138,6 +140,39 @@ describe("per-session session kernel storage", () => {
     expect(reopened.storeForSession(sessionId).runState(sessionId).state).toBe("running");
     expect(reopened.central.hasSessionDurableState(sessionId)).toBe(false);
     reopened.close();
+  });
+
+  test("publishes transcript authority last with an immutable migration receipt", () => {
+    const path = paths();
+    const sessionId = "transcript-cutover";
+    const seed = new SessionKernelStore(path.central);
+    seed.setRunState({ sessionId, state: "idle", event: "seed" });
+    seed.close();
+
+    const host = new SessionKernelStoreHost(path.central, path.isolated);
+    expect(host.migrateLegacySessions(1)).toBe(1);
+    expect(host.central.sessionPlacement(sessionId)?.transcriptAuthority).toBe("shared");
+
+    const published = host.central.publishActorTranscriptAuthority(
+      sessionId,
+      "sha256:verified-target",
+    );
+    expect(published).toMatchObject({
+      transcriptAuthority: "actor",
+      transcriptMigrationReceipt: "sha256:verified-target",
+    });
+    expect(host.central.actorTranscriptSessionIds()).toEqual([sessionId]);
+    expect(() => host.central.publishActorTranscriptAuthority(
+      sessionId,
+      "sha256:other-target",
+    )).toThrow("receipt conflict");
+
+    expect(host.central.rollbackActorTranscriptAuthority(sessionId)).toMatchObject({
+      transcriptAuthority: "shared",
+      transcriptMigrationReceipt: "sha256:verified-target",
+    });
+    expect(host.central.actorTranscriptSessionIds()).toEqual([]);
+    host.close();
   });
 
   test("quarantines one unreadable session database without blocking global stats", () => {
