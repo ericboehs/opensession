@@ -196,7 +196,7 @@ describe("fake-engine session runs (consumer loop end-to-end)", () => {
 	// that centralization only runSessionPromptInner wrote it, and a resumed
 	// run's death left the conversation ending mid-turn with no explanation
 	// (bks-019fb757, 2026-07-31).
-	test("failed opening run: the failure lands in the transcript before an engine session exists", () => {
+	test("failed opening run: the failure lands in the transcript before an engine session exists", async () => {
 		if (!redirected) return;
 		// The store is a globalThis singleton — if an earlier suite file opened
 		// it against the real sessions dir, skip rather than write to it.
@@ -207,7 +207,7 @@ describe("fake-engine session runs (consumer loop end-to-end)", () => {
 		writeSessionFile(sid);
 		sessionCache.invalidateSessionsCache();
 
-		sessionCache.recordRunOutcome(sid, "boom: unrecoverable test failure");
+		await sessionCache.recordRunOutcome(sid, "boom: unrecoverable test failure");
 
 		const chip = store
 			.readTail(sid, 50)
@@ -215,7 +215,7 @@ describe("fake-engine session runs (consumer loop end-to-end)", () => {
 		expect(chip?.content).toBe("Run failed: boom: unrecoverable test failure");
 	});
 
-	test("usage-limit stop is worded as a stop, and a runner-written notice wins", () => {
+	test("usage-limit stop is worded as a stop, and a runner-written notice wins", async () => {
 		if (!redirected) return;
 		const store = transcriptStoreMod.transcriptStore();
 		if (!store.dbPath.startsWith(tmp)) return;
@@ -226,13 +226,13 @@ describe("fake-engine session runs (consumer loop end-to-end)", () => {
 		sessionCache.invalidateSessionsCache();
 		ocTranscript.recordEngineSessionOwner(engineId, sid);
 
-		sessionCache.recordRunOutcome(sid, "Usage limit reached on every account", {
+		await sessionCache.recordRunOutcome(sid, "Usage limit reached on every account", {
 			engineSessionId: engineId,
 			noticeLabel: "Run stopped",
 		});
 		// noticePersisted: the runner already wrote its own friendlier line, so
 		// this must not add a second one.
-		sessionCache.recordRunOutcome(sid, "timed out after 60m", {
+		await sessionCache.recordRunOutcome(sid, "timed out after 60m", {
 			engineSessionId: engineId,
 			noticePersisted: true,
 		});
@@ -246,7 +246,7 @@ describe("fake-engine session runs (consumer loop end-to-end)", () => {
 		);
 	});
 
-	test("a recovered Pi run falls back to the Pi transcript for its failure chip", () => {
+	test("a recovered Pi run falls back to the Pi transcript for its failure chip", async () => {
 		if (!redirected) return;
 		const store = transcriptStoreMod.transcriptStore();
 		if (!store.dbPath.startsWith(tmp)) return;
@@ -263,7 +263,7 @@ describe("fake-engine session runs (consumer loop end-to-end)", () => {
 
 		// Boot recovery failures do not always carry a terminal event session id.
 		// recordRunOutcome must resolve the active engine slot from the session.
-		sessionCache.recordRunOutcome(
+		await sessionCache.recordRunOutcome(
 			sid,
 			"Restart recovery stopped unexpectedly. Send the prompt again to continue.",
 		);

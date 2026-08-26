@@ -478,7 +478,7 @@ async function spawnHostRun(
   try {
     // Persist before launch. If opensession restarts between systemd-run and
     // socket attachment, the boot sweep can still find the surviving host.
-    journalSet(hostedRunRecord(spec));
+    await journalSet(hostedRunRecord(spec));
     try {
       await launchHostUnit(hostId, dir);
     } catch (error) {
@@ -1512,7 +1512,7 @@ export async function resumeLocalHostRun(
     if (recovery.kind === "uncertain") return "uncertain";
     if (recovery.kind === "resume") {
       run.claudeSessionId = recovery.engineSessionId;
-      journalSet({ ...run, claimedAt: undefined });
+      await journalSet({ ...run, claimedAt: undefined });
     }
     return null;
   }
@@ -1546,7 +1546,7 @@ export async function resumeLocalHostRun(
     if (recovery.kind === "uncertain") return "uncertain";
     if (recovery.kind === "resume") {
       run.claudeSessionId = recovery.engineSessionId;
-      journalSet({ ...run, claimedAt: undefined });
+      await journalSet({ ...run, claimedAt: undefined });
     }
     return null;
   }
@@ -1584,7 +1584,7 @@ export async function resumeLocalHostRun(
     if (recovery.kind === "uncertain") return "uncertain";
     if (recovery.kind === "resume") {
       run.claudeSessionId = recovery.engineSessionId;
-      journalSet({ ...run, claimedAt: undefined });
+      await journalSet({ ...run, claimedAt: undefined });
     }
     return null;
   }
@@ -1606,7 +1606,7 @@ export async function resumeLocalHostRun(
           if (shouldPersistModelSwitch(event)) run.selectedModel = event.toModel;
           changed = true;
         }
-        if (changed) journalSet({ ...run, claimedAt: undefined });
+        if (changed) await journalSet({ ...run, claimedAt: undefined });
         yield event;
       }
     } finally {

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test";
-import { mkdtempSync, readFileSync, rmSync } from "fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import * as mod from "./run-journal";
@@ -39,6 +39,75 @@ afterEach(() => {
 });
 
 describe("run journal", () => {
+	it("awaits run registration before journal admission completes", async () => {
+		const gate = Promise.withResolvers<void>();
+		const started = Promise.withResolvers<void>();
+		const events: string[] = [];
+		const registration = mod.journalSet(
+			{
+				runKey: "awaited-registration",
+				osSessionId: "awaited-registration-session",
+				cwd: "/tmp",
+				startedAt: new Date().toISOString(),
+			},
+			async (_sessionId, event) => {
+				events.push(event);
+				started.resolve();
+				await gate.promise;
+			},
+		);
+		let completed = false;
+		void registration.then(() => {
+			completed = true;
+		});
+		await started.promise;
+		expect(completed).toBe(false);
+		expect(events).toEqual(["run_registered"]);
+		gate.resolve();
+		await registration;
+		expect(completed).toBe(true);
+	});
+
+	it("does not hand out boot records before transition settlement", async () => {
+		const record: mod.ActiveRunRecord = {
+			runKey: "awaited-boot-transition",
+			osSessionId: "awaited-boot-session",
+			cwd: "/tmp",
+			startedAt: new Date().toISOString(),
+		};
+		writeFileSync(
+			join(dir, "active-runs.json"),
+			JSON.stringify({ [record.runKey]: record }),
+		);
+		const gate = Promise.withResolvers<void>();
+		const taking = mod.takeInterruptedRuns([], () => true, async () => {
+			await gate.promise;
+		});
+		let completed = false;
+		void taking.then(() => {
+			completed = true;
+		});
+		await Promise.resolve();
+		expect(completed).toBe(false);
+		gate.resolve();
+		expect(await taking).toEqual([record]);
+
+		const rejected: mod.ActiveRunRecord = {
+			...record,
+			runKey: "rejected-boot-transition",
+			osSessionId: "rejected-boot-session",
+		};
+		writeFileSync(
+			join(dir, "active-runs.json"),
+			JSON.stringify({ [rejected.runKey]: rejected }),
+		);
+		await expect(mod.takeInterruptedRuns([], () => true, async () => {
+			throw new Error("boot transition rejected");
+		})).rejects.toThrow("boot transition rejected");
+		expect(mod.activeRunRecords()).toContainEqual(
+			expect.objectContaining({ runKey: rejected.runKey }),
+		);
+	});
 	it("keeps interrupted and reattaching sessions busy until recovery settles", async () => {
 		const sessionId = `recovery-${crypto.randomUUID()}`;
 		try {
@@ -57,7 +126,7 @@ describe("run journal", () => {
 		const sessionId = `exhausted-${crypto.randomUUID()}`;
 		const runKey = `run-${crypto.randomUUID()}`;
 		const startedAt = new Date().toISOString();
-		mod.journalSet({
+		await mod.journalSet({
 			runKey,
 			osSessionId: sessionId,
 			claudeSessionId: `engine-${crypto.randomUUID()}`,
@@ -96,7 +165,7 @@ describe("run journal", () => {
 		const sessionId = `github-review-${crypto.randomUUID()}`;
 		const runKey = `rh-${crypto.randomUUID()}`;
 		try {
-			mod.journalSet({
+			await mod.journalSet({
 				runKey,
 				hostId: runKey,
 				osSessionId: sessionId,
@@ -121,7 +190,7 @@ describe("run journal", () => {
 		const sessionId = `queued-recovery-${crypto.randomUUID()}`;
 		const runKey = `run-${crypto.randomUUID()}`;
 		try {
-			mod.journalSet({
+			await mod.journalSet({
 				runKey,
 				osSessionId: sessionId,
 				claudeSessionId: `engine-${crypto.randomUUID()}`,
@@ -174,8 +243,8 @@ describe("run journal", () => {
       // latch before the detached control reconnects.
       expect(await agent.reissueDurableRecoveryCancel(recovery)).toBe(false);
       expect(agent.isAgentSessionCancelled(sessionId, runKey)).toBe(true);
-      mod.journalSet(recovery);
-      mod.journalRecordAbnormalCompletion(recovery);
+      await mod.journalSet(recovery);
+      await mod.journalRecordAbnormalCompletion(recovery);
       expect(mod.activeRunRecords().some((run) => run.runKey === runKey)).toBe(
         false,
       );
@@ -214,8 +283,8 @@ describe("run journal", () => {
         cancelId: `stop:${runKey}`,
         runGeneration: generation,
       })).toBe("execute");
-      mod.journalSet(record);
-      mod.journalRecordAbnormalCompletion(record);
+      await mod.journalSet(record);
+      await mod.journalRecordAbnormalCompletion(record);
       expect(mod.activeRunRecords().some((run) => run.runKey === runKey)).toBe(true);
       store.settleTurnCancel({
         sessionId,
@@ -261,8 +330,8 @@ describe("run journal", () => {
             interruptId,
             runGeneration: prepared.runGeneration,
           })).toBe("execute");
-          mod.journalSet(record);
-          mod.journalRecordAbnormalCompletion(record);
+          await mod.journalSet(record);
+          await mod.journalRecordAbnormalCompletion(record);
           expect(mod.activeRunRecords().some((run) => run.runKey === runKey)).toBe(
             true,
           );
@@ -277,8 +346,8 @@ describe("run journal", () => {
             mod.journalRetireCancelledAbnormalAfterSettlement(sessionId, runKey),
           ).toBe(true);
         } else {
-          mod.journalSet(record);
-          mod.journalRecordAbnormalCompletion(record);
+          await mod.journalSet(record);
+          await mod.journalRecordAbnormalCompletion(record);
         }
         expect(mod.activeRunRecords().some((run) => run.runKey === runKey)).toBe(
           false,
@@ -298,7 +367,7 @@ describe("run journal", () => {
 		});
 		const fake = makeFakeEngine([{ kind: "clean", gate }]);
 		agent.__setEngineForTest(fake.engine);
-		mod.journalSet({
+		await mod.journalSet({
 			runKey: `run-${crypto.randomUUID()}`,
 			osSessionId: sessionId,
 			prompt: "continue",
@@ -578,7 +647,7 @@ describe("run journal", () => {
     const sessionId = `detached-cancel-${crypto.randomUUID()}`;
     const runKey = `rh-${crypto.randomUUID()}`;
     try {
-      mod.journalSet({
+      await mod.journalSet({
         runKey,
         hostId: runKey,
         osSessionId: sessionId,
@@ -618,10 +687,10 @@ describe("run journal", () => {
 		const runKey = `engine-${crypto.randomUUID()}`;
 		const oldStartedAt = new Date(Date.now() - 1000).toISOString();
 		try {
-			mod.journalSet({ runKey, osSessionId: sessionId, cwd: "/old", startedAt: oldStartedAt });
+			await mod.journalSet({ runKey, osSessionId: sessionId, cwd: "/old", startedAt: oldStartedAt });
 			const old = mod.activeRunRecords().find((run) => run.runKey === runKey)!;
 			mod.journalClear(runKey);
-			mod.journalSet({
+			await mod.journalSet({
 				runKey,
 				osSessionId: sessionId,
 				cwd: "/replacement",
@@ -643,7 +712,7 @@ describe("run journal", () => {
 		const runKey = `engine-${crypto.randomUUID()}`;
 		const startedAt = new Date().toISOString();
 		try {
-			mod.journalSet({ runKey, osSessionId: sessionId, cwd: "/tmp", startedAt });
+			await mod.journalSet({ runKey, osSessionId: sessionId, cwd: "/tmp", startedAt });
 			const started = mod.journalStartRecovery(mod.activeRunRecords()[0]);
 			expect(started.resumeAttempts).toBe(1);
 			expect(started.lastResumeAt).toBeTruthy();
@@ -657,7 +726,7 @@ describe("run journal", () => {
 
 			// A later model fallback re-journals opts captured before the reset.
 			// The live journal's healthy state must win over those stale fields.
-			mod.journalSet({
+			await mod.journalSet({
 				...started,
 				resumeAttempts: 1,
 				lastResumeAt: new Date().toISOString(),
@@ -678,7 +747,7 @@ describe("run journal", () => {
 		const sessionId = `attached-replacement-${crypto.randomUUID()}`;
 		const runKey = `engine-${crypto.randomUUID()}`;
 		try {
-			mod.journalSet({
+			await mod.journalSet({
 				runKey,
 				osSessionId: sessionId,
 				cwd: "/old",
@@ -686,7 +755,7 @@ describe("run journal", () => {
 			});
 			const old = mod.journalStartRecovery(mod.activeRunRecords()[0]);
 			mod.journalClear(runKey);
-			mod.journalSet({
+			await mod.journalSet({
 				runKey,
 				osSessionId: sessionId,
 				cwd: "/replacement",
@@ -995,7 +1064,7 @@ describe("run journal", () => {
 	});
 
 	it("preserves human-confirmed tool policy across restart drains", async () => {
-		mod.journalSet({
+		await mod.journalSet({
 			runKey: "run-1",
 			osSessionId: "bks-1",
 			claudeSessionId: "engine-1",
@@ -1011,7 +1080,7 @@ describe("run journal", () => {
 			startedAt: "2026-07-02T00:00:00.000Z",
 		});
 
-		const [run] = mod.takeInterruptedRuns();
+		const [run] = await mod.takeInterruptedRuns();
 		expect(run.confirmTools).toEqual({
 			mcp__stripe__create_refund: "Create a refund",
 		});
@@ -1028,11 +1097,11 @@ describe("run journal", () => {
 		expect(claimed.runKey).toBe("run-1");
 		expect(claimed.claimedAt).toBeTruthy();
 		// The same process never takes an already-claimed run twice.
-		expect(mod.takeInterruptedRuns()).toEqual([]);
+		expect(await mod.takeInterruptedRuns()).toEqual([]);
 	});
 
 	it("leaves filtered recovery journals unclaimed for a later boot", async () => {
-		mod.journalSet({
+		await mod.journalSet({
 			runKey: "quarantined-run",
 			osSessionId: "quarantined-session",
 			prompt: "preserve me",
@@ -1040,14 +1109,14 @@ describe("run journal", () => {
 			startedAt: new Date().toISOString(),
 		});
 
-		expect(mod.takeInterruptedRuns([], () => false)).toEqual([]);
+		expect(await mod.takeInterruptedRuns([], () => false)).toEqual([]);
 		const [preserved] = mod.activeRunRecords();
 		expect(preserved.runKey).toBe("quarantined-run");
 		expect(preserved.claimedAt).toBeUndefined();
 	});
 
 	it("defers actor-owned opening journals to the durable effect executor", async () => {
-		mod.journalSet({
+		await mod.journalSet({
 			runKey: "opening-run",
 			osSessionId: "opening-session",
 			promptEntryId: "opening-prompt",
@@ -1083,8 +1152,8 @@ describe("run journal", () => {
 			mcpServers: [],
 			startedAt: new Date().toISOString(),
 		};
-		mod.journalSet(record);
-		mod.journalRecordAbnormalCompletion(
+		await mod.journalSet(record);
+		await mod.journalRecordAbnormalCompletion(
 			record,
 			"Opening backend ended without a terminal event",
 		);
@@ -1103,7 +1172,7 @@ describe("run journal", () => {
 
 	it("moves rejected recovery records into an inspectable quarantine", async () => {
 		for (let i = 0; i < 5; i++) {
-			mod.journalSet({ runKey: `batch-${i}`, cwd: "/tmp", mcpServers: [], startedAt: new Date().toISOString() });
+			await mod.journalSet({ runKey: `batch-${i}`, cwd: "/tmp", mcpServers: [], startedAt: new Date().toISOString() });
 		}
 		mod.journalQuarantine([
 			{ run: mod.activeRunRecords().find((run) => run.runKey === "batch-1")!, reason: "recovery_expired", notify: true },
@@ -1132,7 +1201,7 @@ describe("run journal", () => {
 			launchPhase: "launching",
 			startedAt: new Date().toISOString(),
 		};
-		mod.journalSet(run);
+		await mod.journalSet(run);
 		mod.journalQuarantine([
 			{ run, reason: "ambiguous_runner_launch", notify: false },
 		]);
@@ -1150,12 +1219,12 @@ describe("run journal", () => {
 
 	it("preserves first-journaled time while incrementing recovery attempts", async () => {
 		const first = new Date(Date.now() - 10_000).toISOString();
-		mod.journalSet({ runKey: "lineage", cwd: "/tmp", startedAt: first });
+		await mod.journalSet({ runKey: "lineage", cwd: "/tmp", startedAt: first });
 		const prepared = mod.journalStartRecovery(mod.activeRunRecords()[0]);
 		expect(prepared.firstJournaledAt).toBe(first);
 		expect(prepared.resumeAttempts).toBe(1);
 		expect(prepared.lastResumeAt).toBeTruthy();
-		mod.journalSet({ ...prepared, startedAt: new Date().toISOString() });
+		await mod.journalSet({ ...prepared, startedAt: new Date().toISOString() });
 		expect(mod.activeRunRecords()[0].firstJournaledAt).toBe(first);
 		expect(mod.activeRunRecords()[0].resumeAttempts).toBe(1);
 	});
@@ -1163,7 +1232,7 @@ describe("run journal", () => {
 	it("emits recovered run stream events during restart resume", async () => {
 		agent.__setEngineForTest(makeFakeEngine([{ kind: "usage_exhausted" }]).engine);
 		process.env.OPENSESSION_FORCE_LIMIT = "1";
-		mod.journalSet({
+		await mod.journalSet({
 			runKey: "run-2",
             kind: "prompt",
 			osSessionId: "bks-2",
@@ -1338,7 +1407,7 @@ describe("restart recovery queue", () => {
 			(_, i) => `starved-${i}-${crypto.randomUUID()}`,
 		);
 		await Promise.all(sessions.map(async (sessionId, i) => {
-			mod.journalSet({
+			await mod.journalSet({
 				runKey: `run-${sessionId}`,
 				osSessionId: sessionId,
 				claudeSessionId: `engine-${sessionId}`,
@@ -1589,7 +1658,7 @@ describe("restart recovery reattach", () => {
 			firstJournaledAt: startedAt,
 			startedAt,
 		};
-		mod.journalSet(run);
+		await mod.journalSet(run);
 		await clearRunState(sessionId);
 		const streamEnded = Promise.withResolvers<void>();
 		agent.__setLocalHostResumeForTest(async () =>

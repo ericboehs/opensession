@@ -174,7 +174,7 @@ export function makeFakeEngine(
       recordEngineSessionOwner(engineSessionId, unifiedId);
     const runKey = bks ? opts.startToken || `fake-${bks}` : null;
     if (runKey) {
-      journalSet({
+      await journalSet({
         runKey,
         osSessionId: bks,
         claudeSessionId: engineSessionId,

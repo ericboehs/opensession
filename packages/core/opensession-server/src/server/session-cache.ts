@@ -752,6 +752,18 @@ export type RunOutcomeProjectionOptions = {
 	projectedAt?: string;
 };
 
+let runOutcomeProjectorForTest:
+	| typeof applyRunOutcomeProjection
+	| undefined;
+
+export function __setRunOutcomeProjectorForTest(
+	projector: typeof applyRunOutcomeProjection | undefined,
+): typeof applyRunOutcomeProjection | undefined {
+	const previous = runOutcomeProjectorForTest;
+	runOutcomeProjectorForTest = projector;
+	return previous;
+}
+
 export async function recordRunOutcome(
 	sessionId: string,
 	errorMessage: string | null,
@@ -792,7 +804,11 @@ export async function recordRunOutcome(
 		!process.env.OPENSESSION_RUN_JOURNAL
 	)
 		throw new Error("Turn outcome projection requires the authoritative actor");
-	void applyRunOutcomeProjection(id, errorMessage, opts);
+	await (runOutcomeProjectorForTest ?? applyRunOutcomeProjection)(
+		id,
+		errorMessage,
+		opts,
+	);
 }
 
 /** Idempotent destination-side implementation for actor-issued projections. */

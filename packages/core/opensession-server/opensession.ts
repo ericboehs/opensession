@@ -777,19 +777,7 @@ if (!g.__opensessionBooted) {
 					const failed =
 						terminalEvent.type === "error" ||
 						!!terminalEvent.usageLimitExhausted;
-					if (recoveredRun?.promptEntryId) {
-						await settleRecoveredCreationOpening(
-							bksSessionId,
-							recoveredRun.promptEntryId,
-							failed
-								? terminalEvent.content ||
-									terminalEvent.result ||
-									"Recovered opening run failed"
-								: undefined,
-							recoveredRun.runKey,
-						);
-					}
-					recordRunOutcome(
+					await recordRunOutcome(
 						bksSessionId,
 						failed
 							? terminalEvent.content ||
@@ -814,6 +802,18 @@ if (!g.__opensessionBooted) {
 								: undefined,
 						},
 					);
+					if (recoveredRun?.promptEntryId) {
+						await settleRecoveredCreationOpening(
+							bksSessionId,
+							recoveredRun.promptEntryId,
+							failed
+								? terminalEvent.content ||
+									terminalEvent.result ||
+									"Recovered opening run failed"
+								: undefined,
+							recoveredRun.runKey,
+						);
+					}
 					// The in-process settleRun died with the restart — close the
 					// automation ledger entry here or it stays "running" forever.
 					settleResumedAutomationRun(

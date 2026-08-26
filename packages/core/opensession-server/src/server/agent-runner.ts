@@ -1484,12 +1484,12 @@ export async function resumeInterruptedRuns(
   const snapshotSeeds = snapshotLocalHostRuns.filter(
     (run) => !!run.hostId && !run.sandboxId && !run.runnerId,
   );
-  const taken = takeInterruptedRuns(
+  const taken = (await takeInterruptedRuns(
     snapshotSeeds,
     (run) =>
       !run.osSessionId ||
       !sessionKernelStore().quarantinedSession(run.osSessionId),
-  ).filter((run) => !deferRecovery?.(run));
+  )).filter((run) => !deferRecovery?.(run));
   // A graceful shutdown snapshot is intentionally broader than the shared
   // run journal: it also covers turns that finish during the drain. A local
   // detached host can still be alive even when its shared record disappeared

@@ -1658,7 +1658,7 @@ async function* runPiAttempt(
     );
     walk.promptEntryId ??= String(userLine.uuid);
     if (journal?.osSessionId) {
-      journalSet(
+      await journalSet(
         buildRunJournalRecord(opts, {
           runKey,
           osSessionId: journal.osSessionId,
@@ -2434,7 +2434,7 @@ async function* runPiAttempt(
     // Journal upgrade: the record now carries the engine id (still no
     // serverKey — boot must take the continuation re-prompt path).
     if (journal?.osSessionId) {
-      journalSet(
+      await journalSet(
         buildRunJournalRecord(opts, {
           runKey,
           osSessionId: journal.osSessionId,

@@ -2005,7 +2005,7 @@ async function* withRunJournal(
   record: ActiveRunRecord,
   touch: () => void,
 ): AsyncGenerator<StreamEvent> {
-  journalSet(record);
+  await journalSet(record);
   touch();
   let sourceCompleted = false;
   let sawTerminal = false;
@@ -2013,13 +2013,13 @@ async function* withRunJournal(
     for await (const ev of events) {
       if (ev.type === "init" && ev.sessionId && ev.sessionId !== record.claudeSessionId) {
         record.claudeSessionId = ev.sessionId;
-        journalSet(record);
+        await journalSet(record);
       }
       if (ev.type === "model_switch" && ev.toModel) {
         record.model = ev.toModel;
         record.transientFallback = ev.temporaryFallback === true;
         if (shouldPersistModelSwitch(ev)) record.selectedModel = ev.toModel;
-        journalSet(record);
+        await journalSet(record);
       }
       if (ev.type === "done" || ev.type === "error") sawTerminal = true;
       yield ev;
@@ -2027,7 +2027,7 @@ async function* withRunJournal(
     sourceCompleted = true;
   } finally {
     if (sourceCompleted && sawTerminal) journalClear(record.runKey);
-    else if (sourceCompleted) journalRecordAbnormalCompletion(record);
+    else if (sourceCompleted) await journalRecordAbnormalCompletion(record);
     touch();
   }
 }
@@ -2119,18 +2119,18 @@ export function makeRemoteSandbox(parts: RemoteSandboxParts): Sandbox {
         await launcher.writeSpec!(dir, spec);
         mark("spec written");
         // A crash after journal admission must recover from the full spec.
-        journalSet(record);
+        await journalSet(record);
         // Construct (and register) the control BEFORE dispatch so exact-token
         // Stop reaches the launching host: cancelAgentRunTokenAndWait sees
         // hostRunBusy(token) during the launch await, and cancelHost's stop
         // backstop plus the cancelled startup marker fence the dispatch race.
         handle = new HostHandle(dir, spec, callbacks, launcher);
-        await launcher.launch(spec.hostId, dir, () => {
+        await launcher.launch(spec.hostId, dir, async () => {
           record.launchPhase = "launching";
-          journalSet(record);
+          await journalSet(record);
         });
         record.launchPhase = "started";
-        journalSet(record);
+        await journalSet(record);
         if (handle.cancelled)
           throw new HostLaunchNotDispatchedError(
             `${spec.hostId} was cancelled while launching`,

@@ -720,6 +720,46 @@ describe("single session ownership", () => {
     expect(settleProjection).toBeGreaterThan(applyProjection);
     expect(run).toContain("projectionId: `outcome:${startToken}`");
     expect(create).toContain("projectionId: `outcome:${startToken}`");
+
+    const terminalOutcome = run.indexOf(
+      "await recordRunOutcome(session.id, runFailure",
+    );
+    expect(terminalOutcome).toBeGreaterThan(0);
+    expect(run.indexOf("await clearSteerReceipts", terminalOutcome))
+      .toBeGreaterThan(terminalOutcome);
+    expect(run.indexOf('type: "stream_done"', terminalOutcome))
+      .toBeGreaterThan(terminalOutcome);
+
+    const openingOutcome = create.indexOf(
+      "await recordRunOutcome(bksId, runFailure",
+    );
+    expect(openingOutcome).toBeGreaterThan(0);
+    expect(create.indexOf("await settleCreation", openingOutcome))
+      .toBeGreaterThan(openingOutcome);
+    const setupOutcome = create.lastIndexOf("await recordRunOutcome(");
+    expect(create.indexOf('type: "stream_done"', setupOutcome))
+      .toBeGreaterThan(setupOutcome);
+    expect(create.indexOf("await settleCreationFailed(", setupOutcome))
+      .toBeGreaterThan(setupOutcome);
+
+    const boot = read("../../opensession.ts");
+    const recoveredOutcome = boot.indexOf("await recordRunOutcome(");
+    expect(boot.indexOf("await settleRecoveredCreationOpening(", recoveredOutcome))
+      .toBeGreaterThan(recoveredOutcome);
+
+    const github = read("../agents/github/run.ts");
+    const githubOutcome = github.indexOf("await recordRunOutcome(");
+    expect(github.indexOf("journalClearIfLineage(", githubOutcome))
+      .toBeGreaterThan(githubOutcome);
+
+    const journal = read("run-journal.ts");
+    expect(journal).toContain(
+      'await transition(record.osSessionId, "run_registered"',
+    );
+    expect(journal).toContain(
+      'await transition(r.osSessionId, "boot_journal_found"',
+    );
+    expect(journal).not.toContain("void transitionRunState(");
 	});
 
 	test("WebSocket session mutations enter the mailbox before dispatch", () => {

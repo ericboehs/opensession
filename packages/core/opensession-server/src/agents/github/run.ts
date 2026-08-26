@@ -551,14 +551,16 @@ export async function runGithubAgent(opts: GithubRunOpts): Promise<GithubRunResu
     }
   } catch (e: any) {
     errorMsg = e.message || String(e);
-  } finally {
-    if (recoveredRun && !recoveryUncertain) journalClearIfLineage(recoveredRun);
   }
 
   await persist(engineSessionId);
   // An uncertain host still owns the turn. Settling the visible run or clearing
-  // its journal here would let a retry overlap it.
-  if (!recoveryUncertain) recordRunOutcome(bksId, errorMsg || null);
+  // its journal here would let a retry overlap it. A settled run keeps its
+  // recovery record until durable outcome projection completes.
+  if (!recoveryUncertain) {
+    await recordRunOutcome(bksId, errorMsg || null);
+    if (recoveredRun) journalClearIfLineage(recoveredRun);
+  }
   return {
     bksId,
     text,

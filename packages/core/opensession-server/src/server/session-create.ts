@@ -1270,7 +1270,7 @@ export async function openCreatedSession(
 					);
 				if (latestUsage)
 					await touchNativeSession(bksId, { usage: latestUsage });
-				recordRunOutcome(bksId, runFailure, {
+				await recordRunOutcome(bksId, runFailure, {
 					engineSessionId,
 					noticePersisted: failureNoticePersisted,
 					runId: startToken,
@@ -1514,7 +1514,7 @@ export async function openCreatedSession(
 						record.promptEntryId === openingPromptEntryId &&
 						!record.terminalFailure
 					)
-						journalRecordAbnormalCompletion(record);
+						await journalRecordAbnormalCompletion(record);
 				}
 				throw new Error("Opening run ended without a terminal event");
 			}
@@ -1593,6 +1593,12 @@ export async function openCreatedSession(
 					},
 				});
 			}
+			// Persist before terminal delivery or creation settlement. A failed
+			// outcome projection leaves recovery evidence intact for retry.
+			await recordRunOutcome(
+				bksId,
+				`Session setup failed: ${e.message || String(e)}`,
+			);
 			io.emit({ type: "error", message: e.message || String(e) });
 			io.emit({ type: "stream_done" });
 			io.emit({
@@ -1600,15 +1606,6 @@ export async function openCreatedSession(
 				message: `Session setup failed: ${e.message || String(e)}`,
 			});
 			io.emit({ type: "session_status", isRunning: false });
-			// Persist the failure on the session file too — the live
-			// events above are gone on reload, and a setup-failed session
-			// (e.g. `git worktree add` refusing a branch name that
-			// collides with an existing `name/...` ref) otherwise shows
-			// as an inexplicably empty session (bks-019f472f, 2026-07-09).
-			recordRunOutcome(
-				bksId,
-				`Session setup failed: ${e.message || String(e)}`,
-			);
 		} else {
 			io.fail(e.message || String(e));
 		}

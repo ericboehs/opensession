@@ -198,7 +198,7 @@ describe("local run-host capability", () => {
     expect(localRunHostsSupported("linux", true, () => null)).toBe(false);
   });
 
-  test("keeps a fresh host out of the boot recovery claim", () => {
+  test("keeps a fresh host out of the boot recovery claim", async () => {
     const hostId = `rh-${crypto.randomUUID()}`;
     const osSessionId = `os-${crypto.randomUUID()}`;
     const spec: RunHostSpec = {
@@ -225,7 +225,7 @@ describe("local run-host capability", () => {
 
     try {
       expect(hostRunBusy(hostId)).toBe(true);
-      expect(takeInterruptedRuns()).toEqual([]);
+      expect(await takeInterruptedRuns()).toEqual([]);
     } finally {
       handle.abandon();
       __setActiveRunsPathForTest(previousJournal);

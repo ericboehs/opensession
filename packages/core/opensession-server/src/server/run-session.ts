@@ -2494,7 +2494,7 @@ async function runSessionPromptInner(
 				? " Daytona: if the launch failed because the sandbox could not dial back, check callbackBaseUrl and your org tier's egress (docs/self-hosting-sandboxes.md)."
 				: "");
 		broadcastToSession(sessionId, { type: "error", sessionId, message: msg });
-		recordRunOutcome(
+		await recordRunOutcome(
 			session.id,
 			msg,
 			startToken
@@ -2997,7 +2997,7 @@ async function runSessionPromptInner(
 	// transcript as a system chip. finalSessionId wins over the session file's
 	// id: a run that rotated to a fresh engine session mid-turn must write the
 	// chip into the transcript the conversation actually continues in.
-	recordRunOutcome(session.id, runFailure, {
+	await recordRunOutcome(session.id, runFailure, {
 		engineSessionId: finalSessionId || session.claudeSessionId || undefined,
 		noticePersisted: failureNoticePersisted,
 		noticeLabel: failureNoticeLabel,
