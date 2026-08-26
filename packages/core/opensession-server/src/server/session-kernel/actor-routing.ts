@@ -139,8 +139,14 @@ export function isPrioritySessionActorRequest(
   ) {
     const identity = command.request.identity;
     return !!identity && typeof identity === "object" &&
-      "command" in identity &&
-      ["cancel", "steer"].includes(String(identity.command));
+      (("priority" in identity && identity.priority === true) ||
+        ("command" in identity && [
+          "cancel",
+          "steer",
+          "interrupt_prompt",
+          "steer_queued_prompt",
+          "interrupt_queued_prompt",
+        ].includes(String(identity.command))));
   }
   return false;
 }

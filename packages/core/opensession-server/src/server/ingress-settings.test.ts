@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
-import { join } from "path";
+import { dirname, join } from "path";
 import { tmpdir } from "os";
 import {
   directHttpsBindAddress,
@@ -11,6 +11,8 @@ import {
   publicIngressHealth,
   savePrivateAppOrigin,
   savePublicIngress,
+  startTailscaleFunnelCommand,
+  tailscaleApprovalUrl,
   tailscaleFunnelConfigured,
 } from "./ingress-settings";
 
@@ -127,6 +129,28 @@ describe("public ingress settings", () => {
         },
       },
     }, "server.example.ts.net")).toBe(false);
+  });
+
+  test("extracts only Tailscale approval links from CLI output", () => {
+    expect(tailscaleApprovalUrl(
+      "Enable Funnel at:\n\nhttps://login.tailscale.com/admin/funnel?node=example\n",
+    )).toBe("https://login.tailscale.com/admin/funnel?node=example");
+    expect(tailscaleApprovalUrl("Continue at https://example.test/not-tailscale"))
+      .toBe("");
+  });
+
+  test("returns a Funnel approval link without leaving the CLI waiting", async () => {
+    const { path } = fixture();
+    const binary = join(dirname(path), "fake-tailscale");
+    writeFileSync(binary, [
+      "#!/bin/sh",
+      "printf 'Approve at https://login.tailscale.com/admin/funnel?node=example\\n'",
+      "exec sleep 30",
+    ].join("\n"), { mode: 0o700 });
+    const startedAt = Date.now();
+    const result = await startTailscaleFunnelCommand(binary);
+    expect(result.approvalUrl).toBe("https://login.tailscale.com/admin/funnel?node=example");
+    expect(Date.now() - startedAt).toBeLessThan(3_000);
   });
 
   test("uses proven healthy DNS when a NATed server cannot detect its public IP", () => {

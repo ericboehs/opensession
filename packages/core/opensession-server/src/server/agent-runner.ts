@@ -1075,7 +1075,12 @@ export function currentAgentRunToken(id: string): string | undefined {
   const owner = sessionRunOwners.get(id);
   if (owner) return owner;
   const pending = pendingStarts.get(id);
-  return pending?.size === 1 ? pending.values().next().value : undefined;
+  if (pending?.size === 1) return pending.values().next().value;
+  // A detached host survives a gateway restart, while the process-local owner
+  // maps do not. Boot recovery tracks the immutable journal lineage before it
+  // reattaches the host; expose that exact token so steer/cancel can reach the
+  // recovered run instead of silently falling back to the durable queue.
+  return activeRecoveryRuns.get(id)?.runKey;
 }
 
 /** Cancel one exact physical dispatch without crossing onto a successor that

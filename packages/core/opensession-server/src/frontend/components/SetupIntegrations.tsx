@@ -28,7 +28,7 @@ const INTEGRATION_DESCRIPTIONS: Record<string, string> = {
 	slack: "DMs, mentions, session channels, and interactive controls.",
 	stripe: "Dispute webhooks routed into scoped automations.",
 	grafana: "Loki failure signatures routed into investigation automations.",
-	github: "PR comments, reviews, webhooks, and bot-authored work.",
+	github: "Respond to PR webhooks, mentions, labels, and review events.",
 	codestorage: "Git hosting with branch-based reviews and local signing keys.",
 };
 
@@ -44,6 +44,14 @@ function IntegrationCard({
 	onGithubSaved?: (updated: SetupGithub, restartRequired: boolean) => void;
 }) {
 	const state = integrationState(integration);
+	const stateLabel =
+		integration.id === "github"
+			? state.tone === "on"
+				? "Automation on"
+				: state.tone === "warn"
+					? "Automation needs setup"
+					: "Automation off"
+			: state.label;
 	const returnedFromGithub =
 		integration.id === "github" &&
 		typeof window !== "undefined" &&
@@ -67,7 +75,9 @@ const body = await setupRequest<{
 				method: "PUT",
 				json: { enabled },
 			});
-			toast(`${integration.label} ${enabled ? "enabled" : "disabled"}`);
+			toast(
+				`${integration.label}${integration.id === "github" ? " automation" : ""} ${enabled ? "enabled" : "disabled"}`,
+			);
 			onSaved(body.integration, body.restartRequired !== false);
 })().catch(async (cause) => {
 toast(cause instanceof Error ? cause.message : `Could not update ${integration.label}`, {
@@ -86,7 +96,7 @@ setToggling(false);
 					<div className="min-w-[14rem] flex-1">
 						<div className="flex flex-wrap items-center gap-2">
 							<div className="text-item-title font-semibold text-fg">{integration.label}</div>
-							<StateChip tone={state.tone} label={state.label} />
+							<StateChip tone={state.tone} label={stateLabel} />
 						</div>
 						<p className="m-0 mt-1 text-supporting leading-relaxed text-dim">
 							{INTEGRATION_DESCRIPTIONS[integration.id] ?? `Connect ${integration.label} to Open Session.`}
@@ -103,7 +113,7 @@ setToggling(false);
 								checked={integration.enabled}
 								onCheckedChange={(enabled) => void toggle(enabled)}
 								disabled={toggling}
-								aria-label={`${integration.enabled ? "Disable" : "Enable"} ${integration.label}`}
+								aria-label={`${integration.enabled ? "Disable" : "Enable"} ${integration.label}${integration.id === "github" ? " automation" : ""}`}
 							/>
 						)}
 						<Button
@@ -146,6 +156,8 @@ export function IntegrationsList({
 	github?: SetupGithub;
 	onGithubSaved?: (updated: SetupGithub, restartRequired: boolean) => void;
 }) {
+	const githubOnly =
+		integrations.length === 1 && integrations[0]?.id === "github";
 	return (
 		<>
 			<div className="grid gap-3">
@@ -160,8 +172,9 @@ export function IntegrationsList({
 				))}
 			</div>
 			<SettingsHint>
-				Credentials stay on this server and are never shown again. Changes apply after
-				you restart.
+				{githubOnly
+					? "GitHub App setup controls repository access. This switch only controls PR automation, and changes apply after you restart."
+					: "Credentials stay on this server and are never shown again. Changes apply after you restart."}
 			</SettingsHint>
 		</>
 	);

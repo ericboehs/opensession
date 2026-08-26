@@ -659,6 +659,9 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
             identity: {
               command: msg.type,
               messageHash,
+              ...((msg.type === "prompt" && msg.busyMode === "steer")
+                ? { priority: true }
+                : {}),
               ...(targetRunId !== undefined
                 ? { targetRunId, targetRunGeneration }
                 : {}),

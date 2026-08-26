@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { request } from "./request";
+import { ApiError, request } from "./request";
 
 const originalFetch = globalThis.fetch;
 
@@ -54,5 +54,21 @@ describe("request", () => {
 			request("/write", { method: "PUT", body: { value: 1 } }),
 		]);
 		expect(calls).toBe(4);
+	});
+
+	test("preserves an approval action on API errors", async () => {
+		globalThis.fetch = (() => Promise.resolve(Response.json({
+			error: "Approval required",
+			actionUrl: "https://login.tailscale.com/admin/funnel",
+		}, { status: 409 }))) as unknown as typeof fetch;
+
+		try {
+			await request("/approval");
+			throw new Error("Expected request to fail");
+		} catch (error) {
+			expect(error).toBeInstanceOf(ApiError);
+			expect((error as ApiError).status).toBe(409);
+			expect((error as ApiError).actionUrl).toBe("https://login.tailscale.com/admin/funnel");
+		}
 	});
 });

@@ -34,6 +34,7 @@ beforeAll(async () => {
   service = await startSessionKernelService({
     port: 0,
     token,
+    workerCount: 4,
     responseTimeoutMs: 700,
     databasePath: join(stateDir, "sessions", "session-kernel.sqlite"),
   });
@@ -82,6 +83,7 @@ describe("session kernel actor service", () => {
       token,
       workerCount: 1,
       responseTimeoutMs: 700,
+      mutationMailboxLimit: 8,
       workerUrl: new URL("./testing/mailbox-worker.ts", import.meta.url),
     });
     const call = async (

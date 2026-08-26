@@ -36,6 +36,44 @@ describe("integration credential warnings", () => {
 	});
 });
 
+describe("GitHub integration status", () => {
+	const githubIntegration: SetupIntegration = {
+		id: "github",
+		label: "GitHub",
+		doc: "",
+		enabled: false,
+		env: [],
+		links: [],
+		missingRequired: [],
+	};
+
+	test("separates App access from optional PR automation", () => {
+		const markup = renderToStaticMarkup(
+			<IntegrationsList
+				integrations={[githubIntegration]}
+				onSaved={() => {}}
+			/>,
+		);
+		expect(markup).toContain("Automation off");
+		expect(markup).toContain(
+			"Respond to PR webhooks, mentions, labels, and review events.",
+		);
+		expect(markup).toContain(
+			"GitHub App setup controls repository access. This switch only controls PR automation",
+		);
+	});
+
+	test("labels the enabled state as automation", () => {
+		const markup = renderToStaticMarkup(
+			<IntegrationsList
+				integrations={[{ ...githubIntegration, enabled: true }]}
+				onSaved={() => {}}
+			/>,
+		);
+		expect(markup).toContain("Automation on");
+	});
+});
+
 const github: SetupGithub = {
 	userPrAuth: false,
 	clientIdConfigured: false,

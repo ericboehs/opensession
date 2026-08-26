@@ -6,6 +6,7 @@ import {
   savePrivateAppOrigin,
   savePublicIngress,
   setupPrivateAppDomain,
+  TailscaleFunnelApprovalRequired,
   verifyPrivateAppDomain,
 } from "../ingress-settings";
 import { audit } from "../audit";
@@ -21,8 +22,13 @@ import type { RouteContext } from "./context";
 
 function errorResponse(error: unknown): Response {
   return Response.json(
-    { error: error instanceof Error ? error.message : String(error) },
-    { status: 400 },
+    {
+      error: error instanceof Error ? error.message : String(error),
+      ...(error instanceof TailscaleFunnelApprovalRequired
+        ? { actionUrl: error.approvalUrl }
+        : {}),
+    },
+    { status: error instanceof TailscaleFunnelApprovalRequired ? 409 : 400 },
   );
 }
 

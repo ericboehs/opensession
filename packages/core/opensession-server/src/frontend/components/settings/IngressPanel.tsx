@@ -11,6 +11,7 @@ import {
 	type IngressExposure,
 	type PublicIngressSettings,
 } from "../../lib/api";
+import { ApiError } from "../../lib/api/request";
 import {
 	configuredAppDomain,
 	configuredIngressDrafts,
@@ -429,6 +430,7 @@ export function IngressPanel({
 	const [publicAddress, setPublicAddress] = useState("");
 	const [busy, setBusy] = useState<"app" | "apply" | "test" | null>(null);
 	const [error, setError] = useState<string | null>(null);
+	const [tailscaleApprovalUrl, setTailscaleApprovalUrl] = useState<string | null>(null);
 	const loaded = useRef(false);
 	const customDraftTouched = useRef(false);
 	const url = drafts[method];
@@ -488,6 +490,7 @@ export function IngressPanel({
 		if (busy) return;
 		setBusy(kind);
 		setError(null);
+		if (kind === "apply") setTailscaleApprovalUrl(null);
 		await work()
 			.then((next) => {
 				apply(next);
@@ -500,6 +503,10 @@ export function IngressPanel({
 				void onChanged?.();
 			})
 			.catch((cause: unknown) => {
+				if (cause instanceof ApiError && cause.actionUrl) {
+					setTailscaleApprovalUrl(cause.actionUrl);
+					return;
+				}
 				setError(cause instanceof Error ? cause.message : "Public callbacks could not be updated");
 			})
 			.finally(() => setBusy(null));
@@ -813,6 +820,12 @@ export function IngressPanel({
 
 							{settings.exposure === method && (
 								<IngressWaitingState method={method} health={settings.health} />
+							)}
+							{method === "tailscale" && tailscaleApprovalUrl && (
+								<InlineAlert variant="info" title="Approve Funnel in Tailscale">
+									Approve public access, return here, then start Funnel again.
+									{" "}<a className="font-medium underline underline-offset-2" href={tailscaleApprovalUrl} target="_blank" rel="noreferrer">Open Tailscale approval</a>
+								</InlineAlert>
 							)}
 							{settings.health === "unreachable" && settings.exposure === method && (
 								<InlineAlert>

@@ -226,6 +226,64 @@ async function tailscaleFunnelStatus(binary = Bun.which("tailscale")): Promise<u
   }
 }
 
+export function tailscaleApprovalUrl(output: string): string {
+  for (const match of output.matchAll(/https:\/\/[^\s<>"']+/g)) {
+    try {
+      const url = new URL(match[0]);
+      if (url.hostname === "tailscale.com" || url.hostname.endsWith(".tailscale.com")) {
+        return url.href;
+      }
+    } catch {}
+  }
+  return "";
+}
+
+export class TailscaleFunnelApprovalRequired extends Error {
+  constructor(readonly approvalUrl: string) {
+    super("Approve Funnel in Tailscale, then start Funnel again.");
+    this.name = "TailscaleFunnelApprovalRequired";
+  }
+}
+
+export async function startTailscaleFunnelCommand(binary: string): Promise<{
+  code: number;
+  stdout: string;
+  stderr: string;
+  approvalUrl: string;
+}> {
+  const child = Bun.spawn([
+    binary,
+    "funnel",
+    "--bg",
+    "--yes",
+    "--https=443",
+    `http://127.0.0.1:${PUBLIC_INGRESS_PORT}`,
+  ], { stdout: "pipe", stderr: "pipe", env: process.env });
+  let stdout = "";
+  let approvalUrl = "";
+  const readStdout = (async () => {
+    const reader = child.stdout.getReader();
+    const decoder = new TextDecoder();
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      stdout += decoder.decode(value, { stream: true });
+      approvalUrl ||= tailscaleApprovalUrl(stdout);
+      // Some Tailscale control-plane configurations keep the CLI open while
+      // waiting for browser approval. The Settings request cannot complete the
+      // approval itself, so stop the hidden waiter once its action is visible.
+      if (approvalUrl && child.exitCode === null) child.kill();
+    }
+    stdout += decoder.decode();
+  })();
+  const [stderr, code] = await Promise.all([
+    new Response(child.stderr).text(),
+    child.exited,
+    readStdout,
+  ]);
+  return { code, stdout, stderr, approvalUrl };
+}
+
 /** A zero exit from `tailscale funnel --bg` only says the CLI request
  * completed. Confirm that tailscaled retained both the public permission and
  * the exact loopback proxy before Open Session reports the setup as started. */
@@ -551,14 +609,10 @@ export async function enableTailscaleFunnel(): Promise<string> {
   if (!binary) throw new Error("Tailscale is not installed on this server");
   const dnsName = await tailscaleDnsName();
   if (!dnsName) throw new Error("Tailscale is not connected or has no HTTPS hostname");
-  const result = await command([
-    binary,
-    "funnel",
-    "--bg",
-    "--yes",
-    "--https=443",
-    `http://127.0.0.1:${PUBLIC_INGRESS_PORT}`,
-  ]);
+  const result = await startTailscaleFunnelCommand(binary);
+  if (result.approvalUrl) {
+    throw new TailscaleFunnelApprovalRequired(result.approvalUrl);
+  }
   if (result.code !== 0) throw new Error(result.stderr.trim() || "Could not enable Tailscale Funnel");
   const funnelStatus = await tailscaleFunnelStatus(binary);
   if (!tailscaleFunnelConfigured(funnelStatus, dnsName)) {

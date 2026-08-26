@@ -1500,6 +1500,60 @@ describe("restart recovery reattach", () => {
 		}
 	});
 
+	it("restores the immutable steering token while a detached host is attached", async () => {
+		const sessionId = `local-host-steer-owner-${crypto.randomUUID()}`;
+		const hostId = `rh-${crypto.randomUUID()}`;
+		const release = Promise.withResolvers<void>();
+		const terminal = Promise.withResolvers<StreamEvent>();
+		agent.__setLocalHostResumeForTest(async (run) => (async function* () {
+			yield {
+				type: "init" as const,
+				sessionId: run.claudeSessionId,
+				provider: "pi",
+				model: run.model,
+			};
+			await release.promise;
+			yield {
+				type: "done" as const,
+				sessionId: run.claudeSessionId,
+				provider: "pi",
+				model: run.model,
+				result: "attached host finished",
+			};
+		})());
+		const snapshotRun: mod.ActiveRunRecord = {
+			runKey: hostId,
+			hostId,
+			osSessionId: sessionId,
+			claudeSessionId: `pi-${crypto.randomUUID()}`,
+			prompt: "keep running",
+			cwd: "/tmp",
+			model: "pi/anthropic/claude-sonnet-5",
+			kind: "prompt",
+			startedAt: new Date().toISOString(),
+		};
+		try {
+			await agent.resumeInterruptedRuns(
+				(_id, event) => {
+					if (event?.type === "done") terminal.resolve(event);
+				},
+				undefined,
+				undefined,
+				undefined,
+				undefined,
+				[snapshotRun],
+			);
+			expect(agent.currentAgentRunToken(sessionId)).toBe(hostId);
+			expect(agent.currentAgentRunToken(snapshotRun.claudeSessionId!)).toBe(hostId);
+			release.resolve();
+			await terminal.promise;
+		} finally {
+			release.resolve();
+			mod.journalClear(hostId);
+			await clearRunState(sessionId);
+		}
+	});
+
   it("keeps the old lineage when a missing local host falls back in-process", async () => {
     const sessionId = `local-host-fallback-lineage-${crypto.randomUUID()}`;
     const hostId = `rh-${crypto.randomUUID()}`;
