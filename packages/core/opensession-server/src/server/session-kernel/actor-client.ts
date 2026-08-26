@@ -760,37 +760,6 @@ export class SessionKernelActorClient {
     return response.result as TResult;
   }
 
-  private async callAsync<TResult>(
-    request: SyncRequest,
-    label: string,
-  ): Promise<TResult> {
-    const response = await this.request({
-      ...request,
-      rpcId: crypto.randomUUID(),
-    });
-    if (response.t !== "call_result" || !response.body)
-      throw new SessionKernelActorError(
-        `Invalid async ${label} response`,
-        true,
-      );
-    const body = JSON.parse(response.body) as {
-      ok: boolean;
-      result?: TResult;
-      error?: string;
-      code?: string;
-      sessionId?: string;
-    };
-    if (!body.ok) {
-      const message = body.error || `Session kernel ${label} failed`;
-      if (body.code === "session_quarantined" && body.sessionId)
-        throw new SessionKernelQuarantinedError(body.sessionId, message);
-      const error = new SessionKernelActorError(message, false);
-      if (body.code === "actor_fatal") this.markDead(error);
-      throw error;
-    }
-    return body.result as TResult;
-  }
-
   terminate(): void {
     this.store.close();
     this.markDead(new Error("Session kernel actor stopped"), false);

@@ -40,11 +40,10 @@ import { writeJsonAtomic } from "./shared/atomic-write";
 import type { UnifiedSession, NativeSessionFile } from "./types";
 import {
   sessionDeliveryProjection,
-  sessionGatewayCommandAsync,
+  sessionGatewayCommand,
   sessionKernel,
   sessionKernelStore,
   sessionKernelActorActive,
-  sessionKernelStore,
   sessionTurn,
 } from "./session-kernel";
 import { withSessionMutationLock } from "./session-mutation-lock";
