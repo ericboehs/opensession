@@ -28,6 +28,20 @@ const sx = stylex.create({
 	inset0: {
 			inset: "0"
 	},
+	border0: {
+			borderStyle: "solid",
+			borderWidth: "0"
+	},
+	/** The field keeps its surface under the pointer: it is a heading that can
+	 *  be typed into, not a control that lights up. Gated to hover-capable
+	 *  pointers so a tap does not leave the state latched. */
+	hoverBgSurface: {
+		":hover": {
+			"@media (hover: hover)": {
+				"backgroundColor": "var(--bg-surface)"
+			}
+		}
+	},
 	bgSurface: {
 			backgroundColor: "var(--bg)"
 	},
@@ -643,11 +657,19 @@ setError(e.message);
             </span>
             .
           </AuthCopy>
-          {/* The code is what this screen is for, so it gets the display step
-              and room to breathe rather than the inline chip size. */}
+          {/* The code is what this screen is for, so it gets the largest type
+              step and a plain paper block rather than the shared input chrome. */}
           <DeviceCode
             code={flow.userCode}
-            className={mergeStylexOverrideClassName("", sx.px4, sx.py25, typography.pageTitle)}
+            className={mergeStylexOverrideClassName(
+              utilityClassName("[box-shadow:none]!"),
+              sx.border0,
+              sx.bgSurface,
+              sx.px4,
+              sx.py25,
+              sx.hoverBgSurface,
+              typography.stat,
+            )}
           />
           <a
             href={flow.verificationUri}

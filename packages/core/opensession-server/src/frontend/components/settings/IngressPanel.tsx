@@ -483,7 +483,7 @@ function PrivateAppSetup({
 	return (
 		<>
 			{!onboarding && (
-				<SettingCard>
+				<SettingCard className={cn(utilityClassName("bg-raised"), mergeStylexOverrideClassName("", sx.desktopBgPanel))}>
 					<SettingRow>
 						<SettingRowText>
 							<SettingRowTitle>Current address</SettingRowTitle>
@@ -503,7 +503,11 @@ function PrivateAppSetup({
 					)}
 				</SettingCard>
 			)}
-			<SettingsForm className={onboarding ? utilityClassName("mt-0") : utilityClassName("mt-3")}>
+			<SettingsForm className={cn(
+				utilityClassName("bg-raised"),
+				mergeStylexOverrideClassName("", sx.desktopBgPanel),
+				onboarding ? utilityClassName("mt-0") : utilityClassName("mt-3"),
+			)}>
 				{status === "ready" && !settings.app.domain.credentialConfigured && (
 					<SettingsHint className={utilityClassName("m-0")}>This address is already working. Its certificate is managed outside Open Session.</SettingsHint>
 				)}
