@@ -1,4 +1,4 @@
-import { mergeStylexOverrideClassName } from "../ui/cn";
+import { mergeStylexOverrideClassName, mergeStylexProps } from "../ui/cn";
 import { utilityClassName } from "../ui/cn";
 import { useEffect, useState } from "react";
 import { useReducedMotion } from "motion/react";
@@ -71,6 +71,11 @@ const sx = stylex.create({
 	},
 	gap5: {
 			gap: "calc(4px * 5)"
+	},
+	borderTooltipRing: {
+			borderStyle: "solid",
+			borderWidth: "1px",
+			borderColor: "var(--tooltip-ring)"
 	},
 	shrink0: {
 			flexShrink: "0"
@@ -182,13 +187,13 @@ function GithubSetupStep({
 					align="start"
 					offset={6}
 					multiline
-					popupClassName={utilityClassName("max-w-[424px]!")}
+					popupClassName={utilityClassName("max-w-[424px]! p-2!")}
 					label={
 						<span className={utilityClassName("block w-[400px] max-w-[calc(100vw-32px)] whitespace-normal")}>
 							<img
 								src={guide}
 								alt=""
-								className={utilityClassName("block h-auto w-full rounded-md")}
+								{...mergeStylexProps(utilityClassName("block h-auto w-full rounded-md"), sx.borderTooltipRing)}
 							/>
 							<span className={utilityClassName("block px-1 pt-2 pb-1 text-left text-supporting leading-snug font-normal text-tooltip-fg/75")}>
 								{caption}
@@ -199,7 +204,7 @@ function GithubSetupStep({
 					<button
 						type="button"
 						aria-label={`Show help for ${label.toLowerCase()}`}
-						className={utilityClassName("focus-ring pointer-events-auto ml-1.5 flex size-6 items-center justify-center rounded-control text-faint transition-colors duration-[var(--dur-micro)] hover:text-fg phone:size-8")}
+						className={utilityClassName("focus-ring pointer-events-auto ml-auto flex size-6 items-center justify-center rounded-control text-faint transition-colors duration-[var(--dur-micro)] hover:text-fg phone:size-8")}
 					>
 						<IconQuestionCircle size={18} />
 					</button>

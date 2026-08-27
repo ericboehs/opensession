@@ -134,8 +134,7 @@ export function SetupWidget({
 		<aside
 			aria-labelledby="sidebar-setup-title"
 			className={cn(
-				utilityClassName("z-30 rounded-2xl border border-divider-soft p-2 [backdrop-filter:var(--popup-blur)] smooth-shadow-sm"),
-				mergeStylexOverrideClassName("", sx.bgPanel72),
+				utilityClassName("z-30 rounded-2xl border border-divider-soft bg-blue-soft p-2 [backdrop-filter:var(--popup-blur)] smooth-shadow-sm"),
 				placement === "desktop"
 					? utilityClassName("fixed right-4 bottom-20 w-72")
 					: utilityClassName("mx-3 mt-3 mb-20 flex-none"),

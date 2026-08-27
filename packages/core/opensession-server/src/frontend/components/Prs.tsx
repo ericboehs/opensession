@@ -36,6 +36,7 @@ import { cn } from "../ui/cn";
 import {
   PR_GROUP_LABEL,
   PR_LIST,
+  PR_PAGE_COLUMN,
   PR_ROW,
   PR_SECTION_LABEL,
 } from "../lib/pr-list-classes";

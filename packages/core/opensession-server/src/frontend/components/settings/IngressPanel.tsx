@@ -322,6 +322,12 @@ const sx = stylex.create({
 			"justifyContent": "center"
 		}
 	},
+	flexCol: {
+			flexDirection: "column"
+	},
+	gap15: {
+			gap: "6px"
+	},
 	bgFg: {
 			backgroundColor: "var(--text)"
 	},
@@ -535,21 +541,24 @@ function PrivateAppSetup({
 						title="Authorize the DNS provider"
 						controls={
 							<>
-								<Segmented
-									label="Private domain DNS provider"
-									value={provider}
-									onValueChange={(value) => onProviderChange(value as "cloudflare" | "vercel")}
-									className={utilityClassName("w-full")}
-								>
-									<SegmentedOption value="cloudflare" disabled={busy} className={utilityClassName("flex-1 justify-center phone:min-h-11")}>
-										<BrandMark name="cloudflare" size={16} className={utilityClassName("shrink-0")} />
-										Cloudflare
-									</SegmentedOption>
-									<SegmentedOption value="vercel" disabled={busy} className={utilityClassName("flex-1 justify-center phone:min-h-11")}>
-										<BrandMark name="vercel" size={15} className={utilityClassName("shrink-0")} />
-										Vercel
-									</SegmentedOption>
-								</Segmented>
+								<div {...stylex.props(sx.flex, sx.minW0, sx.flexCol, sx.gap15)}>
+									<div {...mergeStylexProps("", sx.fontMedium, sx.textDim, typography.label)}>DNS provider</div>
+									<Segmented
+										label="Private domain DNS provider"
+										value={provider}
+										onValueChange={(value) => onProviderChange(value as "cloudflare" | "vercel")}
+										className={utilityClassName("w-full")}
+									>
+										<SegmentedOption value="cloudflare" disabled={busy} className={utilityClassName("flex-1 justify-center phone:min-h-11")}>
+											<BrandMark name="cloudflare" size={16} className={utilityClassName("shrink-0")} />
+											Cloudflare
+										</SegmentedOption>
+										<SegmentedOption value="vercel" disabled={busy} className={utilityClassName("flex-1 justify-center phone:min-h-11")}>
+											<BrandMark name="vercel" size={15} className={utilityClassName("shrink-0")} />
+											Vercel
+										</SegmentedOption>
+									</Segmented>
+								</div>
 								<SettingsField className={mergeStylexOverrideClassName("", sx.mb0)}>
 									Certificate email
 									<Input type="email" value={email} placeholder={managedCredential && settings.app.domain.certificateEmailConfigured ? "Leave blank to keep the saved email" : "you@example.com"} disabled={busy} autoCapitalize="none" spellCheck={false} onChange={(event) => onEmailChange(event.target.value)} />
