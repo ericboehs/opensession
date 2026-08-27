@@ -1,5 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { expectedUiPrefsMatch, maxValueLength } from "./ui-prefs";
+import {
+	expectedUiPrefsMatch,
+	maxValueLength,
+	normalizedUiPrefValue,
+} from "./ui-prefs";
 
 describe("UI preference limits", () => {
 	test("repository orders can hold a large configured repo list", () => {
@@ -27,6 +31,14 @@ describe("UI preference limits", () => {
 
 	test("ordinary scalar preferences remain tightly bounded", () => {
 		expect(maxValueLength("turn-activity")).toBe(200);
+	});
+
+	test("retires automatic repository preferences", () => {
+		expect(normalizedUiPrefValue("default-repo", "auto")).toBe("");
+		expect(normalizedUiPrefValue("default-repo", "opensession")).toBe(
+			"opensession",
+		);
+		expect(normalizedUiPrefValue("turn-activity", "auto")).toBe("auto");
 	});
 
 	test("conditional patches reject a stale legacy preference snapshot", () => {

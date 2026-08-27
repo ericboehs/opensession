@@ -35,17 +35,6 @@ export const FALLBACK_REPO = "repository";
  */
 export const NO_REPO = "none";
 
-/**
- * Reserved repo id meaning "decide from the prompt" — the New-session picker's
- * Auto mode (the server's `AUTO_REPO`, worktree.ts).
- *
- * A picker VALUE and a create REQUEST value only. The palette normally
- * resolves it to a real repo before creating, so what a session records is
- * always a concrete repo (or none) — no stored session ever carries this, and
- * none of the surfaces that group by repo have to know about it.
- */
-export const AUTO_REPO = "auto";
-
 export function sessionRepoOr(
 	s: Pick<UnifiedSession, "repo">,
 	fallback: string,

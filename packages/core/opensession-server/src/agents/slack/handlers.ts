@@ -1615,7 +1615,7 @@ Please help with this request. Start by exploring the codebase to understand wha
     ? null
     : (await getChannelKind(channel).catch(() => null))?.name || null;
   const intent = await classifyMention(cleanText, { channelName, context });
-  // Auto's repo verdict; getRepo(null/undefined) = the default repo.
+  // The router's verdict; getRepo(null/undefined) = the default repo.
   const repo = getRepo(intent?.repo || undefined);
   const isDefaultRepo = repo.id === getRepo().id;
   if (!isDefaultRepo) console.log(`[slack] mention routed to repo ${repo.id}`);

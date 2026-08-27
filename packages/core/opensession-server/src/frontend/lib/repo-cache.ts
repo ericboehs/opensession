@@ -21,8 +21,17 @@ const KEY = "opensession-repos";
 
 interface CachedRepoList {
 	repos: RepoInfo[];
-	/** The workspace's default repo for new sessions ("auto", an id, or ""). */
+	/** The workspace's default repo for new sessions. */
 	newSessionRepo: string;
+}
+
+function concreteDefault(repos: RepoInfo[], value: string): string {
+	return (
+		(repos.some((repo) => repo.id === value) ? value : "") ||
+		repos.find((repo) => repo.default)?.id ||
+		repos[0]?.id ||
+		""
+	);
 }
 
 let cached: CachedRepoList | null | undefined;
@@ -42,8 +51,10 @@ function read(): CachedRepoList | null {
 		) {
 			cached = {
 				repos: parsed.repos,
-				newSessionRepo:
+				newSessionRepo: concreteDefault(
+					parsed.repos,
 					typeof parsed.newSessionRepo === "string" ? parsed.newSessionRepo : "",
+				),
 			};
 		}
 	} catch {
@@ -69,7 +80,7 @@ export function cachedNewSessionRepo(): string {
 /** Record a fresh `/repos` answer (called as the list lands). */
 export function rememberRepos(repos: RepoInfo[], newSessionRepo: string): void {
 	live = true;
-	cached = { repos, newSessionRepo };
+	cached = { repos, newSessionRepo: concreteDefault(repos, newSessionRepo) };
 	try {
 		localStorage.setItem(KEY, JSON.stringify(cached));
 	} catch {

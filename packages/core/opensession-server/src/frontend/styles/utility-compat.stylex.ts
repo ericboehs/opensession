@@ -1352,6 +1352,13 @@ const sx = stylex.create({
 					}
 			}
 	},
+	hoverBgFg85: {
+			"@media (hover: hover)": {
+					":hover": {
+							backgroundColor: "color-mix(in oklab, var(--text) 85%, transparent)"
+					}
+			}
+	},
 	hoverBgHover: {
 			"@media (hover: hover)": {
 					":hover": {
@@ -2969,6 +2976,9 @@ const sx = stylex.create({
 			fontSize: "var(--type-body) !important",
 			lineHeight: "var(--tw-leading, var(--text-base--line-height)) !important"
 	},
+	textBg: {
+			color: "var(--bg)"
+	},
 	textCenter: {
 			textAlign: "center"
 	},
@@ -3591,6 +3601,7 @@ export const utilityStyles = {
 	"hover:before:bg-pressed": sx.hoverBeforeBgPressed,
 	"hover:bg-[image:linear-gradient(var(--hover),var(--hover))]": sx.hoverBgImageLinearGradientVarHoverVarHover,
 	"hover:bg-[var(--row-chip)]": sx.hoverBgVarRowChip,
+	"hover:bg-fg/85": sx.hoverBgFg85,
 	"hover:bg-hover": sx.hoverBgHover,
 	"hover:bg-hover/40": sx.hoverBgHover40,
 	"hover:bg-panel": sx.hoverBgPanel,
@@ -4008,6 +4019,7 @@ export const utilityStyles = {
 	"text-[color-mix(in_srgb,var(--text)_88%,#1f9e8a)]": sx.textColorMixInSrgbVarText881f9e8a,
 	"text-[inherit]": sx.textInherit,
 	"text-base!": sx.textBase,
+	"text-bg": sx.textBg,
 	"text-center": sx.textCenter,
 	"text-dim": sx.textDim,
 	"text-ellipsis": sx.textEllipsis,

@@ -1,7 +1,6 @@
 /**
- * What a model is told about the registered repositories when it has to pick
- * one — the catalog behind the New-session picker's "Auto" mode
- * (suggest-repos.ts).
+ * What the Slack task router is told about registered repositories when an
+ * incoming message does not name one directly (suggest-repos.ts).
  *
  * The hand-written `description` in config.json is the only thing we had, and
  * it is thin exactly where the choice is hard: it says what a repo IS, never

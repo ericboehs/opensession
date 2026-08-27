@@ -41,48 +41,6 @@ export async function suggestBranch(prompt: string): Promise<string | null> {
 	}
 }
 
-/** What the picker's Auto mode resolved a prompt to. */
-export interface RepoSuggestion {
-	/** The repo the session should sit in; null means "no repo". */
-	repo: string | null;
-	/** Repos to attach beside it. */
-	extras: string[];
-	/** One short clause naming the evidence, shown under the picker. */
-	reason: string;
-	source: "named" | "model";
-}
-
-/**
- * Ask the backend which repo(s) a task belongs in — the New-session picker's
- * Auto mode. Takes a beat (the classifier reads every registered repo's layout
- * and docs), so callers treat it the way the branch field treats
- * `suggestBranch`: fill it in when it lands.
- *
- * Null means "no answer" — nothing to go on, or it didn't come back in time —
- * which is NOT the same as a suggestion whose `repo` is null ("no repo").
- */
-export async function suggestRepos(
-	prompt: string,
-	mode: "ask" | "code",
-): Promise<RepoSuggestion | null> {
-	try {
-		const data = await request<{ suggestion?: unknown }>("/suggest-repos", {
-			method: "POST",
-			body: { prompt, mode },
-		});
-		const s = data?.suggestion as RepoSuggestion | null | undefined;
-		if (!s || typeof s !== "object") return null;
-		return {
-			repo: typeof s.repo === "string" ? s.repo : null,
-			extras: Array.isArray(s.extras) ? s.extras.filter((x) => typeof x === "string") : [],
-			reason: typeof s.reason === "string" ? s.reason : "",
-			source: s.source === "named" ? "named" : "model",
-		};
-	} catch {
-		return null;
-	}
-}
-
 /** Voice dictation: send a recorded clip (raw body), get the transcript back.
  * Bypasses `request` — the body is audio bytes, not JSON. */
 export async function transcribeClip(audio: Blob): Promise<string> {

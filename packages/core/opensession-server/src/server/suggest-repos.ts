@@ -1,6 +1,6 @@
 /**
- * Pick the repository (or repositories) a task belongs in, from the task text
- * alone — what the New-session picker's "Auto" mode resolves against.
+ * Route an unscoped Slack task to the repository it belongs in, from the task
+ * text alone.
  *
  * Two passes, cheapest first:
  *

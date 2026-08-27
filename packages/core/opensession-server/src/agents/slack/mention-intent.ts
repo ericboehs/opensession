@@ -8,9 +8,9 @@
  *     changes) or a "code" task (implement / change / fix code)? "ask" runs
  *     in-thread in the main checkout; "code" spins up a worktree + channel.
  *
- * Non-PR requests then use the same repository router as the New-session
- * picker's Auto mode. That router sees the repository layouts and agent docs,
- * rather than this gate's old one-line descriptions and default-repo bias.
+ * Non-PR requests then use a repository router that sees repository layouts
+ * and agent docs, rather than this gate's old one-line descriptions and
+ * default-repo bias.
  *
  * Fail-open: any error or unparseable output returns null and the caller falls
  * back to the default worktree (code) flow, so a hiccup never blocks the agent.
@@ -133,8 +133,8 @@ export async function classifyMention(
         : null;
     const mode: "ask" | "code" = parsed.mode === "ask" ? "ask" : "code";
     // Dedicated PR actions do not need a checkout. Every other request uses
-    // the New-session picker's Auto router, after mode is known so questions
-    // can be classified without forcing a repository match.
+    // the Slack repository router after mode is known, so questions can be
+    // classified without forcing a repository match.
     const suggestion =
       action !== "none" && prNumber !== null
         ? null

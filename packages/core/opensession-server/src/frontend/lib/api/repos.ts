@@ -57,8 +57,8 @@ export function setSharedCheckoutMode(
 }
 
 /**
- * Set the workspace's default repository for new sessions — a repo id, "auto",
- * or "" to clear it back to the fallback. Admin-facing (Settings →
+ * Set the workspace's default repository for new sessions — a repo id, or ""
+ * to clear it back to the registered fallback. Admin-facing (Settings →
  * Repositories); the per-user preference overrides it.
  */
 export async function setNewSessionRepoApi(repo: string): Promise<string> {
@@ -129,8 +129,8 @@ export async function uploadRepoIconApi(
 const REPO_FETCH_RETRY_DELAYS_MS = [250, 750, 1_500];
 
 /**
- * The workspace's own answer to "which repo does a new session start in?" — a
- * repo id, or "auto". Captured from the /repos payload rather than returned by
+ * The workspace's own answer to "which repo does a new session start in?".
+ * Captured from the /repos payload rather than returned by
  * fetchRepos, whose RepoInfo[] every caller already destructures; the picker
  * reads it in the same `.then()` that sets the repo list.
  */

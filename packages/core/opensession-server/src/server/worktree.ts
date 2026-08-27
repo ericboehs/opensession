@@ -126,24 +126,6 @@ export function repoForPathOrNull(p: string): Repo | undefined {
 export const NO_REPO = "none";
 
 /**
- * Reserved repo id a CREATE passes to mean "you decide, from the prompt" —
- * the New-session picker's Auto mode.
- *
- * Only ever a REQUEST value. session-create resolves it to a real repo (or to
- * NO_REPO) before anything reads it, so it never reaches a worktree, a session
- * record, or the surfaces that group sessions by repo. Like NO_REPO,
- * `getRepo("auto")` throws, so a sentinel that leaks past a create fails
- * loudly rather than resolving to a checkout.
- *
- * The palette usually resolves Auto itself and sends the concrete repo — the
- * user should see where their session is going before they commit to it. This
- * exists for the case where they hit Create before that landed: the ~13s
- * classification (suggest-repos.ts) then happens here instead of making them
- * watch a spinner.
- */
-export const AUTO_REPO = "auto";
-
-/**
  * The repo a session's own work lives in, or undefined when it has none.
  *
  * Repo-less-ness is a property of the session, not of its mode: `scratch`

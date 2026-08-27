@@ -174,7 +174,10 @@ function safeId(id: string): boolean {
  * Both callers hand it a freshly parsed object, so it normalizes in place.
  */
 function fromDisk(p: Workspace): Workspace {
-  if (p.repo) p.repo = canonicalRepoId(p.repo);
+  // "auto" was briefly persisted by the retired repository picker. Treat it
+  // as the registered default until the next save rewrites the repaired id.
+  if (p.repo === "auto") p.repo = defaultRepo().id;
+  else if (p.repo) p.repo = canonicalRepoId(p.repo);
   for (const r of p.attachedRepos || []) r.repo = canonicalRepoId(r.repo);
   return p;
 }
@@ -337,7 +340,7 @@ export function createWorkspace(input: {
   const workspace: Workspace = {
     id: input.id || `ws-${randomUUID()}`,
     name: (input.name || "Untitled workspace").trim().slice(0, 120) || "Untitled workspace",
-    repo: input.repo,
+    repo: input.repo === "auto" ? defaultRepo().id : input.repo,
     color: input.color,
     createdBy: input.createdBy || "Anonymous",
     createdAt: input.createdAt || new Date().toISOString(),
@@ -552,7 +555,9 @@ export function updateWorkspace(
     ...cur,
     ...(patch.name !== undefined ? { name: patch.name.trim().slice(0, 120) || cur.name } : {}),
     ...(followedName ? { name: followedName } : {}),
-    ...(patch.repo !== undefined ? { repo: patch.repo } : {}),
+    ...(patch.repo !== undefined
+      ? { repo: patch.repo === "auto" ? defaultRepo().id : patch.repo }
+      : {}),
     ...(patch.color !== undefined ? { color: patch.color } : {}),
     ...(patch.order !== undefined ? { order: patch.order } : {}),
     ...(patch.branch !== undefined ? { branch: patch.branch } : {}),

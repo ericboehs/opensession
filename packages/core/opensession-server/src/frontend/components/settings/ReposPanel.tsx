@@ -22,9 +22,7 @@ import {
 	type SharedCheckoutMode,
 	type WorktreeSettings,
 } from "../../lib/api";
-import { AUTO_REPO } from "../../lib/session-repo";
 import { RepoTile } from "../RepoTile";
-import { IconSparkle } from "../icons";
 import { Radio, RadioGroup } from "../../ui/radio";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../../styles/typography.stylex";
@@ -83,14 +81,6 @@ const sx = stylex.create({
 	},
 });
 
-/**
- * Where a new session starts for everyone who hasn't set their own preference
- * (Settings → Preferences overrides this). Auto reads the prompt and picks.
- *
- * Deliberately not the same thing as which repo is "the default" internally:
- * that one is a fallback that must always name a real checkout, so it can't
- * say Auto.
- */
 function SharedCheckoutSetting() {
 	const [settings, setSettings] = useState<WorktreeSettings | null>(null);
 	const [saving, setSaving] = useState(false);
@@ -182,6 +172,10 @@ setSaving(false);
 	);
 }
 
+/**
+ * Where a new session starts for everyone who hasn't set their own preference
+ * (Settings → Preferences overrides this).
+ */
 function DefaultRepoRow() {
 	const [repos, setRepos] = useState<RepoInfo[]>([]);
 	const [value, setValue] = useState("");
@@ -199,23 +193,20 @@ function DefaultRepoRow() {
 		<SettingCard>
 			<SettingRow
 				title="Default repository"
-				desc="Where a new session starts, for anyone who hasn't set their own. On Auto it reads the prompt and picks."
+				desc="Where a new session starts, for anyone who hasn't set their own."
 				control={
 					<Select
 						label="Default repository"
-						value={value}
-						options={[
-							{
-								value: AUTO_REPO,
-								label: "Auto",
-								icon: <IconSparkle size={16} />,
-							},
-							...repos.map((r) => ({
-								value: r.id,
-								label: r.label || r.id,
-								icon: <RepoTile name={r.id} size={16} />,
-							})),
-						]}
+						value={
+							repos.some((repo) => repo.id === value)
+								? value
+								: repos[0]?.id || ""
+						}
+						options={repos.map((r) => ({
+							value: r.id,
+							label: r.label || r.id,
+							icon: <RepoTile name={r.id} size={16} />,
+						}))}
 						onChange={(next) => {
 							setValue(next);
 							void setNewSessionRepoApi(next).catch(() => {});

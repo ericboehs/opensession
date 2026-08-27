@@ -115,7 +115,7 @@ import {
 	sessionTurn,
 	sessionTurnSnapshot,
 } from "./session-kernel";
-import { AUTO_REPO, ensureAskCheckout, ensureScratchDir, getRepo, isRegisteredWorktree, listWorktrees, NO_REPO, repoForPath, repoForPathOrNull, resolveUniqueBranch, sharedCheckoutForNewSessions, worktreeHeadBranch, worktreePathFor, } from "./worktree";
+import { ensureAskCheckout, ensureScratchDir, getRepo, isRegisteredWorktree, listWorktrees, NO_REPO, repoForPath, repoForPathOrNull, resolveUniqueBranch, sharedCheckoutForNewSessions, worktreeHeadBranch, worktreePathFor, } from "./worktree";
 import { type WSClientData, broadcastToSession, preparingWorkspaces, } from "./ws-hub";
 import {
 	markReplayedCommandResult,
@@ -1902,12 +1902,13 @@ export async function handleCreateSessionMessage(
 	// that is a conversation with the model and its MCP tools. A fork stays
 	// whatever its source was; an OMITTED repo still means "inherit, else the
 	// default", which is what agent-created subagents depend on.
-	// "Auto": the advisory picker preview had not resolved yet. Never block
-	// creation on another model call: start in the normal fallback environment
-	// and let the opening session move itself if the task belongs elsewhere.
-	let requestedRepo = typeof msg.repo === "string" ? msg.repo : undefined;
-	const deferredAutoRepo = !forkSource && requestedRepo === AUTO_REPO;
-	if (deferredAutoRepo) requestedRepo = undefined;
+	const requestedRepo = typeof msg.repo === "string" ? msg.repo : undefined;
+	// "auto" was a retired picker sentinel, never a repository id. Fail closed
+	// for stale clients instead of silently creating in the instance default.
+	if (!forkSource && requestedRepo === "auto") {
+		failCreate("Choose a repository before creating the session");
+		return;
+	}
 	const isRepoLess = forkSource
 		? isScratch || (forkSource.mode === "ask" && !forkSource.repo)
 		: isScratch || (isAsk && requestedRepo === NO_REPO);
@@ -2356,14 +2357,6 @@ export async function handleCreateSessionMessage(
 				),
 			})),
 		);
-		if (deferredAutoRepo) {
-			openingPrompt += `\n\n${wrapContext(
-        isAsk
-          ? `Repository selection was left on Auto and session creation did not wait for the preview. Decide whether this question belongs to a registered repository. If another repository is a better fit, use opensession-repos list_repos and read it from the checkout path returned there.`
-          : `Repository selection was left on Auto and session creation did not wait for the preview. Decide whether this task belongs in the current repository before editing. If another registered repository is a better fit, use the opensession-repos tools to switch this session or attach that repository first.`,
-        "repos-note",
-      )}`;
-		}
 		// @session:<id> mentions from the New-session box get the same
 		// resolving footer as prompts on existing sessions (see
 		// runSessionPromptInner) — this create path bypasses it.

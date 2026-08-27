@@ -12,7 +12,6 @@ import { orchestratorEnabled } from "../model-providers";
 import { configuredInteractiveDefaultModel, configuredModelProviders, modelFitsConfiguredProviders, pickerModelId, presetFitsConfiguredProviders } from "../model-catalog";
 import { type Sandbox } from "../sandbox";
 import { suggestBranchName } from "../suggest-branch";
-import { suggestRepos } from "../suggest-repos";
 import { MAX_AUDIO_BYTES, transcribeAudio } from "../transcribe";
 import { supportsOpenaiFastMode } from "../openai-auth";
 import { getWorkspace, workspaceModelSettings } from "../workspaces";
@@ -226,17 +225,6 @@ export async function handleModelsRoutes(
 		const prompt = typeof body?.prompt === "string" ? body.prompt : "";
 		const branch = await suggestBranchName(prompt);
 		return Response.json({ branch });
-	}
-
-	// Which repo(s) a task belongs in — the New-session picker's Auto mode,
-	// previewed as you type. `repo: null` is a real answer ("no repo"), so the
-	// caller distinguishes it from `suggestion: null` (nothing to go on, or the
-	// classifier didn't answer in time — keep showing the default).
-	if (path === "/api/suggest-repos" && req.method === "POST") {
-		const body = await req.json().catch(() => null);
-		const prompt = typeof body?.prompt === "string" ? body.prompt : "";
-		const mode = body?.mode === "ask" ? "ask" : "code";
-		return Response.json({ suggestion: await suggestRepos(prompt, { mode }) });
 	}
 
 	// Voice dictation: raw audio body (whatever MediaRecorder produced) in,

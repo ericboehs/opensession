@@ -153,6 +153,10 @@ describe("GitHub App onboarding actions", () => {
 			/>,
 		);
 		expect(markup).toContain("text-green");
+		expect(markup).toContain("Install Open Session for GitHub");
+		expect(markup).toContain("/mac-app-icon.png");
+		expect(markup).toContain("Sign in to GitHub");
+		expect(markup).toContain("You can also sign in to GitHub later.");
 	});
 
 	test("uses the same manifest-only setup in Settings", () => {

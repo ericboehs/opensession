@@ -2,6 +2,7 @@ import { mergeStylexOverrideClassName } from "../ui/cn";
 import { utilityClassName } from "../ui/cn";
 import { useEffect, useState } from "react";
 import { useReducedMotion } from "motion/react";
+import { BASE_PATH } from "../lib/base";
 import { Button } from "../ui/button";
 import { cn } from "../ui/cn";
 import { Input } from "../ui/input";
@@ -251,19 +252,30 @@ export function GithubManifestSetup({
 	return (
 		<>
 			{connectionStatus ? (
-				<div {...stylex.props(sx.flex, sx.itemsStart, sx.justifyBetween, sx.gap4)}>
-					<div {...stylex.props(sx.minW0)}>
+				<>
+					<div className={utilityClassName("flex items-center gap-2")}>
 						<IconTile name="github" size={40} />
-						<div {...stylex.props(sx.mt6, sx.fontSemibold, sx.textFg, typography.dialogTitle)}>
-							How to connect
-						</div>
+						<span
+							aria-hidden="true"
+							className={utilityClassName("w-6 border-t-2 border-dotted border-line-strong")}
+						/>
+						<img
+							src={`${BASE_PATH}/mac-app-icon.png`}
+							alt=""
+							className={utilityClassName("size-10 shrink-0")}
+						/>
 					</div>
-					<div {...stylex.props(sx.pt1)}>
+					<div className={utilityClassName("flex items-center justify-between gap-4")}>
+						<div className={utilityClassName("min-w-0 text-dialog-title font-semibold text-fg")}>
+							Install Open Session for GitHub
+						</div>
 						<StateChip tone={connectionStatus.tone} label={connectionStatus.label} />
 					</div>
-				</div>
+				</>
 			) : (
-				<div {...stylex.props(sx.fontSemibold, sx.textFg, typography.dialogTitle)}>How to connect</div>
+				<div className={utilityClassName("text-dialog-title font-semibold text-fg")}>
+					Install Open Session for GitHub
+				</div>
 			)}
 			<div {...stylex.props(sx.flex, sx.flexCol, sx.gap2)}>
 				<Segmented

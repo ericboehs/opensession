@@ -29,6 +29,12 @@ export function maxValueLength(key: string): number {
 
 export type UiPrefs = Record<string, string>;
 
+export function normalizedUiPrefValue(key: string, value: string): string {
+	// Automatic repository selection was retired. An old preference now means
+	// "use the workspace default", represented by the ordinary empty value.
+	return key === "default-repo" && value === "auto" ? "" : value;
+}
+
 /** Keep only valid key → short-string entries. */
 function clean(input: unknown): UiPrefs {
 	const out: UiPrefs = {};
@@ -42,7 +48,7 @@ function clean(input: unknown): UiPrefs {
 				typeof value === "string" &&
 				value.length <= maxValueLength(key)
 			) {
-				out[key] = value;
+				out[key] = normalizedUiPrefValue(key, value);
 			}
 		}
 	}
@@ -91,7 +97,7 @@ export function patchUiPrefs(
 			if (!KEY_RE.test(key)) continue;
 			if (value === null) delete current[key];
 			else if (typeof value === "string" && value.length <= maxValueLength(key))
-				current[key] = value;
+				current[key] = normalizedUiPrefValue(key, value);
 		}
 	}
 	return store.set(user, current);

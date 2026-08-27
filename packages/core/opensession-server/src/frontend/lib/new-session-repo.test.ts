@@ -1,10 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import { AUTO_REPO, NO_REPO } from "./session-repo";
+import { NO_REPO } from "./session-repo";
 import { newSessionDefaultRepo } from "./new-session-repo";
 
 describe("newSessionDefaultRepo", () => {
 	test("starts in Scratch when no repositories are registered", () => {
-		expect(newSessionDefaultRepo([], AUTO_REPO)).toBe(NO_REPO);
+		expect(newSessionDefaultRepo([], "")).toBe(NO_REPO);
 	});
 
 	test("keeps an available workspace choice", () => {
@@ -28,6 +28,12 @@ describe("newSessionDefaultRepo", () => {
 				],
 				"missing",
 			),
+		).toBe("app");
+	});
+
+	test("falls back to the first repository when none is flagged", () => {
+		expect(
+			newSessionDefaultRepo([{ id: "app" }, { id: "docs" }], "auto"),
 		).toBe("app");
 	});
 });

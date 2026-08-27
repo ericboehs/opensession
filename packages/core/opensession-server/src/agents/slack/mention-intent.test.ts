@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { slackRepoRoutingText } from "./mention-intent";
 
 describe("slackRepoRoutingText", () => {
-  test("carries the channel, message, and thread context into Auto routing", () => {
+  test("carries the channel, message, and thread context into repository routing", () => {
     expect(
       slackRepoRoutingText("Fix the deployment", {
         channelName: "infra",

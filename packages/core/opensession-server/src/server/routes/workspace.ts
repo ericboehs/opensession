@@ -38,7 +38,6 @@ import { attachRepo, switchPrimaryRepo, workspaceOwningWorktree } from "../sessi
 import { getOpenPrs, getTranscriptPath } from "../sessions";
 import { configuredIdentity, configuredRepos, defaultRepo, newSessionRepoDefault } from "../config";
 import { persistRawConfig, rawConfig, withConfigMutationLock } from "../config-mutation";
-import { AUTO_REPO } from "../worktree";
 import { searchSkills } from "../skills";
 import { handleSlashCommand } from "../slash-commands";
 import { sanitizeBranchSlug } from "../suggest-branch";
@@ -347,20 +346,17 @@ export async function handleWorkspaceRoutes(
 				};
 			}),
 			// What the New-session picker starts on for users with no personal
-			// preference of their own: a repo id, or "auto". Rides this fetch
-			// because it is the same thing the picker is already loading.
+			// preference of their own. Rides this fetch because it is the same
+			// thing the picker is already loading.
 			newSessionRepo: newSessionRepoDefault(),
 		});
 	}
 
 	// Where new sessions start for everyone without a preference of their own.
-	// Kept apart from the per-repo `default` flag on purpose: that one is a
-	// server-wide fallback that must always name a real checkout, so it cannot
-	// carry "auto" (see newSessionRepoDefault in config.ts).
 	if (path === "/api/repos/new-session-default" && req.method === "PUT") {
 		const body = await req.json().catch(() => null);
 		const value = typeof body?.repo === "string" ? body.repo.trim() : "";
-		if (value && value !== AUTO_REPO && !(value in configuredRepos())) {
+		if (value && !(value in configuredRepos())) {
 			return Response.json(
 				{ error: `Unknown repository: ${value}` },
 				{ status: 400 },
@@ -489,6 +485,11 @@ export async function handleWorkspaceRoutes(
 		};
 		if (!body.name || !body.name.trim())
 			return Response.json({ error: "name required" }, { status: 400 });
+		if (body.repo === "auto")
+			return Response.json(
+				{ error: "Choose a repository before creating the workspace" },
+				{ status: 400 },
+			);
 		let draft: WorkspaceDraft | undefined;
 		if (body.draft !== undefined) {
 			const parsed = parseWorkspaceDraft(body.draft);
@@ -575,6 +576,11 @@ export async function handleWorkspaceRoutes(
 			modelSettings?: WorkspaceModelSettings;
 			draft?: unknown;
 		};
+		if (body.repo === "auto")
+			return Response.json(
+				{ error: "Choose a repository before updating the workspace" },
+				{ status: 400 },
+			);
 		const { draft: rawDraft, ...rest } = body;
 		let draft: WorkspaceDraft | null | undefined;
 		if (rawDraft !== undefined) {

@@ -26,6 +26,7 @@ const {
 	updateWorkspace,
 	workspaceName,
 } = await import("./workspaces");
+const { defaultRepo } = await import("./config");
 
 afterAll(() => {
 	if (previous === undefined) delete process.env.OPENSESSION_STATE_DIR;
@@ -136,6 +137,32 @@ describe("workspaceName", () => {
 			process.env.OPENSESSION_STATE_DIR = scratch;
 			rmSync(otherRoot, { recursive: true, force: true });
 		}
+	});
+});
+
+describe("the retired automatic repository sentinel", () => {
+	test("repairs old workspace files to the registered default on read", () => {
+		const ws = createWorkspace({
+			name: "Old automatic workspace",
+			repo: "opensession",
+			createdBy: "Kent",
+		});
+		writeFileSync(
+			join(scratch, ".opensession-workspaces", `${ws.id}.json`),
+			JSON.stringify({ ...ws, repo: "auto" }),
+		);
+
+		expect(getWorkspace(ws.id)?.repo).toBe(defaultRepo().id);
+	});
+
+	test("never writes the sentinel through create or update", () => {
+		const ws = createWorkspace({
+			name: "Stale create",
+			repo: "auto",
+			createdBy: "Kent",
+		});
+		expect(ws.repo).toBe(defaultRepo().id);
+		expect(updateWorkspace(ws.id, { repo: "auto" })?.repo).toBe(defaultRepo().id);
 	});
 });
 

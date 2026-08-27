@@ -303,13 +303,21 @@ export function GithubAuthCard({
 					/>
 				</SettingsSection>
 				{onboarding && github.clientIdConfigured && (
-					<div {...stylex.props(sx.mt6)}>
+					<div className={utilityClassName("mt-6 px-5")}>
+						<div className={utilityClassName("mb-3")}>
+							<div className={utilityClassName("text-dialog-title font-semibold text-fg")}>
+								Sign in to GitHub
+							</div>
+							<p className={utilityClassName("m-0 mt-1 text-supporting text-faint")}>
+								You can also sign in to GitHub later.
+							</p>
+						</div>
 						<GithubAccounts
 							personal
 							showHeading={false}
 							showHint={false}
 							onConnectRequest={onPersonalSignIn}
-							cardClassName="personal-github-card"
+							cardClassName={utilityClassName("personal-github-card border-0 bg-panel!")}
 						/>
 					</div>
 				)}

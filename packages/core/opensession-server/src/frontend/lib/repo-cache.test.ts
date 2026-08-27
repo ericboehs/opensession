@@ -58,5 +58,22 @@ test("a later answer replaces the remembered one", () => {
 	rememberRepos([{ id: "gitops", defaultBranch: "main", sharedCheckout: false }], "");
 
 	expect(cachedRepos().map((repo) => repo.id)).toEqual(["gitops"]);
-	expect(cachedNewSessionRepo()).toBe("");
+	expect(cachedNewSessionRepo()).toBe("gitops");
+});
+
+test("retired automatic defaults fall back to a real repository", () => {
+	rememberRepos(
+		[
+			{ id: "app", defaultBranch: "main", sharedCheckout: false },
+			{
+				id: "docs",
+				defaultBranch: "main",
+				sharedCheckout: false,
+				default: true,
+			},
+		],
+		"auto",
+	);
+
+	expect(cachedNewSessionRepo()).toBe("docs");
 });
