@@ -106,9 +106,9 @@ describe("GitHub App onboarding actions", () => {
 		expect(markup).toContain("Organization ID");
 		expect(markup).toContain("<mask");
 		expect(markup).toContain('fill="currentColor"');
-		expect(markup).toContain('aria-label="Preview create github app"');
-		expect(markup).toContain('aria-label="Preview enable device flow"');
-		expect(markup).toContain('aria-label="Preview install github app"');
+		expect(markup).toContain('aria-label="Show help for create github app"');
+		expect(markup).toContain('aria-label="Show help for enable device flow"');
+		expect(markup).toContain('aria-label="Show help for install github app"');
 		expect(markup).not.toMatch(/>\d\. /);
 	});
 
