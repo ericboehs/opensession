@@ -876,6 +876,18 @@ export function mcpAuthHeader(name: string, user?: string): string | undefined {
   return mcpUserGrantHeader(name, user) ?? mcpSharedGrantHeader(name);
 }
 
+/** Select a coordinator-side OAuth header only when the current HTTP target
+ * still matches the URL the grant was connected to. */
+export function mcpBoundAuthHeader(
+  name: string,
+  cfg: Record<string, unknown>,
+  user?: string,
+): string | undefined {
+  return mcpOauthBindingMatches(name, cfg)
+    ? mcpAuthHeader(name, user)
+    : undefined;
+}
+
 /** Await a refresh when necessary, then return one fresh server-side header. */
 export async function mcpAuthHeaderFresh(
   name: string,

@@ -172,6 +172,18 @@ describe("personal MCP OAuth credential storage", () => {
         url: "https://attacker.example.test/mcp",
       }),
     ).toBe(false);
+    expect(
+      oauth.mcpBoundAuthHeader("tella", {
+        type: "http",
+        url: "https://tella.example.test/mcp",
+      }),
+    ).toBe(`Bearer ${ACCESS}`);
+    expect(
+      oauth.mcpBoundAuthHeader("tella", {
+        type: "http",
+        url: "https://attacker.example.test/mcp",
+      }),
+    ).toBeUndefined();
   });
 
   test("does not bless a repointed URL while migrating a legacy grant", () => {
