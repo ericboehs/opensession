@@ -7,10 +7,94 @@
  * propagate immediately, and the `retried` flag reports whether any retry ran.
  */
 import { describe, expect, test } from "bun:test";
-import { retryOnKernelSaturation } from "./session-projection-executor";
-import { SessionKernelActorError } from "./session-kernel/actor-client";
+import {
+  executeArchiveOverrideProjection,
+  retryOnKernelSaturation,
+} from "./session-projection-executor";
+import {
+  SessionKernelActorError,
+  SessionKernelQuarantinedError,
+} from "./session-kernel/actor-client";
 
 const noSleep = async (_ms: number) => {};
+
+describe("executeArchiveOverrideProjection", () => {
+  test("archives through an existing quarantine without releasing it", async () => {
+    let mutations = 0;
+    const result = await executeArchiveOverrideProjection(
+      "paused-session",
+      () => {
+        mutations++;
+        return "archived";
+      },
+      async () => {
+        throw new SessionKernelQuarantinedError(
+          "paused-session",
+          "Session is quarantined",
+        );
+      },
+    );
+
+    expect(result).toBe("archived");
+    expect(mutations).toBe(1);
+  });
+
+  test("does not repeat an archive whose settlement hit quarantine", async () => {
+    let mutations = 0;
+    const result = await executeArchiveOverrideProjection(
+      "paused-session",
+      () => {
+        mutations++;
+        return "archived";
+      },
+      async (_sessionId, _operation, mutate) => {
+        await mutate();
+        throw new SessionKernelQuarantinedError(
+          "paused-session",
+          "Session became quarantined",
+        );
+      },
+    );
+
+    expect(result).toBe("archived");
+    expect(mutations).toBe(1);
+  });
+
+  test("fails closed for every other projection error", async () => {
+    let mutations = 0;
+    await expect(
+      executeArchiveOverrideProjection(
+        "paused-session",
+        () => {
+          mutations++;
+        },
+        async () => {
+          throw new SessionKernelActorError("Actor unavailable", false);
+        },
+      ),
+    ).rejects.toThrow("Actor unavailable");
+    expect(mutations).toBe(0);
+  });
+
+  test("does not accept another session's quarantine", async () => {
+    let mutations = 0;
+    await expect(
+      executeArchiveOverrideProjection(
+        "paused-session",
+        () => {
+          mutations++;
+        },
+        async () => {
+          throw new SessionKernelQuarantinedError(
+            "different-session",
+            "Different session is quarantined",
+          );
+        },
+      ),
+    ).rejects.toThrow("Different session is quarantined");
+    expect(mutations).toBe(0);
+  });
+});
 
 describe("retryOnKernelSaturation", () => {
   test("returns first-attempt success without marking retried", async () => {

@@ -92,6 +92,7 @@ import {
 	shouldApplyCreatedSessionReply,
 	shouldOpenCreatedSession,
 } from "./lib/new-session-navigation";
+import { consumeNewSessionWorkspaceDraft } from "./lib/new-session-workspace-draft";
 import { primeSoftKeyboard } from "./lib/soft-keyboard";
 import { trackKeyboardInset } from "./lib/keyboard-inset";
 import type { CommandPaletteAction } from "./components/SessionSearch";
@@ -1617,18 +1618,6 @@ export function App(
 		else restore();
 	}
 
-	// Escape leaves Settings, the same way its Back control does. The window-level
-	// handler below is installed once, so it reads the current closer through a
-	// ref; null when Settings is not the open surface. Null while the setup
-	// onboarding covers Settings too: opening it pushes /welcome over the
-	// settings entry without changing the route, so Settings still reads as
-	// active — and an Escape would pop history and dismiss the walkthrough.
-	const leaveSettingsRef = useRef<(() => void) | null>(null);
-	useLayoutEffect(() => {
-	leaveSettingsRef.current =
-		settingsActive && !firstMileActive ? leaveSettings : null;
-	});
-
 	// Edge-swipe-from-left pops the pushed page back to the sidebar on phones.
 	useBackSwipe({
 		active: mobileDetail,
@@ -2132,20 +2121,6 @@ const path = await resolveAnonymousUserPath(
 			if (e.key === "Escape") {
 				if (commandMenuRef.current?.isOpen()) commandMenuRef.current.close();
 				else if (paletteOpenRef.current) hotkeyClosePalette();
-				else if (leaveSettingsRef.current) {
-					// A field, a menu or a modal inside Settings owns the keystroke
-					// first: only an unclaimed Escape closes the whole surface.
-					if (e.defaultPrevented || blockingOverlayOpen()) return;
-					const target = e.target as HTMLElement | null;
-					if (
-						target &&
-						(target.tagName === "INPUT" ||
-							target.tagName === "TEXTAREA" ||
-							target.isContentEditable)
-					)
-						return;
-					leaveSettingsRef.current();
-				}
 			}
 		};
 		window.addEventListener("keydown", onKey);
@@ -2315,7 +2290,14 @@ const path = await resolveAnonymousUserPath(
 				// nor gets to take the foreground.
 				const roomScoped = "sessionId" in msg;
 				const draft = pendingDraft?.id === msg.id ? pendingDraft : null;
-				if (draft) pendingCreateDraftRef.current = null;
+				if (draft) {
+					pendingCreateDraftRef.current = null;
+					// The default create unmounts NewSession before this reply. Consume
+					// its parked workspace here so the next global create cannot reuse it
+					// as an existing workspace and appear as another tab.
+					if (draft.workspaceId)
+						consumeNewSessionWorkspaceDraft(draft.workspaceId);
+				}
 				if (!shouldApplyCreatedSessionReply(msg.replayed, !!draft)) {
 					// The durable command outbox replayed a create that this page already
 					// finished. Its real row may be live or archived; either way the lists,

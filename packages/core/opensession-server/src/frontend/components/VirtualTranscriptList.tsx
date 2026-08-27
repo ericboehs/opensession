@@ -342,8 +342,13 @@ class TranscriptVirtualizer extends React.Component<Omit<Props, "enabled">, Adap
 		}, 100);
 	};
 
+	private onTopApproachWheel = (event: WheelEvent) => {
+		if (event.deltaY < 0) this.onTopApproachScroll();
+	};
+
 	private clearTopApproach() {
 		this.topApproachContainer?.removeEventListener("scroll", this.onTopApproachScroll);
+		this.topApproachContainer?.removeEventListener("wheel", this.onTopApproachWheel);
 		this.topApproachContainer = null;
 		if (this.topApproachTimer !== undefined) {
 			window.clearTimeout(this.topApproachTimer);
@@ -354,10 +359,12 @@ class TranscriptVirtualizer extends React.Component<Omit<Props, "enabled">, Adap
 	private syncTopApproach() {
 		const container = this.scrollContainer();
 		const callback = this.props.onTopApproach;
+		const containerChanged = container !== this.topApproachContainer;
+		const wiringChanged =
+			containerChanged || callback !== this.topApproachCallback;
 		const firstKey = this.props.items[0]?.key;
 		if (
-			container === this.topApproachContainer &&
-			callback === this.topApproachCallback &&
+			!wiringChanged &&
 			this.props.topApproachGeneration === this.topApproachGeneration &&
 			this.props.items.length === this.topApproachItemsLength &&
 			firstKey === this.topApproachFirstKey
@@ -368,10 +375,15 @@ class TranscriptVirtualizer extends React.Component<Omit<Props, "enabled">, Adap
 		this.topApproachGeneration = this.props.topApproachGeneration;
 		this.topApproachItemsLength = this.props.items.length;
 		this.topApproachFirstKey = firstKey;
-		this.topApproachLastFire = Number.NEGATIVE_INFINITY;
+		// Range completions change the generation, length, and first key together.
+		// Preserve the cooldown across those commits so a fast response cannot
+		// immediately chain another batch. A continued upward wheel gesture still
+		// re-evaluates demand even while native scrolling is pinned at scrollTop 0.
+		if (containerChanged) this.topApproachLastFire = Number.NEGATIVE_INFINITY;
 		if (!container || !callback) return;
 		this.topApproachContainer = container;
 		container.addEventListener("scroll", this.onTopApproachScroll, { passive: true });
+		container.addEventListener("wheel", this.onTopApproachWheel, { passive: true });
 		this.evaluateTopApproach();
 	}
 

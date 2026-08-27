@@ -170,6 +170,9 @@ const sx = stylex.create({
 	flexWrap: {
 			flexWrap: "wrap"
 	},
+	py4: {
+			paddingBlock: "16px"
+	},
 	py35: {
 			paddingBlock: "calc(4px * 3.5)"
 	},
@@ -1432,7 +1435,7 @@ setError(e.message);
     // desktop. Three short stacked lines — what to do, the two controls, what
     // we're waiting for — never wrap badly and let the code be the thing the eye
     // lands on.
-    <div {...stylex.props(sx.flex, sx.flexCol, sx.gap25, sx.px5, sx.py35)}>
+    <div {...mergeStylexProps(utilityClassName("before:inset-x-0!"), sx.flex, sx.flexCol, sx.gap4, sx.px5, sx.py4)}>
       <div {...stylex.props(sx.textDim, typography.supporting)}>
         Enter this code at{" "}
         <span {...stylex.props(sx.fontMedium, sx.textFg)}>

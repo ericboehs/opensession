@@ -15,13 +15,14 @@ import { SettingCardSkeleton } from "../ui/settings";
 import { LoadingState } from "../ui/state";
 import { BrandMark } from "./BrandTile";
 import { GithubAccounts } from "./Connections";
+import { RepoTile } from "./RepoTile";
 import { GithubAuthCard } from "./SetupIntegrations";
 import { ReposSection } from "./SetupRepos";
 import { SetupRestart } from "./SetupRestart";
 import { UserAvatar } from "./UserAvatar";
 import { OrganizationProfileSection } from "./settings/GeneralPanel";
 import { ProviderAccountsSection } from "./settings/ModelAccounts";
-import { IconCheck, IconGlobe, IconLink, IconRepo } from "./icons";
+import { IconCheck, IconGlobe, IconLink } from "./icons";
 import { githubAuthState, type SetupStatus } from "./setup-shared";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
@@ -103,6 +104,9 @@ const sx = stylex.create({
 	border: {
 			borderStyle: "solid",
 			borderWidth: "1px"
+	},
+	borderLine: {
+			borderColor: "var(--border)"
 	},
 	borderBg: {
 			borderColor: "var(--bg)"
@@ -483,7 +487,7 @@ function FirstMileSummary({
 						<span
 							key={`${account.provider}-${index}`}
 							title={account.label}
-							{...mergeStylexProps("bg-bg/85", sx.flex, sx.size7, sx.itemsCenter, sx.justifyCenter, sx.roundedFull, sx.border, sx.borderBg, sx.textFg)}
+							{...mergeStylexProps("bg-bg/85", sx.flex, sx.size7, sx.itemsCenter, sx.justifyCenter, sx.roundedFull, sx.border, sx.borderLine, sx.textFg)}
 						>
 							<BrandMark name={account.provider} size={15} />
 						</span>
@@ -500,12 +504,13 @@ function FirstMileSummary({
 			preview: (
 				<div {...mergeStylexProps("-space-x-2", sx.flex)} >
 					{status.repos.slice(0, 4).map((repo) => (
-						<span
-							key={repo.id}
-							title={repo.label}
-							{...mergeStylexProps("bg-bg/85", sx.flex, sx.size7, sx.itemsCenter, sx.justifyCenter, sx.roundedFull, sx.border, sx.borderBg, sx.textDim)}
-						>
-							<IconRepo size={14} />
+						<span key={repo.id} title={repo.label} {...stylex.props(sx.flex, sx.size7)}>
+							<RepoTile
+								name={repo.id}
+								size={28}
+								round
+								className={mergeStylexOverrideClassName("", sx.border, sx.borderLine)}
+							/>
 						</span>
 					))}
 					<PreviewOverflow count={status.repos.length - 4} />

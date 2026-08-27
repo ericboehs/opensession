@@ -186,8 +186,8 @@ test("a parked draft keeps the composer copy and carries its attachments", async
   expect(park).toContain("images: staged.images,");
   expect(park).toContain("files: staged.files,");
   // Closing twice updates the workspace the first close made.
-  expect(park).toContain("parkedWorkspaceId");
-  expect(source).toContain("let parkedWorkspaceId: string | null = null;");
+  expect(park).toContain("getParkedNewSessionWorkspaceId()");
+  expect(park).toContain("rememberParkedNewSessionWorkspace(workspace.id)");
 });
 
 test("creating a reopened composer consumes its parked draft workspace", async () => {
@@ -199,13 +199,12 @@ test("creating a reopened composer consumes its parked draft workspace", async (
   const successEnd = source.indexOf("// Re-send the same client-minted id", successStart);
   const successHandler = source.slice(successStart, successEnd);
 
-  expect(createHandler).toContain(
-    "const createWorkspaceId = workspaceId || parkedWorkspaceId || undefined;",
-  );
+  expect(createHandler).toContain("getParkedNewSessionWorkspaceId()");
   expect(createHandler).toContain("{ workspaceId: createWorkspaceId, worktreeMode }");
   expect(createHandler).toContain("{ workspaceId: createWorkspaceId }");
-  expect(successHandler).toContain("workspaceDraftKey(consumedWorkspaceId)");
-  expect(successHandler).toContain("clearDraft(consumedDraftKey)");
+  expect(successHandler).toContain(
+    "consumeNewSessionWorkspaceDraft(consumedWorkspaceId)",
+  );
 });
 
 test("a late re-park clears rather than deletes an adopted workspace", async () => {

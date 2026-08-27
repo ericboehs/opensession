@@ -66,6 +66,13 @@ Uncommitted checkout edits never become live, including frontend edits.
   per-session completion ritual. Concurrent main-line requests queue and
   coalesce to the newest fast-forward commit; targets already covered become
   successful no-ops. Do not manually retry a queued request.
+- Treat a successful deploy as fully settled. Success already means the target
+  release is active and its required health checks passed; the rollback safety
+  window is protection, not a cooldown. Continue immediately with the next
+  promotion or verification. Do not wait for a shared deploy to "settle", add
+  an arbitrary delay, or wait out the safety window. If a lifecycle operation
+  still owns the deploy lock, submit the normal deploy request and let it queue
+  and coalesce instead of polling or sleeping.
 - Use `deploy_self` for ordinary frontend, backend, protocol, and dependency
   changes. It classifies the complete diff from the running backend pin. A
   strictly frontend-only diff is built in its immutable target release and

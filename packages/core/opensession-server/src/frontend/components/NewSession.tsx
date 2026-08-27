@@ -62,6 +62,12 @@ import {
 import type { WSClientMessage, WSServerMessage } from "../lib/types";
 import { newClientSessionId } from "../lib/session-id";
 import { errorMatchesPendingCreate } from "../lib/new-session-navigation";
+import {
+  consumeNewSessionWorkspaceDraft,
+  forgetParkedNewSessionWorkspace,
+  getParkedNewSessionWorkspaceId,
+  rememberParkedNewSessionWorkspace,
+} from "../lib/new-session-workspace-draft";
 import { VoiceInput } from "./VoiceInput";
 import { useIsPhone } from "../hooks/useIsPhone";
 import { handOffSoftKeyboard } from "../lib/soft-keyboard";
@@ -1187,13 +1193,6 @@ type PendingDraftPark = {
 // leave a second, stale draft workspace behind.
 const pendingDraftParks = new Set<PendingDraftPark>();
 
-// The workspace an unscoped park created for this composer's draft. The draft
-// survives closing now, so opening and closing again re-parks the same text:
-// update that workspace instead of leaving a second one beside it. Cleared
-// when the draft is consumed by a create. Module-level because the palette
-// unmounts between the two closes.
-let parkedWorkspaceId: string | null = null;
-
 function consumePendingDraftParks(
   text: string,
   workspaceId: string | undefined,
@@ -1724,13 +1723,8 @@ export function NewSession({ onBack, inline, focusSeq, send, addHandler, connect
       promptHandle.current?.dropPendingDraftWrite();
       dropStagingAttachments(DRAFT_KEY);
       clearDraft(DRAFT_KEY);
-      if (consumedWorkspaceId) {
-        const consumedDraftKey = workspaceDraftKey(consumedWorkspaceId);
-        dropStagingAttachments(consumedDraftKey);
-        clearDraft(consumedDraftKey);
-      }
-      // The next draft is a new one, so it gets its own workspace.
-      parkedWorkspaceId = null;
+      if (consumedWorkspaceId)
+        consumeNewSessionWorkspaceDraft(consumedWorkspaceId);
       // "Create more" stays in the palette and resets for the next task. The
       // other actions close it after App handles the same announcement.
       if (createAction === "more" || inline) {
@@ -1813,19 +1807,20 @@ const createWorkspace = () =>
           ...(repo && repo !== NO_REPO ? { repo } : {}),
           draft: { ...draft, autoName: true },
         });
+      const parkedId = getParkedNewSessionWorkspaceId();
       const workspace = workspaceId
         ? // Scoped to an existing workspace: update its draft, never rename it.
           await updateWorkspaceApi(workspaceId, { draft })
-        : parkedWorkspaceId
+        : parkedId
           ? // Re-parking the draft this palette already saved. The name still
             // follows the text server-side while autoName holds. Only a
             // workspace that is gone earns a fresh one; any other failure is
             // reported rather than answered with a duplicate.
-            await updateWorkspaceApi(parkedWorkspaceId, {
+            await updateWorkspaceApi(parkedId, {
               draft: { ...draft, autoName: true },
             }).catch((e) => {
               if (e instanceof ApiError && e.status === 404) {
-                parkedWorkspaceId = null;
+                forgetParkedNewSessionWorkspace(parkedId);
                 return createWorkspace();
               }
               throw e;
@@ -1838,11 +1833,11 @@ const createWorkspace = () =>
         if (workspaceId || operation.consumedIntoWorkspaceId === workspace.id) {
           await updateWorkspaceApi(workspace.id, { draft: null });
         } else {
-          if (parkedWorkspaceId === workspace.id) parkedWorkspaceId = null;
+          forgetParkedNewSessionWorkspace(workspace.id);
           await deleteWorkspaceApi(workspace.id);
         }
       } else {
-        if (!workspaceId) parkedWorkspaceId = workspace.id;
+        if (!workspaceId) rememberParkedNewSessionWorkspace(workspace.id);
         // Attachments live in this browser's draft store, not on the server
         // record, so hand them to the workspace composer directly.
         const staged = loadDraft(DRAFT_KEY);
@@ -1886,7 +1881,8 @@ pendingDraftParks.delete(operation);
     // the session joins it. An unscoped composer that was closed already made
     // a draft workspace, so reopening and creating adopts that same workspace
     // instead of leaving the draft beside a second, live workspace.
-    const createWorkspaceId = workspaceId || parkedWorkspaceId || undefined;
+    const createWorkspaceId =
+      workspaceId || getParkedNewSessionWorkspaceId() || undefined;
     const worktreeMode =
       createMode === "ask"
         ? "ask"

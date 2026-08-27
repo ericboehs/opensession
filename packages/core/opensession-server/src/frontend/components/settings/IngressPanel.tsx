@@ -17,7 +17,6 @@ import {
 	configuredIngressDrafts,
 	customCaddyConfig,
 	customDnsRecords,
-	INGRESS_METHODS,
 	ingressHealthDot,
 	ingressHealthLabel,
 	ingressHostname,
@@ -51,7 +50,7 @@ import { ResponsiveDialog } from "../../ui/sheet";
 import { InlineAlert, LoadingState } from "../../ui/state";
 import { toast } from "../../ui/toast";
 import { BrandMark } from "../BrandTile";
-import { IconCopy, IconX } from "../icons";
+import { IconCopy, IconGlobe, IconServer, IconX } from "../icons";
 import { SetupRestart } from "../SetupRestart";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../../styles/typography.stylex";
@@ -323,6 +322,16 @@ const sx = stylex.create({
 			"justifyContent": "center"
 		}
 	},
+	w52: {
+			width: "208px"
+	},
+	/** On a desktop these panels sit on the panel surface; a phone keeps the
+	 *  raised one so the cards stay legible against the page. */
+	desktopBgPanel: {
+		"@media (min-width: 721px)": {
+			"backgroundColor": "var(--bg-panel)"
+		}
+	},
 	desktopStepColumns: {
 		"@media (min-width: 721px)": {
 			"display": "grid",
@@ -398,7 +407,7 @@ function SetupStep({
 }) {
 	return (
 		<li {...mergeStylexProps("grid-cols-[24px_minmax(0,1fr)]", sx.grid, sx.gap25, sx.py4, sx.firstPt0, sx.lastPb0)}>
-			<span {...stylex.props(sx.flex, sx.size6, sx.itemsCenter, sx.justifyCenter, sx.roundedFull, sx.bgSurface, sx.fontSemibold, sx.textDim, typography.meta)}>
+			<span {...stylex.props(sx.flex, sx.size6, sx.itemsCenter, sx.justifyCenter, sx.roundedFull, sx.bgSurface, sx.fontSemibold, sx.textFg, typography.meta)}>
 				{number}
 			</span>
 			<div {...stylex.props(sx.minW0, sx.pt05, Boolean(controls) && sx.desktopStepColumns)}>
@@ -798,7 +807,6 @@ export function IngressPanel({
 		!url.trim() ||
 		method === "custom" && records.length === 0 ||
 		method === "cloudflare" && (!tunnelId.trim() || (!tunnelToken.trim() && !settings?.cloudflare.tokenConfigured));
-	const selectedMethod = INGRESS_METHODS.find((option) => option.value === method)!;
 	const selectedHealth = settings?.exposure === method ? settings.health : "not_configured";
 	const privateDomain = settings ? configuredAppDomain(settings) : "";
 	const domainUrl = settings?.app.publicBaseUrl || initialUrls?.app || "";
@@ -865,7 +873,7 @@ export function IngressPanel({
 						onClose={() => setSurface(null)}
 						phone={isPhone}
 						label={surface === "domain" ? "Configure domain" : "Configure public callback"}
-						modalClassName="h-[min(840px,calc(100dvh-32px))] max-h-[calc(100dvh-32px)] w-[min(800px,calc(100vw-32px))] max-w-[800px]"
+						modalClassName="h-[min(840px,calc(100dvh-32px))] max-h-[calc(100dvh-32px)] w-[min(760px,calc(100vw-32px))] max-w-[760px]"
 						sheetClassName="h-[94dvh]"
 					>
 						{(dismiss) => (
@@ -913,25 +921,22 @@ export function IngressPanel({
 							/>
 					) : (
 					<div {...stylex.props(sx.grid, sx.contentStart, sx.gap4)}>
-						<SettingsForm className={cn(utilityClassName("m-0 min-w-0 gap-4 bg-raised p-6 phone:p-4"), mergeStylexOverrideClassName("", sx.desktopRow))}>
-							<div {...stylex.props(sx.px1)}>
-								<div {...mergeStylexProps("text-item-title", sx.fontSemibold, sx.textFg)}>Connection method</div>
-								<p {...mergeStylexProps("", sx.mt1, sx.mb0, sx.leadingRelaxed, sx.textDim, typography.supporting)}>Choose how external services reach Open Session.</p>
-							</div>
+						<SettingsForm className={cn(utilityClassName("m-0 min-w-0 gap-4 bg-raised p-6 phone:p-4"), mergeStylexOverrideClassName("", sx.desktopRow, sx.desktopBgPanel))}>
+							<div {...mergeStylexProps("text-item-title", sx.px1, sx.fontSemibold, sx.textFg)}>Connection method</div>
 							<Segmented
 								label="Public callback method"
 								value={method}
 								onValueChange={(next) => setMethod(next as IngressExposure)}
-								className={utilityClassName("shrink-0 phone:flex phone:w-full")}
+								className={cn(utilityClassName("shrink-0 phone:w-full"), mergeStylexOverrideClassName("", sx.flex, sx.w52))}
 							>
-								<SegmentedOption value="custom" disabled={!!busy || !settings.canManage} className={mergeStylexOverrideClassName("", sx.phoneFlex1, sx.phoneJustifyCenter)}>Caddy</SegmentedOption>
-								<SegmentedOption value="cloudflare" disabled={!!busy || !settings.canManage} className={mergeStylexOverrideClassName("", sx.phoneFlex1, sx.phoneJustifyCenter)}>Cloudflare</SegmentedOption>
+								<SegmentedOption value="custom" disabled={!!busy || !settings.canManage} className={mergeStylexOverrideClassName("", sx.flex, sx.flex1, sx.justifyCenter)}><IconServer size={14} /> Caddy</SegmentedOption>
+								<SegmentedOption value="cloudflare" disabled={!!busy || !settings.canManage} className={mergeStylexOverrideClassName("", sx.flex, sx.flex1, sx.justifyCenter)}><IconGlobe size={14} /> Cloudflare</SegmentedOption>
 							</Segmented>
 						</SettingsForm>
 
-						<SettingsForm className={utilityClassName("m-0 min-w-0 gap-4 bg-raised p-6 phone:p-4")}>
+						<SettingsForm className={cn(utilityClassName("m-0 min-w-0 gap-4 bg-raised p-6 phone:p-4"), mergeStylexOverrideClassName("", sx.desktopBgPanel))}>
 							<div {...stylex.props(sx.flex, sx.itemsCenter, sx.justifyBetween, sx.gap4)}>
-								<div {...mergeStylexProps("text-item-title", sx.minW0, sx.fontSemibold, sx.textFg)}>Set up {selectedMethod.label}</div>
+								<div {...mergeStylexProps("text-item-title", sx.minW0, sx.fontSemibold, sx.textFg)}>{method === "custom" ? "Caddy" : "Cloudflare"}</div>
 								<div {...stylex.props(sx.shrink0)}>
 									<StatusChip label={busy === "apply" ? "Setting up" : ingressHealthLabel(selectedHealth)} dot={busy === "apply" ? "var(--yellow)" : ingressHealthDot(selectedHealth)} />
 								</div>

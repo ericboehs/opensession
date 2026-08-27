@@ -278,7 +278,19 @@ async function buildWorkerSidecars(destDir: string): Promise<void> {
 	mkdirSync(destDir, { recursive: true });
 	for (const { entry, name } of WORKER_SIDECARS) {
 		const out = join(destDir, name);
-		const proc = Bun.spawn(["bun", "build", "--target=bun", join(REPO_ROOT, entry), "--outfile", out], {
+		// A worker's server-only import graph may retain frontend-build's
+		// dev-only HTML import until runtime DCE. Keep HTML external so Bun does
+		// not promote it to a second entry point that collides with --outfile.
+		const proc = Bun.spawn([
+			"bun",
+			"build",
+			"--target=bun",
+			"--external",
+			"*.html",
+			join(REPO_ROOT, entry),
+			"--outfile",
+			out,
+		], {
 			cwd: REPO_ROOT,
 			stdout: "inherit",
 			stderr: "inherit",

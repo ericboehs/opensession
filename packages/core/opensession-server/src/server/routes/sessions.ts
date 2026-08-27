@@ -6,7 +6,10 @@
  * next handler (see routes/index.ts for the dispatch order).
  */
 
-import { executeSessionProjection } from "../session-projection-executor";
+import {
+	executeArchiveOverrideProjection,
+	executeSessionProjection,
+} from "../session-projection-executor";
 import { transcriptSearchWorkerArgv } from "../../runner-host/exe";
 import { requestUser, type RouteContext } from "./context";
 import {
@@ -1569,7 +1572,7 @@ export async function handleSessionsRoutes(
         }
       }
     }
-		await executeSessionProjection(sessionId, "archive_override", () =>
+		await executeArchiveOverrideProjection(sessionId, () =>
 			setArchived(sessionId, archived),
 		);
 		// Plain done-tickets are archived via a file-level flag, not the

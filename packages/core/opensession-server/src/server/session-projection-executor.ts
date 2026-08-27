@@ -3,6 +3,7 @@ import {
   sessionGatewayCommand,
   type GatewayCommandOperation,
 } from "./session-kernel";
+import { SessionKernelQuarantinedError } from "./session-kernel/actor-client";
 
 // Bounded retry for saturation-class kernel errors. Under concurrent load the
 // actor service sheds work with retryable "lane/mailbox is full" errors, and
@@ -200,4 +201,29 @@ export function executeSessionProjection<T>(
       throw error;
     }
   });
+}
+
+/**
+ * Keep reversible archive visibility available while actor-owned state is
+ * quarantined. Archiving neither releases the safety fence nor retries the
+ * uncertain action, and the archive registry already supports idempotent
+ * writes. Every other projection failure still fails closed.
+ */
+export async function executeArchiveOverrideProjection<T>(
+  sessionId: string,
+  mutate: () => T | Promise<T>,
+  project: typeof executeSessionProjection = executeSessionProjection,
+): Promise<T> {
+  let mutation: Promise<T> | undefined;
+  const mutateOnce = () => (mutation ??= Promise.resolve().then(mutate));
+  try {
+    return await project(sessionId, "archive_override", mutateOnce);
+  } catch (error) {
+    if (
+      !(error instanceof SessionKernelQuarantinedError) ||
+      error.sessionId !== sessionId
+    )
+      throw error;
+    return mutateOnce();
+  }
 }
