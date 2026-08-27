@@ -148,7 +148,7 @@ export function SetupWidget({
 					aria-valuemin={0}
 					aria-valuemax={items.length}
 					aria-valuenow={completed.length}
-					className={utilityClassName("h-1 min-w-8 flex-1 overflow-hidden rounded-[999px] bg-active")}
+					className={utilityClassName("h-1 w-8 shrink-0 overflow-hidden rounded-[999px] bg-active")}
 				>
 					<div
 						className={utilityClassName("h-full rounded-[999px] bg-accent")}

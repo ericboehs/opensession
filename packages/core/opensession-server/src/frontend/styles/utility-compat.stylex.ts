@@ -1648,6 +1648,9 @@ const sx = stylex.create({
 	maxW780px: {
 			maxWidth: "780px"
 	},
+	maxW880px: {
+			maxWidth: "880px"
+	},
 	maxWCalc100vw16px: {
 			maxWidth: "calc(100vw - 16px)"
 	},
@@ -3207,6 +3210,9 @@ const sx = stylex.create({
 	wMin640px100: {
 			width: "min(640px, 100%)"
 	},
+	wMin880pxCalc100vw32px: {
+			width: "min(880px, calc(100vw - 32px))"
+	},
 	wVarSidebarW280px: {
 			width: "var(--sidebar-w,280px)"
 	},
@@ -3678,6 +3684,7 @@ export const utilityStyles = {
 	"max-w-[720px]": sx.maxW720px,
 	"max-w-[750px]": sx.maxW750px,
 	"max-w-[780px]": sx.maxW780px,
+	"max-w-[880px]": sx.maxW880px,
 	"max-w-[calc(100vw-16px)]": sx.maxWCalc100vw16px,
 	"max-w-[calc(var(--session-col)+40px)]": sx.maxWCalcVarSessionCol40px,
 	"max-w-[min(320px,calc(100vw-1rem))]": sx.maxWMin320pxCalc100vw1rem,
@@ -4087,6 +4094,7 @@ export const utilityStyles = {
 	"w-[min(1040px,calc(100vw-32px))]": sx.wMin1040pxCalc100vw32px,
 	"w-[min(1280px,92vw)]": sx.wMin1280px92vw,
 	"w-[min(640px,100%)]": sx.wMin640px100,
+	"w-[min(880px,calc(100vw-32px))]": sx.wMin880pxCalc100vw32px,
 	"w-[var(--sidebar-w,280px)]": sx.wVarSidebarW280px,
 	"w-[var(--swipe-action-w,82px)]": sx.wVarSwipeActionW82px,
 	"w-auto": sx.wAuto,
