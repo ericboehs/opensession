@@ -632,8 +632,11 @@ function IndexedTranscriptBlocks(props: Props) {
 	atoms = sortIndexedTimelineAtoms(atoms);
 	// Live turn frames arrive before their durable sequence numbers. Keep a
 	// separate overlay on the durable tail range so one assistant turn cannot
-	// temporarily split into a settled Worked group and a loose call. The range
-	// bounds and entry IDs stay durable-only for sparse hydration requests.
+	// temporarily split into a settled Worked group and loose calls. Assistant
+	// narration must join the overlay too: it commonly arrives immediately before
+	// a batch of tools, and leaving it standalone prevents every following tool
+	// from reaching the tail range. The range bounds and entry IDs stay
+	// durable-only for sparse hydration requests.
 	const tailRange = ranges[ranges.length - 1];
 	for (let index = 1; index < atoms.length; index++) {
 		const atom = atoms[index]!;
@@ -642,7 +645,7 @@ function IndexedTranscriptBlocks(props: Props) {
 			atom.kind !== "entry" ||
 			previous.kind !== "range" ||
 			previous.range !== tailRange ||
-			!isLiveToolEntry(atom.entry)
+			!isTurnContinuationEntry(atom.entry)
 		)
 			continue;
 		previous.continuationEntryIds.push(atom.entry.id);
@@ -856,8 +859,12 @@ function IndexedTranscriptBlocks(props: Props) {
 	);
 }
 
-function isLiveToolEntry(entry: TranscriptEntry): boolean {
-	return entry.type === "tool_use" || entry.type === "tool_result";
+function isTurnContinuationEntry(entry: TranscriptEntry): boolean {
+	return (
+		entry.type === "assistant" ||
+		entry.type === "tool_use" ||
+		entry.type === "tool_result"
+	);
 }
 
 /**

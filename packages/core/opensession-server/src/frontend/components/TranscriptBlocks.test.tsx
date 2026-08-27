@@ -1080,6 +1080,69 @@ describe("TranscriptBlocks indexed ranges", () => {
 		}
 	});
 
+	test("keeps live tools grouped when unindexed narration precedes them", () => {
+		setTurnPrefs(null);
+		const html = renderToStaticMarkup(
+			<TranscriptBlocks
+				live
+				transcriptIndex={[indexRow(1, "user")]}
+				entries={[
+					{
+						id: "indexed-1",
+						seq: 1,
+						changeSeq: 1,
+						type: "user",
+						content: "Inspect the settings",
+						timestamp: "2026-08-12T12:00:01Z",
+					},
+					{
+						id: "live-narration",
+						type: "assistant",
+						content: "I’ll inspect the relevant files first.",
+						timestamp: "2026-08-12T12:00:02Z",
+					},
+					{
+						id: "live-tool-1",
+						type: "tool_use",
+						toolUseId: "call-1",
+						toolName: "read",
+						toolInput: { filePath: "settings.ts" },
+						content: "Using read",
+						timestamp: "2026-08-12T12:00:03Z",
+					},
+					{
+						id: "live-result-1",
+						type: "tool_result",
+						toolUseId: "call-1",
+						content: "first",
+						timestamp: "2026-08-12T12:00:04Z",
+					},
+					{
+						id: "live-tool-2",
+						type: "tool_use",
+						toolUseId: "call-2",
+						toolName: "read",
+						toolInput: { filePath: "routes.ts" },
+						content: "Using read",
+						timestamp: "2026-08-12T12:00:05Z",
+					},
+					{
+						id: "live-result-2",
+						type: "tool_result",
+						toolUseId: "call-2",
+						content: "second",
+						timestamp: "2026-08-12T12:00:06Z",
+					},
+				]}
+			/>,
+		);
+
+		expect(html.match(/>Working<\/span>/g)).toHaveLength(1);
+		expect(html).not.toContain(">Worked</span>");
+		expect(html).toContain("2 steps");
+		expect(html).toContain("I’ll inspect the relevant files first.");
+	});
+
 	test("keeps a note inside its loaded conversation range", () => {
 		const html = renderToStaticMarkup(
 			<TranscriptBlocks

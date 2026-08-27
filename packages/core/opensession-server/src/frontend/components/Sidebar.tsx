@@ -6343,10 +6343,10 @@ fetchFeedItems("plain")
 						<button
 							className={cn(SIDEBAR_BAND_TOGGLE, SIDEBAR_BAND_TOGGLE_INSET)}
 							onClick={() => toggleBand("people")}
-							title={peopleOpen ? "Collapse people" : "Expand people"}
+							title={peopleOpen ? "Collapse team" : "Expand team"}
 							aria-expanded={peopleOpen}
 						>
-							<span className={utilityClassName("min-w-0 truncate")}>People</span>
+							<span className={utilityClassName("min-w-0 truncate")}>Team</span>
 							<span className={SIDEBAR_GROUP_COUNT}>
 								{activePersonGroups.reduce(
 									(count, group) => count + group.activeSessions.length,
@@ -6479,6 +6479,17 @@ fetchFeedItems("plain")
 				>
 					{archivedLink}
 				</div>
+			)}
+
+			{/* Phones keep setup in the sidebar's normal scroll flow. The bottom
+			    margin clears the paired new-session and Desk controls. */}
+			{isPhone && (
+				<SetupWidget
+					placement="phone"
+					hasCreatedSession={sessions.length > 0}
+					onOpenSettings={onOpenSettings}
+					onNewSession={onNewSession}
+				/>
 			)}
 
 			{/* One card for the whole workspace list: the rows come out of a plain
@@ -6619,11 +6630,16 @@ fetchFeedItems("plain")
 			onCustomize={() => setCustomizeOpen(true)}
 		/>
 		</ContextMenu.Root>
-		<SetupWidget
-			hasCreatedSession={sessions.length > 0}
-			onOpenSettings={onOpenSettings}
-			onNewSession={onNewSession}
-		/>
+		{!isPhone &&
+			createPortal(
+				<SetupWidget
+					placement="desktop"
+					hasCreatedSession={sessions.length > 0}
+					onOpenSettings={onOpenSettings}
+					onNewSession={onNewSession}
+				/>,
+				document.body,
+			)}
 		<SidebarCustomizeDialog
 			open={customizeOpen}
 			onOpenChange={setCustomizeOpen}

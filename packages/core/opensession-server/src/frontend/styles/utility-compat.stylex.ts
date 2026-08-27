@@ -3050,6 +3050,11 @@ const sx = stylex.create({
 			transitionTimingFunction: "var(--tw-ease, var(--ease))",
 			transitionDuration: "var(--tw-duration, var(--dur-micro))"
 	},
+	transitionBackgroundColorColorScale: {
+			transitionProperty: "background-color,color,scale",
+			transitionTimingFunction: "var(--tw-ease, var(--ease))",
+			transitionDuration: "var(--tw-duration, var(--dur-micro))"
+	},
 	transitionBackgroundColorScale: {
 			transitionProperty: "background-color,scale",
 			transitionTimingFunction: "var(--tw-ease, var(--ease))",
@@ -4043,6 +4048,7 @@ export const utilityStyles = {
 	"tracking-[0.02em]": sx.tracking002em2,
 	"transform-[translateX(var(--swipe-x,0))]": sx.transformTranslateXVarSwipeX0,
 	"transition-[background-color,border-color,color,filter,scale]": sx.transitionBackgroundColorBorderColorColorFilterScale,
+	"transition-[background-color,color,scale]": sx.transitionBackgroundColorColorScale,
 	"transition-[background-color,scale]": sx.transitionBackgroundColorScale,
 	"transition-[background-color]": sx.transitionBackgroundColor,
 	"transition-[border-color,box-shadow]": sx.transitionBorderColorBoxShadow,

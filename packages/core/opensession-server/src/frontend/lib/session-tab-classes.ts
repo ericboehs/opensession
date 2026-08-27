@@ -806,7 +806,12 @@ export const TAB_STRIP =
 export const TAB_SCROLL =
 	// `flex-[1_1_auto]`, not `flex-1`: Tailwind's shorthand is `1 1 0%`, and a
 	// zero basis sizes the scroll from nothing rather than from its tabs.
-	mergeStylexClassName("", sx.flex, sx.minW0, sx.flex11Auto, sx.itemsCenter, sx.gap3px, sx.overflowXAuto, sx.overscrollXContain, sx.containerTypeInlineSize) + " " +
+	// Only split strips become size containers: inline-size containment on the
+	// intrinsic-width desktop strip would erase the tabs from its flex basis and
+	// collapse the whole scroller. A split instead fills its available width so
+	// TAB_BASE can safely use that definite query size.
+	mergeStylexClassName("", sx.flex, sx.minW0, sx.flex11Auto, sx.itemsCenter, sx.gap3px, sx.overflowXAuto, sx.overscrollXContain) + " " +
+	"data-[split]:[container-type:inline-size] data-[split]:desktop:flex-[1_1_auto] " +
 	mergeStylexClassName("[&::-webkit-scrollbar]:hidden", sx.ScrollbarWidthNone) +
 	// Hug the content on desktop so the pinned "+" sits right after the last tab
 	// rather than being pushed to the far right. The group keeps its intrinsic
