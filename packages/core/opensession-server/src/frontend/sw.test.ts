@@ -116,11 +116,15 @@ describe("service worker navigation freshness", () => {
       "os1-shell-html-v2",
       "os1-shell-assets-v1",
       "os1-shell-gate-v1",
+      "os1-shell-gate-v2",
     ]);
 
     await runWorkerLifecycleEvent(harness, "activate");
 
-    expect(harness.deletedCacheNames).toEqual(["os1-shell-html-v1"]);
+    expect(harness.deletedCacheNames).toEqual([
+      "os1-shell-html-v1",
+      "os1-shell-gate-v1",
+    ]);
     expect(harness.navigated).toEqual(["https://os.test/"]);
   });
 
@@ -128,7 +132,7 @@ describe("service worker navigation freshness", () => {
     const harness = workerHarness("/", [
       "os1-shell-html-v2",
       "os1-shell-assets-v1",
-      "os1-shell-gate-v1",
+      "os1-shell-gate-v2",
     ]);
 
     await runWorkerLifecycleEvent(harness, "activate");
@@ -145,8 +149,8 @@ describe("service worker gate assets", () => {
 
     expect(harness.added).toEqual([
       "/mac-app-icon.png",
-      "/signin-bg.webp",
-      "/signin-bg-dark.webp",
+      "/onboarding-bg.webp",
+      "/onboarding-bg-dark.webp",
     ]);
   });
 

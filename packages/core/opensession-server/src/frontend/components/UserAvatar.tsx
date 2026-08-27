@@ -58,6 +58,7 @@ export function UserAvatar({
 	image: imageProp,
 	size = 24,
 	edge = true,
+	glow = false,
 	className,
 	title,
 	style,
@@ -71,6 +72,8 @@ export function UserAvatar({
 	/** Draw the hairline around a photo. Off where the picture is one glyph in
 	 *  a row of chrome and an edge reads as a second box. */
 	edge?: boolean;
+	/** Add the lifted glow used by prominent setup tiles. */
+	glow?: boolean;
 	className?: string;
 	title?: string;
 	style?: React.CSSProperties;
@@ -102,6 +105,9 @@ export function UserAvatar({
 				width: size,
 				height: size,
 				fontSize: Math.max(9, Math.round(size * 0.46)),
+				boxShadow: glow
+					? "var(--avatar-edge), 0 1px 2px rgba(0, 0, 0, 0.08), 0 5px 14px -6px color-mix(in srgb, var(--accent) 42%, transparent)"
+					: undefined,
 				...style,
 			}}
 			title={title}

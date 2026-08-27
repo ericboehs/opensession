@@ -36,6 +36,17 @@ final class QueueMessageTests: XCTestCase {
         XCTAssertEqual(message.body, "Inspection complete.")
     }
 
+    func testLegacyWorkerFailureIsLabelledAndStripped() {
+        let message = present(
+            "Server notice: worker task `bks-42` ended in error without reporting back."
+        )
+        XCTAssertEqual(message.label, "Worker report")
+        XCTAssertEqual(
+            message.body,
+            "Worker task `bks-42` ended in error without reporting back."
+        )
+    }
+
     func testStackedSentinelsAreAllStripped() {
         let message = present(
             "<!--os:worker-report:os-42--><!--os:workflow-notice:wf-1-->\n✅ Workflow finished"

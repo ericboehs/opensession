@@ -1,10 +1,19 @@
 import { describe, expect, test } from "bun:test";
 import {
+	errorMatchesPendingCreate,
 	shouldApplyCreatedSessionReply,
 	shouldOpenCreatedSession,
 } from "./new-session-navigation";
 
 const appSource = await Bun.file(new URL("../App.tsx", import.meta.url)).text();
+
+describe("errorMatchesPendingCreate", () => {
+	test("only accepts an error scoped to the deterministic create id", () => {
+		expect(errorMatchesPendingCreate("os-new", "os-new")).toBe(true);
+		expect(errorMatchesPendingCreate(undefined, "os-new")).toBe(false);
+		expect(errorMatchesPendingCreate("os-watched", "os-new")).toBe(false);
+	});
+});
 
 describe("shouldApplyCreatedSessionReply", () => {
 	test("drops a durable create replay after its pending draft is gone", () => {

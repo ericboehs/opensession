@@ -37,12 +37,16 @@ import {
 	fireStoredSessionTimer,
 	registerSessionTimerHandler,
 	sessionAsk,
+	sessionAskMigrationComplete,
 	sessionKernel,
-	sessionKernelStore,
+	markSessionAskMigrationComplete,
 } from "./session-kernel";
 import { wrapContext } from "./prompt-context";
 
 const ASK_UI_TIMEOUT_MS = 4 * 60 * 1000;
+const askMigrationState = ((globalThis as typeof globalThis & {
+	__opensessionAskMigrationState?: { complete: boolean };
+}).__opensessionAskMigrationState ??= { complete: false });
 
 // Moved to the protocol package (as AskQuestion); the old name stays for
 // existing import sites.
@@ -139,7 +143,7 @@ export function persistPendingAsks(storePath = pendingAskStorePath()): void {
 		// retired after the actor records its one-time import receipt.
 		if (
 			storePath === pendingAskStorePath() &&
-			sessionKernelStore().askMigrationComplete()
+			askMigrationState.complete
 		)
 			return;
 		const asks: PersistedPendingAsk[] = [];
@@ -397,7 +401,7 @@ export function recordAskAnswer(
 ): void {
 	if (!answers || !questions.length) return;
 	try {
-		storeAppendUserLineEarly(
+		void storeAppendUserLineEarly(
 			sessionId,
 			transcriptLineAskRecord(
 				askRecordEntryContent(questions, answers),
@@ -583,14 +587,18 @@ export async function restorePendingAsks(
   } = {},
 ): Promise<number> {
 	const storePath = options.storePath ?? pendingAskStorePath();
-  const kernelStore = sessionKernelStore();
-  const actorAuthority =
-    storePath === pendingAskStorePath() && kernelStore.askMigrationComplete();
+	const actorAuthority =
+		storePath === pendingAskStorePath() && await sessionAskMigrationComplete();
+	if (storePath === pendingAskStorePath())
+		askMigrationState.complete = actorAuthority;
 	let stored: { asks?: PersistedPendingAsk[] };
-  if (actorAuthority) {
-    removeLegacyAskStore(storePath);
-    stored = {
-      asks: [...pendingAsks].map(([sessionId, ask]) => ({
+	if (actorAuthority) {
+		removeLegacyAskStore(storePath);
+		const entries = await sessionAsk({ op: "entries" }) as Array<
+			[string, PendingAsk]
+		>;
+		stored = {
+			asks: entries.map(([sessionId, ask]) => ({
         sessionId,
         questionId: ask.questionId,
         questions: ask.questions as AskQuestionInput[],
@@ -615,10 +623,11 @@ export async function restorePendingAsks(
       })),
     };
   } else {
-    if (!existsSync(storePath)) {
-      if (storePath === pendingAskStorePath()) {
-        kernelStore.markAskMigrationComplete();
-        removeLegacyAskStore(storePath);
+		if (!existsSync(storePath)) {
+			if (storePath === pendingAskStorePath()) {
+				await markSessionAskMigrationComplete();
+				askMigrationState.complete = true;
+				removeLegacyAskStore(storePath);
       }
       return 0;
     }
@@ -639,7 +648,7 @@ export async function restorePendingAsks(
 			!Array.isArray(saved.questions) ||
 			!Number.isFinite(saved.askedAt) ||
 			!sessionExists(saved.sessionId) ||
-      (!actorAuthority && pendingAsks.has(saved.sessionId))
+			(!actorAuthority && (await pendingAsks.getAsync(saved.sessionId)) !== undefined)
 		) {
 			continue;
 		}
@@ -686,9 +695,10 @@ export async function restorePendingAsks(
 	}
 	// Drop invalid or deleted-session records immediately. A card removed before
 	// the crash is absent because its answer path persists the delete first.
-  if (storePath === pendingAskStorePath()) {
-    kernelStore.markAskMigrationComplete();
-    removeLegacyAskStore(storePath);
+	if (storePath === pendingAskStorePath()) {
+		await markSessionAskMigrationComplete();
+		askMigrationState.complete = true;
+		removeLegacyAskStore(storePath);
   }
 	persistPendingAsks(storePath);
 	if (restored > 0) {

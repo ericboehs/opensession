@@ -61,6 +61,7 @@
       "name": "@tellahq/opensession-website",
       "version": "0.1.0",
       "dependencies": {
+        "@vercel/analytics": "^2.0.1",
         "agentation": "^3.0.2",
         "next": "^16.3.2",
         "react": "^19.2.0",
@@ -828,6 +829,8 @@
     "@ungap/structured-clone": ["@ungap/structured-clone@1.3.1", "", {}, "sha512-mUFwbeTqrVgDQxFveS+df2yfap6iuP20NAKAsBt5jDEoOTDew+zwLAOilHCeQJOVSvmgCX4ogqIrA0mnyr08yQ=="],
 
     "@upsetjs/venn.js": ["@upsetjs/venn.js@2.0.0", "", { "optionalDependencies": { "d3-selection": "^3.0.0", "d3-transition": "^3.0.1" } }, "sha512-WbBhLrooyePuQ1VZxrJjtLvTc4NVfpOyKx0sKqioq9bX1C1m7Jgykkn8gLrtwumBioXIqam8DLxp88Adbue6Hw=="],
+
+    "@vercel/analytics": ["@vercel/analytics@2.0.1", "", { "peerDependencies": { "@remix-run/react": "^2", "@sveltejs/kit": "^1 || ^2", "next": ">= 13", "nuxt": ">= 3", "react": "^18 || ^19 || ^19.0.0-rc", "svelte": ">= 4", "vue": "^3", "vue-router": "^4" }, "optionalPeers": ["@remix-run/react", "@sveltejs/kit", "next", "nuxt", "react", "svelte", "vue", "vue-router"] }, "sha512-MTQG6V9qQrt1tsDeF+2Uoo5aPjqbVPys1xvnIftXSJYG2SrwXRHnqEvVoYID7BTruDz4lCd2Z7rM1BdkUehk2g=="],
 
     "@xterm/addon-fit": ["@xterm/addon-fit@0.11.0", "", {}, "sha512-jYcgT6xtVYhnhgxh3QgYDnnNMYTcf8ElbxxFzX0IZo+vabQqSPAjC3c1wJrKB5E19VwQei89QCiZZP86DCPF7g=="],
 
@@ -1710,8 +1713,6 @@
     "@team-plain/typescript-sdk/ajv-formats": ["ajv-formats@2.1.1", "", { "dependencies": { "ajv": "^8.0.0" } }, "sha512-Wx0Kx52hxE7C18hkMEggYlEifqWZtYaRgouJor+WMdPnQyEK13vgEWyVNup7SoeeoLMsr4kf5h6dOW11I15MUA=="],
 
     "@team-plain/typescript-sdk/zod": ["zod@3.22.4", "", {}, "sha512-iC+8Io04lddc+mVqQ9AZ7OQ2MrUKGN+oIQyq1vemgt46jwCwLfhq7/pwnBnNXXXZb8VTVLKwp9EDkx+ryxIWmg=="],
-
-    "@tellahq/opensession-server/@rynfar/meridian-source": ["@rynfar/meridian@github:rynfar/meridian#948a10a", { "dependencies": { "@anthropic-ai/claude-agent-sdk": "^0.2.117", "@anthropic-ai/claude-code": "^2.1.198", "jsonc-parser": "^3.3.1", "libsql": "^0.5.29" }, "bin": { "meridian": "./dist/cli.js", "claude-max-proxy": "./dist/cli.js" } }, "rynfar-meridian-948a10a", "sha512-IpBD8zdYyY4cTkLKlgkdtPpV4uRDGcEkUo+Y7ihvw3qj7HmZfkkLotJDtGDpmBN2bdpgRun9/T5IAETy8JQhmg=="],
 
     "@tellahq/opensession-server/@types/bun": ["@types/bun@1.4.0", "", { "dependencies": { "bun-types": "1.4.0" } }, "sha512-K+lZULY23vRgK/CfTjFIV+tyifaNdSMlPh9j+6mQ/cLfpOznLyAuzgV/JQysyECpkBQLVMSyvjlr2fBUSA9wFQ=="],
 

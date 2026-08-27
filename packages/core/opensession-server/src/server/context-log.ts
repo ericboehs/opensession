@@ -171,7 +171,7 @@ export function logInjectedContext(input: InjectedContextInput): void {
 		// The ordinary entry path — same helper the intake user line uses, so
 		// the import-first gate, the 32KB blob split and the bus publish all
 		// behave exactly as they do for any other entry.
-		storeAppendUserLineEarly(
+		void storeAppendUserLineEarly(
 			sessionId,
 			transcriptLineContextInjection(
 				block.body,
@@ -286,9 +286,9 @@ export function canonicalJson(value: unknown): string {
  * undefined despite the required type (2026-08-16). An audit record is never
  * worth a turn.
  */
-export function logStandingContext(input: StandingContextInput): void {
+export async function logStandingContext(input: StandingContextInput): Promise<void> {
 	try {
-		appendStandingContext(input);
+		await appendStandingContext(input);
 	} catch (e) {
 		console.warn(
 			`[context-log] standing "${input.source}" not recorded: ${e instanceof Error ? e.message : String(e)}`,
@@ -301,11 +301,11 @@ export function logStandingContext(input: StandingContextInput): void {
  * happens INSIDE the guard, which is where a producer's own bad input (a
  * missing field, a circular object) would otherwise escape.
  */
-export function logStandingJson(
+export async function logStandingJson(
 	input: Omit<StandingContextInput, "content"> & { value: unknown },
-): void {
+): Promise<void> {
 	try {
-		appendStandingContext({ ...input, content: canonicalJson(input.value) });
+		await appendStandingContext({ ...input, content: canonicalJson(input.value) });
 	} catch (e) {
 		console.warn(
 			`[context-log] standing "${input.source}" not recorded: ${e instanceof Error ? e.message : String(e)}`,
@@ -313,7 +313,7 @@ export function logStandingJson(
 	}
 }
 
-function appendStandingContext(input: StandingContextInput): void {
+async function appendStandingContext(input: StandingContextInput): Promise<void> {
 	const sessionId = input.sessionId || "";
 	const content = input.content?.trim();
 	if (!sessionId || !content) return;
@@ -339,7 +339,7 @@ function appendStandingContext(input: StandingContextInput): void {
 		.update(`${sessionId}\u0000${input.source}\u0000${hash}`)
 		.digest("hex")
 		.slice(0, 32)}`;
-	storeAppendUserLineEarly(
+	await storeAppendUserLineEarly(
 		sessionId,
 		transcriptLineStandingContext(
 			content,

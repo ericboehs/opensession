@@ -1,6 +1,10 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { enrichSessionRuntime, invalidateSessionsCache } from "./session-cache";
-import { sessionKernelStore } from "./session-kernel";
+import {
+	enrichSessionRuntime,
+	invalidateSessionsCache,
+	runStateRequiresLiveOwner,
+} from "./session-cache";
+import { __sessionKernelStoreForTest } from "./session-kernel";
 import type { UnifiedSession } from "./types";
 import { allClients } from "./ws-hub";
 
@@ -30,6 +34,14 @@ test("session cache invalidation notifies connected list clients", () => {
 });
 
 describe("session runtime enrichment", () => {
+	test("requires an owner for every non-human unsettled state", () => {
+		expect(runStateRequiresLiveOwner("preparing")).toBe(true);
+		expect(runStateRequiresLiveOwner("running")).toBe(true);
+		expect(runStateRequiresLiveOwner("reattaching")).toBe(true);
+		expect(runStateRequiresLiveOwner("ask_blocked")).toBe(false);
+		expect(runStateRequiresLiveOwner("idle")).toBe(false);
+	});
+
 	test("clears stale indexed running state after the runtime settles", () => {
 		const session = {
 			id: "stale-indexed-runtime-test",
@@ -44,7 +56,7 @@ describe("session runtime enrichment", () => {
 	});
 
 	test("uses one run-state projection for a full session list", () => {
-		const store = sessionKernelStore();
+		const store = __sessionKernelStoreForTest();
 		const originalRunState = store.runState;
 		const originalRunStates = store.runStates;
 		let projectionReads = 0;

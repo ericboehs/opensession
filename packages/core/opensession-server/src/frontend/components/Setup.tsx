@@ -192,7 +192,7 @@ export function SetupPanel({
             <SetupPageSection
               id="github"
               title="Connect GitHub"
-              description="Give sessions access to repositories and pull requests."
+              description="The GitHub App controls repository access. PR automation is optional."
               className="mt-0"
             >
               <IntegrationsList

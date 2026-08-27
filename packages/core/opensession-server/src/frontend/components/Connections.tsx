@@ -45,6 +45,7 @@ import { IconTile } from "./BrandTile";
 import { UserAvatar } from "./UserAvatar";
 import { docTitle, DEFAULT_DOC_TITLE } from "../lib/brand";
 import { ProjectsSection } from "./ProjectsSection";
+import { GithubPrivateKeyField } from "./GithubPrivateKeyField";
 
 interface McpConnection {
   name: string;
@@ -490,11 +491,8 @@ interface DeviceFlow {
  */
 // The create-app form on GitHub can be pre-filled with URL query parameters
 // (docs.github.com/apps/sharing-github-apps/registering-a-github-app-using-url-parameters).
-// `device_flow_enabled` is undocumented but pre-ticks the Enable Device Flow
-// box — so the only thing left to do by hand is generate a client secret. It
-// is treated as best-effort: the wizard still asks the user to confirm Device
-// Flow is on, in case GitHub ever drops the param. GitHub ignores unknown
-// params, so this can only under-fill, never error.
+// Device Flow is not one of the supported parameters, so the wizard asks the
+// user to enable it manually after creating the App.
 // Blank org creates the app under the signed-in personal account; an org login
 // creates it under that organization (so the org owns it and it can reach org
 // repos). Same query params either way.
@@ -513,7 +511,6 @@ function buildGithubAppCreateUrl(name: string, org: string, webhookBaseUrl: stri
     // request, so the App is not born missing `issues` or `checks` (the drift
     // this builder used to have: no issues, no checks).
     ...GITHUB_APP_GRANT_PERMISSIONS,
-    device_flow_enabled: "true",
   }).toString();
   const base = org.trim()
     ? `https://github.com/organizations/${encodeURIComponent(org.trim())}/settings/apps/new`
@@ -552,8 +549,8 @@ function WizardCheck({ children }: { children: React.ReactNode }) {
 
 /**
  * Guided setup for a bring-your-own GitHub App: create it on GitHub (form
- * pre-filled), paste its id/slug/secret, install it on the repos you pick, then
- * connect. It lives outside the card so saving the client id — which re-renders
+ * pre-filled), enter its id/slug/secret, upload its key, install it on the repos
+ * you pick, then connect. It lives outside the card so saving the client id — which re-renders
  * the card from "no app" to "app configured" — doesn't unmount it mid-flow.
  */
 function GithubAppWizard({
@@ -675,7 +672,7 @@ function GithubAppWizard({
   const createReady = appOwner === "you" || !!appOrg.trim();
   const previewSlug = deriveGithubAppSlug(appName);
   const canSave = !!clientId.trim() && !!slug.trim() && !!secret.trim();
-  const titles = ["Create the app", "Paste the details", "Install on your repos", "Connect"];
+  const titles = ["Create the app", "Add the details", "Install on your repos", "Connect"];
 
   return (
     <Modal.Root open={open} onOpenChange={(next) => !saving && onOpenChange(next)}>
@@ -861,25 +858,21 @@ function GithubAppWizard({
                   copy it (shown once). Required.
                 </span>
               </div>
-              <div className="flex flex-col gap-1">
-                <label className="text-supporting text-fg">Private key (PEM)</label>
-                <textarea
-                  className={cn(settingsInputClass, "min-h-20 resize-y font-mono")}
-                  value={privateKey}
-                  onChange={(e) => setPrivateKey(e.target.value)}
-                  placeholder="-----BEGIN RSA PRIVATE KEY-----"
-                  aria-label="GitHub App private key (PEM)"
-                  autoCapitalize="none"
-                  autoComplete="off"
-                  spellCheck={false}
-                />
-                <span className="text-meta leading-snug text-faint">
-                  In <span className="text-dim">Private keys</span>, click{" "}
-                  <span className="text-dim">Generate a private key</span>, then paste
-                  the downloaded .pem here. Lets the bot and PR checks run on the App;
-                  leave blank for sign-in only.
-                </span>
-              </div>
+              <GithubPrivateKeyField
+                configured={false}
+                required={false}
+                saving={saving}
+                value={privateKey}
+                onChange={setPrivateKey}
+                description={
+                  <>
+                    In <span className="text-dim">Private keys</span>, click{" "}
+                    <span className="text-dim">Generate a private key</span>, then choose
+                    the downloaded .pem file. Lets the bot and PR checks run on the App;
+                    leave blank for sign-in only.
+                  </>
+                }
+              />
             </div>
             <Modal.Footer>
               <Button
@@ -962,7 +955,7 @@ function GithubAppWizard({
                 </div>
                 <div className="flex items-center gap-2 text-supporting text-dim">
                   <PulseDot size={7} />
-                  <span>Waiting for GitHub…</span>
+                  <span>Waiting for GitHub. Authorize there, then close that tab.</span>
                 </div>
               </div>
             ) : error ? (
@@ -996,7 +989,10 @@ function GithubAppWizard({
 
 /** `personal`: only the signed-in user's own row (the Account page);
  *  default shows the whole team roster (admin overview). */
-export function GithubAccounts({ personal = false }: { personal?: boolean } = {}) {
+export function GithubAccounts({
+  personal = false,
+  showHeading = true,
+}: { personal?: boolean; showHeading?: boolean } = {}) {
   const [data, setData] = useState<GithubAuthData | null>(null);
   const [flow, setFlow] = useState<DeviceFlow | null>(null);
   const [flowState, setFlowState] = useState<"idle" | "starting" | "waiting">("idle");
@@ -1213,7 +1209,7 @@ setError(e.message);
         <span className="flex min-w-0 flex-1 items-center gap-2">
           <PulseDot size={7} />
           <span className="min-w-0">
-            Waiting for GitHub. Sign in as the account you want to connect.
+            Waiting for GitHub. Authorize there, then close that tab and return here.
           </span>
         </span>
         <Button
@@ -1242,7 +1238,7 @@ setError(e.message);
     const connected = !!account;
     return (
       <>
-        <SectionHeading>GitHub</SectionHeading>
+        {showHeading && <SectionHeading>GitHub</SectionHeading>}
         {error && <InlineAlert onDismiss={() => setError(null)}>{error}</InlineAlert>}
         <SettingCard>
           <SettingRow className="items-start gap-x-3">
@@ -1269,7 +1265,9 @@ setError(e.message);
               <SettingRowDescription className="leading-snug">
                 {connected
                   ? `All sessions clone and open pull requests as @${account.login}.`
-                  : "Connect a GitHub App to clone your private repositories and open pull requests."}
+                  : data.connectAvailable
+                    ? "Sign in so sessions can clone private repositories and open pull requests as you."
+                    : "Set up a GitHub App to access private repositories and open pull requests."}
               </SettingRowDescription>
             </SettingRowText>
             <SettingRowControl className="flex items-center gap-3">
@@ -1325,7 +1323,7 @@ setError(e.message);
                         onClick={startConnect}
                         disabled={flowState !== "idle"}
                       >
-                        {flowState === "starting" ? "Starting…" : "Connect GitHub App"}
+                        {flowState === "starting" ? "Starting…" : "Sign in with GitHub"}
                       </Button>
                       {data.appInstallUrl && (
                         <Button
@@ -1340,13 +1338,14 @@ setError(e.message);
                             />
                           }
                         >
-                          Install on your repositories
+                          Manage repositories
                         </Button>
                       )}
                     </div>
                     <div className="text-meta leading-snug text-faint">
-                      Authorize with a one-time code. No sign-in here, so every
-                      session shares the connected account.
+                      GitHub opens in a new tab. Authorize with the one-time code,
+                      then close that tab and return here. Every session shares the
+                      connected account.
                     </div>
                     {/* A config-set app can be cleared live; an env-set one only
                         gets named, since it needs a restart to change. */}
@@ -1461,7 +1460,9 @@ setError(e.message);
 
   return (
     <>
-      <SectionHeading>{personal ? "GitHub" : "GitHub accounts"}</SectionHeading>
+      {showHeading && (
+        <SectionHeading>{personal ? "GitHub" : "GitHub accounts"}</SectionHeading>
+      )}
       {error && (
         <InlineAlert onDismiss={() => setError(null)}>{error}</InlineAlert>
       )}
@@ -1548,7 +1549,7 @@ setError(e.message);
                   : needsReconnect
                     ? "Reconnect"
                     : personal
-                      ? "Connect"
+                      ? "Sign in"
                       : "Connect account"}
               </Button>
             )}
@@ -1659,7 +1660,7 @@ setError(e.message);
       {personal && (
         <SettingsHint>
           {active
-            ? "Connect GitHub to open pull requests as yourself in interactive sessions. Automations and unconnected teammates use the workspace bot."
+            ? "Sign in with GitHub to open pull requests as yourself in interactive sessions. Automations and unconnected teammates use the workspace bot."
             : "Personal GitHub sign-in is not enabled for this workspace. Pull requests use the workspace bot."}
         </SettingsHint>
       )}

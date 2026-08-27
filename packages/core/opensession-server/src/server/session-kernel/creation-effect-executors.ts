@@ -9,7 +9,7 @@ import { createWorkspace, getWorkspace, type Workspace } from "../workspaces";
 import type { CreationAttachmentSource } from "../uploads";
 import type { WorktreeInfo } from "../worktree";
 import { registerSessionEffectExecutor } from "./effect-executors";
-import { sessionKernel, sessionKernelStore } from "./kernel";
+import { reconcileCreationBranchDeadLetters, sessionKernel } from "./kernel";
 import type { SessionActorEffectFor } from "./lifecycle-protocol";
 import type {
   CreationEventDecisionResult,
@@ -496,7 +496,7 @@ export async function reconcileCompatibleCreationBranchEffects(): Promise<
       project: repo.id,
       worktreePath: resolve(repo.repo),
     }));
-  const retried = sessionKernelStore().retryCompatibleCreationBranchDeadLetters(
+  const retried = await reconcileCreationBranchDeadLetters(
     destinations,
   );
   for (const item of retried)

@@ -11,8 +11,14 @@ import { describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { TranscriptStore } from "./transcript-store";
-import { transcriptLineUser } from "./transcript-persistence";
+import {
+  __setTranscriptStoreForTest,
+  TranscriptStore,
+} from "./transcript-store";
+import {
+  storeAppendUserLineEarly,
+  transcriptLineUser,
+} from "./transcript-persistence";
 import { parseJsonlLines } from "./jsonl-parser";
 
 async function withStore(run: (store: TranscriptStore) => Promise<void>) {
@@ -46,7 +52,39 @@ describe("intake-time user-line persist", () => {
 
     expect(persisted).toBeGreaterThan(-1);
     expect(promptWrite).toBeGreaterThan(persisted);
+    expect(source.slice(promptWrite - 10, promptWrite)).toContain("await");
+    expect(source.slice(promptWrite, workspaceSetup)).toContain("required: true");
     expect(workspaceSetup).toBeGreaterThan(promptWrite);
+  });
+
+  test("run intake awaits the actor write at its documented durability boundary", async () => {
+    const source = await Bun.file(new URL("./run-session.ts", import.meta.url)).text();
+    const promptWrite = source.indexOf("storeAppendUserLineEarly(");
+    expect(promptWrite).toBeGreaterThan(-1);
+    expect(source.slice(promptWrite - 10, promptWrite)).toContain("await");
+    expect(source.slice(promptWrite, promptWrite + 500)).toContain("required: true");
+  });
+
+  test("required intake writes fail closed when the actor append fails", async () => {
+    await withStore(async (store) => {
+      const previous = __setTranscriptStoreForTest(store);
+      (store as unknown as { applyActorRequest: () => never }).applyActorRequest = () => {
+        throw new Error("actor append failed");
+      };
+      try {
+        await expect(storeAppendUserLineEarly(
+          SESSION,
+          transcriptLineUser("required", "required-id"),
+          { required: true },
+        )).rejects.toThrow("actor append failed");
+        await expect(storeAppendUserLineEarly(
+          SESSION,
+          transcriptLineUser("best effort", "best-effort-id"),
+        )).resolves.toBeUndefined();
+      } finally {
+        __setTranscriptStoreForTest(previous);
+      }
+    });
   });
 
   test("intake write + runner write with the same uuid = one upserted row", async () => {

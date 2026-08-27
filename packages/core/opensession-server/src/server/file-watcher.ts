@@ -1,7 +1,11 @@
 import { statSync } from "fs";
 import { entriesForWire, parseTranscriptFrom } from "./jsonl-parser";
 import { markTranscriptStoreDegraded } from "./transcript-persistence";
-import { transcriptStore } from "./transcript-store";
+import {
+  appendTranscriptEvents,
+  replaceTranscriptEvents,
+  transcript,
+} from "./actor-transcript";
 import type { TranscriptEntry } from "./types";
 
 export interface WatchState {
@@ -110,10 +114,9 @@ async function feedTranscriptStore(
 ): Promise<void> {
   if (!sessionId || (!reset && entries.length === 0)) return;
   try {
-    const store = transcriptStore();
-    if (!store.hasImported(sessionId)) return;
-    if (reset) await store.replaceTranscriptEvents(sessionId, entries);
-    else await store.appendTranscriptEvents(sessionId, entries);
+    if (await transcript.needsImport(sessionId)) return;
+    if (reset) await replaceTranscriptEvents(sessionId, entries);
+    else await appendTranscriptEvents(sessionId, entries);
   } catch (e) {
     markTranscriptStoreDegraded(sessionId);
     console.warn(`[file-watcher] v2 store feed failed for ${sessionId}:`, e);

@@ -16,7 +16,7 @@ import {
 	settlePromptInterrupt,
 	undeliveredSteers,
 } from "./queue-state";
-import { sessionKernelStore } from "./session-kernel";
+import { __sessionKernelStoreForTest } from "./session-kernel";
 import { sessionWatchers } from "./ws-hub";
 
 const SESSION = "os-steer-restart-test";
@@ -208,7 +208,7 @@ describe("steer receipt restart persistence", () => {
 	});
 
 	test("production boot restores an unjournaled interrupt with its dispatch", async () => {
-		sessionKernelStore().markDeliveryMigrationComplete();
+		__sessionKernelStoreForTest().markDeliveryMigrationComplete();
 		await promptQueues.set(SESSION, [
 			{ id: "interrupt", content: "send now", hold: true },
 		]);

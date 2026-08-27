@@ -2060,21 +2060,29 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 	const [closingPrUrls, setClosingPrUrls] = useState<Set<string>>(
 		() => new Set(),
 	);
-	async function closePrRow(item: ReviewQueueItem) {
-		if (!window.confirm(`Close PR #${item.pr.number} without merging it?`))
-			return;
-		setClosingPrUrls((current) => new Set(current).add(item.pr.url));
-		await (async () => {
-await closePrPreviewApi(item.pr.repo, item.pr.branch);
-})().catch(async (error: any) => {
-onToast?.(error.message || `Failed to close PR #${item.pr.number}.`);
-}).finally(async () => {
-setClosingPrUrls((current) => {
-				const next = new Set(current);
-				next.delete(item.pr.url);
-				return next;
-			});
-});
+	function closePrRow(item: ReviewQueueItem) {
+		confirm({
+			title: `Close PR #${item.pr.number}?`,
+			description: "This closes the pull request without merging it.",
+			confirmLabel: "Close PR",
+			destructive: true,
+			onConfirm: () => {
+				setClosingPrUrls((current) => new Set(current).add(item.pr.url));
+				void closePrPreviewApi(item.pr.repo, item.pr.branch)
+					.catch((error: any) => {
+						onToast?.(
+							error.message || `Failed to close PR #${item.pr.number}.`,
+						);
+					})
+					.finally(() => {
+						setClosingPrUrls((current) => {
+							const next = new Set(current);
+							next.delete(item.pr.url);
+							return next;
+						});
+					});
+			},
+		});
 	}
 
 	// A PR row is selected while the open workspace carries its PR.

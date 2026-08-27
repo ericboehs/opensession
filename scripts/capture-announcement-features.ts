@@ -30,6 +30,14 @@ const shots = [
 		clip: { x: 0, y: 0, width: 650, height: 720 },
 	},
 	{
+		name: "announcement-desk",
+		feature: "desk",
+		actionReady: `!!document.querySelector('[aria-label="Open the Desk"]')`,
+		action: `document.querySelector('[aria-label="Open the Desk"]')?.click()`,
+		ready: `document.body.innerText.includes('What’s being worked on right now?')`,
+		clip: { x: 145, y: 90, width: 970, height: 606 },
+	},
+	{
 		name: "announcement-automations",
 		feature: "automations",
 		ready: `document.body.innerText.includes('Review stale pull requests')`,
@@ -153,6 +161,22 @@ try {
 			await target.send("Page.navigate", {
 				url: `${base}/product-demo.html?feature=${shot.feature}`,
 			});
+
+			if ("action" in shot) {
+				const actionDeadline = Date.now() + 40_000;
+				for (;;) {
+					const { result } = await target.send("Runtime.evaluate", {
+						expression: shot.actionReady,
+						returnByValue: true,
+					});
+					if (result.value) break;
+					if (Date.now() > actionDeadline) {
+						throw new Error(`${shot.name} action never became available`);
+					}
+					await sleep(250);
+				}
+				await target.send("Runtime.evaluate", { expression: shot.action });
+			}
 
 			const readyDeadline = Date.now() + 40_000;
 			for (;;) {

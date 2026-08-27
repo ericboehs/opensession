@@ -1,5 +1,6 @@
 import React from "react";
 import { cn } from "../ui/cn";
+import { markTileShadow } from "../lib/mark-tile";
 import { repoLetter } from "../lib/repo-label";
 import {
 	hasRepoIcon,
@@ -60,11 +61,13 @@ export function RepoTile({
 	name,
 	size,
 	round,
+	glow = false,
 	className,
 }: {
 	name: string;
 	size?: number;
 	round?: boolean;
+	glow?: boolean;
 	className?: string;
 }) {
 	// Failure is tracked per name AND icon revision, so a tile retries the img
@@ -86,6 +89,7 @@ export function RepoTile({
 	// on both, from the same module as the fill (the two are chosen together,
 	// see REPO_TILE_INK) rather than as a raw colour in a utility.
 	style.color = REPO_TILE_INK;
+	if (glow) style.boxShadow = markTileShadow(repoColor(name));
 	const rev = repoIconRevision(name);
 	const attempt = `${name}:${rev ?? 0}`;
 	if (hasRepoIcon(name) && failedFor !== attempt) {

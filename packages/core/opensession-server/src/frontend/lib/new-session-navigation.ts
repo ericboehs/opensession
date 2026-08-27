@@ -1,3 +1,13 @@
+export function errorMatchesPendingCreate(
+	errorSessionId: string | undefined,
+	pendingSessionId: string | null | undefined,
+): boolean {
+	// WebSocket errors are shared across every operation on the connection. Only
+	// the create's deterministic session id proves this error belongs to the
+	// pending create; an unscoped watch/ack failure must not tear down its shell.
+	return !!pendingSessionId && errorSessionId === pendingSessionId;
+}
+
 export function shouldApplyCreatedSessionReply(
 	replayed: boolean | undefined,
 	hasPendingDraft: boolean,

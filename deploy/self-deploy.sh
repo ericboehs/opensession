@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 #
-# Agent-callable self-deploy for Open Session, with a last-known-good pin, a
-# post-restart health gate, and (opt-in) auto-rollback.
+# Agent-callable release deploy for Open Session, with a last-known-good pin,
+# a post-restart health gate, and automatic pointer-swap rollback.
 #
 # Modes:
-#   self-deploy.sh [--sha <target>]   ff-only deploy to <target> (default
+#   self-deploy.sh [--sha <target>]   deploy immutable <target> (default
 #                  [--pin <sha>]      origin/main) + restart + health gate;
 #                                     --pin overrides the last-known-good pin
 #                                     (for callers that pre-merged, e.g.
@@ -21,21 +21,16 @@
 # the service restart it triggers — but the script is equally runnable
 # standalone by a human.
 #
-# ROLLBACK POSTURE (read before flipping the env flag): going FORWARD is always
-# `git merge --ff-only` — it aborts loudly on a dirty/diverged tree, exactly
-# like deploy/deploy.sh. Going BACK is impossible via ff (the pin is an
-# ancestor of HEAD), so a rollback requires `git reset --hard <pin>` — and on
-# THIS box the deploy checkout is still the live SHARED checkout where sessions
-# keep uncommitted work, making an automatic hard reset the forbidden trap
-# (see AGENTS.md's shared-checkout rules). Therefore rollback only rewrites the
-# tree when BOTH hold: the tree is clean AND the caller set
-# OPENSESSION_DEPLOY_ALLOW_RESET=1 (the future dedicated deploy-only checkout
-# sets it; the shared checkout must not). Otherwise the script marks
-# "rollback-needed" in the result file and leaves the tree for a human.
+# The shared checkout is a git object source only. Deploying never merges,
+# checks out, resets, installs dependencies in, or otherwise mutates that WIP
+# tree. `deploy/release-checkout.sh` prepares a detached worktree for the exact
+# commit and atomically moves the runtime `current` symlink. The previous
+# release remains intact, so rollback is the same pointer swap in reverse.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="${OPENSESSION_DEPLOY_CHECKOUT:-$(dirname "$SCRIPT_DIR")}"
+RELEASE_TEMPLATE_DIR="$(dirname "$SCRIPT_DIR")"
 
 read_env_value() {
   local name="$1" file="$2" value
@@ -48,7 +43,7 @@ read_env_value() {
   printf '%s' "$value"
 }
 
-GATEWAY_ENV_FILE="$(sed -n 's/^EnvironmentFile=//p' "$REPO_DIR/opensession.service" | tail -n 1)"
+GATEWAY_ENV_FILE="$(sed -n 's/^EnvironmentFile=//p' "$RELEASE_TEMPLATE_DIR/opensession.service" | tail -n 1)"
 MIGRATION_STATE_DIR="${OPENSESSION_STATE_DIR:-$(read_env_value OPENSESSION_STATE_DIR "$GATEWAY_ENV_FILE")}"
 MIGRATION_SESSIONS_DIR="${OPENSESSION_SESSIONS_DIR:-$(read_env_value OPENSESSION_SESSIONS_DIR "$GATEWAY_ENV_FILE")}"
 if [ -n "${OPENSESSION_DEPLOY_STATE:-}" ]; then
@@ -60,7 +55,6 @@ else
 fi
 HEALTH_URL="${OPENSESSION_HEALTH_URL:-http://127.0.0.1:3850/ready}"
 LEGACY_HEALTH_URL="${OPENSESSION_LEGACY_HEALTH_URL:-http://127.0.0.1:3850/api/health}"
-ALLOW_RESET="${OPENSESSION_DEPLOY_ALLOW_RESET:-0}"
 SERVICE_NAME="${OPENSESSION_SERVICE_NAME:-opensession.service}"
 EXECUTOR_SERVICE_NAME="opensession-executor.service"
 SESSION_KERNEL_SERVICE_NAME="opensession-session-kernel.service"
@@ -91,6 +85,8 @@ LOG_FILE="$STATE_DIR/self-deploy.log"
 WATCHDOG_LOG="$STATE_DIR/watchdog.log"
 KERNEL_SCHEMA_REL="packages/core/opensession-server/src/server/session-kernel/schema-version"
 KERNEL_SCHEMA_FLOOR_FILE="$STATE_DIR/minimum-kernel-schema"
+RELEASE_TOOL="$SCRIPT_DIR/release-checkout.sh"
+CURRENT_LINK="$STATE_DIR/current"
 
 STARTED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 STARTED_EPOCH="$(date +%s)"
@@ -145,7 +141,7 @@ on_err() {
   local rc=$?
   set +e
   if ! grep -q "\"startedAt\":\"$STARTED_AT\"" "$RESULT_FILE" 2>/dev/null; then
-    write_result false "$MODE" "$(git_repo rev-parse HEAD 2>/dev/null || echo unknown)" "" \
+    write_result false "$MODE" "$(release_cmd current-sha 2>/dev/null || echo unknown)" "" \
       "aborted by error (exit $rc) — see $LOG_FILE"
   fi
   exit "$rc"
@@ -154,6 +150,14 @@ trap on_err ERR
 
 run_systemctl() {
   if [ "$(id -u)" = "0" ]; then systemctl "$@"; else sudo -n systemctl "$@"; fi
+}
+
+release_cmd() {
+  env \
+    OPENSESSION_DEPLOY_CHECKOUT="$REPO_DIR" \
+    OPENSESSION_DEPLOY_STATE="$STATE_DIR" \
+    OPENSESSION_BUN_BIN="$BUN_BIN" \
+    /bin/bash "$RELEASE_TOOL" "$@"
 }
 
 # Once this script stops the gateway, every exit path owns bringing it back.
@@ -199,7 +203,7 @@ refresh_executor() {
   # Privileged artifacts are installed only by `opensession service install`
   # or the root-run deploy script. Self-deploy may restart those fixed units,
   # but never copies executable code from the user-writable checkout as root.
-  if [ ! -f "$REPO_DIR/packages/core/opensession-server/src/executor/main.ts" ]; then
+  if [ ! -f "$CURRENT_LINK/packages/core/opensession-server/src/executor/main.ts" ]; then
     return
   fi
   if [ ! -f "/etc/systemd/system/$EXECUTOR_SERVICE_NAME" ] \
@@ -243,7 +247,7 @@ refresh_session_kernel() {
     migration_env+=("OPENSESSION_SESSIONS_DIR=$MIGRATION_SESSIONS_DIR")
   fi
   env "${migration_env[@]}" \
-    "$BUN_BIN" "$REPO_DIR/scripts/migrate-session-kernel-storage.ts"
+    "$BUN_BIN" "$CURRENT_LINK/scripts/migrate-session-kernel-storage.ts"
   run_systemctl start "$SESSION_KERNEL_SERVICE_NAME"
   local i
   for i in $(seq 1 30); do
@@ -258,8 +262,7 @@ refresh_session_kernel() {
 }
 
 git_repo() { git -C "$REPO_DIR" "$@"; }
-
-tree_clean() { [ -z "$(git_repo status --porcelain 2>/dev/null)" ]; }
+runtime_git() { git -C "$CURRENT_LINK" "$@"; }
 
 kernel_schema_at() {
   local ref="$1" value
@@ -272,7 +275,7 @@ kernel_schema_at() {
 
 record_kernel_schema_floor() {
   local current floor
-  current="$(cat "$REPO_DIR/$KERNEL_SCHEMA_REL" 2>/dev/null || echo 0)"
+  current="$(cat "$CURRENT_LINK/$KERNEL_SCHEMA_REL" 2>/dev/null || echo 0)"
   floor="$(cat "$KERNEL_SCHEMA_FLOOR_FILE" 2>/dev/null || echo 0)"
   if [ "$current" -gt "$floor" ]; then
     printf '%s\n' "$current" > "$KERNEL_SCHEMA_FLOOR_FILE"
@@ -292,7 +295,7 @@ rollback_schema_compatible() {
 health_ok() { curl -fs --max-time 4 "$HEALTH_URL" >/dev/null 2>&1; }
 legacy_health_ok() { curl -fs --max-time 4 "$LEGACY_HEALTH_URL" >/dev/null 2>&1; }
 poll_rollback_health() {
-  if grep -q 'path === "/ready"' "$REPO_DIR/packages/core/opensession-server/src/server/routes/system.ts" 2>/dev/null; then
+  if grep -q 'path === "/ready"' "$CURRENT_LINK/packages/core/opensession-server/src/server/routes/system.ts" 2>/dev/null; then
     poll_health
     return
   fi
@@ -361,55 +364,28 @@ write_result() {
   cp "$RESULT_FILE" "$RESULTS_DIR/$(date -u -d "@$STARTED_EPOCH" +%Y%m%dT%H%M%SZ 2>/dev/null || date -u +%Y%m%dT%H%M%SZ)-$action.json"
 }
 
-# Best-effort dependency sync after a tree change (deploy.sh's fast path).
-maybe_bun_install() {
-  if ! git_repo diff --quiet 'HEAD@{1}' HEAD -- bun.lock package.json 2>/dev/null; then
-    if command -v bun >/dev/null 2>&1; then
-      log "deps changed — bun install --frozen-lockfile"
-      (cd "$REPO_DIR" && bun install --frozen-lockfile)
-    else
-      log "WARNING: deps changed but bun is not on PATH — skipping install"
-    fi
-  fi
-}
-
 # Restart onto the last-known-good pin (shared by the failed-deploy path and
-# --rollback-only). Sets ROLLBACK_HEALTHY / ROLLBACK_DID_RESET; returns 0 when
-# the service came back healthy, 1 otherwise.
+# --rollback-only). Sets ROLLBACK_HEALTHY; returns 0 when the service came back
+# healthy, 1 otherwise. It never modifies the WIP checkout.
 rollback_to_pin() {
   ROLLBACK_HEALTHY=0
-  ROLLBACK_DID_RESET=0
   if [ ! -f "$PIN_FILE" ]; then
     log "ERROR: no last-known-good pin at $PIN_FILE — cannot roll back"
     return 1
   fi
   local pin head_now
   pin="$(cat "$PIN_FILE")"
-  head_now="$(git_repo rev-parse HEAD)"
+  head_now="$(release_cmd current-sha 2>/dev/null || echo unknown)"
   if ! rollback_schema_compatible "$pin"; then
     write_result false rollback-blocked "$head_now" "$pin" \
       "rollback target cannot read the durable session-kernel schema"
     return 1
   fi
   if [ "$head_now" = "$pin" ]; then
-    # Already on the pin — the process is unhealthy, not the tree. Restart only.
-    log "HEAD already at pin ${pin:0:10} — restarting without touching the tree"
-  elif tree_clean && [ "$ALLOW_RESET" = "1" ]; then
-    # The pin is an ancestor of HEAD, so ff backwards is impossible —
-    # `git reset --hard` is the only way to move the tree back. It is safe
-    # here ONLY because both gates held: the tree is clean (no session work to
-    # destroy) and the caller explicitly opted in with
-    # OPENSESSION_DEPLOY_ALLOW_RESET=1 (deploy-only checkout). See the header.
-    log "rolling back tree: git reset --hard ${pin:0:10} (clean tree + OPENSESSION_DEPLOY_ALLOW_RESET=1)"
-    git_repo reset --hard "$pin"
-    ROLLBACK_DID_RESET=1
-    maybe_bun_install
+    log "runtime already at pin ${pin:0:10} — restarting without moving it"
   else
-    log "NOT resetting the tree: clean=$(tree_clean && echo yes || echo no) allow_reset=$ALLOW_RESET"
-    log "rollback to ${pin:0:10} needs a human (or OPENSESSION_DEPLOY_ALLOW_RESET=1 on a clean deploy-only checkout)"
-    write_result false rollback-needed "$head_now" "$pin" \
-      "unhealthy after deploy; tree left at $head_now — roll back to pin $pin manually"
-    return 1
+    log "rolling back current pointer: ${head_now:0:10} -> ${pin:0:10}"
+    release_cmd switch "$pin"
   fi
   if ! refresh_executor; then
     log "ERROR: executor failed readiness after rollback"
@@ -444,17 +420,26 @@ do_deploy() {
   log "fetching origin"
   git_repo fetch --prune origin
 
-  local target_sha current
+  local target_sha current pin_sha
   if ! target_sha="$(git_repo rev-parse "${TARGET}^{commit}" 2>/dev/null)"; then
     log "ERROR: cannot resolve target '$TARGET'"
     exit 1
   fi
-  current="$(git_repo rev-parse HEAD)"
+  if ! current="$(release_cmd current-sha 2>/dev/null)"; then
+    log "ERROR: no pinned runtime at $CURRENT_LINK — run the root deploy once to bootstrap releases"
+    exit 1
+  fi
+  if [ "$target_sha" != "$current" ] \
+    && ! git_repo merge-base --is-ancestor "$current" "$target_sha"; then
+    log "ERROR: refusing stale/parallel release ${target_sha:0:10}; current ${current:0:10} is not its ancestor"
+    write_result false deploy "$current" "$current" \
+      "target $target_sha does not advance current release $current; use rollback-only for rollback or the root deploy for an operator-selected line"
+    exit 1
+  fi
 
-  # Pin the pre-deploy HEAD as last-known-good BEFORE moving anything: this is
+  # Pin the pre-deploy runtime as last-known-good BEFORE moving anything: this is
   # what --rollback-only and the watchdog restore. --pin overrides it for
-  # callers that already advanced the tree (see the flag comment above).
-  local pin_sha
+  # callers that already selected a release (see the flag comment above).
   if [ -n "$PIN_OVERRIDE" ]; then
     if ! pin_sha="$(git_repo rev-parse "${PIN_OVERRIDE}^{commit}" 2>/dev/null)"; then
       log "ERROR: cannot resolve --pin '$PIN_OVERRIDE'"
@@ -466,63 +451,53 @@ do_deploy() {
   echo "$pin_sha" > "$PIN_FILE"
   log "pinned last-known-good ${pin_sha:0:10}"
 
-  # Fast-forward only — never reset --hard going forward. Exactly deploy.sh's
-  # philosophy: the checkout may be shared and sessions edit/commit on it
-  # directly; ff-only advances cleanly when on main and ABORTS loudly if the
-  # checkout diverged or has conflicting local edits — surface, don't destroy.
-  if ! git_repo merge --ff-only "$target_sha"; then
-    log "ERROR: cannot fast-forward to $TARGET ($target_sha)."
-    log "The checkout has local commits or uncommitted changes. On the box:"
-    log "  cd $REPO_DIR && git status   # then commit+push, or stash, then re-run"
-    write_result false deploy "$current" "$current" "ff-only merge to $target_sha aborted — checkout diverged or dirty"
-    exit 1
-  fi
-
-  maybe_bun_install
-
-  if ! refresh_executor; then
-    log "ERROR: target executor failed readiness; attempting rollback to pin"
-    if rollback_to_pin; then
-      write_result false deploy "$(git_repo rev-parse HEAD)" "$current" \
-        "deploy of $target_sha failed executor readiness; rolled back and healthy again"
-    elif [ ! -f "$RESULT_FILE" ] || ! grep -q '"action":"rollback-needed"' "$RESULT_FILE" 2>/dev/null; then
-      write_result false deploy "$(git_repo rev-parse HEAD)" "$current" \
-        "deploy of $target_sha failed executor readiness; rollback failed"
-    fi
+  # Materialize the exact commit before any lifecycle action. A dirty or
+  # diverged WIP tree is irrelevant: git worktree reads objects, not its files.
+  if ! release_cmd prepare "$target_sha" >/dev/null; then
+    log "ERROR: could not prepare release ${target_sha:0:10}"
+    write_result false deploy "$current" "$current" "release preparation failed for $target_sha"
     exit 1
   fi
 
   # Validate privileged service installation while the current gateway is
-  # still serving. The credential itself is intentionally unreadable here;
-  # systemd validates it when refresh_session_kernel starts the unit.
+  # still serving. Self-deploy deliberately does not rewrite root artifacts;
+  # changes to units/helpers must go through deploy/deploy.sh.
   if ! preflight_session_kernel; then
-    log "ERROR: target session kernel preflight failed; attempting rollback to pin"
-    if rollback_to_pin; then
-      write_result false deploy "$(git_repo rev-parse HEAD)" "$current" \
-        "deploy of $target_sha failed session kernel preflight; rolled back and healthy again"
-    elif [ ! -f "$RESULT_FILE" ] || ! grep -q '"action":"rollback-needed"' "$RESULT_FILE" 2>/dev/null; then
-      write_result false deploy "$(git_repo rev-parse HEAD)" "$current" \
-        "deploy of $target_sha failed session kernel preflight; rollback failed"
-    fi
+    log "ERROR: session kernel preflight failed; runtime pointer was not changed"
+    write_result false deploy "$current" "$current" "session kernel preflight failed before release switch"
     exit 1
   fi
 
-  # The actor service opens and migrates the durable database, so establish the
-  # rollback floor before replacing it. A failed target must never boot an older
-  # protocol against a database the target may already have advanced.
-  record_kernel_schema_floor
   # Open the watchdog recovery window before the first destructive lifecycle
   # action. If this transient deploy unit is killed outright, the external
   # watchdog can still recover instead of observing an unmarked stopped unit.
   write_marker
   stop_gateway
+  release_cmd switch "$target_sha"
+  # The actor service opens and migrates the durable database, so establish the
+  # rollback floor from the selected release before replacing it. A failed
+  # target must never boot an older protocol against a database it advanced.
+  record_kernel_schema_floor
+
+  if ! refresh_executor; then
+    log "ERROR: target executor failed readiness; attempting rollback to pin"
+    if rollback_to_pin; then
+      write_result false deploy "$(release_cmd current-sha)" "$current" \
+        "deploy of $target_sha failed executor readiness; rolled back and healthy again"
+    else
+      write_result false deploy "$(release_cmd current-sha 2>/dev/null || echo unknown)" "$current" \
+        "deploy of $target_sha failed executor readiness; rollback failed"
+    fi
+    exit 1
+  fi
+
   if ! refresh_session_kernel; then
     log "ERROR: target session kernel failed readiness; attempting rollback to pin"
     if rollback_to_pin; then
-      write_result false deploy "$(git_repo rev-parse HEAD)" "$current" \
+      write_result false deploy "$(release_cmd current-sha)" "$current" \
         "deploy of $target_sha failed session kernel readiness; rolled back and healthy again"
-    elif [ ! -f "$RESULT_FILE" ] || ! grep -q '"action":"rollback-needed"' "$RESULT_FILE" 2>/dev/null; then
-      write_result false deploy "$(git_repo rev-parse HEAD)" "$current" \
+    else
+      write_result false deploy "$(release_cmd current-sha 2>/dev/null || echo unknown)" "$current" \
         "deploy of $target_sha failed session kernel readiness; rollback failed"
     fi
     exit 1
@@ -539,10 +514,10 @@ do_deploy() {
 
   log "ERROR: not healthy within $((HEALTH_TRIES * HEALTH_SLEEP))s after restart — attempting rollback to pin"
   if rollback_to_pin; then
-    write_result false deploy "$(git_repo rev-parse HEAD)" "$current" \
-      "deploy of $target_sha unhealthy; rolled back (reset=$ROLLBACK_DID_RESET) and healthy again"
-  elif [ ! -f "$RESULT_FILE" ] || ! grep -q '"action":"rollback-needed"' "$RESULT_FILE" 2>/dev/null; then
-    write_result false deploy "$(git_repo rev-parse HEAD)" "$current" \
+    write_result false deploy "$(release_cmd current-sha)" "$current" \
+      "deploy of $target_sha unhealthy; switched back and healthy again"
+  else
+    write_result false deploy "$(release_cmd current-sha 2>/dev/null || echo unknown)" "$current" \
       "deploy of $target_sha unhealthy; rollback attempted but service still unhealthy"
   fi
   exit 1
@@ -553,13 +528,13 @@ do_rollback() {
   TARGET="last-known-good"
   log "rollback-only (repo $REPO_DIR, state $STATE_DIR)"
   local previous
-  previous="$(git_repo rev-parse HEAD 2>/dev/null || echo unknown)"
+  previous="$(release_cmd current-sha 2>/dev/null || echo unknown)"
   if rollback_to_pin; then
-    write_result true rollback "$(git_repo rev-parse HEAD)" "$previous" "restarted onto last-known-good and healthy"
+    write_result true rollback "$(release_cmd current-sha)" "$previous" "restarted onto last-known-good and healthy"
     exit 0
   fi
   if ! grep -q '"action":"rollback-needed"' "$RESULT_FILE" 2>/dev/null; then
-    write_result false rollback "$(git_repo rev-parse HEAD 2>/dev/null || echo unknown)" "$previous" \
+    write_result false rollback "$(release_cmd current-sha 2>/dev/null || echo unknown)" "$previous" \
       "rollback restart did not become healthy"
   fi
   exit 1

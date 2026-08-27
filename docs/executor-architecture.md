@@ -51,6 +51,41 @@ raw `systemd-run` or arbitrary `systemctl` arguments. If the executor restarts
 while a launch is in progress, the next request reconciles the existing unit and
 host socket instead of starting a second run.
 
+## Capacity controls
+
+Before persisting a detached launch, the gateway checks the active and pending
+host count, Linux `MemAvailable`, and CPU PSI `some avg10`. A launch waits with
+bounded backoff when a present signal is over its limit. Missing `/proc` signals
+fail open so non-Linux development remains usable. After the admission timeout,
+the turn fails visibly instead of falling back into the gateway process and
+consuming the same scarce resources.
+
+Gateway settings can be placed in `~/.opensession.env`:
+
+| Setting                                         | Default | Purpose                                  |
+| ----------------------------------------------- | ------: | ---------------------------------------- |
+| `OPENSESSION_RUN_HOST_MAX_ACTIVE`               |     128 | Active plus admitted detached hosts      |
+| `OPENSESSION_RUN_HOST_MIN_AVAILABLE_MB`         |    4096 | Memory headroom retained for the machine |
+| `OPENSESSION_RUN_HOST_RESERVED_MB`              |    1024 | Memory reserved for each pending launch  |
+| `OPENSESSION_RUN_HOST_MAX_CPU_PRESSURE`         |      85 | Maximum CPU PSI `some avg10` percentage  |
+| `OPENSESSION_RUN_HOST_ADMISSION_TIMEOUT_S`      |     900 | Maximum capacity wait before refusal     |
+| `OPENSESSION_ONESHOT_CONCURRENCY`               |       4 | Concurrent gateway one-shot jobs         |
+| `OPENSESSION_OPENING_TURN_CONCURRENCY`          |       8 | Concurrent session opening turns         |
+| `OPENSESSION_KERNEL_TIMER_CONCURRENCY`          |       8 | Concurrent durable timer effects         |
+| `OPENSESSION_KERNEL_OUTBOX_CONCURRENCY`         |       8 | Concurrent general outbox effects        |
+| `OPENSESSION_KERNEL_OPENING_OUTBOX_CONCURRENCY` |     100 | Concurrent opening-turn effects          |
+
+The independently supervised executor does not read `~/.opensession.env`. Set
+`OPENSESSION_EXECUTOR_LAUNCH_CONCURRENCY` (default 8) with an `Environment=`
+systemd drop-in on `opensession-executor.service`. The session kernel likewise
+keeps the application/secrets environment outside its service boundary. Its
+worker count scales to available CPUs (16 on the production host), while the
+root deploy installs a dedicated 4G `MemoryHigh` / 6G `MemoryMax` capacity
+drop-in for the authoritative kernel process.
+
+All overrides are bounded integers. Invalid or out-of-range values log an error
+and retain the built-in default.
+
 ## Failure behavior
 
 | Failure | Behavior |
@@ -78,14 +113,21 @@ The gateway `Requires=` the kernel service and `Wants=` the executor. The
 executor has no `PartOf=` relationship. Linux user scope installs the gateway
 and kernel units but disables the executor and detached local runs.
 
-An executor-only deployment restarts only the executor. A kernel replacement
-stops the gateway first; deployment restarts and health-checks the executor and
-kernel before starting the gateway. Self-deploy refreshes an installed executor,
-records the kernel schema floor, stops the gateway, refreshes the installed
-kernel service, and then restarts the gateway. It does not copy privileged
-units, credentials, or helpers from the writable checkout. Run
-`opensession service install` again when a release changes those system
-artifacts.
+A source release is one pinned gateway + kernel + executor version. Both rollout
+paths restart and readiness-check the executor and kernel before starting the
+gateway; a kernel replacement always happens while the gateway is stopped. The
+executor can still be restarted independently for operational recovery because
+it is not the parent of active run hosts, but that is not a source deployment.
+
+The standard `deploy_self` path reuses the installed root-owned units,
+credentials, helper, sudo policy, and drop-ins. The full root
+`deploy/deploy.sh` path synchronizes those privileged artifacts before switching
+the same immutable release. Use the full path when a release changes its live
+deploy controllers, `opensession*.service`, credential installers, fixed
+run-host helper/installer, or a systemd artifact managed by the root script.
+Other operator-managed artifacts keep their own rollout procedures. Generic
+installations that change service-rendering behavior may also need
+`opensession service install` rerun explicitly.
 
 During the first upgrade only, installations that already granted the previous
 fixed `systemd-run` launch command keep using it until the service installer
@@ -113,28 +155,6 @@ fixed helper remains only as an explicit operator bypass for recovery and
 development.
 Active hosts are still controlled directly through their private host protocol;
 the executor is not their parent and does not own session lifecycle.
-
-### Agent Host execution binding
-
-An Agent Host turn carries an immutable Executor binding: executor and root IDs,
-generation, deadline, and an opaque Agent Host access capability. That access
-capability authorizes only bounded control-plane dispatch requests. It is
-branded separately from an `ExecutorGrant` and is never valid at an
-`ExecutorBroker` or Executor daemon. The control plane must issue a fresh,
-exact operation-scoped `ExecutorGrant` for each eventual dispatch.
-
-A separate additive Agent operation v1 foundation now defines a distinctly
-branded `AgentGatewayDispatchGrant`, non-secret model and MCP descriptors, and a
-gateway receipt ledger. It remains production-unwired: the gateway does not
-issue the grant, route Host operation messages, resolve provider/MCP access, or
-open the ledger at boot. The grant is never persisted. Recovery must reacquire
-short-lived authority while durable identity remains bound to the exact turn
-fence and domain-separated descriptor/payload digests. This foundation does
-not make an Agent operation an Executor operation and never accepts an
-`ExecutorGrant` in its place.
-
-The Agent Host contracts define these boundaries but do not route production
-turns or wire boot.
 
 ## Rollback compatibility
 

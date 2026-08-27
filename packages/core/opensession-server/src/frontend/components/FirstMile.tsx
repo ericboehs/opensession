@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { AnimatePresence, motion, useReducedMotion } from "motion/react";
+import { motion, useReducedMotion } from "motion/react";
 import { BASE_PATH } from "../lib/base";
 import { DEFAULT_DOC_TITLE, PRODUCT_NAME } from "../lib/brand";
 import { useSetupStatus } from "../hooks/useSetupStatus";
@@ -8,7 +8,6 @@ import { Button } from "../ui/button";
 import { cn } from "../ui/cn";
 import { duration, ease } from "../ui/motion";
 import { LoadingState } from "../ui/state";
-import { TopBar } from "../ui/top-bar";
 import { BrandMark } from "./BrandTile";
 import { GithubAuthCard } from "./SetupIntegrations";
 import { ReposSection } from "./SetupRepos";
@@ -17,24 +16,21 @@ import { TeamSection } from "./SetupTeam";
 import { UserAvatar } from "./UserAvatar";
 import { OrganizationProfileSection } from "./settings/GeneralPanel";
 import { ProviderAccountsSection } from "./settings/ModelAccounts";
-import { IngressPanel } from "./settings/IngressPanel";
-import { IconCheck, IconChevronLeft, IconGlobe, IconRepo } from "./icons";
+import { IconCheck, IconGlobe, IconRepo } from "./icons";
 import { githubAuthState, type SetupStatus } from "./setup-shared";
 
 interface FirstMileStep {
-	id: "welcome" | "ingress" | "github" | "organization" | "team" | "ai" | "repos" | "ready";
+	id: "welcome" | "github" | "organization" | "team" | "ai" | "repos" | "ready";
 	label: string;
 	title: string;
 	description: string;
 }
 
-// Organization and model setup come first, before the connection steps.
-// Domains remains before GitHub so a configured endpoint can prefill the App
-// form, but the step stays optional for private-only installations. Members sit
-// after repositories, since an invite is worth more once there is something to
-// join. The members step is removed when GitHub sign-in is not connected,
-// because that step imports and invites people through the connected GitHub
-// organization.
+// Organization and model setup come first. GitHub App creation no longer
+// depends on a public callback origin: the manifest returns its credentials to
+// the private app, while Domains and public callbacks stay in Settings. Members
+// sit after repositories, since an identity is worth more once there is something
+// to act on. Members remain independent from the optional GitHub sign-in gate.
 const STEPS: FirstMileStep[] = [
 	{
 		id: "welcome",
@@ -55,16 +51,10 @@ const STEPS: FirstMileStep[] = [
 		description: "Connect the AI subscriptions your team will use to run sessions.",
 	},
 	{
-		id: "ingress",
-		label: "Domains",
-		title: "Domains",
-		description: "Keep the app private for your team. Optionally let external services reach a public callback endpoint.",
-	},
-	{
 		id: "github",
 		label: "GitHub",
 		title: "Connect GitHub",
-		description: "GitHub signs you in and lets sessions access repositories, push changes, and create and review pull requests. The App form includes your public webhook URL.",
+		description: "Connect a GitHub App so sessions can access repositories, push changes, and create and review pull requests.",
 	},
 	{
 		id: "repos",
@@ -75,8 +65,8 @@ const STEPS: FirstMileStep[] = [
 	{
 		id: "team",
 		label: "Members",
-		title: "Invite your team",
-		description: "Invite teammates from your GitHub organization to work with you.",
+		title: "Team members",
+		description: "Add yourself and anyone else sessions can act as. GitHub usernames are optional.",
 	},
 	{
 		id: "ready",
@@ -86,8 +76,23 @@ const STEPS: FirstMileStep[] = [
 	},
 ];
 
-function githubTeamOnboardingEnabled(status: SetupStatus | null): boolean {
-	return Boolean(status?.github.userPrAuth && status.github.clientIdConfigured);
+function githubOrganizationImportEnabled(status: SetupStatus | null): boolean {
+	return Boolean(
+		status?.github.userPrAuth &&
+			status.github.clientIdConfigured &&
+			status.github.appOrg,
+	);
+}
+
+function initialFirstMileIndex(): number {
+	if (typeof window === "undefined") return 0;
+	const stored = window.sessionStorage.getItem("opensession:first-mile-step");
+	window.sessionStorage.removeItem("opensession:first-mile-step");
+	const requested =
+		new URLSearchParams(window.location.search).get("step") || stored;
+	if (!requested) return 0;
+	const index = STEPS.findIndex((item) => item.id === requested);
+	return index < 0 ? 0 : index;
 }
 
 /** The GitHub organization this instance is wired to, for the organization
@@ -133,7 +138,6 @@ function FirstMileSummary({
 	onSelect: (step: FirstMileStep["id"]) => void;
 }) {
 	const github = githubAuthState(status.github);
-	const showTeam = githubTeamOnboardingEnabled(status);
 	let serverHost = status.publicBaseUrl;
 	try {
 		serverHost = new URL(status.publicBaseUrl).host;
@@ -256,23 +260,15 @@ function FirstMileSummary({
 				</div>
 			),
 		},
-	].filter((tile) => tile.step !== "team" || showTeam);
+	];
 
 	return (
-		<div
-			className={cn(
-				"grid gap-3 phone:grid-cols-2",
-				showTeam ? "grid-cols-5" : "mx-auto max-w-[760px] grid-cols-4",
-			)}
-		>
+		<div className="grid justify-center gap-4 desktop:grid-cols-[repeat(auto-fit,200px)] phone:grid-cols-2 phone:gap-3">
 			{tiles.map((tile) => {
 				const className = cn(
-					"flex aspect-square min-w-0 flex-col justify-between rounded-2xl border p-4 text-left backdrop-blur-xl phone:rounded-xl phone:p-3.5",
+					"flex aspect-square min-w-0 flex-col justify-between rounded-2xl bg-palette-glass p-5 text-left [backdrop-filter:var(--popup-blur)] smooth-shadow-sm desktop:size-[200px] phone:p-3.5",
 					tile.step &&
 						"focus-ring cursor-pointer transition-[transform,filter] duration-150 hover:brightness-[0.98] active:scale-[0.96] motion-reduce:transform-none",
-					tile.ready
-						? "border-transparent bg-green-soft shadow-[inset_0_1px_0_color-mix(in_srgb,white_45%,transparent),0_12px_28px_-24px_color-mix(in_srgb,var(--green)_45%,transparent)]"
-						: "border-divider-soft bg-settings-plate/65",
 				);
 				const content = (
 					<>
@@ -320,18 +316,14 @@ function FirstMileSummary({
 export function FirstMile({ onDone }: { onDone: () => Promise<void> }) {
 	const setup = useSetupStatus();
 	const { status, failed, refetch } = setup;
-	const [index, setIndex] = useState(0);
-	const [direction, setDirection] = useState(1);
-	const [footerSeparated, setFooterSeparated] = useState(false);
+	const [index, setIndex] = useState(initialFirstMileIndex);
+	const [contentVisible, setContentVisible] = useState(true);
+	const [navigationVisible, setNavigationVisible] = useState(true);
 	const [finishing, setFinishing] = useState(false);
-	const [ingressReady, setIngressReady] = useState(false);
 	const [theme, setTheme] = useState(effectiveTheme);
 	const headingRef = useRef<HTMLHeadingElement>(null);
-	const mainRef = useRef<HTMLElement>(null);
 	const reducedMotion = useReducedMotion();
-	const steps = githubTeamOnboardingEnabled(status)
-		? STEPS
-		: STEPS.filter((item) => item.id !== "team");
+	const steps = STEPS;
 	const step = steps[index]!;
 
 	useEffect(() => {
@@ -347,328 +339,256 @@ export function FirstMile({ onDone }: { onDone: () => Promise<void> }) {
 		if (index > 0) headingRef.current?.focus({ preventScroll: true });
 	}, [index]);
 
+	// `onLayoutAnimationComplete` is the exact reveal signal. This timeout is a
+	// fallback for steps whose measured modal geometry happens to be identical,
+	// in which case Motion has no layout animation to complete.
 	useEffect(() => {
-		const main = mainRef.current;
-		if (!main) return;
-		const update = () => {
-			const remaining = main.scrollHeight - main.scrollTop - main.clientHeight;
-			setFooterSeparated(remaining > 1);
-		};
-		update();
-		main.addEventListener("scroll", update, { passive: true });
-		const resize = new ResizeObserver(update);
-		resize.observe(main);
-		const mutation = new MutationObserver(update);
-		mutation.observe(main, { childList: true, subtree: true });
-		return () => {
-			main.removeEventListener("scroll", update);
-			resize.disconnect();
-			mutation.disconnect();
-		};
-	}, [index, status]);
+		if (contentVisible) return;
+		const reveal = window.setTimeout(() => {
+			setContentVisible(true);
+			setNavigationVisible(true);
+		}, (reducedMotion ? duration.micro : duration.large) * 1000);
+		return () => window.clearTimeout(reveal);
+	}, [contentVisible, index, reducedMotion]);
 
 	async function goTo(next: number) {
 		const nextIndex = Math.min(Math.max(next, 0), steps.length - 1);
 		if (nextIndex === index) return;
-		// The GitHub creation link carries the public callback URL. Refresh it
-		// after the preceding ingress step before rendering a clickable link.
-		if (steps[nextIndex]?.id === "github") await refetch();
-		setDirection(nextIndex > index ? 1 : -1);
+		setContentVisible(false);
+		setNavigationVisible(false);
 		setIndex(nextIndex);
-		if (steps[nextIndex]?.id !== "github") void refetch();
+		void refetch();
 	}
 
 	async function finish() {
 		if (finishing) return;
+		setNavigationVisible(false);
 		setFinishing(true);
 		await onDone();
 		setFinishing(false);
+		setNavigationVisible(true);
 	}
 
-	const variants = {
-		initial: (travel: number) => ({
-			opacity: 0,
-			x: reducedMotion ? 0 : travel * 34,
-		}),
-		animate: { opacity: 1, x: 0 },
-		exit: (travel: number) => ({
-			opacity: 0,
-			x: reducedMotion ? 0 : travel * -22,
-		}),
-	};
-
-	const backdropName = theme === "dark" ? "onboarding-bg-dark" : "onboarding-bg";
+	const backdropName =
+		theme === "dark" ? "onboarding-bg-dark" : "onboarding-bg";
+	const nextLabel =
+		index === 0
+			? "Setup server"
+			: index === steps.length - 1
+				? finishing
+					? "Finishing…"
+					: null
+				: index === steps.length - 2
+					? "Review"
+					: "Next";
 
 	return (
 		<div
 			data-first-mile
-			className="relative grid h-[100dvh] w-full grid-rows-[76px_minmax(0,1fr)_84px] overflow-hidden bg-surface bg-cover bg-center text-fg phone:grid-rows-[68px_minmax(0,1fr)_90px] phone:pb-[env(safe-area-inset-bottom)]"
+			className="relative grid h-[100dvh] w-full grid-rows-[44px_minmax(0,1fr)] gap-y-3 overflow-hidden bg-surface bg-cover bg-center p-6 text-fg phone:gap-y-0 phone:px-0 phone:pb-0 phone:pt-[max(12px,env(safe-area-inset-top))]"
 			// The vendored marketing artwork keeps first run independent of a CDN.
-			// Painting it on the shell lets a transparent idle footer reveal it.
 			style={{ backgroundImage: `url(${BASE_PATH}/${backdropName}.webp)` }}
 		>
-			<TopBar
-				as="header"
-				className="relative z-10 grid grid-cols-[1fr_auto_1fr] px-8 phone:px-4"
+			<nav
+				aria-label="Onboarding progress"
+				className="relative z-20 flex h-11 shrink-0 items-start justify-center"
 			>
-				<Button
-					variant="ghost"
-					size="lg"
-					icon={<IconChevronLeft size={18} />}
-					onClick={() => goTo(index - 1)}
-					aria-label="Back"
-					className={cn(
-						"hidden justify-self-start phone:flex phone:size-10 phone:justify-center phone:p-0",
-						index === 0 && "phone:invisible",
-					)}
-				/>
-
-				<nav
-					className={cn(
-						"absolute left-1/2 flex -translate-x-1/2 items-center gap-2",
-						index === 0 && "invisible",
-					)}
-					aria-label="Onboarding progress"
-				>
-					{steps.slice(1).map((item, itemIndex) => {
-						const stepIndex = itemIndex + 1;
-						return (
-							<button
-								key={item.id}
-								type="button"
-								aria-label={item.label}
-								aria-current={stepIndex === index ? "step" : undefined}
-								onClick={() => goTo(stepIndex)}
-								className={cn(
-									"focus-ring h-2 cursor-pointer rounded-full transition-[width,background-color] duration-200",
-									stepIndex === index
-										? "w-8 bg-fg"
-										: stepIndex < index
-											? "w-2 bg-fg/45"
-											: "w-2 bg-faint/35 hover:bg-faint/60",
-								)}
-							/>
-						);
-					})}
-				</nav>
-
-				{index > 0 && index < steps.length - 1 && step.id !== "ingress" ? (
+				{steps.map((item, stepIndex) => (
 					<button
+						key={item.id}
 						type="button"
-						onClick={() => goTo(index + 1)}
-						className="focus-ring col-start-3 min-h-9 justify-self-end rounded-control px-3 text-label font-medium text-dim hover:bg-hover hover:text-fg"
+						onClick={() => goTo(stepIndex)}
+						aria-label={`${item.label}, step ${stepIndex + 1} of ${steps.length}`}
+						aria-current={stepIndex === index ? "step" : undefined}
+						className="group focus-ring flex h-10 w-8 items-center justify-center rounded-control phone:h-11 phone:w-9"
 					>
-						Skip
-					</button>
-				) : (
-					<div className="col-start-3" />
-				)}
-			</TopBar>
-
-			<main
-				ref={mainRef}
-				className="relative z-10 min-h-0 overflow-y-auto px-6 [scrollbar-width:thin] phone:px-4"
-			>
-				{!status ? (
-					<div className="flex h-full items-center justify-center">
-						<LoadingState>
-							{failed ? "Couldn't load setup." : "Preparing your workspace…"}
-						</LoadingState>
-					</div>
-				) : (
-					<AnimatePresence initial={false} mode="wait" custom={direction}>
-						<motion.section
-							key={step.id}
-							custom={direction}
-							variants={variants}
-							initial="initial"
-							animate="animate"
-							exit="exit"
-							transition={{
-								type: "tween",
-								duration: reducedMotion ? duration.micro : duration.large,
-								ease,
-							}}
+						<span
+							aria-hidden="true"
 							className={cn(
-								"mx-auto flex min-h-full w-full flex-col items-center py-8 phone:py-5",
-								step.id === "ingress" ? "max-w-[1120px]" : "max-w-[960px]",
-								step.id === "welcome" && "justify-center pb-16 phone:pb-10",
+								"h-2 rounded-full transition-[width,background-color,opacity] duration-[var(--dur)] ease-[var(--ease)] motion-reduce:transition-none",
+								stepIndex === index
+									? "w-6 bg-fg"
+									: stepIndex < index
+										? "w-2 bg-fg/45 group-hover:bg-fg/65"
+										: "w-2 bg-faint/35 group-hover:bg-faint/60",
 							)}
-						>
-							{step.id === "welcome" ? (
-								<div className="flex max-w-[560px] flex-col items-center text-center">
-									<img
-										src={`${BASE_PATH}/mac-app-icon.png`}
-										alt=""
-										className="mb-7 size-20 scale-[1.13] [filter:drop-shadow(0_18px_28px_rgba(0,0,0,0.16))] phone:mb-6 phone:size-16"
-									/>
-									<h1
-										ref={headingRef}
-										className="m-0 text-center text-[clamp(1.6rem,2vw,2.15rem)] font-title leading-[1.08] tracking-[-0.03em] text-fg outline-none"
-									>
-										{step.title}
-									</h1>
-									<p className="mt-3 max-w-[440px] text-pretty text-body font-normal leading-relaxed text-dim">
-										{step.description}
-									</p>
-									<div className="mt-7 w-full max-w-[300px]">
-										<Button
-											variant="primary"
-											size="lg"
-											onClick={() => goTo(1)}
-											className="min-h-11 w-full justify-center"
-										>
-											Setup server
-										</Button>
-									</div>
-								</div>
-							) : (
-								<>
-									<div className="mb-8 max-w-[700px] text-center phone:mb-6">
-										<h1
-											ref={headingRef}
-											tabIndex={-1}
-											className="m-0 text-balance text-[clamp(1.6rem,2.5vw,2.25rem)] font-title leading-[1.08] tracking-[-0.035em] text-fg outline-none phone:text-[1.5rem]"
-										>
-											{step.title}
-										</h1>
-										<p className="mt-3 text-pretty text-body font-normal leading-relaxed text-dim">
-											{step.description}
-										</p>
-									</div>
+						/>
+					</button>
+				))}
+			</nav>
 
-									{/* The marketing site places translucent white sections over this same
-									    artwork. Keep the app's settings layout, but use that material here. */}
-									<div
-										className={cn(
-											"w-full pb-8 [&_[data-setting-title]]:text-dialog-title [&_[data-setting-title]]:phone:text-body",
-											// The split ingress step needs room for setup commands. The final
-											// review uses the full canvas for larger tiles; forms stay focused.
-											step.id === "ingress"
-												? "max-w-[1120px]"
-												: step.id === "ready"
-													? "max-w-[960px]"
-													: "max-w-[820px]",
-											// Match opensession.com's card glass: translucent paper, a quiet
-											// hairline, and the same 14px blur with restrained saturation.
-											"[&_.bg-settings-plate]:rounded-3xl [&_.bg-settings-plate]:border-divider-soft [&_.bg-settings-plate]:bg-[color-mix(in_srgb,var(--popup-surface)_86%,transparent)] [&_.bg-settings-plate]:shadow-[0_18px_46px_-36px_color-mix(in_srgb,var(--blue)_48%,transparent)] [&_.bg-settings-plate]:[backdrop-filter:blur(14px)_saturate(1.08)]",
-											// First-run fields use the large field step, with extra room
-											// for the fixed-width organization and product names.
-											"[&_input]:h-9 [&_input]:min-h-9 [&_input]:px-3 [&_input]:text-base [&_select]:min-h-9 [&_textarea]:min-h-9 [&_input[data-setup-field='identity']]:w-[240px] [&_input[data-setup-field='org-name']]:w-[320px]",
-										)}
-									>
-										{step.id === "ingress" && (
-											<IngressPanel
-												onboarding
-												setup={setup}
-												onChanged={refetch}
-												onStatusChange={(ingress) => {
-													if (ingress.health !== "ready") {
-														setIngressReady(false);
-														return;
-													}
-													void refetch().then(() => setIngressReady(true));
-												}}
-											/>
-										)}
-										{step.id === "github" && (
-											<GithubAuthCard
-												github={status.github}
-												onSaved={setup.applyGithub}
-												onboarding
-											/>
-										)}
-										{step.id === "organization" && (
-											<OrganizationProfileSection
-												githubOrganization={connectedGithubOrganization(status)}
-											/>
-										)}
-										{step.id === "team" && (
-											<TeamSection
-												onChanged={refetch}
-												title="Members"
-												showCount
-												githubOnly
-												compact
-											/>
-										)}
-										{step.id === "ai" && (
-											<ProviderAccountsSection onboarding onChanged={refetch} />
-										)}
-										{step.id === "repos" && (
-											<ReposSection
-												repos={status.repos}
-												onChanged={refetch}
-												compact
-												showLifecycleStatus={false}
-											/>
-										)}
-										{step.id === "ready" && (
-											<FirstMileSummary
-												status={status}
-												onSelect={(stepId) =>
-													goTo(steps.findIndex((item) => item.id === stepId))
-												}
-											/>
-										)}
-									</div>
-								</>
-							)}
-						</motion.section>
-					</AnimatePresence>
-				)}
-			</main>
-
-			<footer
-				className={cn(
-					"relative z-10 border-t px-8 pt-1 transition-[border-color,background-color] phone:px-5 phone:pt-3",
-					footerSeparated
-						? "border-line bg-bg/95 backdrop-blur-xl"
-						: "border-transparent bg-transparent",
-					index === 0 && "invisible",
-				)}
-			>
-				<div className="mx-auto grid h-full w-full max-w-[820px] grid-cols-[1fr_auto_1fr] items-center phone:grid-cols-1 phone:items-start">
-					<Button
-						variant={footerSeparated ? "ghost" : "overlay"}
-						size="lg"
-						icon={<IconChevronLeft size={18} />}
-						onClick={() => goTo(index - 1)}
+			{!status ? (
+				<div className="flex min-h-40 w-full max-w-[560px] self-center justify-self-center items-center justify-center rounded-2xl bg-palette-glass px-8 py-12 [--smooth-ring-color:var(--dialog-ring)] [backdrop-filter:var(--popup-blur)] smooth-shadow-ring-lg">
+					<LoadingState>
+						{failed ? "Couldn't load setup." : "Preparing your workspace…"}
+					</LoadingState>
+				</div>
+			) : (
+				<motion.section
+					layout
+					onLayoutAnimationComplete={() => {
+						setContentVisible(true);
+						setNavigationVisible(true);
+					}}
+					transition={{
+						layout: {
+							type: "spring",
+							duration: reducedMotion ? duration.micro : duration.large,
+							bounce: 0,
+						},
+					}}
+					className={cn(
+						"relative z-10 flex max-h-full w-full self-center justify-self-center flex-col overflow-hidden rounded-2xl phone:h-full phone:max-h-none phone:max-w-none phone:self-stretch phone:rounded-none phone:[box-shadow:none]",
+						step.id === "welcome" || step.id === "ready"
+							? cn(
+									step.id === "ready" ? "max-w-[1144px]" : "max-w-[560px]",
+									"bg-transparent [backdrop-filter:none]",
+								)
+							: "max-w-[750px] bg-palette-glass [--smooth-ring-color:var(--dialog-ring)] [backdrop-filter:var(--popup-blur)] smooth-shadow-ring-lg",
+					)}
+				>
+					<div
+						key={step.id}
+						aria-hidden={!contentVisible}
+						inert={!contentVisible}
 						className={cn(
-							"justify-self-start phone:hidden",
-							!footerSeparated && "text-white!",
-							index === 0 && "invisible",
+							"flex min-h-0 flex-col",
+							!contentVisible && "invisible",
 						)}
 					>
-						Back
-					</Button>
+						<header className="shrink-0 px-10 pb-2 pt-9 text-center phone:px-5 phone:pt-6">
+							{step.id === "welcome" && (
+								<img
+									src={`${BASE_PATH}/mac-app-icon.png`}
+									alt=""
+									className="mx-auto mb-7 size-16 [filter:drop-shadow(0_18px_28px_rgba(0,0,0,0.16))] phone:mb-6"
+								/>
+							)}
+							<h1
+								ref={headingRef}
+								tabIndex={index > 0 ? -1 : undefined}
+								className="m-0 text-balance text-page-title font-title leading-[1.1] tracking-[-0.012em] text-fg outline-none phone:text-section-title"
+							>
+								{step.title}
+							</h1>
+						</header>
 
-					<span className="phone:hidden" />
+						<div
+							className={cn(
+								"min-h-0",
+								step.id === "welcome"
+									? "h-4 shrink-0"
+									: "overflow-y-auto overscroll-contain px-10 pb-12 pt-5 [-webkit-mask-image:linear-gradient(to_bottom,#000_0,#000_calc(100%_-_36px),transparent_100%)] [mask-image:linear-gradient(to_bottom,#000_0,#000_calc(100%_-_36px),transparent_100%)] [scrollbar-width:thin] phone:px-4 phone:pb-12 phone:pt-4",
+							)}
+						>
+							{step.id !== "welcome" && (
+								<div
+									className={cn(
+										"mx-auto w-full [&_[data-setting-title]]:text-dialog-title [&_[data-setting-title]]:phone:text-body [&_[data-settings-group-label]]:text-body [&_[data-settings-group-label]]:text-fg [&_[data-settings-hint]]:leading-[1.5] [&_[data-settings-hint]]:text-faint [&_[data-onboarding-caption]]:leading-[1.5]",
+										step.id === "ready" ? "max-w-[1160px]" : "max-w-[780px]",
+										"[&_.bg-settings-plate]:border-0 [&_.bg-settings-plate]:bg-transparent! [&_.bg-settings-plate]:shadow-none [&_.bg-settings-plate]:[backdrop-filter:none]",
+										"[&_input]:h-9 [&_input]:min-h-9 [&_input]:px-3 [&_input]:text-base [&_select]:min-h-9 [&_textarea]:min-h-9",
+									)}
+								>
+									{step.id === "github" && (
+										<GithubAuthCard
+											github={status.github}
+											onSaved={setup.applyGithub}
+											onboarding
+										/>
+									)}
+									{step.id === "organization" && (
+										<OrganizationProfileSection
+											githubOrganization={connectedGithubOrganization(status)}
+											onboarding
+										/>
+									)}
+									{step.id === "team" && (
+										<TeamSection
+											onChanged={refetch}
+											title="Members"
+											showCount
+											onboarding
+											syncGithubOrganization={githubOrganizationImportEnabled(status)}
+											compact
+										/>
+									)}
+									{step.id === "ai" && (
+										<ProviderAccountsSection onboarding onChanged={refetch} />
+									)}
+									{step.id === "repos" && (
+										<ReposSection
+											repos={status.repos}
+											onChanged={refetch}
+											compact
+											showLifecycleStatus={false}
+										/>
+									)}
+									{step.id === "ready" && (
+										<FirstMileSummary
+											status={status}
+											onSelect={(stepId) =>
+												goTo(steps.findIndex((item) => item.id === stepId))
+											}
+										/>
+									)}
+								</div>
+							)}
+						</div>
+					</div>
 
-					<Button
-						variant="primary"
-						size="lg"
-						onClick={() => {
-							if (index === steps.length - 1) void finish();
-							else goTo(index + 1);
-						}}
-						disabled={!status || finishing}
-						className="justify-self-end phone:min-h-12 phone:w-full phone:justify-center phone:rounded-lg"
+					<motion.footer
+						layout="position"
+						initial={false}
+						animate={{ opacity: navigationVisible ? 1 : 0 }}
+						transition={{ type: "tween", duration: duration.micro, ease }}
+						aria-hidden={!navigationVisible}
+						inert={!navigationVisible}
+						className={cn(
+							"relative z-20 shrink-0 px-6 py-4 phone:px-3 phone:pb-[max(12px,env(safe-area-inset-bottom))] phone:pt-3",
+							!navigationVisible && "pointer-events-none",
+						)}
 					>
-						{step.id === "ingress" && !ingressReady
-							? "Skip for now"
-							: index === 0
-							? "Continue"
-							: index === steps.length - 1
-								? finishing
-									? "Finishing…"
-									: `Enter ${PRODUCT_NAME}`
-								: index === steps.length - 2
-									? "Review"
-									: "Next"}
-					</Button>
-				</div>
-			</footer>
+						<div
+							className={cn(
+								"flex items-center gap-3",
+								index === 0 || step.id === "ready"
+									? "justify-center"
+									: "justify-between",
+							)}
+						>
+							{index > 0 && step.id !== "ready" && (
+								<Button
+									variant="soft"
+									size="lg"
+									onClick={() => goTo(index - 1)}
+									className="phone:min-h-11"
+								>
+									Back
+								</Button>
+							)}
+
+							<Button
+								variant="primary"
+								size="lg"
+								onClick={() => {
+									if (index === steps.length - 1) void finish();
+									else goTo(index + 1);
+								}}
+								disabled={finishing}
+								className="px-4 phone:min-h-11"
+							>
+								{nextLabel ?? (
+									<>
+										<span className="phone:hidden">Enter {PRODUCT_NAME}</span>
+										<span className="desktop:hidden">Enter</span>
+									</>
+								)}
+							</Button>
+						</div>
+					</motion.footer>
+				</motion.section>
+			)}
 
 			<SetupRestart setup={setup} />
 		</div>

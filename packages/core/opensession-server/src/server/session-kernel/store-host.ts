@@ -7,10 +7,15 @@ import {
   type DurableRunState,
   type DurableSessionQuarantine,
   type DurableTimer,
-  type DeliverySlot,
   type SessionKernelStoreApi,
 } from "./store";
 import { sessionKernelStoreRoute } from "./store-routing";
+import { TranscriptStore } from "../transcript-store";
+import {
+  assertTranscriptActorRequest,
+  type TranscriptActorRequest,
+  type TranscriptActorResult,
+} from "./transcript-protocol";
 
 function minDefined(values: Array<number | undefined>): number | undefined {
   const present = values.filter((value): value is number => value !== undefined);
@@ -23,8 +28,42 @@ const CENTRAL_STORE_FAILURE = "SESSION_KERNEL_CENTRAL_STORE_FAILURE";
 // while a bounded slice prevents startup recovery from opening hundreds of
 // SQLite databases behind one global barrier.
 const RUNTIME_WAKE_CANDIDATE_BATCH = 16;
+const SPARSE_PROJECTION_BACKFILL_BATCH = 128;
 const OUTBOX_ROUTE_MAINTENANCE_BATCH = 8;
 const SESSION_STORE_MAINTENANCE_BATCH = 1;
+
+export type SessionKernelStoreHostMetrics = {
+  kernelStoreCacheMisses: number;
+  kernelStoreCacheEvictions: number;
+  transcriptStoreCacheMisses: number;
+  transcriptStoreCacheEvictions: number;
+  sqliteBusy: number;
+};
+
+class SparseProjectionBackfillPendingError extends Error {
+  readonly retryable = true;
+}
+
+const SPARSE_PROJECTION_MUTATIONS = new Set([
+  "setAskRecord",
+  "answerAskRecord",
+  "deleteAskRecord",
+  "setDeliverySlot",
+  "deleteDeliverySlot",
+  "prepareSteerDelivery",
+  "acceptSteerDelivery",
+  "rejectSteerDelivery",
+  "requeueSteerDeliveries",
+  "ackDeliveryDispatch",
+  "failDeliveryDispatch",
+  "prepareDeliveryInterrupt",
+  "beginDeliveryInterruptEffect",
+  "settleDeliveryInterrupt",
+  "claimNextDeliveryDispatch",
+  "claimDeliveryDispatch",
+  "clearSession",
+  "tombstoneSession",
+]);
 
 export function isSessionKernelCentralStoreFailure(error: unknown): boolean {
   return !!error && typeof error === "object" && "code" in error &&
@@ -62,15 +101,18 @@ function centralStoreFailure(error: unknown): Error & { code: string } {
 export class SessionKernelStoreHost {
   readonly central: SessionKernelStore;
   private readonly isolated = new Map<string, SessionKernelStore>();
+  private readonly transcripts = new Map<string, TranscriptStore>();
   private runtimeCursor = "";
+  private runtimeDueCursor = "";
   private maintenanceSessionCursor = "";
   private outboxRouteMaintenanceCursor = 0;
-  private askEntriesCache?: Array<[string, unknown]>;
-  private readonly deliveryEntriesCache = new Map<
-    DeliverySlot,
-    Array<[string, unknown]>
-  >();
-
+  private readonly laneMetrics: SessionKernelStoreHostMetrics = {
+    kernelStoreCacheMisses: 0,
+    kernelStoreCacheEvictions: 0,
+    transcriptStoreCacheMisses: 0,
+    transcriptStoreCacheEvictions: 0,
+    sqliteBusy: 0,
+  };
   constructor(
     private readonly centralPath = sessionKernelDbPath(),
     private readonly isolatedRoot = `${dirname(centralPath)}/session-kernel-sessions`,
@@ -84,7 +126,22 @@ export class SessionKernelStoreHost {
     this.central = new SessionKernelStore(centralPath);
   }
 
+  metrics(): SessionKernelStoreHostMetrics {
+    return { ...this.laneMetrics };
+  }
+
+  recordSqliteBusy(error: unknown): void {
+    const code = error && typeof error === "object" && "code" in error
+      ? String((error as { code?: unknown }).code ?? "")
+      : "";
+    const message = error instanceof Error ? error.message : String(error);
+    if (code.startsWith("SQLITE_BUSY") || /sqlite_busy|database is locked/i.test(message))
+      this.laneMetrics.sqliteBusy += 1;
+  }
+
   close(): void {
+    for (const store of this.transcripts.values()) store.close();
+    this.transcripts.clear();
     for (const store of this.isolated.values()) store.close();
     this.isolated.clear();
     this.central.close();
@@ -104,20 +161,87 @@ export class SessionKernelStoreHost {
     );
   }
 
+  /** Prove that a settlement which timed out at the gateway did commit. The
+   * central route is durable ownership evidence, while absence from that
+   * session's isolated outbox proves the actor already removed the effect. */
+  private committedOutboxSettlementEvidence(
+    sessionId: string,
+    quarantine: DurableSessionQuarantine,
+  ): boolean {
+    if (
+      quarantine.commandKind !== "core:ack_outbox" &&
+      quarantine.commandKind !== "core:fail_outbox"
+    ) return false;
+    const match = /^Outbox (\d+) crossed session ownership$/.exec(
+      quarantine.reason,
+    );
+    if (!match || !this.isIsolated(sessionId)) return false;
+    const outboxId = Number(match[1]);
+    if (!Number.isSafeInteger(outboxId)) return false;
+    if (
+      this.centralOperation(
+        () => this.central.isolatedOutboxSessionId(outboxId),
+      ) !== sessionId
+    ) return false;
+    const settled = this.containIsolated(
+      sessionId,
+      "storage:outbox-settlement-evidence",
+      () => this.openIsolated(sessionId).outboxSessionId(outboxId),
+    );
+    return settled.ok && settled.value === undefined;
+  }
+
   quarantinedSession(sessionId: string): DurableSessionQuarantine | undefined {
     const infrastructure = this.centralOperation(
       () => this.central.quarantinedSession(sessionId),
     );
-    if (infrastructure) return infrastructure;
+    if (infrastructure) {
+      const committedOutboxSettlement =
+        this.committedOutboxSettlementEvidence(sessionId, infrastructure);
+      if (
+        (!infrastructure.repairable && !committedOutboxSettlement) ||
+        !this.isIsolated(sessionId)
+      )
+        return infrastructure;
+      const evidence = this.containIsolated(
+        sessionId,
+        "storage:quarantine-repair-evidence",
+        () => this.openIsolated(sessionId).quarantineRepairEvidence(
+          sessionId,
+          infrastructure.commandKind,
+          infrastructure.reason,
+          committedOutboxSettlement,
+        ),
+      );
+      return {
+        ...infrastructure,
+        repairable: evidence.ok && evidence.value,
+      };
+    }
     if (!this.isIsolated(sessionId)) return undefined;
     const isolated = this.containIsolated(
       sessionId,
       "storage:quarantine-read",
       () => this.openIsolated(sessionId).quarantinedSession(sessionId),
     );
-    return isolated.ok
-      ? isolated.value
-      : this.centralOperation(() => this.central.quarantinedSession(sessionId));
+    if (!isolated.ok)
+      return this.centralOperation(() => this.central.quarantinedSession(sessionId));
+    if (!isolated.value || isolated.value.repairable) return isolated.value;
+    const committedOutboxSettlement = this.committedOutboxSettlementEvidence(
+      sessionId,
+      isolated.value,
+    );
+    return committedOutboxSettlement
+      ? {
+          ...isolated.value,
+          repairable: this.openIsolated(sessionId).quarantineRepairEvidence(
+            sessionId,
+            isolated.value.commandKind,
+            isolated.value.reason,
+            true,
+          ),
+        }
+      : isolated.value;
   }
 
   quarantineSession(
@@ -126,27 +250,49 @@ export class SessionKernelStoreHost {
     commandKind: string,
     infrastructure = false,
   ): DurableSessionQuarantine {
-    const quarantine = infrastructure && this.isIsolated(sessionId)
+    const isolatedBefore = this.isIsolated(sessionId);
+    if (isolatedBefore)
+      this.centralOperation(
+        () => this.central.markIsolatedSessionProjectionDirty(sessionId),
+      );
+    const quarantine = infrastructure && isolatedBefore
       ? this.centralOperation(
           () => this.central.quarantineSession(sessionId, reason, commandKind),
         )
-      : this.storeForSession(sessionId, true).quarantineSession(
+      : this.storeForSession(sessionId, true, true).quarantineSession(
           sessionId,
           reason,
           commandKind,
         );
-    this.removeCachedAskEntry(sessionId);
-    this.removeCachedDeliveryEntries(sessionId);
+    const isolated = isolatedBefore || this.isIsolated(sessionId);
+    if (isolated) {
+      if (infrastructure)
+        this.centralOperation(() => this.central.settleIsolatedSessionProjection(
+          sessionId,
+          undefined,
+          undefined,
+          quarantine,
+        ));
+      else this.refreshSessionProjections(sessionId);
+    }
     return quarantine;
   }
 
-  storeForSession(sessionId: string, mutation = false): SessionKernelStore {
+  storeForSession(
+    sessionId: string,
+    mutation = false,
+    projectionMutation = false,
+  ): SessionKernelStore {
     const placement = this.centralOperation(
       () => this.central.sessionPlacement(sessionId),
     );
     if (placement) {
       if (mutation)
         this.centralOperation(() => this.central.markIsolatedSessionDirty(sessionId));
+      if (projectionMutation)
+        this.centralOperation(
+          () => this.central.markIsolatedSessionProjectionDirty(sessionId),
+        );
       return this.openIsolated(sessionId);
     }
     if (
@@ -154,7 +300,72 @@ export class SessionKernelStoreHost {
       this.centralOperation(() => this.central.hasSessionDurableState(sessionId))
     ) return this.central;
     this.centralOperation(() => this.central.claimIsolatedSession(sessionId));
+    if (projectionMutation)
+      this.centralOperation(
+        () => this.central.markIsolatedSessionProjectionDirty(sessionId),
+      );
     return this.openIsolated(sessionId);
+  }
+
+  transcript<T extends TranscriptActorRequest>(
+    request: T,
+  ): TranscriptActorResult<T> {
+    assertTranscriptActorRequest(request);
+    const mutation = "requestId" in request || request.op === "ack_wake";
+    const kernelStore = mutation
+      ? this.storeForSession(request.sessionId, true)
+      : undefined;
+    const placement = this.centralOperation(
+      () => this.central.sessionPlacement(request.sessionId),
+    );
+    if (!placement || placement.placement !== "isolated" ||
+        placement.transcriptAuthority !== "actor")
+      throw new Error(
+        `Session ${request.sessionId} has no isolated actor transcript placement`,
+      );
+    const transcriptStore = this.openTranscript(request.sessionId);
+    if (request.op === "agent_append_destination") {
+      return transcriptStore.commitAgentTranscriptDestinationAppend({
+        sessionId: request.sessionId,
+        appendId: request.appendId,
+        runId: request.runId,
+        turnId: request.turnId,
+        generation: request.generation,
+        transcriptAnchor: request.transcriptAnchor,
+        entries: [...request.entries],
+      }) as TranscriptActorResult<T>;
+    }
+    if (request.op === "agent_query_destination_receipt") {
+      if (this.storeForSession(request.sessionId).isTombstoned(request.sessionId))
+        throw new Error(`Session ${request.sessionId} was deleted`);
+      return transcriptStore.queryAgentTranscriptReceiptRef({
+        sessionId: request.sessionId,
+        appendId: request.appendId,
+        runId: request.runId,
+        turnId: request.turnId,
+        generation: request.generation,
+        transcriptAnchor: request.transcriptAnchor,
+        requestDigest: request.requestDigest,
+      }) as TranscriptActorResult<T>;
+    }
+    if (request.op === "agent_validate_destination_receipt") {
+      if (this.storeForSession(request.sessionId).isTombstoned(request.sessionId))
+        throw new Error(`Session ${request.sessionId} was deleted`);
+      return transcriptStore.validateAgentTranscriptReceiptRef({
+        sessionId: request.sessionId,
+        runId: request.runId,
+        turnId: request.turnId,
+        generation: request.generation,
+        transcriptAnchor: request.transcriptAnchor,
+        receipt: request.receipt,
+      }) as TranscriptActorResult<T>;
+    }
+    if (request.op === "append_destination") {
+      if (transcriptStore.replayActorRequest(request))
+        return transcriptStore.applyActorRequest(request) as TranscriptActorResult<T>;
+      kernelStore!.assertTranscriptDestinationFence(request);
+    }
+    return transcriptStore.applyActorRequest(request) as TranscriptActorResult<T>;
   }
 
   private outboxRoute(id: number): { central?: string; isolated?: string } {
@@ -192,22 +403,33 @@ export class SessionKernelStoreHost {
       );
     if (method === "releaseQuarantine") {
       const sessionId = String(args[0] ?? "");
+      const quarantine = this.quarantinedSession(sessionId);
+      if (!quarantine?.repairable) return false;
+      const committedOutboxSettlement =
+        this.committedOutboxSettlementEvidence(sessionId, quarantine);
       let isolatedReleased = false;
       if (this.isIsolated(sessionId)) {
+        this.centralOperation(
+          () => this.central.markIsolatedSessionProjectionDirty(sessionId),
+        );
         const isolated = this.containIsolated(
           sessionId,
           "storage:quarantine-release",
-          () => this.openIsolated(sessionId).releaseQuarantine(sessionId),
+          () => this.openIsolated(sessionId).releaseQuarantine(
+            sessionId,
+            committedOutboxSettlement,
+          ),
         );
         if (isolated.ok) isolatedReleased = isolated.value;
       }
       const centralReleased = this.centralOperation(
-        () => this.central.releaseQuarantine(sessionId),
+        () => this.central.releaseQuarantine(
+          sessionId,
+          committedOutboxSettlement,
+        ),
       );
-      if (centralReleased || isolatedReleased) {
-        this.refreshCachedAskEntry(sessionId);
-        this.refreshCachedDeliveryEntries(sessionId);
-      }
+      if (centralReleased || isolatedReleased)
+        this.refreshSessionProjections(sessionId);
       return centralReleased || isolatedReleased;
     }
     const route = sessionKernelStoreRoute(method, args);
@@ -224,78 +446,112 @@ export class SessionKernelStoreHost {
       return result;
     }
     const result = this.invoke(
-      this.storeForSession(route.sessionId, route.mutation),
+      this.storeForSession(
+        route.sessionId,
+        route.mutation,
+        route.mutation && SPARSE_PROJECTION_MUTATIONS.has(method),
+      ),
       method,
       args,
     );
-    if (route.mutation) {
-      if (
-        method === "setAskRecord" ||
-        method === "answerAskRecord" ||
-        method === "deleteAskRecord" ||
-        method === "clearSession" ||
-        method === "tombstoneSession"
-      ) this.refreshCachedAskEntry(route.sessionId);
-      if (
-        method === "setDeliverySlot" ||
-        method === "deleteDeliverySlot" ||
-        method === "prepareSteerDelivery" ||
-        method === "acceptSteerDelivery" ||
-        method === "rejectSteerDelivery" ||
-        method === "requeueSteerDeliveries" ||
-        method === "ackDeliveryDispatch" ||
-        method === "failDeliveryDispatch" ||
-        method === "prepareDeliveryInterrupt" ||
-        method === "beginDeliveryInterruptEffect" ||
-        method === "settleDeliveryInterrupt" ||
-        method === "claimNextDeliveryDispatch" ||
-        method === "claimDeliveryDispatch" ||
-        method === "clearSession" ||
-        method === "tombstoneSession"
-      ) this.refreshCachedDeliveryEntries(route.sessionId);
-    }
+    if (route.mutation && SPARSE_PROJECTION_MUTATIONS.has(method))
+      this.refreshSessionProjections(route.sessionId);
     return result;
   }
 
-  private removeCachedAskEntry(sessionId: string): void {
-    if (!this.askEntriesCache) return;
-    this.askEntriesCache = this.askEntriesCache.filter(
-      ([cachedSessionId]) => cachedSessionId !== sessionId,
+  refreshSessionProjections(sessionId: string): void {
+    if (!this.isIsolated(sessionId)) return;
+    const store = this.storeForSession(sessionId);
+    const quarantined =
+      this.centralOperation(() => this.central.quarantinedSession(sessionId)) ||
+      store.quarantinedSession(sessionId);
+    const ask = quarantined ? undefined : store.askSnapshot(sessionId);
+    const delivery = quarantined ? undefined : store.deliverySnapshot(sessionId);
+    const sparseDelivery = delivery && (
+      delivery.queued.length > 0 ||
+      delivery.steered.length > 0 ||
+      delivery.pendingSteers.length > 0 ||
+      delivery.dispatch !== undefined ||
+      delivery.interrupt !== undefined
+    ) ? delivery : undefined;
+    this.centralOperation(() => this.central.settleIsolatedSessionProjection(
+      sessionId,
+      ask,
+      sparseDelivery,
+      quarantined,
+    ));
+  }
+
+  private repairSparseProjections(
+    limit = SPARSE_PROJECTION_BACKFILL_BATCH,
+  ): boolean {
+    const candidates = this.centralOperation(
+      () => this.central.isolatedProjectionPendingSessionIds(limit),
     );
-  }
-
-  private refreshCachedAskEntry(sessionId: string): void {
-    if (!this.askEntriesCache) return;
-    this.removeCachedAskEntry(sessionId);
-    const value = this.storeForSession(sessionId).askSnapshot(sessionId);
-    if (value === undefined) return;
-    this.askEntriesCache.push([sessionId, structuredClone(value)]);
-    this.askEntriesCache.sort(([left], [right]) => left.localeCompare(right));
-  }
-
-  private removeCachedDeliveryEntries(sessionId: string): void {
-    for (const [slot, entries] of this.deliveryEntriesCache)
-      this.deliveryEntriesCache.set(
-        slot,
-        entries.filter(([cachedSessionId]) => cachedSessionId !== sessionId),
+    for (const sessionId of candidates) {
+      const repaired = this.containIsolated(
+        sessionId,
+        "maintenance:sparse-projection",
+        () => {
+          const centralQuarantine = this.central.quarantinedSession(sessionId);
+          if (centralQuarantine) {
+            this.central.settleIsolatedSessionProjection(
+              sessionId,
+              undefined,
+              undefined,
+              centralQuarantine,
+            );
+            return;
+          }
+          const store = this.centralPath === ":memory:"
+            ? this.openIsolated(sessionId)
+            : new SessionKernelStore(
+                sessionKernelSessionDbPath(sessionId, this.isolatedRoot),
+                {
+                  readonly: true,
+                  hydrateRunStateCache: false,
+                  // Schemas 29–30 only add central projection fields. Session
+                  // ask/delivery/quarantine tables are unchanged from 28.
+                  compatibleReadSchemaFloor: 28,
+                },
+              );
+          try {
+            const quarantined = store.quarantinedSession(sessionId);
+            const ask = quarantined ? undefined : store.askSnapshot(sessionId);
+            const delivery = quarantined ? undefined : store.deliverySnapshot(sessionId);
+            const sparseDelivery = delivery && (
+              delivery.queued.length > 0 ||
+              delivery.steered.length > 0 ||
+              delivery.pendingSteers.length > 0 ||
+              delivery.dispatch !== undefined ||
+              delivery.interrupt !== undefined
+            ) ? delivery : undefined;
+            this.central.settleIsolatedSessionProjection(
+              sessionId,
+              ask,
+              sparseDelivery,
+              quarantined,
+            );
+          } finally {
+            if (store !== this.isolated.get(sessionId)) store.close();
+          }
+        },
       );
-  }
-
-  refreshCachedDeliveryEntries(sessionId: string): void {
-    if (this.deliveryEntriesCache.size === 0) return;
-    this.removeCachedDeliveryEntries(sessionId);
-    const state = this.storeForSession(sessionId).deliverySnapshot(sessionId);
-    for (const [slot, entries] of this.deliveryEntriesCache) {
-      const value = slot === "queued"
-        ? state.queued
-        : slot === "steered"
-          ? state.steered
-          : state.dispatch;
-      if (value === undefined || (Array.isArray(value) && value.length === 0))
-        continue;
-      entries.push([sessionId, structuredClone(value)]);
-      entries.sort(([left], [right]) => left.localeCompare(right));
+      if (!repaired.ok)
+        this.centralOperation(() => this.central.settleIsolatedSessionProjection(
+          sessionId,
+          undefined,
+          undefined,
+        ));
     }
+    const pending = this.centralOperation(
+      () => this.central.isolatedProjectionPendingSessionIds(1).length > 0,
+    );
+    if (!pending && !this.central.sparseProjectionMigrationComplete())
+      this.centralOperation(
+        () => this.central.markSparseProjectionMigrationComplete(),
+      );
+    return pending;
   }
 
   allRunStates(): Array<DurableRunState & { sessionId: string }> {
@@ -303,34 +559,35 @@ export class SessionKernelStoreHost {
   }
 
   allAskEntries(): Array<[string, unknown]> {
-    if (this.askEntriesCache) return structuredClone(this.askEntriesCache);
-    const entries = this.mapReadStores(
-      "global:ask-entries",
-      (store) => store.askEntries(),
-    ).flat();
-    this.askEntriesCache = entries;
+    const entries = [
+      ...this.central.askEntries(),
+      ...this.central.isolatedAskProjectionEntries(),
+    ];
     return structuredClone(entries);
   }
 
   allDeliveryEntries(slot: Parameters<SessionKernelStoreApi["deliveryEntries"]>[0]) {
-    const cached = this.deliveryEntriesCache.get(slot);
-    if (cached) return structuredClone(cached);
-    const entries = this.mapReadStores(
-      "global:delivery-entries",
-      (store) => store.deliveryEntries(slot),
-    ).flat();
-    this.deliveryEntriesCache.set(slot, entries);
+    const entries = [
+      ...this.central.deliveryEntries(slot),
+      ...this.central.isolatedDeliveryProjectionEntries(slot),
+    ];
     return structuredClone(entries);
   }
 
   allQuarantinedSessions(limit = 100, offset = 0): DurableSessionQuarantine[] {
-    const isolated = this.mapIsolatedReadStores(
-      "global:quarantined-sessions",
-      (store) => store.quarantinedSessions(Number.MAX_SAFE_INTEGER, 0),
-    ).flat();
-    return [...this.central.quarantinedSessions(Number.MAX_SAFE_INTEGER, 0), ...isolated]
-      .sort((a, b) => b.quarantinedAt - a.quarantinedAt)
-      .slice(offset, offset + limit);
+    // This latency-sensitive read stays entirely on the catalog. Runtime
+    // maintenance backfills old stores in bounded turns, and every new
+    // quarantine mutation refreshes its durable projection eagerly.
+    const unique = new Map<string, DurableSessionQuarantine>();
+    for (const entry of [
+      ...this.central.quarantinedSessions(Number.MAX_SAFE_INTEGER, 0),
+      ...this.central.isolatedQuarantineProjectionEntries(),
+    ]) unique.set(entry.sessionId, entry);
+    return structuredClone(
+      [...unique.values()]
+        .sort((a, b) => b.quarantinedAt - a.quarantinedAt)
+        .slice(offset, offset + limit),
+    );
   }
 
   runtimeWork(
@@ -339,24 +596,59 @@ export class SessionKernelStoreHost {
     effectKinds: string[],
     limit: number,
   ): { timers: DurableTimer[]; outbox: DurableOutboxItem[] } {
+    this.repairSparseProjections();
     const candidateLimit = Math.max(
       1,
       Math.min(RUNTIME_WAKE_CANDIDATE_BATCH, limit),
     );
-    let candidates = this.central.isolatedWakeCandidates(
-      now,
-      candidateLimit,
-      this.runtimeCursor,
-    );
-    if (candidates.length < candidateLimit && this.runtimeCursor) {
-      const wrapped = this.central.isolatedWakeCandidates(
+    // Reserve a small part of every batch for the most recently dirtied actors
+    // and the oldest already-indexed due work. This keeps both new creates and
+    // retrying effects responsive while the cursor continues a large
+    // conservative migration or crash-recovery sweep.
+    const priorityLimit = Math.min(4, candidateLimit);
+    const recentLimit = Math.ceil(priorityLimit / 2);
+    const dueLimit = priorityLimit - recentLimit;
+    const candidates = this.central.isolatedRecentDirtyWakeCandidates(recentLimit);
+    const seen = new Set(candidates);
+    if (dueLimit > 0) {
+      let due = this.central.isolatedDueWakeCandidates(
         now,
-        candidateLimit - candidates.length,
+        dueLimit,
+        this.runtimeDueCursor,
       );
-      const seen = new Set(candidates);
-      candidates = [...candidates, ...wrapped.filter((sessionId) => !seen.has(sessionId))];
+      if (due.length < dueLimit && this.runtimeDueCursor) {
+        const wrapped = this.central.isolatedDueWakeCandidates(
+          now,
+          dueLimit - due.length,
+        );
+        due = [...due, ...wrapped];
+      }
+      for (const sessionId of due) {
+        if (seen.has(sessionId)) continue;
+        seen.add(sessionId);
+        candidates.push(sessionId);
+        this.runtimeDueCursor = sessionId;
+      }
     }
-    if (candidates.length > 0) this.runtimeCursor = candidates.at(-1)!;
+    const appendFairCandidates = (afterSessionId = "") => {
+      const remaining = candidateLimit - candidates.length;
+      if (remaining <= 0) return;
+      const fair = this.central.isolatedWakeCandidates(
+        now,
+        remaining + seen.size,
+        afterSessionId,
+      );
+      for (const sessionId of fair) {
+        if (seen.has(sessionId)) continue;
+        seen.add(sessionId);
+        candidates.push(sessionId);
+        this.runtimeCursor = sessionId;
+        if (candidates.length >= candidateLimit) break;
+      }
+    };
+    appendFairCandidates(this.runtimeCursor);
+    if (candidates.length < candidateLimit && this.runtimeCursor)
+      appendFairCandidates();
     const quota = Math.max(1, Math.ceil(limit / (candidates.length + 1)));
     const timers = this.central.dueTimers(now, Math.min(quota, limit), timerKinds);
     const outbox = this.central.pendingOutbox(now, Math.min(quota, limit), effectKinds);
@@ -428,6 +720,7 @@ export class SessionKernelStoreHost {
   }
 
   maintain(): boolean {
+    let pending = this.repairSparseProjections(SESSION_STORE_MAINTENANCE_BATCH);
     let routes = this.central.isolatedOutboxRoutes(
       OUTBOX_ROUTE_MAINTENANCE_BATCH,
       this.outboxRouteMaintenanceCursor,
@@ -450,9 +743,10 @@ export class SessionKernelStoreHost {
       if (routedSession.ok && routedSession.value !== route.sessionId)
         this.central.forgetIsolatedOutboxRoute(route.id);
     }
-    let pending =
+    pending =
       routes.length === OUTBOX_ROUTE_MAINTENANCE_BATCH ||
-      this.central.maintain();
+      this.central.maintain() ||
+      pending;
     const placements = this.central.isolatedSessionPlacements(
       SESSION_STORE_MAINTENANCE_BATCH,
       this.maintenanceSessionCursor,
@@ -476,6 +770,31 @@ export class SessionKernelStoreHost {
     return pending;
   }
 
+  private openTranscript(sessionId: string): TranscriptStore {
+    let store = this.transcripts.get(sessionId);
+    if (store) {
+      this.transcripts.delete(sessionId);
+      this.transcripts.set(sessionId, store);
+      return store;
+    }
+    this.laneMetrics.transcriptStoreCacheMisses += 1;
+    while (this.transcripts.size >= this.maxOpenSessionStores) {
+      const oldest = this.transcripts.keys().next().value as string | undefined;
+      if (!oldest) break;
+      this.transcripts.get(oldest)?.close();
+      this.transcripts.delete(oldest);
+      this.laneMetrics.transcriptStoreCacheEvictions += 1;
+    }
+    if (this.centralPath === ":memory:")
+      throw new Error("Actor transcript storage requires an isolated file database");
+    store = new TranscriptStore(
+      sessionKernelSessionDbPath(sessionId, this.isolatedRoot),
+      { actorOwned: false },
+    );
+    this.transcripts.set(sessionId, store);
+    return store;
+  }
+
   private openIsolated(sessionId: string): SessionKernelStore {
     let store = this.isolated.get(sessionId);
     if (store) {
@@ -485,12 +804,14 @@ export class SessionKernelStoreHost {
       this.isolated.set(sessionId, store);
       return store;
     }
+    this.laneMetrics.kernelStoreCacheMisses += 1;
     while (this.isolated.size >= this.maxOpenSessionStores) {
       const oldestSessionId = this.isolated.keys().next().value as string | undefined;
       if (!oldestSessionId) break;
       const oldest = this.isolated.get(oldestSessionId);
       this.isolated.delete(oldestSessionId);
       oldest?.close();
+      this.laneMetrics.kernelStoreCacheEvictions += 1;
     }
     store = new SessionKernelStore(
       this.centralPath === ":memory:"
@@ -615,6 +936,11 @@ export class SessionKernelStoreHost {
   }
 
   private callGlobal(method: string, args: unknown[]): unknown {
+    if (method === "actorTranscriptSessionIds")
+      return this.central.actorTranscriptSessionIds(
+        Number(args[0] ?? 100),
+        String(args[1] ?? ""),
+      );
     if (method === "askMigrationComplete") return this.central.askMigrationComplete();
     if (method === "markAskMigrationComplete") return this.central.markAskMigrationComplete();
     if (method === "deliveryMigrationComplete") return this.central.deliveryMigrationComplete();
@@ -648,31 +974,62 @@ export class SessionKernelStoreHost {
       return;
     }
     if (method === "clearAskRecords") {
-      this.mapStores("global:clear-asks", (store) => store.clearAskRecords());
-      this.askEntriesCache = [];
+      if (this.repairSparseProjections())
+        throw new SparseProjectionBackfillPendingError(
+          "Sparse session projection backfill is still in progress",
+        );
+      const sessionIds = this.central.isolatedAskProjectionEntries()
+        .map(([sessionId]) => sessionId);
+      this.central.clearAskRecords();
+      for (const sessionId of sessionIds) {
+        this.centralOperation(
+          () => this.central.markIsolatedSessionProjectionDirty(sessionId),
+        );
+        this.storeForSession(sessionId, true, true).clearAskRecords();
+        this.refreshSessionProjections(sessionId);
+      }
       return;
     }
     if (method === "clearDeliverySlot") {
-      this.mapStores("global:clear-delivery", (store) =>
-        store.clearDeliverySlot(args[0] as Parameters<SessionKernelStoreApi["clearDeliverySlot"]>[0]));
-      this.deliveryEntriesCache.clear();
+      if (this.repairSparseProjections())
+        throw new SparseProjectionBackfillPendingError(
+          "Sparse session projection backfill is still in progress",
+        );
+      const slot = args[0] as Parameters<SessionKernelStoreApi["clearDeliverySlot"]>[0];
+      const sessionIds = this.central.isolatedDeliveryProjectionEntries(slot)
+        .map(([sessionId]) => sessionId);
+      this.central.clearDeliverySlot(slot);
+      for (const sessionId of sessionIds) {
+        this.centralOperation(
+          () => this.central.markIsolatedSessionProjectionDirty(sessionId),
+        );
+        this.storeForSession(sessionId, true, true).clearDeliverySlot(slot);
+        this.refreshSessionProjections(sessionId);
+      }
       return;
     }
     if (method === "settlePendingSteers") {
+      const projectionPending = this.repairSparseProjections();
+      if (projectionPending)
+        throw new SparseProjectionBackfillPendingError(
+          "Sparse session projection backfill is still in progress",
+        );
       let settled = this.central.settlePendingSteers();
-      const candidates = this.mapIsolatedReadStores(
-        "global:find-pending-steers",
-        (store, sessionId) => store.hasPendingSteers() ? sessionId : undefined,
-      ).filter((sessionId): sessionId is string => sessionId !== undefined);
+      const candidates = this.central.isolatedPendingSteerProjectionSessionIds();
       for (const sessionId of candidates) {
+        this.centralOperation(
+          () => this.central.markIsolatedSessionProjectionDirty(sessionId),
+        );
         const result = this.containIsolated(
           sessionId,
           "global:settle-pending-steers",
-          () => this.storeForSession(sessionId, true).settlePendingSteers(),
+          () => this.storeForSession(sessionId, true, true).settlePendingSteers(),
         );
-        if (result.ok) settled += result.value;
+        if (result.ok) {
+          settled += result.value;
+          this.refreshSessionProjections(sessionId);
+        }
       }
-      if (settled > 0) this.deliveryEntriesCache.clear();
       return settled;
     }
     if (method === "retryCompatibleCreationBranchDeadLetters") {

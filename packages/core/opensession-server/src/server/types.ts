@@ -42,6 +42,18 @@ export interface OsReviewSummary {
   at: string;
 }
 
+export interface SessionSafetyState {
+  status: "paused_for_safety";
+  /** Plain-language explanation safe to show to every session participant. */
+  explanation: string;
+  automaticReconciliationRunning: boolean;
+  pausedAt: string;
+  operation: string;
+  /** The actor found enough durable evidence for an administrator to repair
+   * the session without blindly replaying an ambiguous effect. */
+  repairAvailable: boolean;
+}
+
 export interface UnifiedSession {
   id: string;
   /** Historical marker retained while old session files age out. */
@@ -62,6 +74,11 @@ export interface UnifiedSession {
   lastActivity: string;
   createdAt: string;
   isRunning: boolean;
+  /** Present whenever the owning actor has fenced this session. Safety state
+   * overrides stale engine/run projections and is never represented as running. */
+  safety?: SessionSafetyState;
+  /** A queued prompt is actively owned by the drain loop or its idle watcher. */
+  queueOwnerActive?: boolean;
   /**
    * When the in-flight run started (ISO), for the "in progress" elapsed ticker
    * in the sidebar. Only set while isRunning; sourced from the run journal, so

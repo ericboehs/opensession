@@ -473,7 +473,7 @@ describe("context-log: standing context is recorded on change, not per turn", ()
 		expect(JSON.parse(rows[0].content).mcpScope).toBe("all");
 	});
 
-	test("a direct engine's instructions record rides the same helper, and leaves on the way out", () => {
+	test("a direct engine's instructions record rides the same helper, and leaves on the way out", async () => {
 		const sessionId = "os-std-direct-instructions";
 		const text = "## Run policy\nnever push to main\n";
 		// What claude-direct and codex-direct call once their system prompt is
@@ -481,13 +481,13 @@ describe("context-log: standing context is recorded on change, not per turn", ()
 		// so the adapter is the call site. Same helper, so the same
 		// content-addressing — a second turn, and a restart that clears the
 		// in-process map, both land on the one row.
-		logStandingContext({
+		await logStandingContext({
 			sessionId,
 			turnId: "turn-1",
 			source: "instructions",
 			content: text,
 		});
-		logStandingContext({
+		await logStandingContext({
 			sessionId,
 			turnId: "turn-2",
 			source: "instructions",
@@ -502,7 +502,7 @@ describe("context-log: standing context is recorded on change, not per turn", ()
 		// onto the same content-addressed row, which keeps its place in the
 		// transcript and takes the re-asserting turn's id.
 		(globalThis as any).__osStandingContext?.clear();
-		logStandingContext({
+		await logStandingContext({
 			sessionId,
 			turnId: "turn-3",
 			source: "instructions",
@@ -515,7 +515,7 @@ describe("context-log: standing context is recorded on change, not per turn", ()
 		expect(rows[0].contextInjection?.turnId).toBe("turn-3");
 
 		// Instructions that actually moved earn their own record.
-		logStandingContext({
+		await logStandingContext({
 			sessionId,
 			turnId: "turn-4",
 			source: "instructions",
@@ -530,11 +530,11 @@ describe("context-log: standing context is recorded on change, not per turn", ()
 		);
 	});
 
-	test("pi instructions record once across turns, and again only when the text changes", () => {
+	test("pi instructions record once across turns, and again only when the text changes", async () => {
 		const sessionId = "os-std-pi-instructions";
 		const text = "## Run policy\nkeep the checkout intact\n";
 		for (const turnId of ["turn-1", "turn-2"]) {
-			logStandingContext({
+			await logStandingContext({
 				sessionId,
 				turnId,
 				source: "instructions",
@@ -543,7 +543,7 @@ describe("context-log: standing context is recorded on change, not per turn", ()
 		}
 
 		expect(standing(sessionId, "instructions")).toHaveLength(1);
-		logStandingContext({
+		await logStandingContext({
 			sessionId,
 			turnId: "turn-3",
 			source: "instructions",

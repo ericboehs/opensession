@@ -1,9 +1,9 @@
 # Open Session
 
 Self-hosted agent-infrastructure server: a web UI plus Slack, Linear, Plain,
-and GitHub agents, driving coding sessions through the Pi engine
-(supported model providers) in git worktrees on your own box, or in isolated
-sandboxes — Docker locally, with pluggable adapters for other providers.
+and GitHub agents, driving coding sessions through the Pi engine in git worktrees on your own box, or in isolated
+sandboxes.
+Supports multiple Codex and Claude subscriptions and model APIs.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/readme-hero-roomy-dark.webp">
@@ -25,17 +25,15 @@ first.
 curl -fsSL https://raw.githubusercontent.com/tellahq/opensession/main/install.sh | bash
 ```
 
-On Linux, `--tailscale` asks the installer to add Tailscale when passwordless
-`sudo` is available. The recommended remote-access install also adds Caddy and
+The recommended install also adds Tailscale, Caddy and
 the lego certificate helper so the private app can use HTTPS or a friendly
-custom domain. If it reports that `sudo` is needed, run the manual command it
-prints. Without `TS_AUTHKEY`, installing the client does not join a tailnet.
+custom domain.
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/tellahq/opensession/main/install.sh | bash -s -- --tailscale --caddy
 ```
 
-For public ingress through Cloudflare Tunnel, `--cloudflare` installs
+For public ingress through Cloudflare Tunnel instead of Tailscale, `--cloudflare` installs
 `cloudflared`. Finish configuring either option under Settings → Domains and
 ingress.
 
@@ -102,11 +100,11 @@ run `bash install.sh --help` for the complete installer list. A source checkout
 requires Bun and git.
 
 > Letting the agent improve Open Session itself? Clone your fork, not this
-> repo. Self-sessions commit and push to `origin` (and `deploy_self`
-> fast-forwards from it), so pointed at `tellahq/opensession` every push is
-> rejected and, once you've self-modified, updates from us stop
-> fast-forwarding. Fork, clone the fork, and keep us as an `upstream` remote.
-> Config-only use (your repos, your integrations) needs no fork.
+> repo. Self-sessions commit and push to `origin`, and `deploy_self` advances
+> the pinned runtime to a descendant commit from it. Pointed at
+> `tellahq/opensession`, every push is rejected. Fork, clone the fork, and keep
+> us as an `upstream` remote. Config-only use (your repos, your integrations)
+> needs no fork.
 
 > Authentication is available, and it is opt-in. By default, Open Session
 > trusts everyone who can reach the address it binds to. GitHub sign-in can

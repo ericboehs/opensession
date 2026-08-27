@@ -1,7 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
-import type { SetupIntegration } from "./setup-shared";
-import { IntegrationsList } from "./SetupIntegrations";
+import type { SetupGithub, SetupIntegration } from "./setup-shared";
+import {
+	GithubAuthCard,
+	GithubManifestSetup,
+	IntegrationsList,
+} from "./SetupIntegrations";
 
 const integration: SetupIntegration = {
 	id: "linear",
@@ -29,5 +33,133 @@ describe("integration credential warnings", () => {
 
 	test("shows missing credentials while the integration is on", () => {
 		expect(renderIntegration(true)).toContain("Missing LINEAR_API_KEY");
+	});
+});
+
+describe("GitHub integration status", () => {
+	const githubIntegration: SetupIntegration = {
+		id: "github",
+		label: "GitHub",
+		doc: "",
+		enabled: false,
+		env: [],
+		links: [],
+		missingRequired: [],
+	};
+
+	test("separates App access from optional PR automation", () => {
+		const markup = renderToStaticMarkup(
+			<IntegrationsList
+				integrations={[githubIntegration]}
+				onSaved={() => {}}
+			/>,
+		);
+		expect(markup).toContain("Automation off");
+		expect(markup).toContain(
+			"Respond to PR webhooks, mentions, labels, and review events.",
+		);
+		expect(markup).toContain(
+			"GitHub App setup controls repository access. This switch only controls PR automation",
+		);
+	});
+
+	test("labels the enabled state as automation", () => {
+		const markup = renderToStaticMarkup(
+			<IntegrationsList
+				integrations={[{ ...githubIntegration, enabled: true }]}
+				onSaved={() => {}}
+			/>,
+		);
+		expect(markup).toContain("Automation on");
+	});
+});
+
+const github: SetupGithub = {
+	userPrAuth: false,
+	clientIdConfigured: false,
+	clientSecretConfigured: false,
+	mentionHandle: "opensession",
+	appCredentialConfigured: false,
+	privateKeyConfigured: false,
+	appSlug: null,
+	installationOwner: "acme",
+	appCreateUrl: "https://github.com/organizations/acme/settings/apps/new",
+};
+
+function renderGithub(appSlug: string | null): string {
+	return renderToStaticMarkup(
+		<GithubAuthCard
+			github={{ ...github, appSlug }}
+			onSaved={() => {}}
+			onboarding
+		/>,
+	);
+}
+
+describe("GitHub App onboarding actions", () => {
+	test("shows clickable setup steps and disables unavailable actions", () => {
+		const markup = renderGithub(null);
+		expect(markup).toContain("Create GitHub app");
+		expect(markup).toContain("Enable Device Flow");
+		expect(markup).toContain("Install GitHub app");
+		expect(markup.match(/disabled=""/g)).toHaveLength(2);
+		expect(markup).toContain("Organization ID");
+		expect(markup).not.toMatch(/>\d\. /);
+	});
+
+	test("links personal App settings independently from its organization installation", () => {
+		const markup = renderGithub("open-session-acme");
+		expect(markup).toContain(
+			'href="https://github.com/settings/apps/open-session-acme"',
+		);
+		expect(markup).not.toContain("/organizations/acme/settings/apps/open-session-acme");
+		expect(markup).toContain("Enable Device Flow");
+		expect(markup).toContain(
+			'href="https://github.com/apps/open-session-acme/installations/new"',
+		);
+		expect(markup).toContain("Install GitHub app");
+	});
+
+	test("links organization App settings only when appOrg identifies the owner", () => {
+		const markup = renderToStaticMarkup(
+			<GithubManifestSetup
+				github={{ ...github, appSlug: "open-session-acme", appOrg: "acme" }}
+				returnTo="welcome"
+			/>,
+		);
+		expect(markup).toContain(
+			'href="https://github.com/organizations/acme/settings/apps/open-session-acme"',
+		);
+	});
+
+	test("shows only manifest setup during onboarding", () => {
+		const markup = renderGithub(null);
+		expect(markup).not.toContain("Use an existing GitHub App");
+		expect(markup).not.toContain('type="file"');
+		expect(markup).not.toContain("Client secret");
+	});
+
+	test("offers optional GitHub account sign-in after the App is created", () => {
+		const markup = renderToStaticMarkup(
+			<GithubAuthCard
+				github={{ ...github, appSlug: "open-session-acme", clientIdConfigured: true }}
+				onSaved={() => {}}
+				onboarding
+			/>,
+		);
+		expect(markup).toContain("Optional. Sign in now");
+		expect(markup).toContain("connect later under Account");
+		expect(markup).toContain('class="text-green"');
+	});
+
+	test("uses the same manifest-only setup in Settings", () => {
+		const markup = renderToStaticMarkup(
+			<GithubManifestSetup github={github} returnTo="settings" />,
+		);
+		expect(markup).toContain("Create GitHub app");
+		expect(markup).toContain("Enable Device Flow");
+		expect(markup).toContain("Install GitHub app");
+		expect(markup).not.toContain('type="file"');
+		expect(markup).not.toContain("Client secret");
 	});
 });

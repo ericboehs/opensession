@@ -90,7 +90,7 @@ describe("agent wait registration", () => {
       now: 1_000,
     });
     expect(first).toMatchObject({ ok: true, replaced: false });
-    expect(getAgentWait("s1")).toMatchObject({
+    expect(await getAgentWait("s1")).toMatchObject({
       id: "call-1",
       kind: "timer",
       dueAt: 61_000,
@@ -104,7 +104,7 @@ describe("agent wait registration", () => {
       now: 2_000,
     });
     expect(duplicate).toMatchObject({ ok: true, replaced: false });
-    expect(getAgentWait("s1")).toMatchObject({ dueAt: 61_000 });
+    expect(await getAgentWait("s1")).toMatchObject({ dueAt: 61_000 });
 
     const replacement = await registerPrChecksAgentWait({
       sessionId: "s1",
@@ -115,14 +115,14 @@ describe("agent wait registration", () => {
       now: 3_000,
     });
     expect(replacement).toMatchObject({ ok: true, replaced: true });
-    expect(getAgentWait("s1")).toMatchObject({
+    expect(await getAgentWait("s1")).toMatchObject({
       id: "call-2",
       kind: "pr_checks",
       repo: "example",
       branch: "feature",
     });
     expect(await cancelAgentWait("s1")).toBe(true);
-    expect(getAgentWait("s1")).toBeUndefined();
+    expect(await getAgentWait("s1")).toBeUndefined();
   });
 
   test("wakes with hidden system context rather than a user message", async () => {

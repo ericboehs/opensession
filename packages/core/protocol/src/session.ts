@@ -423,6 +423,15 @@ export type ProtocolClientMessage =
  * identical shape, so a client can unwrap a feed frame straight into its
  * ordinary handler, and a new field can never reach one route only.
  */
+export interface SessionSafetyState {
+  status: "paused_for_safety";
+  explanation: string;
+  automaticReconciliationRunning: boolean;
+  pausedAt: string;
+  operation: string;
+  repairAvailable: boolean;
+}
+
 export type SessionLiveEvent =
   | {
       type: "transcript_append";
@@ -452,7 +461,12 @@ export type SessionLiveEvent =
   | { type: "stream_tool_use"; sessionId?: string; entry: TranscriptEntry }
   | { type: "stream_tool_result"; sessionId?: string; entry: TranscriptEntry }
   | { type: "stream_done"; sessionId?: string }
-  | { type: "session_status"; sessionId?: string; isRunning: boolean };
+  | {
+      type: "session_status";
+      sessionId?: string;
+      isRunning: boolean;
+      safety?: SessionSafetyState;
+    };
 
 /**
  * Core server → client frames. sessionId on the session-scoped messages lets

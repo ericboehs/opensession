@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { BASE_PATH } from "../lib/base";
+import { effectiveTheme, onThemeChanged } from "../lib/theme";
 import { Button } from "../ui/button";
 import { Modal } from "../ui/modal";
 import { IconChevronLeft } from "./icons";
@@ -34,8 +35,12 @@ export function DownloadAppsDialog({
 
 	return (
 		<Modal.Root open={open} onOpenChange={onOpenChange}>
-			<Modal.Content widthClassName="max-w-[48rem]">
+			<Modal.Content
+				widthClassName="max-w-[48rem]"
+				className="rounded-3xl bg-popup-glass [backdrop-filter:var(--popup-blur)]"
+			>
 				<Modal.Header
+					className="static bg-transparent"
 					title={
 						showInstallHelp ? (
 							<span className="flex min-w-0 items-center gap-1">
@@ -75,6 +80,11 @@ export function DownloadAppsBody({
 	showInstallHelp: boolean;
 	onShowInstallHelp: () => void;
 }) {
+	const [theme, setTheme] = useState(effectiveTheme);
+	useEffect(() => onThemeChanged(() => setTheme(effectiveTheme())), []);
+	const backgroundName =
+		theme === "dark" ? "download-background-dark" : "download-background";
+
 	if (showInstallHelp)
 		return (
 			<div className="grid min-h-0 flex-1 gap-3 desktop:grid-cols-3">
@@ -97,7 +107,7 @@ export function DownloadAppsBody({
 					<div
 						className="relative h-full overflow-hidden bg-cover bg-center pl-5 pt-5"
 						style={{
-							backgroundImage: `url(${BASE_PATH}/download-background.webp)`,
+							backgroundImage: `url(${BASE_PATH}/${backgroundName}.webp)`,
 						}}
 					>
 						<img
@@ -105,7 +115,7 @@ export function DownloadAppsBody({
 							alt="Open Session running on Mac"
 							className="h-full w-full rounded-tl-lg object-cover object-left-top outline outline-1 -outline-offset-1 outline-black/10"
 						/>
-						<div className="pointer-events-none absolute inset-x-0 bottom-0 h-1/3 bg-gradient-to-b from-transparent to-panel" />
+						<div className="pointer-events-none absolute inset-x-0 bottom-0 h-1/3 bg-gradient-to-b from-transparent to-surface" />
 					</div>
 				}
 				title="Open Session for Mac"
@@ -131,16 +141,15 @@ export function DownloadAppsBody({
 					<div
 						className="relative flex h-full justify-center overflow-hidden bg-cover bg-center px-3 pt-6"
 						style={{
-							backgroundImage: `url(${BASE_PATH}/download-background.webp)`,
+							backgroundImage: `url(${BASE_PATH}/${backgroundName}.webp)`,
 						}}
 					>
-						<div className="pointer-events-none absolute inset-0 bg-[color-mix(in_oklch,var(--green)_70%,var(--yellow))] opacity-60" />
 						<img
 							src={`${BASE_PATH}/download-phone.webp`}
 							alt="Open Session installed as a phone web app"
-							className="relative z-10 h-[115%] w-auto max-w-none origin-top object-contain object-top smooth-shadow-lg"
+							className="relative z-10 h-[130%] w-auto max-w-none origin-top rounded-2xl object-contain object-top smooth-shadow-lg"
 						/>
-						<div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 h-1/3 bg-gradient-to-b from-transparent to-panel" />
+						<div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 h-1/3 bg-gradient-to-b from-transparent to-surface" />
 					</div>
 				}
 				title="Web"
@@ -171,7 +180,7 @@ function AppCard({
 	children: ReactNode;
 }) {
 	return (
-		<section className="flex h-[20rem] flex-col overflow-hidden rounded-[calc(22px*var(--rf))] bg-panel desktop:h-[22rem]">
+		<section className="flex h-[20rem] flex-col overflow-hidden rounded-[calc(22px*var(--rf))] bg-surface desktop:h-[22rem]">
 			<div className="min-h-0 flex-1">{preview}</div>
 			<div className="relative z-10 flex shrink-0 flex-col px-4 pb-4 desktop:px-5 desktop:pb-5">
 				<h3 className="m-0 text-section-title font-semibold leading-tight text-fg">{title}</h3>

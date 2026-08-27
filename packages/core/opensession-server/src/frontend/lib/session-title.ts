@@ -12,3 +12,16 @@ export function cleanSessionTitle(title: string): string {
       .trim() || title
   );
 }
+
+/**
+ * A normal session reference names the workspace it opens. A worker reference
+ * instead names its delegated task: workers inherit the parent's workspace, so
+ * using that name would make every child chip repeat the parent's subject.
+ */
+export function sessionReferenceTitle(session: {
+  title: string;
+  workspaceName?: string;
+  parentSessionId?: string;
+}): string {
+  return session.parentSessionId ? session.title : session.workspaceName || session.title;
+}

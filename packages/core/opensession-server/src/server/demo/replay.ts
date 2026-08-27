@@ -30,7 +30,7 @@ import {
   recordEngineSessionOwner,
 } from "../transcript-persistence";
 import { parseJsonlLines } from "../jsonl-parser";
-import { transcriptStore } from "../transcript-store";
+import { importLegacyTranscript, replaceTranscriptEvents, transcript } from "../actor-transcript";
 import { touchNativeSession } from "../session-cache";
 import {
   DEMO_LIVE_ENGINE_SESSION_ID,
@@ -64,8 +64,8 @@ export async function startDemoReplayer(): Promise<void> {
   // Fresh session: skip the legacy-import gate up front so the first append
   // never tries to merge nonexistent history.
   recordEngineSessionOwner(ocId, sessionId);
-  if (transcriptStore().needsImport(sessionId)) {
-    await transcriptStore().importLegacyTranscript(sessionId, [], "live-only", null);
+  if (await transcript.needsImport(sessionId)) {
+    await importLegacyTranscript(sessionId, [], "live-only", null);
   }
 
   // Busy-mark + FSM: prompt → starting, run_registered → running.
@@ -87,7 +87,7 @@ export async function startDemoReplayer(): Promise<void> {
       if (step === 0) {
         // Loop restart: authoritatively replace (reset:true on the bus) so
         // watchers drop the previous loop instead of merging into it.
-        await transcriptStore().replaceTranscriptEvents(
+        await replaceTranscriptEvents(
           sessionId,
           parseJsonlLines(lines.map((l) => JSON.stringify(l))),
         );

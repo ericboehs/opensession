@@ -20,6 +20,7 @@ import {
   startSessionKernelService,
 } from "./actor-service";
 import { sessionKernelSessionDbPath } from "./store";
+import { SessionKernelActorClient } from "./actor-client";
 
 const token = "test-session-kernel-token";
 const stateDir = mkdtempSync(join(tmpdir(), "opensession-kernel-service-"));
@@ -33,6 +34,7 @@ beforeAll(async () => {
   service = await startSessionKernelService({
     port: 0,
     token,
+    workerCount: 4,
     responseTimeoutMs: 700,
     databasePath: join(stateDir, "sessions", "session-kernel.sqlite"),
   });
@@ -75,6 +77,207 @@ async function rpc(request: KernelActorTransportEnvelope["request"]) {
 }
 
 describe("session kernel actor service", () => {
+  test("absorbs read bursts beyond the bounded mutation mailbox", async () => {
+    const isolatedService = await startSessionKernelService({
+      port: 0,
+      token,
+      workerCount: 1,
+      responseTimeoutMs: 700,
+      mutationMailboxLimit: 8,
+      workerUrl: new URL("./testing/mailbox-worker.ts", import.meta.url),
+    });
+    const call = async (
+      request: KernelActorTransportEnvelope["request"],
+      epoch?: string,
+    ) => fetch(`${isolatedService.url}/rpc`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${token}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        version: SESSION_KERNEL_TRANSPORT_VERSION,
+        actorVersion: SESSION_KERNEL_ACTOR_VERSION,
+        ...(epoch ? { serviceEpoch: epoch } : {}),
+        request,
+      }),
+    });
+    try {
+      const helloResponse = await call({
+        t: "hello",
+        rpcId: "mailbox-handshake",
+        version: SESSION_KERNEL_ACTOR_VERSION,
+      });
+      const hello = await helloResponse.json() as { serviceEpoch: string };
+      expect(helloResponse.status).toBe(200);
+
+      const responses = await Promise.all(Array.from({ length: 40 }, (_, index) =>
+        call({
+          t: "call",
+          rpcId: `burst-read-${index}`,
+          outputBytes: 1024,
+          request: {
+            t: "store",
+            method: "turnSnapshot",
+            args: ["busy-session"],
+          },
+        }, hello.serviceEpoch)
+      ));
+      expect(responses.map((response) => response.status)).toEqual(
+        Array.from({ length: 40 }, () => 200),
+      );
+
+      const mutations = await Promise.all(Array.from({ length: 10 }, (_, index) =>
+        call({
+          t: "call",
+          rpcId: `burst-mutation-${index}`,
+          outputBytes: 1024,
+          request: {
+            t: "store",
+            method: "setRunState",
+            args: [{
+              sessionId: "busy-session",
+              state: "idle",
+              since: new Date(0).toISOString(),
+              generation: index,
+              changeSeq: index,
+            }],
+          },
+        }, hello.serviceEpoch)
+      ));
+      expect(mutations.map((response) => response.status).sort()).toEqual(
+        [...Array.from({ length: 9 }, () => 200), 429].sort(),
+      );
+    } finally {
+      isolatedService.stop();
+    }
+  });
+
+  test("global runtime work does not wait for an active read-only session turn", async () => {
+    const isolatedService = await startSessionKernelService({
+      port: 0,
+      token,
+      workerCount: 1,
+      responseTimeoutMs: 700,
+      workerUrl: new URL("./testing/read-barrier-worker.ts", import.meta.url),
+    });
+    const call = async (
+      request: KernelActorTransportEnvelope["request"],
+      epoch?: string,
+    ) => fetch(`${isolatedService.url}/rpc`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${token}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        version: SESSION_KERNEL_TRANSPORT_VERSION,
+        actorVersion: SESSION_KERNEL_ACTOR_VERSION,
+        ...(epoch ? { serviceEpoch: epoch } : {}),
+        request,
+      }),
+    });
+    try {
+      const helloResponse = await call({
+        t: "hello",
+        rpcId: "read-barrier-handshake",
+        version: SESSION_KERNEL_ACTOR_VERSION,
+      });
+      const hello = await helloResponse.json() as { serviceEpoch: string };
+      const read = call({
+        t: "call",
+        rpcId: "slow-session-read",
+        outputBytes: 1024,
+        request: { t: "store", method: "turnSnapshot", args: ["busy-session"] },
+      }, hello.serviceEpoch);
+      await Bun.sleep(25);
+
+      const startedAt = Date.now();
+      const runtime = await call({
+        t: "runtime_work",
+        rpcId: "runtime-during-read",
+        now: Date.now(),
+        timerKinds: [],
+        effectKinds: [],
+        limit: 100,
+      }, hello.serviceEpoch);
+      expect(runtime.status).toBe(200);
+      expect(Date.now() - startedAt).toBeLessThan(150);
+      expect(await runtime.json()).toMatchObject({
+        t: "runtime_work_result",
+        timers: [],
+        outbox: [],
+      });
+      expect((await read).status).toBe(200);
+    } finally {
+      isolatedService.stop();
+    }
+  });
+
+  test("restarts the catalog lane instead of the service after a read timeout", async () => {
+    const isolatedService = await startSessionKernelService({
+      port: 0,
+      token,
+      workerCount: 1,
+      responseTimeoutMs: 100,
+      workerUrl: new URL("./testing/read-timeout-worker.ts", import.meta.url),
+    });
+    try {
+      const helloResponse = await fetch(`${isolatedService.url}/rpc`, {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${token}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          version: SESSION_KERNEL_TRANSPORT_VERSION,
+          actorVersion: SESSION_KERNEL_ACTOR_VERSION,
+          request: {
+            t: "hello",
+            rpcId: "read-timeout-handshake",
+            version: SESSION_KERNEL_ACTOR_VERSION,
+          },
+        }),
+      });
+      const hello = await helloResponse.json() as { serviceEpoch: string };
+      expect(helloResponse.status).toBe(200);
+
+      const timedOut = await fetch(`${isolatedService.url}/rpc`, {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${token}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          version: SESSION_KERNEL_TRANSPORT_VERSION,
+          actorVersion: SESSION_KERNEL_ACTOR_VERSION,
+          serviceEpoch: hello.serviceEpoch,
+          request: {
+            t: "call",
+            rpcId: "slow-read",
+            outputBytes: 1024,
+            request: { t: "store", method: "askEntries", args: [] },
+          },
+        }),
+      });
+      expect(timedOut.status).toBe(429);
+      expect(await timedOut.json()).toMatchObject({
+        error: "Session actor lane 0 response timed out",
+      });
+
+      let ready: Response | undefined;
+      for (let attempt = 0; attempt < 50; attempt += 1) {
+        ready = await fetch(`${isolatedService.url}/ready`);
+        if (ready.status === 200) break;
+        await Bun.sleep(10);
+      }
+      expect(ready?.status).toBe(200);
+      expect((await fetch(`${isolatedService.url}/live`)).status).toBe(200);
+    } finally {
+      isolatedService.stop();
+    }
+  });
+
   test("accepts the transport worker's first message immediately", async () => {
     const previousToken = process.env.OPENSESSION_SESSION_KERNEL_TOKEN;
     const previousUrl = process.env.OPENSESSION_SESSION_KERNEL_URL;
@@ -111,6 +314,41 @@ describe("session kernel actor service", () => {
       });
     } finally {
       worker.terminate();
+      if (previousToken === undefined)
+        delete process.env.OPENSESSION_SESSION_KERNEL_TOKEN;
+      else process.env.OPENSESSION_SESSION_KERNEL_TOKEN = previousToken;
+      if (previousUrl === undefined)
+        delete process.env.OPENSESSION_SESSION_KERNEL_URL;
+      else process.env.OPENSESSION_SESSION_KERNEL_URL = previousUrl;
+    }
+  });
+
+  test("reconnects and re-handshakes after the service incarnation changes", async () => {
+    const previousToken = process.env.OPENSESSION_SESSION_KERNEL_TOKEN;
+    const previousUrl = process.env.OPENSESSION_SESSION_KERNEL_URL;
+    process.env.OPENSESSION_SESSION_KERNEL_TOKEN = token;
+    process.env.OPENSESSION_SESSION_KERNEL_URL = service.url;
+    const worker = new Worker(
+      new URL("../../session-kernel-transport-worker.ts", import.meta.url),
+      { type: "module" },
+    );
+    const client = new SessionKernelActorClient(worker);
+    try {
+      await client.hello();
+      const port = Number(new URL(service.url).port);
+      service.stop();
+      service = await startSessionKernelService({
+        port,
+        token,
+        responseTimeoutMs: 700,
+        databasePath: join(stateDir, "sessions", "session-kernel.sqlite"),
+      });
+      await expect(client.callAsync(
+        { t: "store", method: "creationState", args: ["after-restart"] },
+        "creationState",
+      )).resolves.toBeUndefined();
+    } finally {
+      client.terminate();
       if (previousToken === undefined)
         delete process.env.OPENSESSION_SESSION_KERNEL_TOKEN;
       else process.env.OPENSESSION_SESSION_KERNEL_TOKEN = previousToken;
@@ -200,6 +438,17 @@ describe("session kernel actor service", () => {
       }));
       expect(settled.ok).toBe(true);
 
+      const replayedSettlement = result(await send({
+        t: "reduce",
+        rpcId: "async-settlement-replayed",
+        command: {
+          kind: "core",
+          commandId: crypto.randomUUID(),
+          request: { op: "ack_outbox", id, sessionId },
+        },
+      }));
+      expect(replayedSettlement.ok).toBe(true);
+
       const pending = result(await send({
         t: "store",
         rpcId: "async-settlement-pending",
@@ -234,6 +483,46 @@ describe("session kernel actor service", () => {
       body: "{}",
     });
     expect(unauthorized.status).toBe(401);
+  });
+
+  test("reports per-lane occupancy and cumulative counters on /ready", async () => {
+    // Complete at least one turn so counters have advanced.
+    await rpc({
+      t: "call",
+      rpcId: crypto.randomUUID(),
+      outputBytes: 256 * 1024,
+      request: { t: "store", method: "stats", args: [] },
+    });
+    const ready = (await (await fetch(`${service.url}/ready`)).json()) as {
+      workers: { capacity: number };
+      lanes: Array<Record<string, unknown>>;
+    };
+    // Catalog lane (index 0) plus every session lane.
+    expect(ready.lanes.length).toBe(ready.workers.capacity + 1);
+    for (const lane of ready.lanes) {
+      expect(lane).toMatchObject({ ready: true, restarting: false });
+      expect(typeof lane.index).toBe("number");
+      expect(typeof lane.queued).toBe("number");
+      expect(typeof lane.executing).toBe("number");
+      expect(typeof lane.turnsCompleted).toBe("number");
+      expect(typeof lane.queueWaitMsTotal).toBe("number");
+      expect(typeof lane.busyMsTotal).toBe("number");
+      expect(typeof lane.timeouts).toBe("number");
+      expect(typeof lane.restarts).toBe("number");
+      expect(typeof lane.rejectedFull).toBe("number");
+      expect(typeof lane.kernelStoreCacheMisses).toBe("number");
+      expect(typeof lane.kernelStoreCacheEvictions).toBe("number");
+      expect(typeof lane.transcriptStoreCacheMisses).toBe("number");
+      expect(typeof lane.transcriptStoreCacheEvictions).toBe("number");
+      expect(typeof lane.sqliteBusy).toBe("number");
+    }
+    // The handshake and at least one call ran somewhere: total completed turns
+    // across lanes must have advanced.
+    const completed = ready.lanes.reduce(
+      (total, lane) => total + Number(lane.turnsCompleted),
+      0,
+    );
+    expect(completed).toBeGreaterThan(0);
   });
 
   test("refuses to send the actor credential off host", () => {
@@ -275,6 +564,10 @@ describe("session kernel actor service", () => {
       t: "hello",
       rpcId: "version-handshake",
       version: SESSION_KERNEL_ACTOR_VERSION,
+    });
+    expect(await rpc({ t: "stats", rpcId: "fenced-stats" })).toMatchObject({
+      t: "stats_result",
+      serviceEpoch,
     });
     for (const envelope of [
       {
@@ -619,6 +912,29 @@ describe("session kernel actor service", () => {
         },
       });
       await Bun.sleep(25);
+      const catalogReadStartedAt = Date.now();
+      expect(await rpc({
+        t: "call",
+        rpcId: "barrier-timeout-quarantines",
+        outputBytes: 256 * 1024,
+        request: {
+          t: "store",
+          method: "quarantinedSessions",
+          args: [100, 0],
+        },
+      })).toMatchObject({ t: "call_result", status: 1 });
+      expect(await rpc({
+        t: "call",
+        rpcId: "barrier-timeout-asks",
+        outputBytes: 256 * 1024,
+        request: {
+          t: "store",
+          method: "askEntries",
+          args: [],
+        },
+      })).toMatchObject({ t: "call_result", status: 1 });
+      expect(Date.now() - catalogReadStartedAt).toBeLessThan(400);
+
       const startedAt = Date.now();
       const response = await fetch(`${service.url}/rpc`, {
         method: "POST",

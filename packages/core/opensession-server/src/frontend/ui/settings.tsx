@@ -63,6 +63,7 @@ export function SettingsGroupLabel({
 }: React.ComponentPropsWithoutRef<"div"> & { actions?: React.ReactNode }) {
 	return (
 		<div
+			data-settings-group-label=""
 			className={cn(
 				// mt-9: a group's card and the hint under it read as one block, so
 				// the space above the next label is what separates the groups.

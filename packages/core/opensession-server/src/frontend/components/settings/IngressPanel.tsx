@@ -11,6 +11,7 @@ import {
 	type IngressExposure,
 	type PublicIngressSettings,
 } from "../../lib/api";
+import { ApiError } from "../../lib/api/request";
 import {
 	configuredAppDomain,
 	configuredIngressDrafts,
@@ -30,7 +31,6 @@ import { cn } from "../../ui/cn";
 import { CopyCheck, useCopy } from "../../ui/copy";
 import { Input } from "../../ui/input";
 import { Radio, RadioGroup } from "../../ui/radio";
-import { Segmented, SegmentedOption } from "../../ui/segmented";
 import {
 	SettingCard,
 	SettingCardSkeleton,
@@ -47,7 +47,7 @@ import {
 	SettingsPanel,
 	StatusChip,
 } from "../../ui/settings";
-import { InlineAlert } from "../../ui/state";
+import { InlineAlert, LoadingState } from "../../ui/state";
 import { toast } from "../../ui/toast";
 import { markTileClass, markTileGradient, markTileInk, markTileShadow, type MarkTone } from "../../lib/mark-tile";
 import { IconCopy, IconGlobe, IconServer, IconShieldCheck } from "../icons";
@@ -142,9 +142,90 @@ function SetupStep({ number, title, children }: { number: number; title: string;
 	);
 }
 
+function IngressWaitingState({
+	method,
+	health,
+}: {
+	method: IngressExposure;
+	health: PublicIngressSettings["health"];
+}) {
+	if (health !== "starting" && health !== "waiting_dns") return null;
+	const message = method === "tailscale"
+		? "Waiting for Tailscale’s public DNS. This can take up to 10 minutes."
+		: method === "cloudflare"
+			? "Waiting for Cloudflare to connect the public route."
+			: health === "waiting_dns"
+				? "Waiting for DNS to point to this server."
+				: "Waiting for Caddy to finish HTTPS setup.";
+	return <LoadingState placement="card">{message} This page checks automatically.</LoadingState>;
+}
+
+function DomainSetupSteps({
+	value,
+	onValueChange,
+	appStatus,
+	callbackStatus,
+}: {
+	value: "domain" | "callbacks";
+	onValueChange: (value: "domain" | "callbacks") => void;
+	appStatus: PublicIngressSettings["app"]["domain"]["health"];
+	callbackStatus: PublicIngressSettings["health"];
+}) {
+	const steps = [
+		{
+			value: "domain" as const,
+			number: 1,
+			title: "Friendly domain",
+			description: "Give your team a memorable address while keeping the app private.",
+			status: appStatus,
+		},
+		{
+			value: "callbacks" as const,
+			number: 2,
+			title: "Public callbacks",
+			description: "Required for GitHub webhooks and remote Sandbox callbacks. The public endpoint never exposes the app.",
+			status: callbackStatus,
+		},
+	];
+	return (
+		<SettingCard className="mb-5">
+			<ol className="m-0 grid list-none grid-cols-2 p-0 phone:grid-cols-1">
+				{steps.map((step, index) => {
+					const active = value === step.value;
+					return (
+						<li key={step.value} className={cn(index > 0 && "border-l border-line phone:border-t phone:border-l-0")}>
+							<button
+								type="button"
+								aria-current={active ? "step" : undefined}
+								className={cn(
+									"flex min-h-28 w-full items-start gap-3.5 px-5 py-4 text-left transition-[background-color] hover:bg-hover phone:min-h-0 phone:py-4",
+									active && "bg-pressed",
+								)}
+								onClick={() => onValueChange(step.value)}
+							>
+								<span className={cn("mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full bg-surface text-label font-semibold text-dim", active && "bg-fg text-panel")}>
+									{step.number}
+								</span>
+								<span className="min-w-0 flex-1">
+									<span className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+										<span className="text-item-title font-semibold text-fg">{step.title}</span>
+										<StatusChip label={ingressHealthLabel(step.status)} dot={ingressHealthDot(step.status)} />
+									</span>
+									<span className="mt-1.5 block text-supporting leading-relaxed text-dim">{step.description}</span>
+								</span>
+							</button>
+						</li>
+					);
+				})}
+			</ol>
+		</SettingCard>
+	);
+}
+
 function PrivateAppSetup({
 	settings,
 	domain,
+	onboarding,
 	email,
 	apiToken,
 	provider,
@@ -162,6 +243,7 @@ function PrivateAppSetup({
 }: {
 	settings: PublicIngressSettings;
 	domain: string;
+	onboarding: boolean;
 	email: string;
 	apiToken: string;
 	provider: "cloudflare" | "vercel";
@@ -183,42 +265,30 @@ function PrivateAppSetup({
 	const managedCredential = settings.app.domain.credentialConfigured && domain.trim() === savedDomain && settings.app.domain.dnsProvider === provider;
 	const managedInputMissing = !domain.trim() || (!managedCredential && (!email.trim() || !apiToken.trim()));
 	const status = settings.app.domain.health;
-	const statusLabel = busy ? action === "verify" ? "Checking" : action === "save" ? "Saving" : "Setting up" : ingressHealthLabel(status);
-	const statusDot = ingressHealthDot(status);
 	return (
 		<>
-			<SettingsGroupLabel
-				className="mt-0"
-				actions={<StatusChip label={statusLabel} dot={busy ? "var(--yellow)" : statusDot} />}
-			>
-				Private app
-			</SettingsGroupLabel>
-			<SettingCard>
-				<SettingRow>
-					<SettingRowText>
-						<SettingRowTitle>Current address</SettingRowTitle>
-						<div className="selectable mt-1 break-all font-mono text-supporting text-dim">{settings.app.publicBaseUrl}</div>
-					</SettingRowText>
-				</SettingRow>
-				{settings.app.domain.certificateExpiresAt && (
+			{!onboarding && (
+				<SettingCard>
 					<SettingRow>
 						<SettingRowText>
-							<SettingRowTitle>Certificate</SettingRowTitle>
-							<SettingRowDescription>
-								Valid until {new Date(settings.app.domain.certificateExpiresAt).toLocaleDateString()}
-								{settings.app.domain.credentialConfigured ? ". Renewal is automatic." : ". Managed outside Open Session."}
-							</SettingRowDescription>
+							<SettingRowTitle>Current address</SettingRowTitle>
+							<div className="selectable mt-1 break-all font-mono text-supporting text-dim">{settings.app.publicBaseUrl}</div>
 						</SettingRowText>
 					</SettingRow>
-				)}
-			</SettingCard>
-			<SettingsForm className="mt-3">
-				<div>
-					<div className="text-item-title font-medium text-fg">Optional friendly domain</div>
-					<p className="mt-1 mb-0 text-supporting leading-relaxed text-dim">
-						Give your team a memorable HTTPS address while keeping the app private.
-					</p>
-				</div>
+					{settings.app.domain.certificateExpiresAt && (
+						<SettingRow>
+							<SettingRowText>
+								<SettingRowTitle>Certificate</SettingRowTitle>
+								<SettingRowDescription>
+									Valid until {new Date(settings.app.domain.certificateExpiresAt).toLocaleDateString()}
+									{settings.app.domain.credentialConfigured ? ". Renewal is automatic." : ". Managed outside Open Session."}
+								</SettingRowDescription>
+							</SettingRowText>
+						</SettingRow>
+					)}
+				</SettingCard>
+			)}
+			<SettingsForm className={onboarding ? "mt-0" : "mt-3"}>
 				{status === "ready" && !settings.app.domain.credentialConfigured && (
 					<SettingsHint className="m-0">This address is already working. Its certificate is managed outside Open Session.</SettingsHint>
 				)}
@@ -346,7 +416,7 @@ export function IngressPanel({
 	const localSetup = useSetupStatus();
 	const setup = parentSetup || localSetup;
 	const [settings, setSettings] = useState<PublicIngressSettings | null>(null);
-	const [surface, setSurface] = useState<"app" | "ingress">("app");
+	const [surface, setSurface] = useState<"domain" | "callbacks">("domain");
 	const [method, setMethod] = useState<IngressExposure>("custom");
 	const [appDomain, setAppDomain] = useState("");
 	const [certificateEmail, setCertificateEmail] = useState("");
@@ -360,6 +430,11 @@ export function IngressPanel({
 	const [publicAddress, setPublicAddress] = useState("");
 	const [busy, setBusy] = useState<"app" | "apply" | "test" | null>(null);
 	const [error, setError] = useState<string | null>(null);
+	const [tailscaleAction, setTailscaleAction] = useState<
+		| { url: string; kind: "approval" | "plans" }
+		| { command: string; kind: "operator" }
+		| null
+	>(null);
 	const loaded = useRef(false);
 	const customDraftTouched = useRef(false);
 	const url = drafts[method];
@@ -370,6 +445,7 @@ export function IngressPanel({
 		if (!loaded.current) {
 			setAppDomain(configuredAppDomain(next));
 			setPrivateProvider(next.app.domain.dnsProvider || "cloudflare");
+			if (onboarding && next.app.domain.health === "ready") setSurface("callbacks");
 			setDrafts(configuredIngressDrafts(next));
 			setPublicAddress(next.server.ipv4[0] || next.server.ipv6[0] || "");
 			loaded.current = true;
@@ -397,9 +473,9 @@ export function IngressPanel({
 		});
 	}, []);
 
-	// A custom-domain setup is complete before DNS necessarily reaches this
-	// server. Keep waiting and transiently unreachable states current without
-	// requiring a repeated manual probe while DNS or the listener converges.
+	// Ingress setup can complete before public DNS or an edge route converges.
+	// Keep pending and transiently unreachable states current without requiring
+	// a repeated manual probe.
 	useEffect(() => {
 		const publicPending = settings?.health === "starting" || settings?.health === "waiting_dns" || settings?.health === "unreachable";
 		const appPending = settings?.app.domain.health === "waiting_dns" || settings?.app.domain.health === "unreachable";
@@ -418,13 +494,31 @@ export function IngressPanel({
 		if (busy) return;
 		setBusy(kind);
 		setError(null);
+		if (kind === "apply") setTailscaleAction(null);
 		await work()
 			.then((next) => {
 				apply(next);
 				toast(typeof message === "function" ? message(next) : message, { variant: "success" });
+				if (next.githubWebhook?.updated) {
+					toast("GitHub callbacks connected", { variant: "success" });
+				} else if (next.githubWebhook?.error) {
+					toast("Public callbacks are ready, but the GitHub webhook needs attention.");
+				}
 				void onChanged?.();
 			})
 			.catch((cause: unknown) => {
+				if (cause instanceof ApiError && cause.actionKind === "operator" && cause.actionCommand) {
+					setTailscaleAction({ command: cause.actionCommand, kind: "operator" });
+					return;
+				}
+				if (
+					cause instanceof ApiError &&
+					cause.actionUrl &&
+					(cause.actionKind === "approval" || cause.actionKind === "plans")
+				) {
+					setTailscaleAction({ url: cause.actionUrl, kind: cause.actionKind });
+					return;
+				}
 				setError(cause instanceof Error ? cause.message : "Public callbacks could not be updated");
 			})
 			.finally(() => setBusy(null));
@@ -470,7 +564,7 @@ export function IngressPanel({
 
 	async function applyMethod() {
 		if (method === "tailscale") {
-			await run("apply", enablePublicIngressFunnel, "Tailscale Funnel started");
+			await run("apply", enablePublicIngressFunnel, "Tailscale Funnel configured");
 			return;
 		}
 		if (method === "custom") {
@@ -511,8 +605,8 @@ export function IngressPanel({
 		<SettingsPanel className={onboarding ? "mx-auto max-w-[1120px]" : "relative"}>
 			{!onboarding && (
 				<SettingsHeader
-					title="Domains and ingress"
-					description="Keep the app private, then choose one way to receive public callbacks."
+					title="Domains and callbacks"
+					description="Set a friendly private address, then add the public endpoint external services need."
 				/>
 			)}
 
@@ -521,17 +615,18 @@ export function IngressPanel({
 				<SettingCardSkeleton rows={3} label="Loading public ingress" />
 			) : (
 				<>
-					<div className="mb-5 flex justify-center px-5">
-						<Segmented label="Domain setup" value={surface} onValueChange={(value) => setSurface(value as "app" | "ingress")} className="w-full max-w-[480px]">
-							<SegmentedOption value="app" className="flex min-h-10 flex-1 items-center justify-center phone:min-h-11">Private app</SegmentedOption>
-							<SegmentedOption value="ingress" className="flex min-h-10 flex-1 items-center justify-center phone:min-h-11">Public callbacks</SegmentedOption>
-						</Segmented>
-					</div>
-					{surface === "app" ? (
+					<DomainSetupSteps
+						value={surface}
+						onValueChange={setSurface}
+						appStatus={settings.app.domain.health}
+						callbackStatus={settings.health}
+					/>
+					{surface === "domain" ? (
 						<>
 							<PrivateAppSetup
 								settings={settings}
 								domain={appDomain}
+								onboarding={onboarding}
 								email={certificateEmail}
 								apiToken={privateApiToken}
 								provider={privateProvider}
@@ -553,9 +648,6 @@ export function IngressPanel({
 								onVerify={() => void verifyAppDomain()}
 								onSaveManual={() => void runPrivateApp("save", () => savePrivateAppDomain(appDomain), "Private app domain saved")}
 							/>
-							{onboarding && settings.health !== "ready" && (
-								<SettingsHint className="mt-4">Both are optional. Without public callbacks, external services cannot deliver webhooks or remote callbacks.</SettingsHint>
-							)}
 						</>
 					) : (
 					<>
@@ -585,15 +677,6 @@ export function IngressPanel({
 						</>
 					)}
 
-					<SettingsGroupLabel
-						className={onboarding ? "mt-0" : undefined}
-						actions={onboarding ? <StatusChip label={busy === "apply" ? "Setting up" : ingressHealthLabel(selectedHealth)} dot={busy === "apply" ? "var(--yellow)" : ingressHealthDot(selectedHealth)} /> : undefined}
-					>
-						Public callbacks
-					</SettingsGroupLabel>
-					{onboarding && (
-						<SettingsHint className="mt-2 mb-3">Optional. Skip this if you do not need webhooks, remote Sandbox callbacks, or public workload identity.</SettingsHint>
-					)}
 					<div
 						className={cn(
 							"grid items-start gap-3.5 phone:grid-cols-1",
@@ -743,22 +826,45 @@ export function IngressPanel({
 										<div className="mt-2"><ConfigCodeBlock code={customCaddyConfig(url)} /></div>
 										<p className="mt-2 mb-0">Automatic setup also adds the detected local interface bind.</p>
 									</details>
-									{settings.health === "waiting_dns" && settings.exposure === "custom" && (
-										<InlineAlert>DNS does not point to this server yet. Keep this page open or click Check again after updating the records.</InlineAlert>
-									)}
 								</>
 							)}
 							</div>
 
-							{settings.health === "starting" && settings.exposure === "tailscale" && method === "tailscale" && (
-								<InlineAlert>Funnel started. Tailscale’s public edge can take up to a minute to become reachable.</InlineAlert>
+							{settings.exposure === method && (
+								<IngressWaitingState method={method} health={settings.health} />
+							)}
+							{method === "tailscale" && tailscaleAction && (
+								<InlineAlert
+									variant="info"
+									title={tailscaleAction.kind === "plans"
+										? "Choose a Tailscale plan"
+										: tailscaleAction.kind === "operator"
+											? "Allow Open Session to manage Tailscale"
+											: "Approve Funnel in Tailscale"}
+								>
+									{tailscaleAction.kind === "operator" ? (
+										<>
+											This changes Tailscale’s local operator to the Open Session service account. Run it once on the server, then start Funnel again.
+											<div className="mt-2"><CodeBlock>{tailscaleAction.command}</CodeBlock></div>
+										</>
+									) : (
+										<>
+											{tailscaleAction.kind === "plans"
+												? "Tailscale requires this tailnet to select a current plan. Funnel is available on all current plans."
+												: "Approve public access, return here, then start Funnel again."}
+											{" "}<a className="font-medium underline underline-offset-2" href={tailscaleAction.url} target="_blank" rel="noreferrer">{tailscaleAction.kind === "plans" ? "Review Tailscale plans" : "Open Tailscale approval"}</a>
+										</>
+									)}
+								</InlineAlert>
 							)}
 							{settings.health === "unreachable" && settings.exposure === method && (
 								<InlineAlert>
 									{method === "cloudflare" && settings.cloudflare.connectorRunning
 										? <>The connector process is running, but Cloudflare cannot reach Open Session. Verify that this hostname routes to <strong>{settings.cloudflare.connectorTarget}</strong> and that the tunnel ID and token come from the same remotely managed tunnel.</>
 										: method === "tailscale"
-											? "Funnel did not become reachable. Allow Funnel and HTTPS certificate access for this node in Tailscale, then start Funnel again."
+											? settings.tailscale.funnelConfigured
+												? "Funnel is configured, but its public address did not become reachable. Check this node’s Funnel access in Tailscale, then try again."
+												: "Tailscale no longer has the Funnel route for Open Session. Start Funnel again."
 											: "The public URL is configured but its health check is not reachable. Verify DNS and firewall rules, then check again."}
 								</InlineAlert>
 							)}

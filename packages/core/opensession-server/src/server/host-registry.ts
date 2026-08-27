@@ -19,6 +19,8 @@ export interface HostRunControl {
   steerable: boolean;
   /** True while the socket to the host is up (steers need a live connection). */
   connected: () => boolean;
+  /** Consume a terminal receipt written after the live socket was lost. */
+  reconcileTerminal?: () => boolean;
 
   steer: (text: string, images?: ImageInput[], steerId?: string) => boolean;
   retractSteer: (steerId: string) => Promise<boolean>;
@@ -46,7 +48,9 @@ export function unregisterHostRun(ctl: HostRunControl): void {
 }
 
 export function hostRunBusy(id: string): boolean {
-  return hostRuns.has(id);
+  const ctl = hostRuns.get(id);
+  if (!ctl) return false;
+  return !ctl.reconcileTerminal?.();
 }
 
 export function hostRunCount(): number {
@@ -61,7 +65,12 @@ export function hostSteer(
   steerId?: string
 ): boolean {
   const ctl = hostRuns.get(id);
-  if (!ctl || !ctl.steerable || !ctl.connected()) return false;
+  if (
+    !ctl ||
+    ctl.reconcileTerminal?.() ||
+    !ctl.steerable ||
+    !ctl.connected()
+  ) return false;
   return ctl.steer(text, images, steerId);
 }
 
@@ -73,6 +82,7 @@ export async function hostRetractSteer(
     ids.flatMap((id) => (id && hostRuns.get(id) ? [hostRuns.get(id)!] : []))
   );
   for (const ctl of controls) {
+    if (ctl.reconcileTerminal?.()) continue;
     if (ctl.steerable && ctl.connected() && await ctl.retractSteer(steerId)) return true;
   }
   return false;
@@ -85,12 +95,17 @@ export function hostInterruptSteer(
   images?: ImageInput[]
 ): boolean {
   const ctl = hostRuns.get(id);
-  if (!ctl || !ctl.steerable || !ctl.connected()) return false;
+  if (
+    !ctl ||
+    ctl.reconcileTerminal?.() ||
+    !ctl.steerable ||
+    !ctl.connected()
+  ) return false;
   return ctl.interruptSteer(text, images);
 }
 
 export function hostCancel(id: string): boolean {
   const ctl = hostRuns.get(id);
-  if (!ctl) return false;
+  if (!ctl || ctl.reconcileTerminal?.()) return false;
   return ctl.cancel();
 }

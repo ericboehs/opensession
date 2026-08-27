@@ -76,50 +76,105 @@ end-to-end. Verify that class of change with tests plus a real deploy. Engine
 runs depend on engine credentials and are best treated as untested from a
 preview.
 
-## Deploying your change: `deploy_self` and the canary
+## Deploying a source change
 
-The complement of previews is the `opensession-self-deploy` in-process MCP
-server (interactive sessions only, never automations, never dev instances):
-`deploy_self({ sha?, confirm: true })` launches `deploy/self-deploy.sh` as a
-transient system unit so the sequence survives its own restart. The script
-fetches and fast-forwards the checkout with `git merge --ff-only`. Divergence
-or local changes that conflict with the fast-forward abort it, but unrelated
-dirty changes do not always block it. It records the pre-deploy HEAD as a
-last-known-good pin, restarts and readiness-checks the executor and
-session-kernel services, then restarts `opensession.service`. The health gate
-requires three consecutive responses with the same `bootId` from the
-configured `OPENSESSION_HEALTH_URL`. The script defaults to
-`http://127.0.0.1:3850/ready`; `opensession service install --system` configures
-the helper with `OPENSESSION_HEALTH_URL`, or defaults it to
-`http://127.0.0.1:3850/api/health`.
+A system-scope source installation bootstrapped by `deploy/deploy.sh`, including
+Tella's live instance, has two immutable-release rollout paths. Both deploy one
+release containing the gateway, session kernel, and executor. “Light” and
+“full” describe whether root-owned installation artifacts are refreshed, not
+which runtime process restarts. A plain source service installed directly from a
+checkout still follows
+[the checkout watcher/restart behavior](setup/install.md#10-frontend-rebuilds-vs-restart)
+until an operator deliberately adopts the immutable-release deploy path.
 
-On failure the script attempts rollback. Moving the tree back requires both a
-clean tree and `OPENSESSION_DEPLOY_ALLOW_RESET=1`; otherwise it records
-`rollback-needed` and leaves the tree for a human. Rollback is also refused
-when the pin is below the durable session-kernel schema floor.
-`deploy_status({})` reads the pin, the last result, and the deploy-marker age.
-The watchdog itself acts only during the first 15 minutes. The current
-`deploy_status` `OPEN` label does not expire at that cutoff.
+| Path | Use it for | Entry point |
+| --- | --- | --- |
+| Standard (light) | Ordinary frontend, backend, protocol, and dependency changes that can reuse the installed units, credentials, and helper | interactive MCP `deploy_self({ sha, confirm: true })` |
+| Full (root) | Changes to the live deploy controllers, `opensession*.service`, credential installers, the fixed run-host helper/installer, or systemd artifacts managed by the root script | `sudo deploy/deploy.sh <sha>` |
 
-Prerequisites — **your own remote first**: self-sessions commit and push to
-`origin`, and `deploy_self` fast-forwards from `origin/main`. If your checkout
-was cloned straight from `tellahq/opensession`, every push is rejected (you
-can't write to our upstream) and, after your first local commit, ff-only
-deploys abort permanently because your history has diverged from ours. Clone
-your **fork** (keep `tellahq/opensession` as an `upstream` remote to pull our
-updates), and in worktree mode set the self repo's `ghRepo` in your config to
-the fork so the PR flow targets it. On Linux/systemd, run
-`opensession service install --system` once from the service user account and
-allow its sudo prompts. The default command without `--system` installs a
-rootless user service and does not install the fixed run-host helper or
-self-deploy grants.
+A docs-only commit does not need a live rollout. A frontend-only commit does.
+The production frontend watcher follows the pinned release worktree, not the
+shared WIP checkout, so editing `src/frontend` in the shared checkout cannot
+change the live bundle.
+
+Do not substitute `systemctl restart opensession`. That restarts the currently
+pinned release, does not pick up the new commit, and bypasses the coordinated
+executor/kernel/gateway rollout.
+
+### Standard (light) deploy
+
+The `opensession-self-deploy` in-process MCP server is available only to
+interactive admin sessions, never automations or dev instances.
+`deploy_self({ sha?, confirm: true })` launches the controller from the running
+release as a transient system unit so it survives the gateway restart.
+
+The controller:
+
+1. fetches `origin` and resolves the requested target (`origin/main` by
+   default),
+2. requires the currently pinned commit to be an ancestor of the target, so a
+   stale or parallel release cannot silently replace it,
+3. creates or reuses a detached worktree under the deploy state directory,
+   runs `bun install --frozen-lockfile` there, and verifies tracked files stayed
+   unchanged,
+4. records the current release as last-known-good, stops the gateway, and
+   atomically repoints `current` to the prepared release,
+5. restarts and readiness-checks the installed executor, runs the offline
+   session migration, restarts and checks the session kernel, then restarts the
+   gateway, and
+6. requires three consecutive health responses from the same `bootId`.
+
+The shared checkout is only the Git object source. Its branch, index, staged
+files, and unrelated dirty edits are not changed by deployment. Detached engine
+turns survive in their transient run-host units and sessions reattach after the
+UI blip.
+
+This path deliberately does **not** copy root-owned units, credentials, helper
+executables, sudo policy, or systemd drop-ins from a writable checkout. If the
+target relies on a changed installed artifact, use the full deploy instead.
+
+On readiness or health failure, the controller switches the `current` pointer
+back to last-known-good and brings all three services back. Rollback is refused
+when the old release cannot read the durable session-kernel schema floor.
+`deploy_status({})` reports the pin, latest result, and deploy-marker age. The
+optional watchdog can act once during the first 15 minutes after a deploy; the
+current `deploy_status` `OPEN` label itself does not expire at that cutoff.
+
+### Full (root) deploy
+
+`sudo deploy/deploy.sh <sha>` uses the same immutable release preparation and
+pointer switch, then also installs or synchronizes the privileged credentials,
+fixed run-host helper and sudo policy, three systemd units, gateway resource
+drop-in, user slice, and Caddy boot drop-in. It waits up to
+`MAX_DRAIN_WAIT` (480 seconds by default) for gateway activity to drain before
+the cut-over, restarts and health-checks the executor and kernel before the
+gateway, and switches back to the previous release if the rollout fails.
+
+The root path also requires the current release to be an ancestor of the
+target. `OPENSESSION_DEPLOY_ALLOW_DIVERGED=1` is an explicit operator override
+for a deliberate history-line change, not a normal agent workflow. It manages
+only the artifacts named in `deploy/deploy.sh`; watchdog units, sandbox images,
+and other operator-managed assets keep their own rollout procedures.
+
+### Prerequisites and updates
+
+Use **your own remote first**. Self-sessions normally commit and push to
+`origin`, and the default `deploy_self` target is `origin/main`. If the checkout
+was cloned directly from an upstream repository you cannot write, clone your
+fork instead (keep the original as `upstream`) and set the self repo's `ghRepo`
+to the fork. Passing an exact pushed SHA avoids deploying an unintended newer
+`origin/main`.
+
+On Linux/systemd, run `opensession service install --system` once from the
+service user account and allow its sudo prompts. The default command without
+`--system` installs a rootless user service and does not install the fixed
+run-host helper or self-deploy grants.
 
 Staying current is one command: **`opensession update`**. It refuses a dirty
 checkout, detects fork topology (origin = your fork + an upstream remote),
 fetches upstream, and either fast-forwards or creates an honest merge commit.
 It never rebases, and conflicts abort cleanly back to your tree. For a fork it
-attempts to push the result to `origin`; a push failure is only a warning, so
-the local update and dependency install continue.
+attempts to push the result to `origin`; a push failure is only a warning.
 
 For a source checkout, update uses the health-gated self-deploy script only
 when a service is installed, the script exists, and `sudo -n true` succeeds.

@@ -131,6 +131,8 @@ function initialize(db: Database): void {
   const version = db
     .query<{ user_version: number }, []>("PRAGMA user_version")
     .get()!.user_version;
+  // The Executor runtime has never been boot-wired, so no production claims DB
+  // can be version 1. Refuse that disposable pre-production shape explicitly.
   if (version === 1)
     throw new Error(
       "Runner Executor claims schema version 1 is disposable pre-production state; delete the claims database and restart",

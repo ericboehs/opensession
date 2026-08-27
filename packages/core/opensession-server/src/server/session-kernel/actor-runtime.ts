@@ -14,10 +14,8 @@ const globalActor = globalThis as typeof globalThis & {
 const runtime = (globalActor.__opensessionSessionKernelActor ??= {});
 
 /**
- * The gateway keeps its bounded synchronous actor facade in a Worker bridge.
- * That bridge performs bounded authenticated RPC to the independently
- * supervised actor service, then wakes the gateway through SharedArrayBuffer.
- * The service owns the only actor Worker and the only writable SQLite store.
+ * The gateway uses an asynchronous Worker transport to the independently
+ * supervised actor service. The service owns all writable SQLite stores.
  */
 function sessionKernelTransportWorkerUrl(): string | URL {
   return workerEntry(
@@ -53,11 +51,19 @@ export function startSessionKernelActor(): Promise<void> {
     await waitForSessionKernelService();
     const worker = new Worker(sessionKernelTransportWorkerUrl(), { type: "module" });
     const client = new SessionKernelActorClient(worker, (error) => {
-      setServiceReadiness("failed", error);
-      console.error("[session-kernel] authoritative actor failed; stopping gateway:", error);
-      process.exitCode = 1;
-      setTimeout(() => process.kill(process.pid, "SIGTERM"), 0).unref?.();
-      setTimeout(() => process.exit(1), 5_000).unref?.();
+      if (runtime.client !== client) return;
+      runtime.client = undefined;
+      installSessionKernelActor(undefined);
+      setServiceReadiness("recovering", error);
+      console.error("[session-kernel] actor transport failed; reconnecting:", error);
+      setTimeout(() => {
+        void startSessionKernelActor()
+          .then(() => setServiceReadiness("ready"))
+          .catch((reconnectError) => {
+            setServiceReadiness("recovering", reconnectError);
+            console.error("[session-kernel] reconnect failed; retrying on next probe:", reconnectError);
+          });
+      }, 250).unref?.();
     });
     try {
       await client.hello();

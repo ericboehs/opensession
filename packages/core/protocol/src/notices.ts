@@ -331,6 +331,8 @@ const ATTR_PREFIX_RE = /^\[[^\]\n]{1,80}\]\s*/;
  */
 const WORKER_ATTR_RE = /^\[worker\s+([^\]\s]+)\]\s*/;
 const WORKER_SENTINEL_RE = /^<!--os:worker-report(?::([^\s>]+))?-->\s*/;
+const LEGACY_WORKER_FAILURE_RE =
+  /^Server notice:\s+(?=worker task `((?:os|bks)-[a-z0-9-]+)` ended in error without reporting back\.)/i;
 
 /**
  * Notices stack: a worker whose whole job was a workflow reports back with the
@@ -362,7 +364,12 @@ export function parseWorkerReport(
     sessionId = sentinel[1] || sessionId;
     text = text.slice(sentinel[0].length);
   }
-  if (!attr && !sentinel) return null;
+  const failure = text.match(LEGACY_WORKER_FAILURE_RE);
+  if (failure) {
+    sessionId = failure[1];
+    text = text.slice(failure[0].length).replace(/^worker\b/i, "Worker");
+  }
+  if (!attr && !sentinel && !failure) return null;
   return { sessionId, body: stripLeadingSentinels(text).trim() };
 }
 

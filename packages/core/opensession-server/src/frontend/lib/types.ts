@@ -329,6 +329,15 @@ export interface SessionPrRef {
 	checks?: { total: number; passed: number; failed: number; pending: number };
 }
 
+export interface SessionSafetyState {
+	status: "paused_for_safety";
+	explanation: string;
+	automaticReconciliationRunning: boolean;
+	pausedAt: string;
+	operation: string;
+	repairAvailable: boolean;
+}
+
 export interface UnifiedSession {
 	id: string;
 	/** Historical marker retained while old session files age out. */
@@ -362,6 +371,10 @@ export interface UnifiedSession {
 	lastActivity: string;
 	createdAt: string;
 	isRunning: boolean;
+	/** Present when the server has fenced an ambiguous session operation. */
+	safety?: SessionSafetyState;
+	/** Server confirmation that queued prompts have an active drain owner. */
+	queueOwnerActive?: boolean;
 	/**
 	 * When the in-flight run started (ISO), for the "in progress" elapsed ticker
 	 * in the sidebar. Only set while isRunning; sourced server-side from the run

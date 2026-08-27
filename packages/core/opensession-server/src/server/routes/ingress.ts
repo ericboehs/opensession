@@ -6,9 +6,15 @@ import {
   savePrivateAppOrigin,
   savePublicIngress,
   setupPrivateAppDomain,
+  TailscaleFunnelActionRequired,
   verifyPrivateAppDomain,
 } from "../ingress-settings";
 import { audit } from "../audit";
+import { readEnvFileValues } from "../env-file-edit";
+import {
+  githubAppConfigured,
+  updateGithubAppWebhook,
+} from "../github-app";
 import { requireWorkspaceAdmin, workspaceAdminAuthorized } from "../workspace-auth";
 import type { IngressExposure } from "../config";
 import { refreshIndexHtml } from "../frontend-build";
@@ -16,9 +22,48 @@ import type { RouteContext } from "./context";
 
 function errorResponse(error: unknown): Response {
   return Response.json(
-    { error: error instanceof Error ? error.message : String(error) },
-    { status: 400 },
+    {
+      error: error instanceof Error ? error.message : String(error),
+      ...(error instanceof TailscaleFunnelActionRequired
+        ? {
+            actionUrl: error.actionUrl,
+            actionCommand: error.actionCommand,
+            actionKind: error.actionKind,
+          }
+        : {}),
+    },
+    { status: error instanceof TailscaleFunnelActionRequired ? 409 : 400 },
   );
+}
+
+type GithubWebhookSync = { updated: true } | { updated: false; error: string };
+
+async function syncGithubWebhook(publicBaseUrl: string): Promise<GithubWebhookSync | undefined> {
+  if (!githubAppConfigured()) return undefined;
+  const secret =
+    readEnvFileValues().GITHUB_WEBHOOK_SECRET ||
+    process.env.GITHUB_WEBHOOK_SECRET ||
+    "";
+  if (!secret) {
+    return { updated: false, error: "The GitHub App has no webhook secret" };
+  }
+  try {
+    await updateGithubAppWebhook(publicBaseUrl, secret);
+    audit({ kind: "ingress_github_webhook_update", publicBaseUrl });
+    return { updated: true };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.warn(`[public-ingress] GitHub webhook update failed: ${message.slice(0, 200)}`);
+    return { updated: false, error: message };
+  }
+}
+
+async function changedIngressResponse(): Promise<Record<string, unknown>> {
+  const settings = await publicIngressStatus(true);
+  const githubWebhook = settings.publicBaseUrl
+    ? await syncGithubWebhook(settings.publicBaseUrl)
+    : undefined;
+  return { ...settings, ...(githubWebhook ? { githubWebhook } : {}) };
 }
 
 export async function handleIngressRoutes(ctx: RouteContext): Promise<Response | undefined> {
@@ -90,7 +135,7 @@ export async function handleIngressRoutes(ctx: RouteContext): Promise<Response |
           typeof body.cloudflareTunnelId === "string" ? body.cloudflareTunnelId : undefined,
       });
       refreshIndexHtml("public ingress changed");
-      return Response.json(await publicIngressStatus(true));
+      return Response.json(await changedIngressResponse());
     } catch (error) {
       return errorResponse(error);
     }
@@ -101,7 +146,7 @@ export async function handleIngressRoutes(ctx: RouteContext): Promise<Response |
     try {
       await enableTailscaleFunnel();
       refreshIndexHtml("public ingress changed");
-      return Response.json(await publicIngressStatus(true));
+      return Response.json(await changedIngressResponse());
     } catch (error) {
       return errorResponse(error);
     }
@@ -117,7 +162,7 @@ export async function handleIngressRoutes(ctx: RouteContext): Promise<Response |
         token: typeof body?.token === "string" ? body.token : undefined,
       });
       refreshIndexHtml("public ingress changed");
-      return Response.json(await publicIngressStatus(true));
+      return Response.json(await changedIngressResponse());
     } catch (error) {
       return errorResponse(error);
     }
@@ -132,7 +177,7 @@ export async function handleIngressRoutes(ctx: RouteContext): Promise<Response |
         typeof body?.publicIp === "string" ? body.publicIp : undefined,
       );
       refreshIndexHtml("public ingress changed");
-      return Response.json(await publicIngressStatus(true));
+      return Response.json(await changedIngressResponse());
     } catch (error) {
       return errorResponse(error);
     }

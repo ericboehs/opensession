@@ -4,9 +4,11 @@ import {
 	sessionCoreAsync,
 	sessionKernel,
 	sessionKernelRuntimeWork,
-	sessionKernelStore,
 	maintainSessionKernel,
+	sessionIsQuarantined,
+	sessionRunStateProjections,
 	sessionTimer,
+	sessionTimerSnapshot,
 } from "./kernel";
 import type { DurableOutboxItem, DurableTimer } from "./store";
 import {
@@ -21,6 +23,28 @@ import {
 } from "./creation-effect-executors";
 import { audit } from "../audit";
 import { SessionKernelQuarantinedError } from "./actor-client";
+import { envCapacity } from "../shared/env-capacity";
+
+// Runtime effect execution happens in the gateway process (physical work),
+// so these knobs are read from the gateway environment.
+const TIMER_CONCURRENCY = envCapacity(
+	"OPENSESSION_KERNEL_TIMER_CONCURRENCY",
+	8,
+	1,
+	64,
+);
+const OUTBOX_CONCURRENCY = envCapacity(
+	"OPENSESSION_KERNEL_OUTBOX_CONCURRENCY",
+	8,
+	1,
+	64,
+);
+const OPENING_OUTBOX_CONCURRENCY = envCapacity(
+	"OPENSESSION_KERNEL_OPENING_OUTBOX_CONCURRENCY",
+	100,
+	1,
+	512,
+);
 
 type TimerHandler = (timer: DurableTimer) => void | Promise<void>;
 
@@ -174,7 +198,7 @@ export async function fireStoredSessionTimer(
 	sessionId: string,
 	timerId: string,
 ): Promise<boolean> {
-	const timer = sessionKernelStore().timer(sessionId, timerId);
+	const timer = await sessionTimerSnapshot(sessionId, timerId);
 	return timer ? fireSessionTimer(timer) : false;
 }
 
@@ -193,12 +217,17 @@ export async function drainSessionKernelRuntime(): Promise<void> {
 			// Admit enough opening effects to project their session files immediately.
 			// session-create.ts applies the smaller eight-turn engine gate only after
 			// projection, so slow agent turns cannot hide later accepted sessions.
-			const openings = await sessionKernelRuntimeWork([], [openingKind], Date.now(), 100);
+			const openings = await sessionKernelRuntimeWork(
+				[],
+				[openingKind],
+				Date.now(),
+				OPENING_OUTBOX_CONCURRENCY,
+			);
 			work.outbox.push(...openings.outbox);
 		}
 		const activeTimers = (runtime.activeTimers ??= new Set());
 		for (const timer of work.timers) {
-			if (activeTimers.size >= 8) break;
+			if (activeTimers.size >= TIMER_CONCURRENCY) break;
 			const key = `${timer.sessionId}:${timer.timerId}:${timer.token}`;
 			if (activeTimers.has(key)) continue;
 			activeTimers.add(key);
@@ -231,17 +260,32 @@ export async function drainSessionKernelRuntime(): Promise<void> {
 				item.kind === "creation_opening_turn"
 					? activeOpeningOutbox
 					: activeOutbox;
-			const admissionLimit = item.kind === openingKind ? 100 : 8;
+			const admissionLimit =
+				item.kind === openingKind
+					? OPENING_OUTBOX_CONCURRENCY
+					: OUTBOX_CONCURRENCY;
 			if (active.size >= admissionLimit || active.has(item.id)) continue;
 			active.add(item.id);
 			void executeSessionEffect(item)
 				.then(async (executed) => {
-					if (executed)
+					if (!executed) return;
+					try {
 						await sessionCoreAsync({
 							op: "ack_outbox",
 							id: item.id,
 							sessionId: item.sessionId,
 						});
+					} catch (settlementError) {
+						// The physical effect succeeded. An acknowledgement timeout is
+						// therefore an indeterminate settlement, not an effect failure:
+						// fail_outbox would falsely retry/account for work that completed.
+						// A committed ACK removes the item; an uncommitted ACK leaves it
+						// available for the runtime's next idempotent execution pass.
+						console.error(
+							`[session-kernel] outbox ${item.kind}/${item.id} completed but could not acknowledge:`,
+							settlementError,
+						);
+					}
 				})
 				.catch(async (error) => {
 					if (error instanceof SessionKernelQuarantinedError) {
@@ -317,7 +361,8 @@ export async function drainSessionKernelRuntime(): Promise<void> {
 				maintenanceNow + MAINTENANCE_CONTINUATION_DELAY_MS;
 			runtime.maintenancePending = await maintainSessionKernel();
 			if (maintenanceSweepDue) {
-				pruneCreatePlans(sessionKernelStore());
+				// Legacy create-plan files are forensic evidence. Their asynchronous
+				// receipt sweep runs outside the gateway/kernel compatibility store.
 				runtime.lastCompactAt = maintenanceNow;
 			}
 			if (!runtime.maintenancePending)
@@ -369,11 +414,11 @@ export async function reconcileSessionKernelOwnership(
 		"reattaching",
 	]);
 	const settled: string[] = [];
-	for (const state of sessionKernelStore().runStates()) {
+	for (const state of sessionRunStateProjections()) {
 		if (
 			!unsettled.has(state.state) ||
 			ownedSessionIds.has(state.sessionId) ||
-			sessionKernelStore().quarantinedSession(state.sessionId)
+			await sessionIsQuarantined(state.sessionId)
 		)
 			continue;
 		await sessionKernel(state.sessionId).applyRunEvent({

@@ -4,6 +4,7 @@ export type SessionKernelStoreRoute =
   | { scope: "outbox"; id: number; mutation: boolean };
 
 const GLOBAL_METHODS = new Set([
+  "actorTranscriptSessionIds",
   "askMigrationComplete",
   "markAskMigrationComplete",
   "deliveryMigrationComplete",
@@ -105,6 +106,7 @@ const OUTBOX_ID_METHODS = new Set([
 ]);
 
 export const READ_METHODS = new Set([
+  "actorTranscriptSessionIds",
   "command",
   "quarantinedSession",
   "creationState",

@@ -453,7 +453,7 @@ describe("starting the device flow", () => {
     expect(await startGithubDeviceFlow()).toEqual({ error: "Not Found" });
   });
 
-  test("a configured app gets its code back with organization read access", async () => {
+  test("a configured app gets its code back with the canonical browser URL", async () => {
     enableFeature();
     let requestedScope = "";
     globalThis.fetch = (async (_input: string | URL | Request, init?: RequestInit) => {
@@ -462,7 +462,7 @@ describe("starting the device flow", () => {
       return Response.json({
         device_code: "dev-code",
         user_code: "ABCD-1234",
-        verification_uri: "https://github.com/login/device",
+        verification_uri: "https://github.com/login/device/authorize",
         interval: 5,
         expires_in: 900,
       });

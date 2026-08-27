@@ -24,7 +24,12 @@ export interface PublicIngressSettings {
 	};
 	server: { ipv4: string[]; ipv6: string[] };
 	dns: { a: string[]; aaaa: string[]; suggested: string[] };
-	tailscale: { installed: boolean; dnsName: string; suggestedUrl: string };
+	tailscale: {
+		installed: boolean;
+		dnsName: string;
+		suggestedUrl: string;
+		funnelConfigured: boolean;
+	};
 	cloudflare: {
 		installed: boolean;
 		tunnelId: string;
@@ -34,6 +39,9 @@ export interface PublicIngressSettings {
 		connectorRunning: boolean;
 	};
 	custom: { caddyInstalled: boolean; generatedConfig: string };
+	/** Present only on a public-ingress mutation when a configured GitHub App
+	 * was updated, or when that follow-up needs attention. */
+	githubWebhook?: { updated: boolean; error?: string };
 }
 
 export function fetchPublicIngress(): Promise<PublicIngressSettings> {

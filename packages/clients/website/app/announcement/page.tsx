@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { IconChevronLeft } from "../../../../core/opensession-server/src/frontend/components/icons";
 import { AnnouncementArticle } from "../../AnnouncementArticle";
 import "./announcement.css";
 
@@ -33,6 +34,7 @@ export default function AnnouncementPage() {
 					<img src="/icon.png" alt="" />
 				</a>
 				<a className="announcement-home" href="/">
+					<IconChevronLeft size={17} aria-hidden="true" />
 					Back to home
 				</a>
 			</nav>

@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
+  isCreationEffectPendingError,
   patchCreationSetupPlan,
   requestCreationAttachment,
   requestCreationBranch,
@@ -407,13 +408,13 @@ describe("creation opening intents", () => {
   test("keeps a timed-out opening durable without emitting another launch", async () => {
     const { store, kernel } = harness(opening.sessionId);
     try {
-      await expect(
-        requestCreationOpening(opening, {
-          kernel,
-          timeoutMs: 5,
-          pollMs: 1,
-        }),
-      ).rejects.toThrow("remains durably pending");
+      const timeout = await requestCreationOpening(opening, {
+        kernel,
+        timeoutMs: 5,
+        pollMs: 1,
+      }).catch((error) => error);
+      expect(isCreationEffectPendingError(timeout)).toBe(true);
+      expect(timeout).toMatchObject({ retryable: true });
       await expect(
         requestCreationOpening(opening, {
           kernel,

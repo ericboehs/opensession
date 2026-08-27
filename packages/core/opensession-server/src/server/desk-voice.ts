@@ -30,7 +30,7 @@ import { stateDir } from "./paths";
 import { writeJsonAtomic } from "./shared/atomic-write";
 import { ensureDeskSession } from "./desk";
 import { getSessionControl } from "./session-control";
-import { transcriptStore } from "./transcript-store";
+import { appendTranscriptEvents } from "./actor-transcript";
 import type { InProcessMcpServer } from "./inprocess-mcp";
 import type { TranscriptEntry } from "./types";
 
@@ -245,9 +245,9 @@ function truncate(s: string, n: number): string {
 
 /** Recent Desk text-mode conversation, inlined so the voice engine picks the
  *  conversation up mid-thread instead of starting blank. */
-function recentDeskContext(sessionId: string): string {
+async function recentDeskContext(sessionId: string): Promise<string> {
 	try {
-		const tail = getSessionControl().transcriptTail(sessionId, 12);
+		const tail = await getSessionControl().transcriptTail(sessionId, 12);
 		const lines = tail
 			.filter((e) => (e.type === "user" || e.type === "assistant") && e.content)
 			.map(
@@ -267,7 +267,7 @@ export async function buildVoiceSessionConfig(sessionId: string, user = "Open Se
 	return {
 		type: "realtime",
 		model: DESK_VOICE_MODEL,
-		instructions: VOICE_INSTRUCTIONS + recentDeskContext(sessionId),
+		instructions: VOICE_INSTRUCTIONS + await recentDeskContext(sessionId),
 		tools: [...VOICE_TOOLS, ...(await listVoiceMcpTools(user, sessionId))],
 		tool_choice: "auto",
 		audio: {
@@ -370,7 +370,7 @@ export async function executeVoiceTool(
 				repo: s.repo,
 				branch: s.branch,
 				pendingQuestion: s.pendingQuestion,
-				recent: control.transcriptTail(id, 10).map((e) => ({
+				recent: (await control.transcriptTail(id, 10)).map((e) => ({
 					type: e.type,
 					tool: e.toolName,
 					content: truncate((e.content || "").replace(/\s+/g, " "), 300),
@@ -508,7 +508,7 @@ export function mirrorVoiceEntries(
 		content: e.text,
 		timestamp: now,
 	}));
-	void transcriptStore().appendTranscriptEvents(sessionId, tes).catch((error) => {
+	void appendTranscriptEvents(sessionId, tes).catch((error) => {
     console.error(`[desk-voice] Failed to mirror voice entries for ${sessionId}:`, error);
   });
 	appendHandoff(
@@ -529,7 +529,7 @@ export function mirrorVoiceToolCall(
 	result: unknown,
 ): void {
 	const { sessionId } = ensureDeskSession(user);
-	void transcriptStore().appendTranscriptEvents(
+	void appendTranscriptEvents(
 		sessionId,
 		voiceToolTranscriptEntries(callId, name, args, result),
 	).catch((error) => {

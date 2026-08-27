@@ -7,13 +7,6 @@
  */
 import { audit } from "../audit";
 import type { AskActorRequest, AskActorResult } from "./ask-protocol";
-import { decodeAgentOperationRequest, type AgentOperationRequest, type AgentOperationResult } from "./agent-operation-protocol";
-import type {
-  AgentHostPlanRegistration,
-  AgentHostPlanRegistrationResult,
-  AgentHostSupervisionClaim,
-  AgentHostSupervisionResult,
-} from "./agent-host-supervision-protocol";
 import {
 	type SessionActorEffectFor,
 	type SessionActorEffectKind,
@@ -26,13 +19,16 @@ import type { TurnActorRequest, TurnActorResult } from "./turn-protocol";
 import type { TimerActorRequest, TimerActorResult } from "./timer-protocol";
 import type { GatewayCommandRequest, GatewayCommandResult } from "./gateway-command-protocol";
 import type { CoreActorRequest, CoreActorResult } from "./core-protocol";
+import type {
+  TranscriptActorRequest,
+  TranscriptActorResult,
+} from "./transcript-protocol";
 import {
 	SessionKernelActorError,
 	type SessionKernelActorClient,
 } from "./actor-client";
 import {
 	SessionKernelStore,
-	type SessionKernelStoreApi,
 	type CreationEventDecision,
 	type CreationEventDecisionResult,
 	type DurableCommandRecord,
@@ -65,7 +61,7 @@ export function sessionProjectionOr<T>(read: () => T, fallback: T): T {
 }
 
 type GlobalKernelState = {
-	store?: SessionKernelStoreApi;
+	store?: SessionKernelStore;
 	actor?: SessionKernelActorClient;
 	kernels?: Map<string, SessionKernel>;
 };
@@ -81,28 +77,7 @@ function compatibilityStoreForTest(
 		throw new Error(
 			`Session ${domain} mutation requires the authoritative actor`,
 		);
-	return sessionKernelStore();
-}
-
-export function sessionAgentOperation(request: AgentOperationRequest): AgentOperationResult {
-  const decoded = decodeAgentOperationRequest(request);
-  if (!decoded) return { accepted: false, reason: "invalid_request" };
-  if (state.actor) return state.actor.decideAgentOperation(decoded);
-  return compatibilityStoreForTest("core").decideAgentOperation(decoded);
-}
-
-export async function registerAgentHostPlan(
-  request: AgentHostPlanRegistration,
-): Promise<AgentHostPlanRegistrationResult> {
-  if (state.actor) return state.actor.decideAgentHostSupervisionAsync(request);
-  return compatibilityStoreForTest("core").registerAgentHostPlan(request);
-}
-
-export async function claimAgentHostSupervision(
-  request: AgentHostSupervisionClaim,
-): Promise<AgentHostSupervisionResult> {
-  if (state.actor) return state.actor.decideAgentHostSupervisionAsync(request);
-  return compatibilityStoreForTest("core").claimAgentHostSupervision(request);
+	return __sessionKernelStoreForTest();
 }
 
 export async function sessionAsk<T extends AskActorRequest>(
@@ -207,6 +182,25 @@ export async function sessionCoreAsync<T extends CoreActorRequest>(
   return sessionCore(request);
 }
 
+export async function sessionTranscript<T extends TranscriptActorRequest>(
+  request: T,
+): Promise<TranscriptActorResult<T>> {
+  if (state.actor) return state.actor.decideTranscriptAsync(request);
+  throw new Error("Session transcript operation requires the authoritative actor");
+}
+
+export async function actorTranscriptSessionIds(
+  limit = 100,
+  afterSessionId = "",
+): Promise<string[]> {
+  if (!state.actor)
+    throw new Error("Transcript catalog access requires the authoritative actor");
+  return state.actor.callAsync<string[]>(
+    { t: "store", method: "actorTranscriptSessionIds", args: [limit, afterSessionId] },
+    "actor transcript catalog",
+  );
+}
+
 export async function sessionGatewayCommand<T extends GatewayCommandRequest>(
   request: T,
 ): Promise<GatewayCommandResult<T>> {
@@ -224,6 +218,32 @@ export async function sessionGatewayCommandAsync<T extends GatewayCommandRequest
 ): Promise<GatewayCommandResult<T>> {
   if (state.actor) return state.actor.decideGatewayAsync(request);
   return sessionGatewayCommand(request);
+}
+
+const deliveryProjectionCache = new Map<string, DurableDeliveryState>();
+
+function noteDeliveryProjection(sessionId: string, snapshot: DurableDeliveryState): void {
+  deliveryProjectionCache.set(sessionId, snapshot);
+}
+
+export function sessionDeliveryProjectionCached(sessionId: string): DurableDeliveryState {
+  return deliveryProjectionCache.get(sessionId) ?? {
+    revision: 0,
+    queued: [],
+    steered: [],
+    pendingSteers: [],
+    updatedAt: 0,
+  };
+}
+
+export function sessionDeliveryEntriesCached(slot: import("./store").DeliverySlot): Array<[string, unknown]> {
+  const entries: Array<[string, unknown]> = [];
+  for (const [sessionId, state] of deliveryProjectionCache) {
+    const value = slot === "queued" ? state.queued : slot === "steered" ? state.steered : state.dispatch;
+    if (value !== undefined && !(Array.isArray(value) && value.length === 0))
+      entries.push([sessionId, value]);
+  }
+  return entries;
 }
 
 export async function sessionDelivery<T extends DeliveryActorRequest>(
@@ -300,6 +320,50 @@ export async function sessionDelivery<T extends DeliveryActorRequest>(
         request.promptEntryId,
       );
   }
+  if (request.op === "snapshot")
+    noteDeliveryProjection(request.sessionId, result as DurableDeliveryState);
+  else if (request.op === "entries") {
+    const entries = result as Array<[string, unknown]>;
+    const present = new Set(entries.map(([sessionId]) => sessionId));
+    for (const [sessionId, snapshot] of deliveryProjectionCache) {
+      if (present.has(sessionId)) continue;
+      noteDeliveryProjection(sessionId, {
+        ...snapshot,
+        ...(request.slot === "queued"
+          ? { queued: [] }
+          : request.slot === "steered"
+            ? { steered: [] }
+            : { dispatch: undefined }),
+      });
+    }
+    for (const [sessionId, value] of entries) {
+      const snapshot = sessionDeliveryProjectionCached(sessionId);
+      noteDeliveryProjection(sessionId, {
+        ...snapshot,
+        ...(request.slot === "queued"
+          ? { queued: value }
+          : request.slot === "steered"
+            ? { steered: value }
+            : { dispatch: value }),
+      } as DurableDeliveryState);
+    }
+  } else if ("sessionId" in request) {
+    try {
+      const snapshot = actor
+        ? await actor.decideDeliveryAsync({ op: "snapshot", sessionId: request.sessionId })
+        : compatibilityStoreForTest("delivery").deliverySnapshot(request.sessionId);
+      noteDeliveryProjection(request.sessionId, snapshot);
+    } catch (error) {
+      console.error(`[session-kernel] delivery projection refresh failed for ${request.sessionId}:`, error);
+    }
+  } else if (request.op === "clear_slot") {
+    for (const [sessionId, snapshot] of deliveryProjectionCache) {
+      noteDeliveryProjection(sessionId, {
+        ...snapshot,
+        ...(request.slot === "queued" ? { queued: [] } : request.slot === "steered" ? { steered: [] } : { dispatch: undefined }),
+      });
+    }
+  }
   return result as DeliveryActorResult<T>;
 }
 
@@ -309,18 +373,69 @@ export async function sessionDeliveryProjection(
   return sessionDelivery({ op: "snapshot", sessionId });
 }
 
+async function sessionStoreAsync<TResult>(
+	method: string,
+	args: unknown[] = [],
+	large = false,
+): Promise<TResult> {
+	if (state.actor)
+		return state.actor.callAsync<TResult>(
+			{ t: "store", method, args },
+			method,
+			large,
+		);
+	const store = __sessionKernelStoreForTest() as unknown as Record<
+		string,
+		(...values: unknown[]) => TResult
+	>;
+	return store[method](...args);
+}
+
+export function sessionAskMigrationComplete(): Promise<boolean> {
+	return sessionStoreAsync("askMigrationComplete");
+}
+
+export function markSessionAskMigrationComplete(): Promise<void> {
+	return sessionStoreAsync("markAskMigrationComplete");
+}
+
+export function sessionDeliveryMigrationComplete(): Promise<boolean> {
+	return sessionStoreAsync("deliveryMigrationComplete");
+}
+
+export function markSessionDeliveryMigrationComplete(): Promise<void> {
+	return sessionStoreAsync("markDeliveryMigrationComplete");
+}
+
+export function sessionQuarantineSnapshot(
+	sessionId: string,
+): Promise<import("./store").DurableSessionQuarantine | undefined> {
+	return sessionStoreAsync("quarantinedSession", [sessionId]);
+}
+
+export function sessionQuarantines(
+	limit = 10_000,
+): Promise<import("./store").DurableSessionQuarantine[]> {
+	return sessionStoreAsync("quarantinedSessions", [limit, 0], true);
+}
+
 export function sessionKernelActorActive(): boolean {
   return !!state.actor;
 }
 
-export function sessionIsQuarantined(sessionId: string): boolean {
-  if (state.actor) return !!state.actor.quarantinedSession(sessionId);
-  if (process.env.NODE_ENV === "test")
-    return !!sessionKernelStore().quarantinedSession(sessionId);
-  throw new Error("Session quarantine reads require the authoritative actor");
+export async function sessionIsQuarantined(sessionId: string): Promise<boolean> {
+  return !!await sessionStoreAsync<unknown>("quarantinedSession", [sessionId]);
 }
 
-export function sessionKernelStore(): SessionKernelStoreApi {
+export function quarantineSessionForSafety(
+  sessionId: string,
+  reason: string,
+  operation: string,
+): Promise<import("./store").DurableSessionQuarantine> {
+  return sessionStoreAsync("quarantineSession", [sessionId, reason, operation]);
+}
+
+export function __sessionKernelStoreForTest(): SessionKernelStore {
   if (state.store) return state.store;
   if (process.env.NODE_ENV === "test")
     return (state.store = new SessionKernelStore());
@@ -344,7 +459,6 @@ export function installSessionKernelActor(
 ): SessionKernelActorClient | undefined {
 	const previous = state.actor;
 	state.actor = actor;
-  state.store = actor?.store;
 	state.kernels?.clear();
 	return previous;
 }
@@ -368,7 +482,7 @@ export class SessionKernel {
           { t: "store", method: "isTombstoned", args: [this.sessionId] },
           "isTombstoned",
         )
-      : sessionKernelStore().isTombstoned(this.sessionId);
+      : __sessionKernelStoreForTest().isTombstoned(this.sessionId);
 		if (
 			tombstoned &&
 			operation !== "session_delete" &&
@@ -404,9 +518,9 @@ export class SessionKernel {
     return result;
   }
 
-  creationState(): DurableCreationState | undefined {
+  creationState(): Promise<DurableCreationState | undefined> {
     this.touch();
-    return sessionKernelStore().creationState(this.sessionId);
+    return sessionCreationState(this.sessionId);
   }
 
   async applyRunEvent(
@@ -422,13 +536,14 @@ export class SessionKernel {
         });
 	}
 
-	runState(): DurableRunState {
+	/** Gateway-local run projection. It is never durable evidence. */
+	runStateProjection(): DurableRunState {
 		this.touch();
-		return sessionKernelStore().runState(this.sessionId);
+		return sessionRunStateProjection(this.sessionId);
 	}
 
-	isCurrentRun(runId: string, generation?: number): boolean {
-		const current = this.runState();
+	isCurrentRunProjection(runId: string, generation?: number): boolean {
+		const current = this.runStateProjection();
 		return (
 			["running", "ask_blocked", "interrupted", "reattaching"].includes(
 				current.state,
@@ -440,7 +555,7 @@ export class SessionKernel {
 
 	changesSince(changeSeq: number, limit = 500) {
 		this.touch();
-		return sessionKernelStore().changesSince(this.sessionId, changeSeq, limit);
+		return sessionChangesSince(this.sessionId, changeSeq, limit);
 	}
 
 	scheduleTimer(
@@ -536,8 +651,86 @@ export async function clearSessionKernel(sessionId: string): Promise<void> {
 export function durableSessionCommand(
 	sessionId: string,
 	requestId: string,
-): DurableCommandRecord | undefined {
-	return sessionKernelStore().command(sessionId, requestId);
+): Promise<DurableCommandRecord | undefined> {
+	return sessionStoreAsync("command", [sessionId, requestId]);
+}
+
+export function sessionCreationState(
+  sessionId: string,
+): Promise<DurableCreationState | undefined> {
+  return sessionStoreAsync("creationState", [sessionId], true);
+}
+
+export function sessionTurnSnapshot(sessionId: string) {
+  return sessionTurn({ op: "snapshot", sessionId });
+}
+
+export function sessionChangesSince(sessionId: string, after: number, limit = 500) {
+  return sessionStoreAsync<ReturnType<SessionKernelStore["changesSince"]>>(
+    "changesSince",
+    [sessionId, after, limit],
+    true,
+  );
+}
+
+/** Replaceable gateway-local projection hydrated during the actor handshake. */
+export function sessionRunStateProjection(sessionId: string): DurableRunState {
+  if (state.actor) return state.actor.runStateProjection(sessionId);
+  return __sessionKernelStoreForTest().runState(sessionId);
+}
+
+export function sessionRunStateProjections(): Array<DurableRunState & { sessionId: string }> {
+  if (state.actor) return state.actor.runStateProjections();
+  return __sessionKernelStoreForTest().runStates();
+}
+
+export function sessionTombstoneState(sessionId: string): Promise<boolean> {
+  return sessionStoreAsync("isTombstoned", [sessionId]);
+}
+
+export function sessionTimerSnapshot(sessionId: string, timerId: string): Promise<DurableTimer | undefined> {
+  return sessionStoreAsync("timer", [sessionId, timerId]);
+}
+
+export function sessionKernelDeadLetters(limit = 100, offset = 0) {
+  return sessionStoreAsync<ReturnType<SessionKernelStore["deadLetters"]>>(
+    "deadLetters",
+    [limit, offset],
+    true,
+  );
+}
+
+export function releaseSessionQuarantine(sessionId: string): Promise<boolean> {
+  return sessionStoreAsync("releaseQuarantine", [sessionId]);
+}
+
+export function discardSessionDeadTimer(sessionId: string, timerId: string): Promise<boolean> {
+  return sessionStoreAsync("discardDeadTimer", [sessionId, timerId]);
+}
+
+export function retrySessionDeadTimer(sessionId: string, timerId: string): Promise<boolean> {
+  return sessionStoreAsync("retryDeadTimer", [sessionId, timerId]);
+}
+
+export function discardSessionDeadOutbox(id: number): Promise<boolean> {
+  return sessionStoreAsync("discardDeadOutbox", [id]);
+}
+
+export function retrySessionDeadOutbox(id: number): Promise<boolean> {
+  return sessionStoreAsync("retryDeadOutbox", [id]);
+}
+
+export function reconcileCreationBranchDeadLetters(
+  destinations: ReadonlyArray<{ project: string; worktreePath: string }>,
+  now?: number,
+) {
+  return sessionStoreAsync<
+    Array<{
+      id: number;
+      sessionId: string;
+      reason: "shared_checkout_destination_adoptable" | "legacy_empty_base_branch";
+    }>
+  >("retryCompatibleCreationBranchDeadLetters", [destinations, now]);
 }
 
 export async function acknowledgeSessionCommand(
@@ -548,7 +741,7 @@ export async function acknowledgeSessionCommand(
 		await state.actor.acknowledgeCommand(sessionId, requestId);
 		return;
 	}
-	sessionKernelStore().acknowledgeCommand(sessionId, requestId);
+	__sessionKernelStoreForTest().acknowledgeCommand(sessionId, requestId);
 }
 
 export async function sessionKernelRuntimeWork(
@@ -563,8 +756,8 @@ export async function sessionKernelRuntimeWork(
 	if (state.actor)
 		return state.actor.runtimeWork(timerKinds, effectKinds, now, limit);
 	return {
-		timers: sessionKernelStore().dueTimers(now, limit, timerKinds),
-		outbox: sessionKernelStore().pendingOutbox(now, limit, effectKinds),
+		timers: __sessionKernelStoreForTest().dueTimers(now, limit, timerKinds),
+		outbox: __sessionKernelStoreForTest().pendingOutbox(now, limit, effectKinds),
 	};
 }
 
@@ -588,7 +781,7 @@ export async function sessionKernelHealth(): Promise<Record<string, unknown>> {
 	healthRefresh = (async () => {
 		const stats = state.actor
 			? await state.actor.statsAsync()
-			: sessionKernelStore().stats();
+			: __sessionKernelStoreForTest().stats();
 		const value = {
 			active: state.kernels?.size ?? 0,
 			...stats,
@@ -610,7 +803,7 @@ export async function sessionKernelHealth(): Promise<Record<string, unknown>> {
 
 export async function maintainSessionKernel(): Promise<boolean> {
 	if (state.actor) return state.actor.maintainAsync();
-	return sessionKernelStore().maintain();
+	return __sessionKernelStoreForTest().maintain();
 }
 
 export async function tombstoneSessionKernel(sessionId: string): Promise<void> {

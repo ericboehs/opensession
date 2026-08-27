@@ -22,13 +22,19 @@ describe("executor deployment", () => {
     );
   });
 
-  test("supports executor-only deploys without a gateway restart", async () => {
+  test("deploys one pinned gateway, kernel, and executor release", async () => {
     const deploy = await Bun.file(resolve(import.meta.dir, "deploy.sh")).text();
-    expect(deploy).toContain(
-      'packages/core/opensession-server/src/executor/*|opensession-executor.service',
-    );
-    expect(deploy).toContain('if [ "$RESTART_GATEWAY" = "0" ]');
-    expect(deploy).toContain("executor deploy complete");
+    expect(deploy).toContain('RELEASE_DIR="$(run_release prepare "$TARGET_COMMIT")"');
+    expect(deploy).toContain('run_release switch "$TARGET_COMMIT"');
+    expect(deploy).toContain('workdir="$CURRENT_LINK"');
+    expect(deploy).toContain("Environment=OPENSESSION_PREBUILT_FRONTEND=0");
+    expect(deploy).toContain("RESTART_EXECUTOR=1");
+    expect(deploy).toContain("RESTART_KERNEL=1");
+    expect(deploy).toContain("RESTART_GATEWAY=1");
+    expect(deploy).not.toContain("merge --ff-only");
+    expect(deploy).not.toContain("reset --hard");
+    expect(deploy).toContain('merge-base --is-ancestor "$PREVIOUS_HEAD" "$TARGET_COMMIT"');
+    expect(deploy).toContain("OPENSESSION_DEPLOY_ALLOW_DIVERGED=1");
     expect(deploy).toContain("executor-credential.conf");
     expect(deploy).toContain(
       `sed -n 's/^EnvironmentFile=//p' "$REPO_DIR/opensession.service"`,
@@ -70,6 +76,7 @@ describe("executor deployment", () => {
     expect(helper).toContain("OPENSESSION_RUN_SPEC_HASH");
     expect(helper).toContain("OPENSESSION_RUN_JOURNAL=$dir/journal.json");
     expect(helper).toContain('if [ "$action" = "self-deploy" ]');
+    expect(helper).toContain('"$repo_dir/deploy/self-deploy.sh"');
     expect(helper).toContain('if [ "$runner_mode" = "compiled" ]');
     expect(helper).toContain('"$runner_bin" runner-host "$dir/spec.json"');
     expect(helper).toContain('"$runner_bin" run "$repo_dir/packages/core/opensession-server/src/runner-host/host.ts"');

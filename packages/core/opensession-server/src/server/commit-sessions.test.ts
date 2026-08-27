@@ -1,5 +1,9 @@
 import { describe, expect, it } from "bun:test";
-import { firstMentions, readableThrough } from "./commit-sessions";
+import {
+  firstMentions,
+  readableThrough,
+  readCommitTranscriptRows,
+} from "./commit-sessions";
 
 const SHA = "ad85e5d51c76de8fd66fea6f9f1c777f1d174910";
 const at = Date.parse("2026-08-15T17:37:00Z");
@@ -13,6 +17,35 @@ const row = (
   session,
   ts: at + offsetMs,
   data,
+});
+
+describe("commit transcript pagination", () => {
+  it("continues through full 200-row actor pages", async () => {
+    const entries = Array.from({ length: 450 }, (_, index) => ({
+      id: `entry-${index + 1}`,
+      seq: index + 1,
+      changeSeq: index + 1,
+      type: "assistant" as const,
+      content: `row ${index + 1}`,
+      timestamp: new Date(at + index).toISOString(),
+    }));
+    const limits: number[] = [];
+    const rows = await readCommitTranscriptRows(
+      "session",
+      0,
+      (async (_sessionId: string, cursor: number, limit = 200) => {
+        limits.push(limit);
+        const page = entries.filter((entry) => entry.seq > cursor).slice(0, limit);
+        return {
+          entries: page,
+          firstSeq: page[0]?.seq ?? 0,
+          lastSeq: page.at(-1)?.seq ?? 0,
+        };
+      }) as typeof import("./actor-transcript").transcript.readSince,
+    );
+    expect(rows).toHaveLength(450);
+    expect(limits).toEqual([200, 200, 200]);
+  });
 });
 
 describe("firstMentions", () => {

@@ -9,7 +9,7 @@ import { existsSync, readFileSync } from "fs";
 import { OPENSESSION_SESSIONS_DIR } from "./paths";
 import { } from "./paths";
 import { transitionRunState } from "./run-state";
-import { sessionDelivery, sessionKernelStore, sessionTurn } from "./session-kernel/kernel";
+import { sessionDelivery, sessionTurn, sessionTurnSnapshot } from "./session-kernel/kernel";
 import { writeJsonAtomic } from "./shared/atomic-write";
 
 // Overridable so a detached run host (src/runner-host/host.ts) journals to its
@@ -368,7 +368,7 @@ export async function journalRecordAbnormalCompletion(
     },
   };
   await journalSet(failed);
-  journalRetireSettledCancelAbnormal(failed.osSessionId, failed.runKey);
+  await journalRetireSettledCancelAbnormal(failed.osSessionId, failed.runKey);
   return failed;
 }
 
@@ -388,20 +388,20 @@ function retireCancelAbnormalEvidence(
 
 /** Source-side race participant: actor uncertainty retains evidence because
  * the durable effect will perform the authoritative settlement-side check. */
-export function journalRetireSettledCancelAbnormal(
+export async function journalRetireSettledCancelAbnormal(
   sessionId: string | undefined,
   runKey: string,
-): boolean {
+): Promise<boolean> {
   if (process.env.OPENSESSION_RUN_JOURNAL || !sessionId) return false;
   try {
-    const cancel = sessionKernelStore().turnSnapshot(sessionId).cancel;
+    const cancel = (await sessionTurnSnapshot(sessionId)).cancel;
     if (cancel?.runId === runKey && cancel.phase === "settled")
       return retireCancelAbnormalEvidence(sessionId, runKey);
   } catch {
     // The independent interrupt owner may still positively prove settlement.
   }
   try {
-    const delivery = sessionKernelStore().deliverySnapshot(sessionId);
+    const delivery = await sessionDelivery({ op: "snapshot", sessionId });
     const dispatchedInterrupt = (
       delivery.dispatch as { interrupt?: typeof delivery.interrupt } | undefined
     )?.interrupt;
@@ -505,7 +505,7 @@ const takenRunKeys: Set<string> = ((globalThis as any).__runJournalTakenKeys ??=
  */
 export async function takeInterruptedRuns(
   seedRecords: ActiveRunRecord[] = [],
-  shouldTake: (record: ActiveRunRecord) => boolean = () => true,
+  shouldTake: (record: ActiveRunRecord) => boolean | Promise<boolean> = () => true,
   transition: JournalRunStateTransition = transitionRunState,
 ): Promise<ActiveRunRecord[]> {
   const journal = readRunJournal();
@@ -521,12 +521,15 @@ export async function takeInterruptedRuns(
       firstJournaledAt: record.firstJournaledAt || record.startedAt,
     };
   }
-  const entries = Object.values(journal).filter(
-    (r) =>
-      !isRunActiveInProcess(r.runKey) &&
-      !takenRunKeys.has(r.runKey) &&
-      shouldTake(r),
-  );
+  const entries: ActiveRunRecord[] = [];
+  for (const record of Object.values(journal)) {
+    if (
+      !isRunActiveInProcess(record.runKey) &&
+      !takenRunKeys.has(record.runKey) &&
+      await shouldTake(record)
+    )
+      entries.push(record);
+  }
   if (entries.length > 0) {
     const now = new Date().toISOString();
     for (const r of entries) {

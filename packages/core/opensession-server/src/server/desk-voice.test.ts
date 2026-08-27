@@ -47,7 +47,7 @@ describe("Desk voice Realtime session", () => {
 		registerSessionControl({
 			listSessions: () => sessions as ReturnType<SessionControl["listSessions"]>,
 			getSession: () => undefined,
-			transcriptTail: () => [],
+			transcriptTail: async () => [],
 			answerQuestion: () => false,
 			deliverToSession: async () => ({
 				status: "error" as const,

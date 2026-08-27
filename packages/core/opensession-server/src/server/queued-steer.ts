@@ -47,7 +47,7 @@ export type QueuedSteerDeps = {
 const queuedSteerDeps: QueuedSteerDeps = {
   target(sessionId) {
     const token = currentAgentRunToken(sessionId);
-    const run = sessionKernel(sessionId).runState();
+    const run = sessionKernel(sessionId).runStateProjection();
     if (!token || !run.currentRunId) return undefined;
     return { token, runId: run.currentRunId, generation: run.generation };
   },

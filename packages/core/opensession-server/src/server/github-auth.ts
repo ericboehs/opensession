@@ -284,6 +284,7 @@ export interface DeviceFlowStart {
 const DEVICE_FLOW_DISABLED =
   'This GitHub app does not have Device Flow enabled, so nobody can sign in. ' +
   'Tick "Enable Device Flow" in the app\'s settings on GitHub, then try again.';
+const GITHUB_DEVICE_VERIFICATION_URI = "https://github.com/login/device";
 
 export async function startGithubDeviceFlow(): Promise<DeviceFlowStart | { error: string }> {
   // The device flow uses the configured App client id from environment or config.
@@ -305,7 +306,9 @@ export async function startGithubDeviceFlow(): Promise<DeviceFlowStart | { error
   return {
     deviceCode: body.device_code,
     userCode: body.user_code,
-    verificationUri: body.verification_uri || "https://github.com/login/device",
+    // GitHub's documented browser entry point is fixed. Do not forward an
+    // unexpected response URL such as the internal POST-only /authorize path.
+    verificationUri: GITHUB_DEVICE_VERIFICATION_URI,
     interval: typeof body.interval === "number" ? body.interval : 5,
     expiresIn: typeof body.expires_in === "number" ? body.expires_in : 900,
   };

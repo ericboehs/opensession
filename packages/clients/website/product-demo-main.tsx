@@ -15,6 +15,7 @@ const minutesAgo = (minutes: number) =>
 	new Date(Date.now() - minutes * 60_000).toISOString();
 const now = minutesAgo(0);
 const activeSessionId = "bks-demo-presence";
+const deskSessionId = "bks-demo-desk";
 /** Optional capture-only state used by scripts/capture-announcement-features.ts.
  *  The ordinary landing demo has no query string and keeps its current state. */
 const featureShot = new URLSearchParams(location.search).get("feature");
@@ -355,6 +356,26 @@ const automations = [
 ];
 
 const transcripts: Record<string, TranscriptEntry[]> = {
+	[deskSessionId]: [
+		{
+			id: "desk-entry-1",
+			type: "user",
+			content: "What’s being worked on right now?",
+			timestamp: minutesAgo(8),
+			seq: 1,
+			changeSeq: 1,
+		},
+		{
+			id: "desk-entry-2",
+			type: "assistant",
+			content:
+				"Three things need your attention:\n\n- **Review checkout recovery** is still running.\n- **Improve mobile navigation** is waiting for your input.\n- **Ship keyboard shortcuts** passed every check and is ready to review.\n\nI can follow up on any of these or start a new session for you.",
+			timestamp: minutesAgo(7),
+			model: "anthropic/claude-fable-5",
+			seq: 2,
+			changeSeq: 2,
+		},
+	],
 	[activeSessionId]: [
 		{
 			id: "entry-1",
@@ -552,6 +573,12 @@ const json = (body: unknown, init: ResponseInit = {}) =>
 const responseFor = (url: URL, method: string): Response => {
 	const path = url.pathname.replace(/^\/(opensession|backstage)/, "");
 	if (path === "/api/sessions") return json(sessions, { headers: { ETag: '"demo-v1"' } });
+	if (path === "/api/desk/ensure" && method === "POST")
+		return json({
+			sessionId: deskSessionId,
+			clearedAt: null,
+			session: { model: "anthropic/claude-fable-5", effort: "low" },
+		});
 	if (path === "/api/auth/status")
 		return json({ required: false, authenticated: true, local: true, name: "Grant Shaddick" });
 	if (path === "/api/people")

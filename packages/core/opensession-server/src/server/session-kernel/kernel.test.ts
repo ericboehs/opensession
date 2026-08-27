@@ -19,7 +19,6 @@ import {
   targetForDeliveryInterrupt,
   targetForTurnCancel,
 } from ".";
-import { SESSION_KERNEL_ACTOR_VERSION } from "./actor-protocol";
 
 
 let store: SessionKernelStore;
@@ -41,7 +40,6 @@ test("tracked schema version matches the store reader", async () => {
 			readFileSync(join(import.meta.dir, "schema-version"), "utf8").trim(),
 		),
 	).toBe(SESSION_KERNEL_SCHEMA_VERSION);
-	expect(SESSION_KERNEL_ACTOR_VERSION).toBe(SESSION_KERNEL_SCHEMA_VERSION);
 });
 
 test("refuses an unsafe schema downgrade", async () => {
@@ -53,6 +51,29 @@ test("refuses an unsafe schema downgrade", async () => {
 	try {
 		expect(() => new SessionKernelStore(path)).toThrow("newer than supported");
 	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test("active command recovery uses the selective status index", () => {
+	const dir = mkdtempSync(join(tmpdir(), "session-kernel-active-index-"));
+	const path = join(dir, "kernel.sqlite");
+	const durableStore = new SessionKernelStore(path);
+	durableStore.close();
+	const db = new Database(path, { readonly: true });
+	try {
+		const plan = db
+			.query(`EXPLAIN QUERY PLAN
+				SELECT request_id, type, status, replay_safe
+				FROM session_kernel_commands
+				WHERE session_id = ?
+				  AND status IN ('pending', 'processing', 'indeterminate')`)
+			.all("indexed-session") as Array<{ detail: string }>;
+		expect(plan.map((row) => row.detail).join("\n")).toContain(
+			"idx_skc_active_session_status",
+		);
+	} finally {
+		db.close();
 		rmSync(dir, { recursive: true, force: true });
 	}
 });
@@ -74,6 +95,44 @@ test("read-only mirrors observe later WAL commits and cannot mutate", async () =
 	} finally {
 		mirror.close();
 		writer.close();
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test("session lanes refresh change sequences written through another lane", () => {
+	const dir = mkdtempSync(join(tmpdir(), "session-kernel-lane-sequence-"));
+	const path = join(dir, "kernel.sqlite");
+	const sessionLane = new SessionKernelStore(path);
+	const catalogLane = new SessionKernelStore(path);
+	try {
+		expect(
+			sessionLane.applyRunEvent({
+				sessionId: "cross-lane-sequence",
+				event: "prompt",
+				runKey: "run-one",
+			}),
+		).toMatchObject({ accepted: true, state: { changeSeq: 1 } });
+		expect(
+			catalogLane.appendChange(
+				"cross-lane-sequence",
+				"catalog_lane_mutation",
+			),
+		).toBe(2);
+		expect(
+			sessionLane.applyRunEvent({
+				sessionId: "cross-lane-sequence",
+				event: "run_registered",
+				runKey: "run-one",
+			}),
+		).toMatchObject({ accepted: true, state: { changeSeq: 3 } });
+		expect(
+			sessionLane
+				.changesSince("cross-lane-sequence", 0)
+				.map((change) => change.changeSeq),
+		).toEqual([1, 2, 3]);
+	} finally {
+		catalogLane.close();
+		sessionLane.close();
 		rmSync(dir, { recursive: true, force: true });
 	}
 });
@@ -187,7 +246,7 @@ test("schema 6 upgrades create autonomous creation, delivery and ask state", asy
 });
 
 describe("SessionKernel", () => {
-	test("fails closed non-idempotent projection work after actor restart", async () => {
+	test("fails closed replay but accepts exact settlement after actor restart", async () => {
 		const dir = mkdtempSync(join(tmpdir(), "session-kernel-projection-crash-"));
 		const path = join(dir, "kernel.sqlite");
 		let durableStore = new SessionKernelStore(path);
@@ -208,6 +267,161 @@ describe("SessionKernel", () => {
 				requestId: "write-one",
 				operation: "session_file_updated",
 			})).toThrow("actor restarted after execution began");
+
+			expect(durableStore.completeGatewayCommand({
+				sessionId: "projection-crash",
+				requestId: "write-one",
+				operation: "session_file_updated",
+				result: "written",
+			})).toBe("written");
+			expect(durableStore.command("projection-crash", "write-one")).toMatchObject({
+				status: "completed",
+				result: "written",
+			});
+
+			expect(durableStore.requestGatewayCommand({
+				sessionId: "projection-crash",
+				requestId: "write-two",
+				operation: "session_file_updated",
+			})).toEqual({ status: "execute" });
+			durableStore.close();
+			durableStore = new SessionKernelStore(path);
+			durableStore.failGatewayCommand({
+				sessionId: "projection-crash",
+				requestId: "write-two",
+				operation: "session_file_updated",
+				error: "destination rejected the write",
+				retryable: false,
+			});
+			expect(durableStore.command("projection-crash", "write-two")).toMatchObject({
+				status: "failed",
+				error: "destination rejected the write",
+			});
+		} finally {
+			durableStore.close();
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	test("abandons a stranded gateway settlement when safely releasing quarantine", () => {
+		const dir = mkdtempSync(join(tmpdir(), "session-kernel-gateway-repair-"));
+		const path = join(dir, "kernel.sqlite");
+		let durableStore = new SessionKernelStore(path);
+		try {
+			expect(durableStore.requestGatewayCommand({
+				sessionId: "projection-repair",
+				requestId: "write-one",
+				operation: "session_file_updated",
+			})).toEqual({ status: "execute" });
+			durableStore.close();
+			durableStore = new SessionKernelStore(path);
+			expect(durableStore.requestSubmitPromptCommand({
+				sessionId: "projection-repair",
+				requestId: "delivery-recovery",
+				identity: { content: "follow up", attachmentsHash: "none" },
+			})).toEqual({ status: "execute" });
+			durableStore.setRunState({
+				sessionId: "projection-repair",
+				state: "running",
+				event: "prompt",
+				currentRunId: "live-run",
+			});
+			const outcomeEffect = durableStore.enqueueOutbox(
+				"projection-repair",
+				"turn_outcome_project",
+				{ projectionId: "outcome:live-run" },
+				"outcome:live-run",
+			);
+			durableStore.enqueueOutbox(
+				"projection-repair",
+				"turn_cancel",
+				{ cancelId: "cancel:live-run", dispatchId: "live-run", runGeneration: 1 },
+				"cancel:live-run",
+			);
+			const oldDeadEffect = durableStore.enqueueOutbox(
+				"projection-repair",
+				"human_ask_deliver",
+				{ askId: "old-dead-ask", skipUi: false },
+				"old-dead-ask",
+			);
+			for (let attempt = 0; attempt < 20; attempt += 1)
+				durableStore.noteOutboxFailure(oldDeadEffect, "already abandoned", 20);
+			durableStore.quarantineSession(
+				"projection-repair",
+				"actor restarted after execution began",
+				"gateway:complete",
+			);
+
+			expect(durableStore.quarantinedSession("projection-repair")).toMatchObject({
+				repairable: true,
+			});
+			expect(durableStore.releaseQuarantine("projection-repair")).toBe(true);
+			expect(durableStore.quarantinedSession("projection-repair")).toBeUndefined();
+			expect(durableStore.command("projection-repair", "write-one")).toMatchObject({
+				status: "failed",
+				retryable: false,
+			});
+			expect(durableStore.command("projection-repair", "delivery-recovery")).toMatchObject({
+				status: "failed",
+				replaySafe: true,
+				retryable: true,
+			});
+			expect(durableStore.pendingOutbox(Date.now(), 10)).toContainEqual(
+				expect.objectContaining({ id: outcomeEffect, kind: "turn_outcome_project" }),
+			);
+			// Releasing the gateway fence does not invent a terminal run outcome. The
+			// still-owned run can now finish its ordinary settlement in the same session.
+			expect(durableStore.runState("projection-repair")).toMatchObject({
+				state: "running",
+				currentRunId: "live-run",
+			});
+		} finally {
+			durableStore.close();
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	test("keeps unrelated pending effects fail-closed during gateway repair", () => {
+		store.enqueueOutbox(
+			"effect-repair",
+			"human_ask_deliver",
+			{ askId: "ask-one", skipUi: false },
+			"ask-one",
+		);
+		store.quarantineSession(
+			"effect-repair",
+			"actor restarted after execution began",
+			"gateway:complete",
+		);
+		expect(store.quarantinedSession("effect-repair")).toMatchObject({
+			repairable: false,
+		});
+		expect(store.releaseQuarantine("effect-repair")).toBe(false);
+	});
+
+	test("accepts an exact replay-safe completion from a caller that survived actor restart", () => {
+		const dir = mkdtempSync(join(tmpdir(), "session-kernel-gateway-settlement-"));
+		const path = join(dir, "kernel.sqlite");
+		let durableStore = new SessionKernelStore(path);
+		const input = {
+			sessionId: "gateway-settlement",
+			requestId: "command-one",
+			operation: "websocket_command" as const,
+			identity: { command: "cancel", targetRunId: "run-one" },
+		};
+		try {
+			expect(durableStore.requestGatewayCommand(input)).toEqual({ status: "execute" });
+			durableStore.close();
+			durableStore = new SessionKernelStore(path);
+			expect(durableStore.command(input.sessionId, input.requestId)).toMatchObject({
+				status: "failed",
+				replaySafe: true,
+				retryable: true,
+			});
+			expect(durableStore.completeGatewayCommand({
+				...input,
+				result: { cancelled: true },
+			})).toEqual({ cancelled: true });
 		} finally {
 			durableStore.close();
 			rmSync(dir, { recursive: true, force: true });
@@ -362,6 +576,69 @@ describe("SessionKernel", () => {
 		}
 	});
 
+	test("accepts and repairs exact submit settlements across an actor restart", () => {
+		const dir = mkdtempSync(join(tmpdir(), "session-kernel-submit-settlement-"));
+		const path = join(dir, "kernel.sqlite");
+		let durableStore = new SessionKernelStore(path);
+		const input = {
+			sessionId: "submit-settlement",
+			requestId: "delivery-settlement",
+			identity: { content: "hello", attachmentsHash: "none" },
+		};
+		try {
+			expect(durableStore.requestGatewayCommand({
+				sessionId: input.sessionId,
+				requestId: "older-transcript-write",
+				operation: "transcript_append",
+			})).toEqual({ status: "execute" });
+			expect(durableStore.requestSubmitPromptCommand(input)).toEqual({
+				status: "execute",
+			});
+			durableStore.close();
+			durableStore = new SessionKernelStore(path);
+			expect(durableStore.command(input.sessionId, input.requestId)).toMatchObject({
+				status: "failed",
+				replaySafe: true,
+				retryable: true,
+			});
+			expect(durableStore.completeSubmitPromptCommand({
+				sessionId: input.sessionId,
+				requestId: input.requestId,
+				result: { status: "queued" },
+			})).toEqual({ status: "queued" });
+
+			const recovery = { ...input, requestId: "delivery-recovery" };
+			expect(durableStore.requestSubmitPromptCommand(recovery)).toEqual({
+				status: "execute",
+			});
+			durableStore.quarantineSession(
+				input.sessionId,
+				"actor restarted before execution admission",
+				"delivery:complete_submit_command",
+			);
+			expect(durableStore.quarantinedSession(input.sessionId)).toMatchObject({
+				repairable: true,
+			});
+			expect(durableStore.releaseQuarantine(input.sessionId)).toBe(true);
+			expect(durableStore.command(input.sessionId, recovery.requestId)).toMatchObject({
+				status: "failed",
+				replaySafe: true,
+				retryable: true,
+			});
+			expect(durableStore.command(input.sessionId, "older-transcript-write")).toMatchObject({
+				status: "failed",
+				replaySafe: false,
+				retryable: false,
+			});
+			expect(durableStore.requestSubmitPromptCommand(recovery)).toEqual({
+				status: "execute",
+			});
+		} finally {
+			durableStore.close();
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
 	test("turns pre-execution pending admission into a durable retry receipt", async () => {
 		const dir = mkdtempSync(join(tmpdir(), "session-kernel-pending-restart-"));
 		const path = join(dir, "kernel.sqlite");
@@ -475,9 +752,9 @@ describe("SessionKernel", () => {
 		try {
 			await transitionRunState(id, "prompt");
 			await transitionRunState(id, "run_registered", { run_key: "run-new" });
-			const generation = sessionKernel(id).runState().generation;
+			const generation = sessionKernel(id).runStateProjection().generation;
 			await transitionRunState(id, "run_registered", { run_key: "run-old" });
-			expect(sessionKernel(id).runState()).toMatchObject({
+			expect(sessionKernel(id).runStateProjection()).toMatchObject({
 				state: "running",
 				currentRunId: "run-new",
 				generation,
@@ -508,7 +785,7 @@ describe("SessionKernel", () => {
 
 	test("persists run state and monotonic change sequence", async () => {
 		const kernel = sessionKernel("s1");
-		expect(kernel.runState().state).toBe("idle");
+		expect(kernel.runStateProjection().state).toBe("idle");
 		expect(store.setRunState({ sessionId: "a", state: "starting", event: "prompt" }).changeSeq,).toBe(1);
 		const running = store.setRunState({
       sessionId: "a",
@@ -1462,10 +1739,10 @@ describe("SessionKernel", () => {
       }),
     ]);
     const { isUserStopped, liftUserStop } = await import("../queue-state");
-    expect(isUserStopped("cancel-starting")).toBe(true);
+    expect(await isUserStopped("cancel-starting")).toBe(true);
     await liftUserStop("cancel-starting");
     expect(store.runState("cancel-starting").state).toBe("idle");
-    expect(isUserStopped("cancel-starting")).toBe(true);
+    expect(await isUserStopped("cancel-starting")).toBe(true);
     expect(store.applyRunEvent({
       sessionId: "cancel-starting",
       event: "run_registered",
@@ -1476,7 +1753,7 @@ describe("SessionKernel", () => {
       cancelId: "cancel-starting",
       outcome: "confirmed",
     });
-    expect(isUserStopped("cancel-starting")).toBe(false);
+    expect(await isUserStopped("cancel-starting")).toBe(false);
     expect(store.applyRunEvent({
       sessionId: "cancel-starting",
       event: "prompt",

@@ -24,11 +24,10 @@
  * and how far the cursor is allowed to move.
  */
 
-import { Database } from "bun:sqlite";
 import { existsSync, readFileSync } from "fs";
 import { stateDir } from "./paths";
 import { writeJsonAtomic } from "./shared/atomic-write";
-import { transcriptDbPath } from "./transcript-store";
+import { transcript } from "./actor-transcript";
 
 export interface CommitRef {
 	sha: string;
@@ -48,6 +47,7 @@ const KEEP_DAYS = 60;
 /** Sessions read between yields. The sweep can walk hundreds of megabytes on
  *  its first run, and it must not hold the loop while it does. */
 const YIELD_EVERY = 20;
+const TRANSCRIPT_PAGE_SIZE = 200;
 
 /** Hex runs that could be a sha. Bounded by word edges, so the hex inside a
  *  longer token is not one; 7 is git's shortest abbreviation here. */
@@ -160,17 +160,26 @@ export function readableThrough(
 	return read;
 }
 
-let db: Database | null = null;
-function readDb(): Database | null {
-	if (db) return db;
-	try {
-		const path = transcriptDbPath();
-		if (!existsSync(path)) return null;
-		db = new Database(path, { readonly: true });
-		return db;
-	} catch {
-		return null;
+export async function readCommitTranscriptRows(
+	sessionId: string,
+	cursor: number,
+	readSince: typeof transcript.readSince = transcript.readSince,
+): Promise<Array<{ seq: number; ts: number; data: string }>> {
+	const rows: Array<{ seq: number; ts: number; data: string }> = [];
+	let pageCursor = cursor;
+	for (;;) {
+		const page = await readSince(sessionId, pageCursor, TRANSCRIPT_PAGE_SIZE);
+		for (const entry of page.entries) {
+			rows.push({
+				seq: entry.seq,
+				ts: Date.parse(entry.timestamp || "") || 0,
+				data: JSON.stringify(entry),
+			});
+		}
+		if (page.entries.length < TRANSCRIPT_PAGE_SIZE) break;
+		pageCursor = page.entries.at(-1)!.seq;
 	}
+	return rows;
 }
 
 let sweeping: Promise<void> | null = null;
@@ -189,24 +198,24 @@ async function sweep(
 	 *  A row written before it can only name commits the list already holds. */
 	commitsReadAt: number,
 ): Promise<void> {
-	const store = readDb();
-	if (!store) return;
 	const since = Date.now() - ACTIVE_DAYS * 86_400_000;
-	const sessions = store
-		.query("SELECT session_id FROM transcript_sessions WHERE last_ts >= ?")
-		.all(since) as Array<{ session_id: string }>;
-	const events = store.query(
-		"SELECT seq, ts, data FROM transcript_events WHERE session_id = ? AND seq > ? ORDER BY seq",
-	);
+	const sessions: string[] = [];
+	let after = "";
+	for (;;) {
+		const ids = await transcript.sessionIds(200, after);
+		for (const id of ids) {
+			const summary = await transcript.summary(id);
+			if ((summary?.lastTs ?? 0) >= since) sessions.push(id);
+		}
+		if (ids.length < 200) break;
+		after = ids.at(-1)!;
+	}
 
 	let walked = 0;
-	for (const { session_id: session } of sessions) {
+	for (const session of sessions) {
 		const cursor = index.cursors[session]?.seq ?? 0;
-		const rows = events.all(session, cursor) as Array<{
-			seq: number;
-			ts: number;
-			data: string;
-		}>;
+		const rows = await readCommitTranscriptRows(session, cursor);
+
 		if (rows.length) {
 			const found = firstMentions(
 				rows.map((row) => ({ session, ts: row.ts, data: row.data })),

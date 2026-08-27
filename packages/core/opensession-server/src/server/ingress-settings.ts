@@ -2,10 +2,9 @@
 import { randomBytes } from "crypto";
 import { createSocket } from "dgram";
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "fs";
-import { networkInterfaces } from "os";
+import { networkInterfaces, tmpdir, userInfo } from "os";
 import { isIP } from "net";
 import { join } from "path";
-import { tmpdir } from "os";
 import { resolve4, resolve6 } from "dns/promises";
 import {
   configuredIngress,
@@ -35,12 +34,24 @@ import {
 export const PUBLIC_INGRESS_PORT = 3860;
 const CADDYFILE = process.env.OPENSESSION_CADDYFILE || "/etc/caddy/Caddyfile";
 const CLOUDFLARE_TOKEN_PATH = stateDir("cloudflared-tunnel-token");
-const FUNNEL_STARTING_GRACE_MS = 60_000;
+const INGRESS_STARTING_GRACE_MS: Record<IngressExposure, number> = {
+  tailscale: 10 * 60_000,
+  cloudflare: 60_000,
+  custom: 60_000,
+};
 const runtime = globalThis as typeof globalThis & {
   __opensessionCloudflared?: ReturnType<typeof Bun.spawn>;
   __opensessionCloudflaredRestart?: ReturnType<typeof setTimeout>;
-  __opensessionTailscaleFunnelStartedAt?: number;
+  __opensessionIngressStartedAt?: Partial<Record<IngressExposure, number>>;
 };
+
+function markIngressStarting(exposure: IngressExposure): void {
+  (runtime.__opensessionIngressStartedAt ??= {})[exposure] = Date.now();
+}
+
+function ingressStartedAt(exposure: IngressExposure | null): number {
+  return exposure ? runtime.__opensessionIngressStartedAt?.[exposure] || 0 : 0;
+}
 
 export interface IngressStatus {
   canManage: boolean;
@@ -57,7 +68,12 @@ export interface IngressStatus {
   };
   server: { ipv4: string[]; ipv6: string[] };
   dns: { a: string[]; aaaa: string[]; suggested: string[] };
-  tailscale: { installed: boolean; dnsName: string; suggestedUrl: string };
+  tailscale: {
+    installed: boolean;
+    dnsName: string;
+    suggestedUrl: string;
+    funnelConfigured: boolean;
+  };
   cloudflare: {
     installed: boolean;
     tunnelId: string;
@@ -198,6 +214,137 @@ async function tailscaleDnsName(): Promise<string> {
   }
 }
 
+async function tailscaleFunnelStatus(binary = Bun.which("tailscale")): Promise<unknown> {
+  if (!binary) return null;
+  const result = await command([binary, "funnel", "status", "--json"]);
+  if (result.code !== 0) return null;
+  try {
+    return JSON.parse(result.stdout);
+  } catch {
+    return null;
+  }
+}
+
+export function tailscaleFunnelAction(output: string): {
+  url: string;
+  kind: "approval" | "plans";
+} | null {
+  let plansUrl = "";
+  for (const match of output.matchAll(/https:\/\/[^\s<>"']+/g)) {
+    try {
+      const url = new URL(match[0]);
+      if (url.hostname === "login.tailscale.com" && url.pathname === "/f/funnel") {
+        return { url: url.href, kind: "approval" };
+      }
+      if (
+        url.hostname === "console.tailscale.com" &&
+        url.pathname === "/admin/settings/billing/plans"
+      ) {
+        plansUrl = url.href;
+      }
+    } catch {}
+  }
+  return plansUrl ? { url: plansUrl, kind: "plans" } : null;
+}
+
+export function tailscaleFunnelOperatorDenied(output: string): boolean {
+  return /serve config denied/i.test(output);
+}
+
+export function tailscaleFunnelOperatorCommand(username = userInfo().username): string {
+  const operator = /^[a-z_][a-z0-9_-]*[$]?$/i.test(username) ? username : "$(id -un)";
+  return `sudo tailscale set --operator=${operator}`;
+}
+
+type TailscaleFunnelAction =
+  | { kind: "approval" | "plans"; url: string }
+  | { kind: "operator"; command: string };
+
+export class TailscaleFunnelActionRequired extends Error {
+  readonly actionKind: TailscaleFunnelAction["kind"];
+  readonly actionUrl?: string;
+  readonly actionCommand?: string;
+
+  constructor(action: TailscaleFunnelAction) {
+    super(action.kind === "plans"
+      ? "Tailscale requires this tailnet to select a current plan before Funnel can be enabled."
+      : action.kind === "operator"
+        ? "Allow the Open Session service account to manage Tailscale, then start Funnel again."
+        : "Approve Funnel in Tailscale, then start Funnel again.");
+    this.name = "TailscaleFunnelActionRequired";
+    this.actionKind = action.kind;
+    if ("url" in action) this.actionUrl = action.url;
+    if ("command" in action) this.actionCommand = action.command;
+  }
+}
+
+export async function startTailscaleFunnelCommand(binary: string): Promise<{
+  code: number;
+  stdout: string;
+  stderr: string;
+  actionUrl: string;
+  actionKind: "approval" | "plans" | null;
+}> {
+  const child = Bun.spawn([
+    binary,
+    "funnel",
+    "--bg",
+    "--yes",
+    "--https=443",
+    `http://127.0.0.1:${PUBLIC_INGRESS_PORT}`,
+  ], { stdout: "pipe", stderr: "pipe", env: process.env });
+  let stdout = "";
+  let approvalUrl = "";
+  const readStdout = (async () => {
+    const reader = child.stdout.getReader();
+    const decoder = new TextDecoder();
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      stdout += decoder.decode(value, { stream: true });
+      const action = tailscaleFunnelAction(stdout);
+      if (action?.kind === "approval") approvalUrl = action.url;
+      // Some Tailscale control-plane configurations keep the CLI open while
+      // waiting for browser approval. The Settings request cannot complete the
+      // approval itself, so stop the hidden waiter once its action is visible.
+      if (approvalUrl && child.exitCode === null) child.kill();
+    }
+    stdout += decoder.decode();
+  })();
+  const [stderr, code] = await Promise.all([
+    new Response(child.stderr).text(),
+    child.exited,
+    readStdout,
+  ]);
+  const action = tailscaleFunnelAction(stdout);
+  return {
+    code,
+    stdout,
+    stderr,
+    actionUrl: action?.url || "",
+    actionKind: action?.kind || null,
+  };
+}
+
+/** A zero exit from `tailscale funnel --bg` only says the CLI request
+ * completed. Confirm that tailscaled retained both the public permission and
+ * the exact loopback proxy before Open Session reports the setup as started. */
+export function tailscaleFunnelConfigured(
+  status: unknown,
+  dnsName: string,
+  target = `http://127.0.0.1:${PUBLIC_INGRESS_PORT}`,
+): boolean {
+  if (!status || typeof status !== "object" || Array.isArray(status) || !dnsName) return false;
+  const config = status as Record<string, unknown>;
+  const hostPort = `${dnsName.replace(/\.$/, "")}:443`;
+  const tcp = config.TCP as Record<string, { HTTPS?: unknown }> | undefined;
+  const web = config.Web as Record<string, { Handlers?: Record<string, { Proxy?: unknown }> }> | undefined;
+  const allowFunnel = config.AllowFunnel as Record<string, unknown> | undefined;
+  return tcp?.["443"]?.HTTPS === true &&
+    web?.[hostPort]?.Handlers?.["/"]?.Proxy === target &&
+    allowFunnel?.[hostPort] === true;
+}
+
 function publicInterfaceAddresses(): { a: string[]; aaaa: string[] } {
   const a = new Set<string>();
   const aaaa = new Set<string>();
@@ -292,22 +439,24 @@ export function publicIngressHealth(
   probed: "ready" | "unreachable" | "not_configured",
   dns: { a: string[]; aaaa: string[] },
   server: { a: string[]; aaaa: string[] },
-  funnelStartedAt = 0,
+  startedAt = 0,
   now = Date.now(),
 ): IngressStatus["health"] {
   if (probed !== "unreachable") return probed;
+  if (exposure === "custom") {
+    const expectedAddresses = [...server.a, ...server.aaaa];
+    const resolvedAddresses = [...dns.a, ...dns.aaaa];
+    const dnsPointsHere = expectedAddresses.length
+      ? resolvedAddresses.some((address) => expectedAddresses.includes(address))
+      : resolvedAddresses.length > 0;
+    if (!dnsPointsHere) return "waiting_dns";
+  }
   if (
-    exposure === "tailscale" &&
-    funnelStartedAt > 0 &&
-    now - funnelStartedAt < FUNNEL_STARTING_GRACE_MS
+    exposure &&
+    startedAt > 0 &&
+    now - startedAt < INGRESS_STARTING_GRACE_MS[exposure]
   ) return "starting";
-  if (exposure !== "custom") return probed;
-  const expectedAddresses = [...server.a, ...server.aaaa];
-  const resolvedAddresses = [...dns.a, ...dns.aaaa];
-  const dnsPointsHere = expectedAddresses.length
-    ? resolvedAddresses.some((address) => expectedAddresses.includes(address))
-    : resolvedAddresses.length > 0;
-  return dnsPointsHere ? probed : "waiting_dns";
+  return probed;
 }
 
 export function displayedServerAddresses(
@@ -329,19 +478,25 @@ export async function publicIngressStatus(
   let hostname = "";
   try { hostname = new URL(configured.publicBaseUrl).hostname; } catch {}
   const tailnetIpv4 = detectedTailnetIpv4();
-  const [dns, tsName, probedHealth, serverAddresses, appDomain] = await Promise.all([
+  const [dns, tsName, funnelStatus, probedHealth, serverAddresses, appDomain] = await Promise.all([
     currentDns(hostname),
     tailscaleDnsName(),
+    tailscaleFunnelStatus(),
     ingressHealth(configured.publicBaseUrl),
     publicServerAddresses(),
     privateAppDomainStatus(appBaseUrl, tailnetIpv4),
   ]);
+  const funnelConfigured = tailscaleFunnelConfigured(funnelStatus, tsName);
+  const canStillBeStarting = configured.exposure !== "tailscale" || funnelConfigured;
+  const connectorRunning = cloudflareConnectorRunning();
   const health = publicIngressHealth(
     configured.exposure,
-    probedHealth,
+    configured.exposure === "tailscale" && !funnelConfigured ? "unreachable" : probedHealth,
     dns,
     serverAddresses,
-    runtime.__opensessionTailscaleFunnelStartedAt,
+    canStillBeStarting && (configured.exposure !== "cloudflare" || connectorRunning)
+      ? ingressStartedAt(configured.exposure)
+      : 0,
   );
   // A healthy direct Caddy origin proves its resolved addresses reach this
   // listener. Reuse that exact answer on NATed hosts whose cloud metadata is
@@ -374,6 +529,7 @@ export async function publicIngressStatus(
       installed: Bun.which("tailscale") !== null,
       dnsName: tsName,
       suggestedUrl: tsName ? `https://${tsName}` : "",
+      funnelConfigured,
     },
     cloudflare: {
       installed: Bun.which("cloudflared") !== null,
@@ -381,7 +537,7 @@ export async function publicIngressStatus(
       cnameTarget: tunnelId ? `${tunnelId}.cfargotunnel.com` : "<tunnel-id>.cfargotunnel.com",
       connectorTarget: `http://127.0.0.1:${PUBLIC_INGRESS_PORT}`,
       tokenConfigured: existsSync(CLOUDFLARE_TOKEN_PATH),
-      connectorRunning: cloudflareConnectorRunning(),
+      connectorRunning,
     },
     custom: {
       caddyInstalled: Bun.which("caddy") !== null,
@@ -495,21 +651,32 @@ export async function enableTailscaleFunnel(): Promise<string> {
   if (!binary) throw new Error("Tailscale is not installed on this server");
   const dnsName = await tailscaleDnsName();
   if (!dnsName) throw new Error("Tailscale is not connected or has no HTTPS hostname");
-  const result = await command([
-    binary,
-    "funnel",
-    "--bg",
-    "--yes",
-    "--https=443",
-    `http://127.0.0.1:${PUBLIC_INGRESS_PORT}`,
-  ]);
+  const result = await startTailscaleFunnelCommand(binary);
+  if (result.actionUrl && result.actionKind) {
+    throw new TailscaleFunnelActionRequired({
+      url: result.actionUrl,
+      kind: result.actionKind,
+    });
+  }
+  if (tailscaleFunnelOperatorDenied(`${result.stdout}\n${result.stderr}`)) {
+    throw new TailscaleFunnelActionRequired({
+      kind: "operator",
+      command: tailscaleFunnelOperatorCommand(),
+    });
+  }
   if (result.code !== 0) throw new Error(result.stderr.trim() || "Could not enable Tailscale Funnel");
+  const funnelStatus = await tailscaleFunnelStatus(binary);
+  if (!tailscaleFunnelConfigured(funnelStatus, dnsName)) {
+    throw new Error(
+      "Tailscale did not retain a public Funnel route on port 443. Allow Funnel and HTTPS certificates for this node, then try again.",
+    );
+  }
   const origin = normalizeIngressOrigin(`https://${dnsName}`);
   // Funnel starting and its public edge becoming reachable are separate facts.
   // Persist the successful command immediately so a slow edge does not leave a
   // running Funnel reported as an entirely failed setup. The UI probes health.
   await savePublicIngress({ publicBaseUrl: origin, exposure: "tailscale" });
-  runtime.__opensessionTailscaleFunnelStartedAt = Date.now();
+  markIngressStarting("tailscale");
   return origin;
 }
 
@@ -563,6 +730,7 @@ export async function configureCloudflareTunnel(input: {
     cloudflareTunnelId: input.tunnelId,
   });
   if (!ensureCloudflareTunnel()) throw new Error("Could not start the Cloudflare Tunnel connector");
+  markIngressStarting("cloudflare");
 }
 
 export async function installManagedCaddy(originValue: string, publicIp?: string): Promise<void> {
@@ -616,6 +784,7 @@ export async function installManagedCaddy(originValue: string, publicIp?: string
     }
     try {
       await savePublicIngress({ publicBaseUrl: origin, exposure: "custom", publicIp });
+      markIngressStarting("custom");
     } catch (error) {
       await rollback();
       throw error;

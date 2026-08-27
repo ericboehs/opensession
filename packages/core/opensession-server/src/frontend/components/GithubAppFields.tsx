@@ -1,4 +1,5 @@
-import { Badge } from "../ui/badge";
+import { Field, FieldGrid, Input } from "../ui/input";
+import { GithubPrivateKeyField } from "./GithubPrivateKeyField";
 import { SecretField, type SetupGithub } from "./setup-shared";
 
 export function GithubAppFields({
@@ -52,44 +53,44 @@ export function GithubAppFields({
 				onChange={onClientIdChange}
 				onToggleClear={onToggleClientIdClear}
 			/>
-			<label className="flex flex-col gap-1">
-				<span className="text-supporting text-fg">App slug</span>
-				<input
-					type="text"
-					className="w-full rounded-md border border-line bg-surface px-2.5 py-1.5 font-mono text-supporting text-fg outline-none focus-ring phone:min-h-11 phone:text-input-phone"
-					value={appSlug}
-					onChange={(event) => onAppSlugChange(event.target.value)}
-					placeholder="open-session-example"
-					aria-label="GitHub App slug"
-					disabled={saving}
-					autoCapitalize="none"
-					autoComplete="off"
-					spellCheck={false}
-				/>
-				<span className="text-meta leading-snug text-faint">
-					From github.com/apps/&lt;slug&gt;. Identifies App-authored activity.
-				</span>
-			</label>
-			{showInstallationOwner && (
-				<label className="flex flex-col gap-1">
-					<span className="text-supporting text-fg">Installation owner</span>
-					<input
+			<FieldGrid className={showInstallationOwner ? undefined : "grid-cols-1"}>
+				<Field label="App slug">
+					<Input
 						type="text"
-						className="w-full rounded-md border border-line bg-surface px-2.5 py-1.5 font-mono text-supporting text-fg outline-none focus-ring phone:min-h-11 phone:text-input-phone"
-						value={installationOwner}
-						onChange={(event) => onInstallationOwnerChange(event.target.value)}
-						placeholder="my-organization"
-						aria-label="GitHub App installation owner"
+						className="font-mono phone:min-h-11 phone:text-input-phone"
+						value={appSlug}
+						onChange={(event) => onAppSlugChange(event.target.value)}
+						placeholder="open-session-example"
+						aria-label="GitHub App slug"
 						disabled={saving}
 						autoCapitalize="none"
 						autoComplete="off"
 						spellCheck={false}
 					/>
 					<span className="text-meta leading-snug text-faint">
-						Required. Enter the GitHub login for the account or organization where the App is installed. Open Session uses it to select the installation that mints repository tokens.
+						From github.com/apps/&lt;slug&gt;. Identifies App-authored activity.
 					</span>
-				</label>
-			)}
+				</Field>
+				{showInstallationOwner && (
+					<Field label="Installation owner">
+						<Input
+							type="text"
+							className="font-mono phone:min-h-11 phone:text-input-phone"
+							value={installationOwner}
+							onChange={(event) => onInstallationOwnerChange(event.target.value)}
+							placeholder="my-organization"
+							aria-label="GitHub App installation owner"
+							disabled={saving}
+							autoCapitalize="none"
+							autoComplete="off"
+							spellCheck={false}
+						/>
+						<span className="text-meta leading-snug text-faint">
+							The GitHub account or organization where the App is installed.
+						</span>
+					</Field>
+				)}
+			</FieldGrid>
 			<SecretField
 				name="Client secret"
 				required
@@ -100,35 +101,12 @@ export function GithubAppFields({
 				onChange={onClientSecretChange}
 				onToggleClear={onToggleClientSecretClear}
 			/>
-			<label className="flex flex-col gap-1">
-				<span className="flex items-center justify-between gap-2">
-					<span className="text-label font-medium text-dim">Private key (PEM)</span>
-					{github.privateKeyConfigured ? (
-						<span className="shrink-0 text-meta text-green">Saved</span>
-					) : (
-						<Badge tone="warning">Required</Badge>
-					)}
-				</span>
-				<textarea
-					className="min-h-20 w-full resize-y rounded-md border border-line bg-surface px-2.5 py-1.5 font-mono text-supporting text-fg outline-none focus-ring phone:text-input-phone"
-					value={privateKey}
-					onChange={(event) => onPrivateKeyChange(event.target.value)}
-					placeholder={
-						github.privateKeyConfigured
-							? "Leave blank to keep"
-							: "-----BEGIN RSA PRIVATE KEY-----"
-					}
-					aria-label="GitHub App private key (PEM)"
-					required
-					disabled={saving}
-					autoCapitalize="none"
-					autoComplete="off"
-					spellCheck={false}
-				/>
-				<span className="text-meta leading-snug text-faint">
-					Paste a generated private key, or leave blank to keep the current key.
-				</span>
-			</label>
+			<GithubPrivateKeyField
+				configured={github.privateKeyConfigured}
+				saving={saving}
+				value={privateKey}
+				onChange={onPrivateKeyChange}
+			/>
 		</div>
 	);
 }

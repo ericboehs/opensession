@@ -8,6 +8,7 @@ export interface SessionStatus {
 }
 
 export function sessionStatus(s: UnifiedSession): SessionStatus {
+  if (s.safety) return { label: "Paused for safety", tone: "yellow" };
   if (s.isRunning) return { label: "Working", tone: "green" };
   if (s.prState === "MERGED") return { label: "Merged", tone: "purple" };
   if (s.prState === "CLOSED") return { label: "Closed", tone: "red" };

@@ -20,7 +20,7 @@ import { transcriptLineUser } from "./transcript-persistence";
 import {
   SessionKernelStore,
   __setSessionKernelStoreForTest,
-  sessionKernelStore,
+  __sessionKernelStoreForTest,
 } from "./session-kernel";
 import { hostRunBusy } from "./host-registry";
 import {
@@ -32,7 +32,7 @@ import {
 const roots: string[] = [];
 
 function registerTestRun(sessionId: string, runId: string): void {
-  const store = sessionKernelStore();
+  const store = __sessionKernelStoreForTest();
   const prior = store.runState(sessionId);
   store.setRunState({
     sessionId,
@@ -189,6 +189,39 @@ describe("uncertain host reconciliation", () => {
 });
 
 describe("local run-host capability", () => {
+  test("busy checks consume an offline terminal host receipt", async () => {
+    const root = mkdtempSync(join(tmpdir(), "host-terminal-test-"));
+    roots.push(root);
+    const hostId = `rh-${crypto.randomUUID()}`;
+    const dir = join(root, hostId);
+    mkdirSync(dir);
+    const spec: RunHostSpec = {
+      hostId,
+      osSessionId: `os-${crypto.randomUUID()}`,
+      prompt: "run once",
+      cwd: "/tmp",
+    };
+    const handle = new HostHandle(dir, spec, {}, {
+      alive: () => true,
+      newRunDir: (id) => join(root, id),
+      launch: async () => {},
+    });
+    writeFileSync(join(dir, "meta.json"), JSON.stringify({
+      hostId,
+      pid: process.pid,
+      osSessionId: spec.osSessionId,
+      startedAt: new Date().toISOString(),
+      done: { type: "done", result: "completed while disconnected" },
+    } satisfies RunHostMeta));
+
+    expect(hostRunBusy(hostId)).toBe(false);
+    expect((await handle.events().next()).value).toMatchObject({
+      type: "done",
+      result: "completed while disconnected",
+    });
+    expect(handle.ended).toBe(true);
+  });
+
   test("requires Linux, a booted systemd, systemctl, and sudo", () => {
     const commands = (command: string) =>
       ["systemctl", "sudo"].includes(command) ? `/usr/bin/${command}` : null;
@@ -429,8 +462,10 @@ describe("HostHandle model recovery", () => {
     const root = mkdtempSync(join(tmpdir(), "host-client-projection-failure-test-"));
     roots.push(root);
     const store = new TranscriptStore(join(root, "transcripts.db"), { actorOwned: true });
-    (store as any).appendTranscriptEvents = async () => {
-      throw new Error("projection rejected");
+    const applyActorRequest = store.applyActorRequest.bind(store);
+    (store as any).applyActorRequest = (request: { op?: string }) => {
+      if (request.op === "append") throw new Error("projection rejected");
+      return applyActorRequest(request as any);
     };
     const previous = __setTranscriptStoreForTest(store);
     const kernelStore = new SessionKernelStore(join(root, "kernel.db"));

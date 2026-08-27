@@ -204,12 +204,12 @@ const AUTOMATION_ID_BARE = new RegExp(
 // The app shell registers what it already polls (App.tsx); anything not in that
 // list (archived, deleted, not yet polled) falls back to a shortened id.
 interface SessionName {
-  /** What the chip shows: the workspace's name (App.tsx says why). */
+  /** What the chip shows: a human session's workspace, or a worker's task. */
   label: string;
   /** The session's own title, when it differs from the label. Tooltip only:
-   *  a workspace holds many sessions, so the label alone cannot say WHICH
-   *  conversation a chip opens, and two chips into one workspace would
-   *  otherwise be identical down to the tooltip. */
+   *  a workspace can hold multiple human conversations, so its label alone
+   *  cannot say which conversation a chip opens. Worker labels already use
+   *  the session title and do not need this distinction. */
   tab?: string;
   /** On-demand metadata carries this for references outside the live list. */
   archived?: boolean;

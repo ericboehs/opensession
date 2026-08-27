@@ -24,12 +24,17 @@ const settings = {
 		tailnetIpv4: "100.64.0.10",
 	},
 	server: { ipv4: ["203.0.113.10"], ipv6: ["2001:db8::10"] },
-	tailscale: { suggestedUrl: "https://server.example.ts.net" },
+	tailscale: {
+		installed: true,
+		dnsName: "server.example.ts.net",
+		suggestedUrl: "https://server.example.ts.net",
+		funnelConfigured: true,
+	},
 } as PublicIngressSettings;
 
 describe("public ingress form", () => {
 	test("shows a newly started connector as pending rather than failed", () => {
-		expect(ingressHealthLabel("starting")).toBe("Starting");
+		expect(ingressHealthLabel("starting")).toBe("Waiting");
 		expect(ingressHealthDot("starting")).toBe("var(--yellow)");
 	});
 

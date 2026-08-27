@@ -1,5 +1,6 @@
 import collaborationAsset from "./announcement-collaboration.webp";
 import automationsAsset from "./announcement-automations.webp";
+import deskAsset from "./announcement-desk.webp";
 import walkthroughsAsset from "./announcement-walkthroughs.webp";
 import { assetUrl } from "./asset-url";
 import { ProductDemo } from "./ProductDemo";
@@ -7,6 +8,7 @@ import { ProductDemo } from "./ProductDemo";
 const featureShots = {
 	collaboration: assetUrl(collaborationAsset),
 	automations: assetUrl(automationsAsset),
+	desk: assetUrl(deskAsset),
 	walkthroughs: assetUrl(walkthroughsAsset),
 };
 
@@ -187,6 +189,11 @@ export function AnnouncementArticle({
 				powerful sub-agents in new sessions for the work to be completed. You can
 				use it like a team standup with your agents.
 			</p>
+
+			<AnnouncementFeatureShot
+				feature="desk"
+				alt="Open Session’s Desk overlay answering a question about active work across the team."
+			/>
 
 			<p>
 				<strong>Automations</strong> are another cool feature. You give your agent

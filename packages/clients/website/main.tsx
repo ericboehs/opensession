@@ -592,7 +592,7 @@ function LandingPage() {
 					<ProductDemo />
 				</section>
 
-				<section className="card">
+				<section className="card feature-card">
 					<div className="features">
 						<Feature icon={<IconSparkle size={28} />} name="Use any model">
 							Bring your own subscription and API keys. Switch models whenever you

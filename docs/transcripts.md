@@ -6,12 +6,13 @@ is operator configuration.
 ## The store
 
 Open Session-owned transcripts are per-session, sequence-numbered event logs in
-one SQLite database (WAL): `<sessions dir>/transcripts.db`, managed by
-`packages/core/opensession-server/src/server/transcript-store.ts`. The sessions
-directory is `~/.opensession/sessions` on fresh installs; existing installs can
-retain the legacy `~/.opensession-sessions` path, and
-`OPENSESSION_SESSIONS_DIR` overrides both. External CLI/tmux and `plain-`
-sessions can remain file-backed as described below.
+the same actor-owned SQLite file (WAL) as that session's kernel tables, under
+`<sessions dir>/session-kernel-sessions/`. The central kernel database is only
+the placement and wake catalog. `packages/core/opensession-server/src/server/transcript-store.ts`
+owns the mature transcript schema inside each actor file. The retired shared
+`<sessions dir>/transcripts.db` is left untouched after the offline authority
+cutover as rollback evidence. External CLI/tmux and `plain-` sessions can remain
+file-backed as described below.
 
 - A row is one parsed `TranscriptEntry`: `(session_id, seq)` is the primary key,
   with dense 1-based `seq` values per session and unique `(session_id, uuid)`
@@ -30,12 +31,53 @@ sessions can remain file-backed as described below.
   and tool detail comes from `GET /api/sessions/:id/entry/:entryId`; image
   markers resolve through
   `GET /api/sessions/:id/transcript-image/:entryId/:index`.
-- **Exactly one physical writer:** the live server process. Every append,
-  import, replacement, and deletion first enters the session owner through
-  `packages/core/opensession-server/src/server/session-projection-executor.ts`,
-  then mutates SQLite on the gateway thread. Backfills run in-process, and
-  local detached, sandbox, and remote run hosts relay transcript batches to
-  the server instead of opening the database.
+- **Exactly one physical writer:** the independently supervised session actor
+  worker owns every actor database. The gateway uses the bounded async
+  transcript facade and only publishes post-commit bus wakes returned by the
+  actor. Backfills and detached, sandbox, and remote run hosts relay bounded
+  transcript batches through that facade; they never open actor databases.
+
+The authority move is an offline, all-at-once operation. Stop the gateway,
+executor, and session-kernel services, then run
+`scripts/migrate-actor-transcripts.ts`. It fails closed unless all three units
+report the explicit systemd state `inactive`. It enumerates the union of all
+five source tables, every central durable session, and every shared-authority
+placement, including sessions with no transcript rows, then migrates any legacy
+central kernel state first. A transcript-only row with no kernel state receives
+an offline-only isolated
+placement whose authority remains `shared` until the final publication, so old
+fixture/orphan evidence cannot be stranded behind the actor facade. The cutover
+copies every transcript into its isolated kernel database in one transaction,
+verifies global and per-table counts, bidirectional `EXCEPT`, sequence and
+change-cursor invariants, reset/import high-waters, durable append receipts,
+blob and outline coherence, and `integrity_check`, then atomically publishes
+every central authority placement last. Rerunning adopts verified targets after
+a crash before publication. A private read-only snapshot is attached for the
+copy, so the shared source is never modified, removed, or chmodded and retains
+its exact bytes and file mode even if migration is killed.
+
+With all three services stopped, audit without creating placements or targets:
+
+```sh
+bun scripts/migrate-actor-transcripts.ts --audit
+```
+
+Perform the verified cutover:
+
+```sh
+bun scripts/migrate-actor-transcripts.ts
+```
+
+To deploy the old shared-store build again, first atomically roll every catalog
+entry back to shared authority. Rollback verifies every actor transcript and
+migration receipt against the frozen shared source before changing any catalog
+entry. It fails closed if an actor-owned append, import, replacement, deletion,
+or other divergence occurred after cutover; it cannot report success while the
+shared source is stale:
+
+```sh
+bun scripts/migrate-actor-transcripts.ts --rollback
+```
 
 For future detached Agent Host recovery, the store also exposes a typed internal
 `transcript_destination_append` API. This is deliberately separate from legacy

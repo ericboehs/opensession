@@ -31,6 +31,7 @@ struct QueueMessagePresentation: Equatable {
         let routingStripped = agentPrefixed?.rest
             ?? Self.attributionPrefix.match(content)?.rest
             ?? content
+        let legacyWorkerFailure = Self.legacyWorkerFailure.match(content)
         isSessionMessage = Self.agentActor.match(user ?? "") != nil
             || agentPrefixed != nil
             || Self.sessionNoticeSentinel.match(routingStripped) != nil
@@ -38,7 +39,8 @@ struct QueueMessagePresentation: Equatable {
         // Every marker starts the message, so a couple of prefix tests settle
         // the ordinary case without touching a regex. This runs for each
         // visible chip on every composer keystroke.
-        if !isGitHub, !isSessionMessage, !Self.mayCarryMarker(content) {
+        if !isGitHub, !isSessionMessage, legacyWorkerFailure == nil,
+           !Self.mayCarryMarker(content) {
             label = nil
             body = content
             return
@@ -56,6 +58,12 @@ struct QueueMessagePresentation: Equatable {
         if let worker = Self.workerAttribution.match(content) {
             label = "Worker report"
             body = Self.stripLeadingSentinels(worker.rest)
+            return
+        }
+
+        if let legacyWorkerFailure {
+            label = "Worker report"
+            body = legacyWorkerFailure.rest
             return
         }
 
@@ -120,6 +128,9 @@ struct QueueMessagePresentation: Equatable {
     private static let agentActor = Pattern("^agent\\s+(?:os|bks)-[a-z0-9-]+$")
     private static let workerSentinel =
         Pattern("^<!--os:worker-report(?::[^\\s>]+)?-->\\s*")
+    private static let legacyWorkerFailure = Pattern(
+        "^Server notice:\\s+(?=worker task `(?:os|bks)-[a-z0-9-]+` ended in error without reporting back\\.)"
+    )
     private static let workflowSentinel =
         Pattern("^<!--os:workflow-notice(?::[^\\s>]+)?-->\\s*")
     private static let sessionNoticeSentinel = Pattern("^<!--os:session-notice-->\\s*")

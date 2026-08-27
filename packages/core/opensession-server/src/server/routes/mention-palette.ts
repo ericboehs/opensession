@@ -1,7 +1,10 @@
 import { readMcpConfig } from "../connections";
 import { mentionPaletteItems } from "../mention-palette";
-import { findSessionAsync, peekCachedSessions } from "../session-cache";
-import { getAllSessions } from "../sessions";
+import {
+	findSessionAsync,
+	getSessionListSnapshotAsync,
+	peekCachedSessions,
+} from "../session-cache";
 import { userMatchesAny } from "../shared/user-mappings";
 import { listWorkspaces } from "../workspaces";
 import { requestUser, type RouteContext } from "./context";
@@ -43,7 +46,9 @@ export async function handleMentionPaletteRoutes(
 			query,
 			toolNames,
 			workspaces: listWorkspaces(),
-			sessions: cachedSessions.length ? cachedSessions : await getAllSessions(),
+			sessions: cachedSessions.length
+				? cachedSessions
+				: await getSessionListSnapshotAsync(),
 			currentSessionId: sessionId,
 		}),
 	});

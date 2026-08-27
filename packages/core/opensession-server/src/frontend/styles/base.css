@@ -178,12 +178,10 @@
 	   page — it is the one thing you touch — so it sits a step above the
 	   panels around it instead of matching them. */
 	--composer-radius: calc(28px * var(--rf));
-	/* The sign-in card's edge. Behind it is the charcoal cut of the silk loop,
-	   so a cast has nothing to fall on: black ink on a near-black picture lands
-	   as a grey smudge under the card rather than a lift beneath it, and the
-	   card's own fill is only a shade off the video, so the cast is not drawing
-	   the shape either. A hairline draws it instead, and nothing darkens the
-	   backdrop. Light keeps the cast: see the light block. */
+	/* The sign-in card's edge. On the dark marketing artwork, a cast has
+	   nothing to fall on: black ink on a near-black picture becomes a grey
+	   smudge rather than a lift. A hairline holds the glass shape instead, and
+	   nothing darkens the backdrop. Light keeps the cast: see the light block. */
 	--auth-card-edge: 0 0 0 1px var(--smooth-ring-color);
 	--bg-panel: #262626;
 	--bg-hover: #2e2e2e;
@@ -559,9 +557,9 @@ html[data-theme="light"] {
 	   own — the palette already did, and the two shells are one surface. */
 	--dialog-ring: var(--popup-ring);
 	--composer-shadow: 0 2px 6px rgba(0, 0, 0, 0.04), 0 14px 36px rgba(0, 0, 0, 0.08);
-	/* See :root. Here the backdrop is silver and the card is white on top of
-	   it, so the cast is what says the card is in front. It is the scale's `lg`
-	   step (smooth-shadow.css), written out because only one theme takes it. */
+	/* See :root. The light artwork has enough value range for a quiet cast to
+	   lift the glass card from it. This is the scale's `lg` step
+	   (smooth-shadow.css), written out because only one theme takes it. */
 	--auth-card-edge:
 		0 4px 12px -4px color-mix(in srgb, black 5%, transparent),
 		0 18px 48px -14px color-mix(in srgb, black 11%, transparent);

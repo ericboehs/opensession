@@ -15,6 +15,19 @@ function sourceFiles(dir: string): string[] {
 }
 
 describe("single session ownership", () => {
+	test("runtime metadata readers do not run the synchronous full-history scanner", () => {
+		for (const file of [
+			"runner-portals.ts",
+			"session-control-wiring.ts",
+			"transcript-orphan-sweep.ts",
+			"routes/mention-palette.ts",
+			"routes/sessions.ts",
+			"routes/workspace.ts",
+		]) {
+			expect(read(file)).not.toContain("getAllSessions(");
+		}
+	});
+
 	test("production has no legacy gateway mailbox", () => {
 		const production = sourceFiles(serverDir).map((path) =>
       readFileSync(path, "utf8"),
@@ -51,13 +64,13 @@ describe("single session ownership", () => {
 		const queue = read("queue-state.ts");
 		const asks = read("asks.ts");
 		expect(queue).toContain("removeLegacyQueueStore(storePath)");
-		expect(queue).toContain("deliveryMigrationComplete()");
+		expect(queue).toContain("sessionDeliveryMigrationComplete()");
 		expect(asks).toContain("removeLegacyAskStore(storePath)");
-		expect(asks).toContain("askMigrationComplete()");
-		expect(queue.indexOf("deliveryMigrationComplete()"))
-			.toBeLessThan(queue.indexOf("writeJsonAtomic("));
-		expect(asks.indexOf("askMigrationComplete()"))
-			.toBeLessThan(asks.indexOf("writeJsonAtomic("));
+		expect(asks).toContain("sessionAskMigrationComplete()");
+		// Once the actor acknowledges either one-time import, production JSON
+		// persistence stays fail-closed instead of becoming a second writer.
+		expect(queue).toContain("queueMigrationState.complete");
+		expect(asks).toContain("askMigrationState.complete");
 	});
 
 	test("delivery and ask writes fail closed without the actor in production", () => {
@@ -270,9 +283,20 @@ describe("single session ownership", () => {
 		const actor = read("session-kernel/actor-worker.ts");
 		expect(actor).toContain("const host = new SessionKernelStoreHost()");
 		expect(actor).not.toContain("const store = new SessionKernelStore()");
-		expect(read("session-kernel/actor-client.ts")).toContain(
-			"SharedArrayBuffer",
-		);
+		const forbidden = ["Atomics.wait", "SharedArrayBuffer", "callSync", "KernelActorSyncRequest"];
+		const offenders: string[] = [];
+		for (const path of sourceFiles(serverDir)) {
+			if (path.endsWith(".test.ts")) continue;
+			const source = readFileSync(path, "utf8");
+			for (const token of forbidden) {
+				if (source.includes(token)) offenders.push(`${path}:${token}`);
+			}
+		}
+		const transport = read("../session-kernel-transport-worker.ts");
+		for (const token of forbidden) {
+			if (transport.includes(token)) offenders.push(`session-kernel-transport-worker.ts:${token}`);
+		}
+		expect(offenders).toEqual([]);
 	});
 
 	test("Slack ask delivery is a durable production outbox effect", () => {
@@ -445,7 +469,7 @@ describe("single session ownership", () => {
     expect(ws.indexOf("const persistedCancel =")).toBeLessThan(
       ws.indexOf('operation: "websocket_command"'),
     );
-    expect(ws.indexOf("const priorCommandPayload = durableSessionCommand(")).toBeLessThan(
+    expect(ws.indexOf("durableSessionCommand(")).toBeLessThan(
       ws.indexOf('operation: "websocket_command"'),
     );
     expect(ws.indexOf("const persistedInterrupt =")).toBeLessThan(
@@ -488,7 +512,7 @@ describe("single session ownership", () => {
       /if \(cancelOwnership === "unknown"\) \{[\s\S]*?return true;/,
     );
     expect(agentRunner).toContain(
-      'while (ownership === "unknown")',
+      'while (ownership === "unknown" && Date.now() < ownershipDeadline)',
     );
     expect(agentRunner).toContain(
       "ownershipBackoffMs = Math.min(5_000, ownershipBackoffMs * 2)",
@@ -536,7 +560,7 @@ describe("single session ownership", () => {
     expect(boot).toContain("runId: recoveredRun.runKey");
     expect(boot).toContain("projectionId: `outcome:${recoveredRun.runKey}`");
     expect(boot).toContain(
-      "runGeneration: sessionKernel(bksSessionId).runState().generation",
+      "runGeneration: sessionKernel(bksSessionId).runStateProjection().generation",
     );
     const cache = read("session-cache.ts");
     expect(cache).toContain('op: "prepare_outcome_projection"');

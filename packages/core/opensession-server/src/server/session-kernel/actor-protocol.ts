@@ -5,9 +5,11 @@ import type {
   RunEventDecisionResult,
 } from "./store";
 
-export const SESSION_KERNEL_ACTOR_VERSION = 28;
+export const SESSION_KERNEL_ACTOR_VERSION = 33;
 export const SESSION_KERNEL_TRANSPORT_VERSION = 1;
-export const SESSION_KERNEL_MAX_REQUEST_BYTES = 16 * 1024 * 1024;
+// A transcript mutation can carry one accepted 50 MiB legacy/base64 image
+// (about 67 MiB on the JSON wire) before the actor splits it into blob storage.
+export const SESSION_KERNEL_MAX_REQUEST_BYTES = 80 * 1024 * 1024;
 export const SESSION_KERNEL_MAX_RESPONSE_BYTES = 128 * 1024 * 1024;
 export const SESSION_KERNEL_MAX_TRANSPORT_REQUESTS = 1024;
 
@@ -57,7 +59,7 @@ export type KernelActorServiceCall = {
   outputBytes: number;
 };
 
-export type KernelActorServiceResponse =
+export type KernelActorResponse =
   | KernelActorAsyncResponse
   | {
       t: "call_result";
@@ -67,12 +69,15 @@ export type KernelActorServiceResponse =
       body?: string;
     };
 
+/** HTTP service responses are fenced after the actor worker replies. */
+export type KernelActorServiceResponse = KernelActorResponse & {
+  serviceEpoch: string;
+};
+
 export type KernelActorClientRequest =
   KernelActorAsyncRequest | KernelActorClientCallRequest;
 
-export type KernelActorClientResponse =
-  | KernelActorAsyncResponse
-  | Extract<KernelActorServiceResponse, { t: "call_result" }>;
+export type KernelActorClientResponse = KernelActorResponse;
 
 export type KernelActorTransportEnvelope = {
   version: number;
@@ -80,15 +85,6 @@ export type KernelActorTransportEnvelope = {
   serviceEpoch?: string;
   request: KernelActorAsyncRequest | KernelActorServiceCall;
 };
-
-type SyncBuffers = {
-  control: SharedArrayBuffer;
-  output: SharedArrayBuffer;
-};
-
-export type KernelActorSyncRequest =
-  | ({ t: "store"; method: string; args: unknown[] } & SyncBuffers)
-  | ({ t: "reduce"; command: SessionActorReducerCommand } & SyncBuffers);
 
 export type KernelActorRunEventResult = RunEventDecisionResult;
 
@@ -98,8 +94,6 @@ export type KernelActorRunEventResult = RunEventDecisionResult;
 export function isCriticalSettlementCommand(
   command: SessionActorReducerCommand,
 ): boolean {
-  if (command.kind === "agent_operation")
-    return command.request.op === "settle" || command.request.op === "indeterminate";
   if (command.kind === "gateway")
     return command.request.op === "complete" || command.request.op === "fail";
   if (command.kind === "core")

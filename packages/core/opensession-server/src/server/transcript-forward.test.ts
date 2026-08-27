@@ -5,7 +5,7 @@ import { setTranscriptForwarder } from "./transcript-forward";
 afterEach(() => setTranscriptForwarder(undefined));
 
 describe("detached transcript forwarding", () => {
-  test("intercepts early and standing-context writes before the store opens", () => {
+  test("intercepts early and standing-context writes before the store opens", async () => {
     const batches: Array<{
       engineSessionId: string;
       lines: Record<string, unknown>[];
@@ -15,7 +15,7 @@ describe("detached transcript forwarding", () => {
     });
 
     const line = transcriptLineUser("hello", "prompt-1");
-    storeAppendUserLineEarly("os-session", line);
+    await storeAppendUserLineEarly("os-session", line);
 
     expect(batches).toEqual([
       { engineSessionId: "os-session", lines: [line] },

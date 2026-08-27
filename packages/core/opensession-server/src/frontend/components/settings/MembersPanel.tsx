@@ -1,3 +1,4 @@
+import { BASE_PATH } from "../../lib/base";
 import { SettingsHeader, SettingsPanel } from "../../ui/settings";
 import { TeamSection } from "../SetupTeam";
 
@@ -10,9 +11,20 @@ export function MembersPanel() {
 		<SettingsPanel>
 			<SettingsHeader
 				title="Members"
-				description="Members from your GitHub organization are added automatically."
+				description={
+					<>
+						Members identify who sessions act as. Configure who can sign in under{" "}
+						<a
+							href={`${BASE_PATH}/settings/authentication`}
+							className="text-link hover:underline"
+						>
+							Authentication
+						</a>
+						.
+					</>
+				}
 			/>
-			<TeamSection onChanged={() => {}} githubOnly />
+			<TeamSection onChanged={() => {}} />
 		</SettingsPanel>
 	);
 }

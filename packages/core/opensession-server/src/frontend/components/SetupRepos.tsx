@@ -176,6 +176,7 @@ export function ReposSection({
 									repo={appearance.get(repo.id)}
 									id={repo.id}
 									onChanged={loadAppearance}
+									glow
 								/>
 								<SettingRowText>
 									<SettingRowTitle>{repo.label}</SettingRowTitle>
@@ -476,10 +477,12 @@ function RepoTileButton({
 	id,
 	repo,
 	onChanged,
+	glow = false,
 }: {
 	id: string;
 	repo: RepoInfo | undefined;
 	onChanged: () => Promise<void>;
+	glow?: boolean;
 }) {
 	const [busy, setBusy] = useState(false);
 	const [error, setError] = useState<string | null>(null);
@@ -521,7 +524,7 @@ setBusy(false);
 				className="shrink-0 rounded-md outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent,#6b8afd)]"
 				aria-label={`Change ${id}'s icon`}
 			>
-				<RepoTile name={id} size={28} />
+				<RepoTile name={id} size={28} glow={glow} />
 			</Popover.Trigger>
 			<Popover.Popup className="w-[248px] p-3" initialFocus>
 				<div className="mb-2 text-meta font-medium text-dim">Icon</div>

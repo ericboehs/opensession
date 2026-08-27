@@ -26,12 +26,19 @@ import { userMatchesAny } from "./shared/user-mappings";
 import {
 	DeliveryOwnedMap,
 	EphemeralSessionSet,
+	markSessionDeliveryMigrationComplete,
 	sessionDelivery,
+	sessionDeliveryMigrationComplete,
   sessionKernel,
-	sessionKernelStore,
+	sessionQuarantineSnapshot,
   sessionTurn,
+  sessionTurnSnapshot,
 } from "./session-kernel";
 import type { DurableSteerTarget } from "./session-kernel/store";
+
+const queueMigrationState = ((globalThis as typeof globalThis & {
+	__opensessionQueueMigrationState?: { complete: boolean };
+}).__opensessionQueueMigrationState ??= { complete: false });
 
 export type QueueItem = {
 	id?: string;
@@ -228,11 +235,11 @@ export const stoppedSessions = new EphemeralSessionSet();
 
 /** Durable Stop ownership survives a gateway restart until an explicit prompt
  * advances the actor run state out of `stopped`. */
-export function isUserStopped(sessionId: string): boolean {
-  const cancel = sessionKernelStore().turnSnapshot(sessionId).cancel;
+export async function isUserStopped(sessionId: string): Promise<boolean> {
+  const cancel = (await sessionTurnSnapshot(sessionId)).cancel;
   return (
     stoppedSessions.has(sessionId) ||
-    sessionKernel(sessionId).runState().state === "stopped" ||
+    sessionKernel(sessionId).runStateProjection().state === "stopped" ||
     cancel?.phase === "prepared" ||
     cancel?.phase === "executing"
   );
@@ -248,7 +255,7 @@ export function isUserStopped(sessionId: string): boolean {
  */
 export async function liftUserStop(sessionId: string): Promise<void> {
   stoppedSessions.delete(sessionId);
-  if (sessionKernel(sessionId).runState().state === "stopped")
+  if (sessionKernel(sessionId).runStateProjection().state === "stopped")
     // Intake only releases the durable Stop latch. The later physical run
     // reservation owns `prompt` -> `starting` and supplies its run token.
     // Advancing to `starting` here makes the intake busy-check observe its own
@@ -308,7 +315,7 @@ export function persistQueues(storePath = QUEUE_STORE): void {
 		// being a projection once the actor acknowledged its one-time import.
 		if (
 			storePath === QUEUE_STORE &&
-			sessionKernelStore().deliveryMigrationComplete()
+			queueMigrationState.complete
 		)
 			return;
 		const entries = (m: Iterable<[string, QueueItem[]]>) =>
@@ -367,21 +374,31 @@ function readPersistedQueueState(storePath: string,): PersistedQueueState | null
 /** Load raw durable maps before the server accepts writes. Ownership and
  * transcript reconciliation happen after recovery identifies adopted runs. */
 export async function hydratePersistedQueueState(storePath = QUEUE_STORE): Promise<number> {
-  const kernelStore = sessionKernelStore();
   const migrateToKernel = storePath === QUEUE_STORE;
-  if (migrateToKernel && kernelStore.deliveryMigrationComplete()) {
+  const actorAuthority =
+		migrateToKernel && await sessionDeliveryMigrationComplete();
+	if (migrateToKernel) queueMigrationState.complete = actorAuthority;
+	if (actorAuthority) {
     removeLegacyQueueStore(storePath);
+		// The first schema-29 boot rebuilds the durable sparse projection in
+		// bounded retryable read turns. Finish that before the one mutating
+		// pending-steer reconciliation so no isolated store is skipped.
+		await sessionDelivery({ op: "entries", slot: "queued" });
     await sessionDelivery({ op: "settle_pending_steers" });
-    return (
-      [...promptQueues.values(), ...steeredReceipts.values()].reduce(
-        (count, items) => count + items.length,
-        0,
-      ) + promptDispatches.size
-    );
+		const [queued, steered, dispatching] = await Promise.all([
+			sessionDelivery({ op: "entries", slot: "queued" }),
+			sessionDelivery({ op: "entries", slot: "steered" }),
+			sessionDelivery({ op: "entries", slot: "dispatch" }),
+		]);
+		return [...queued, ...steered].reduce(
+			(count, [, items]) => count + (items as unknown[]).length,
+			0,
+		) + dispatching.length;
   }
   if (!existsSync(storePath)) {
     if (migrateToKernel) {
-      kernelStore.markDeliveryMigrationComplete();
+			await markSessionDeliveryMigrationComplete();
+			queueMigrationState.complete = true;
       removeLegacyQueueStore(storePath);
     }
     return 0;
@@ -407,7 +424,8 @@ export async function hydratePersistedQueueState(storePath = QUEUE_STORE): Promi
 		}
 	}
   if (migrateToKernel) {
-    kernelStore.markDeliveryMigrationComplete();
+		await markSessionDeliveryMigrationComplete();
+		queueMigrationState.complete = true;
     removeLegacyQueueStore(storePath);
   }
 	return (
@@ -424,24 +442,41 @@ export async function hydratePersistedQueueState(storePath = QUEUE_STORE): Promi
 export async function restorePersistedQueueState(options: {
 	storePath?: string;
 	sessionExists: (sessionId: string) => boolean;
-	sessionQuarantined?: (sessionId: string) => boolean;
+	sessionQuarantined?: (sessionId: string) => boolean | Promise<boolean>;
 	journalOwnsPrompt: (sessionId: string, promptEntryId: string) => boolean;
-	creationOwnsPrompt?: (sessionId: string, promptEntryId: string) => boolean;
+	creationOwnsPrompt?: (sessionId: string, promptEntryId: string) => boolean | Promise<boolean>;
 	runOwnsSteers: (sessionId: string) => boolean;
-	deliveredUserTexts: (sessionId: string) => string[];
+	deliveredUserTexts: (sessionId: string) => string[] | Promise<string[]>;
 	effects?: boolean;
 }): Promise<{ queuedSessionIds: string[]; queuedCount: number; steeredCount: number }> {
 	const storePath = options.storePath ?? QUEUE_STORE;
 	const actorOwned =
 		storePath === QUEUE_STORE &&
-		sessionKernelStore().deliveryMigrationComplete();
+		await sessionDeliveryMigrationComplete();
+	if (storePath === QUEUE_STORE) queueMigrationState.complete = actorOwned;
+	const actorEntries = actorOwned
+		? await Promise.all([
+				sessionDelivery({ op: "entries", slot: "queued" }),
+				sessionDelivery({ op: "entries", slot: "steered" }),
+				sessionDelivery({ op: "entries", slot: "dispatch" }),
+			])
+		: undefined;
   const data: PersistedQueueState =
     actorOwned
       ? {
-          queued: Object.fromEntries(promptQueues),
-          steered: Object.fromEntries(steeredReceipts),
-          dispatching: Object.fromEntries(promptDispatches),
-	}
+					queued: Object.fromEntries(actorEntries![0]) as Record<
+						string,
+						QueueItem[]
+					>,
+					steered: Object.fromEntries(actorEntries![1]) as Record<
+						string,
+						QueueItem[]
+					>,
+					dispatching: Object.fromEntries(actorEntries![2]) as Record<
+						string,
+						PromptDispatch
+					>,
+		}
       : (readPersistedQueueState(storePath) ?? {});
   if (
     !Object.keys(data.queued || {}).length &&
@@ -451,16 +486,31 @@ export async function restorePersistedQueueState(options: {
     return { queuedSessionIds: [], queuedCount: 0, steeredCount: 0 };
 
 	if (actorOwned) {
-		const restorable = (sessionId: string) => !options.sessionQuarantined?.(sessionId);
-		for (const [sessionId] of promptQueues) {
+		const actorSessionIds = new Set([
+			...Object.keys(data.queued || {}),
+			...Object.keys(data.steered || {}),
+			...Object.keys(data.dispatching || {}),
+		]);
+		const quarantined = new Set(
+			(await Promise.all(
+				[...actorSessionIds].map(async (sessionId) =>
+					(await sessionQuarantineSnapshot(sessionId)) ||
+					(await options.sessionQuarantined?.(sessionId))
+						? sessionId
+						: undefined,
+				),
+			)).filter((sessionId): sessionId is string => !!sessionId),
+		);
+		const restorable = (sessionId: string) => !quarantined.has(sessionId);
+		for (const sessionId of Object.keys(data.queued || {})) {
 			if (!restorable(sessionId)) continue;
 			if (!options.sessionExists(sessionId)) await promptQueues.delete(sessionId);
 		}
-		for (const [sessionId, dispatch] of promptDispatches) {
+		for (const [sessionId, dispatch] of Object.entries(data.dispatching || {})) {
 			if (!restorable(sessionId)) continue;
 			const creationOwned =
 				dispatch.kind === "create" &&
-				(options.creationOwnsPrompt?.(sessionId, dispatch.promptEntryId) ||
+				((await options.creationOwnsPrompt?.(sessionId, dispatch.promptEntryId)) ||
 					!options.journalOwnsPrompt(sessionId, dispatch.promptEntryId));
 			// Creation dispatches intentionally precede the session file. The actor
 			// opening plan and effect remain their recovery authority in this window.
@@ -474,36 +524,51 @@ export async function restorePersistedQueueState(options: {
 			else await failPromptDispatch(sessionId, dispatch.promptEntryId, false);
 		}
 
-		let steeredCount = 0;
-		for (const [sessionId, items] of steeredReceipts) {
+		for (const [sessionId, items] of Object.entries(data.steered || {})) {
 			if (!restorable(sessionId)) continue;
 			if (!options.sessionExists(sessionId)) {
 				await steeredReceipts.delete(sessionId);
 				continue;
 			}
-			const delivered = options.deliveredUserTexts(sessionId);
+			const delivered = await options.deliveredUserTexts(sessionId);
 			const pending = queueWithIds(undeliveredSteers(items, delivered), sessionId);
 			if (options.runOwnsSteers(sessionId)) {
 				if (pending.length) await steeredReceipts.set(sessionId, pending);
 				else await steeredReceipts.delete(sessionId);
-				steeredCount += pending.length;
-			} else await requeueSteerReceipts(sessionId, delivered);
+			} else {
+				await sessionDelivery({
+					op: "requeue_steers",
+					sessionId,
+					items: pending,
+				});
+			}
 		}
+		const [finalQueued, finalSteered] = await Promise.all([
+			sessionDelivery({ op: "entries", slot: "queued" }),
+			sessionDelivery({ op: "entries", slot: "steered" }),
+		]);
 		if (options.effects !== false) {
 			persistQueues(storePath);
 			for (const sessionId of new Set([
-				...promptQueues.keys(),
-				...steeredReceipts.keys(),
+				...finalQueued.map(([sessionId]) => sessionId),
+				...finalSteered.map(([sessionId]) => sessionId),
 			])) if (restorable(sessionId)) await broadcastQueue(sessionId);
 		}
-		const queuedSessionIds = [...promptQueues.keys()].filter(restorable);
+		const queuedSessionIds = finalQueued
+			.map(([sessionId]) => sessionId)
+			.filter(restorable);
 		return {
 			queuedSessionIds,
-			queuedCount: queuedSessionIds.reduce(
-				(count, sessionId) => count + (promptQueues.get(sessionId)?.length ?? 0),
+			queuedCount: finalQueued.reduce(
+				(count, [sessionId, items]) =>
+					count + (restorable(sessionId) ? (items as unknown[]).length : 0),
 				0,
 			),
-			steeredCount,
+			steeredCount: finalSteered.reduce(
+				(count, [sessionId, items]) =>
+					count + (restorable(sessionId) ? (items as unknown[]).length : 0),
+				0,
+			),
 		};
 	}
 
@@ -520,7 +585,7 @@ export async function restorePersistedQueueState(options: {
 		if (
 			dispatch?.kind === "create" &&
 			dispatch.promptEntryId &&
-			(options.creationOwnsPrompt?.(sessionId, dispatch.promptEntryId) ||
+			((await options.creationOwnsPrompt?.(sessionId, dispatch.promptEntryId)) ||
 				!options.journalOwnsPrompt(sessionId, dispatch.promptEntryId))
 		) {
 			const createDispatch: PromptDispatch =
@@ -567,7 +632,7 @@ export async function restorePersistedQueueState(options: {
 	let steeredCount = 0;
 	for (const [sessionId, items] of Object.entries(data.steered || {})) {
 		if (!options.sessionExists(sessionId) || !items?.length) continue;
-		const delivered = options.deliveredUserTexts(sessionId);
+		const delivered = await options.deliveredUserTexts(sessionId);
 		const pending = queueWithIds(undeliveredSteers(items, delivered), sessionId);
 		if (!pending.length) continue;
 		if (options.runOwnsSteers(sessionId)) {
@@ -766,9 +831,12 @@ export function clientVisibleQueuedCount(sessionId: string): number {
 }
 
 /** One actor snapshot for list rendering, instead of one RPC per session. */
-export function clientVisibleQueuedCounts(): Map<string, number> {
+export async function clientVisibleQueuedCounts(): Promise<Map<string, number>> {
 	const counts = new Map<string, number>();
-	for (const [sessionId, value] of sessionKernelStore().deliveryEntries("queued")) {
+	for (const [sessionId, value] of await sessionDelivery({
+		op: "entries",
+		slot: "queued",
+	})) {
 		const items = value as QueueItem[];
 		const visible = items.filter(isClientVisibleQueueItem).length;
 		if (visible) counts.set(sessionId, visible);

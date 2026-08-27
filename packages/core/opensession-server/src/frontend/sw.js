@@ -110,19 +110,18 @@ const MAX_ASSETS = 80;
  * Their own cache rather than ASSET_CACHE: that one is pruned oldest-first,
  * and precached entries are by definition the oldest ones there.
  *
- * Posters, not the mp4 cuts. Each webp is its video's first frame and is
- * already the still fallback an offline visitor gets (UserPicker.tsx,
- * AuthBackdrop), so ~7KB buys the whole picture where 750KB would buy the
- * motion.
+ * The same fixed light/dark artwork used by onboarding is small enough to
+ * cache in full, so offline and reduced-motion visitors see the real surface.
+ * v2 retires the old Silver Silk posters from the cache.
  */
-const GATE_CACHE = "os1-shell-gate-v1";
+const GATE_CACHE = "os1-shell-gate-v2";
 const GATE_PATHS = [
   "/mac-app-icon.png",
-  "/signin-bg.webp",
-  "/signin-bg-dark.webp",
+  "/onboarding-bg.webp",
+  "/onboarding-bg-dark.webp",
 ];
 const GATE_RE =
-  /^\/(?:opensession\/|backstage\/)?(?:mac-app-icon\.png|signin-bg(?:-dark)?\.webp)$/;
+  /^\/(?:opensession\/|backstage\/)?(?:mac-app-icon\.png|onboarding-bg(?:-dark)?\.webp)$/;
 
 self.addEventListener("fetch", (event) => {
   const req = event.request;

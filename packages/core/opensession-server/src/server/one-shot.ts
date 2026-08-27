@@ -20,13 +20,16 @@ import {
   type SessionEffort,
 } from "./models";
 import { isShuttingDown } from "./shutdown-state";
+import { envCapacity } from "./shared/env-capacity";
 
 const DEFAULT_ONESHOT_MODEL = "pi/anthropic/claude-haiku-4-5";
 const DEFAULT_TIMEOUT_MS = 120_000;
 const ONESHOT_CWD = `${PI_STATE_DIR}/oneshot`;
-const ONESHOT_CONCURRENCY = Math.max(
+const ONESHOT_CONCURRENCY = envCapacity(
+  "OPENSESSION_ONESHOT_CONCURRENCY",
+  4,
   1,
-  Number(process.env.OPENSESSION_ONESHOT_CONCURRENCY || 4),
+  64,
 );
 
 type OneShotPool = {

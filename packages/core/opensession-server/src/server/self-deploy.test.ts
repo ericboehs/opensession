@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdtempSync, rmSync, writeFileSync } from "fs";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join, resolve } from "path";
 import {
@@ -167,6 +167,8 @@ describe("deploy/self-deploy.sh", () => {
 		expect(script).toContain('migration_env+=("OPENSESSION_STATE_DIR=');
 		expect(script).toContain('migration_env+=("OPENSESSION_SESSIONS_DIR=');
 		expect(script).toContain("migrate-session-kernel-storage.ts");
+		expect(script).toContain('merge-base --is-ancestor "$current" "$target_sha"');
+		expect(script).toContain("refusing stale/parallel release");
 	});
 
 	test("the server launches through the fixed privileged helper", async () => {
@@ -176,10 +178,56 @@ describe("deploy/self-deploy.sh", () => {
 		expect(source).toContain("Environment=OPENSESSION_BUN_BIN=${process.execPath}");
 		expect(source).toContain("Environment=OPENSESSION_STATE_DIR=");
 		expect(source).toContain("Environment=OPENSESSION_SESSIONS_DIR=");
+		const deployTool = source.indexOf("async (args: { sha?: string; confirm: boolean })");
+		const stateDir = source.indexOf("const stateDir = deployStateDir();", deployTool);
+		const runtime = source.indexOf("const runtime = `${stateDir}/current`;", deployTool);
+		expect(stateDir).toBeGreaterThan(deployTool);
+		expect(stateDir).toBeLessThan(runtime);
 		const helper = await Bun.file(
 			resolve(import.meta.dir, "../../../../../deploy/opensession-run-host"),
 		).text();
 		expect(helper).toContain('-p "EnvironmentFile=$env_file"');
 		expect(helper).toContain('-p "Environment=OPENSESSION_BUN_BIN=$bun_bin"');
+	});
+});
+
+describe("deploy/release-checkout.sh", () => {
+	test("prepares and atomically selects a commit without changing dirty WIP", () => {
+		const source = join(dir, "source");
+		const state = join(dir, "state");
+		const fakeBun = join(dir, "bun");
+		mkdirSync(source);
+		mkdirSync(state);
+		writeFileSync(fakeBun, "#!/bin/sh\nexit 0\n");
+		chmodSync(fakeBun, 0o755);
+		for (const args of [
+			["init", "-q"],
+			["config", "user.email", "release-test@example.invalid"],
+			["config", "user.name", "Release Test"],
+		]) {
+			expect(Bun.spawnSync(["git", "-C", source, ...args]).exitCode).toBe(0);
+		}
+		writeFileSync(join(source, "app.txt"), "committed\n");
+		expect(Bun.spawnSync(["git", "-C", source, "add", "app.txt"]).exitCode).toBe(0);
+		expect(Bun.spawnSync(["git", "-C", source, "commit", "-qm", "initial"]).exitCode).toBe(0);
+		const sha = new TextDecoder().decode(
+			Bun.spawnSync(["git", "-C", source, "rev-parse", "HEAD"]).stdout,
+		).trim();
+		writeFileSync(join(source, "app.txt"), "unfinished WIP\n");
+
+		const script = resolve(import.meta.dir, "../../../../../deploy/release-checkout.sh");
+		const env = {
+			...process.env,
+			OPENSESSION_DEPLOY_CHECKOUT: source,
+			OPENSESSION_DEPLOY_STATE: state,
+			OPENSESSION_BUN_BIN: fakeBun,
+		};
+		const prepared = Bun.spawnSync(["bash", script, "prepare", sha], { env });
+		expect(prepared.exitCode).toBe(0);
+		const release = new TextDecoder().decode(prepared.stdout).trim();
+		expect(readFileSync(join(release, "app.txt"), "utf8")).toBe("committed\n");
+		expect(readFileSync(join(source, "app.txt"), "utf8")).toBe("unfinished WIP\n");
+		expect(Bun.spawnSync(["bash", script, "switch", sha], { env }).exitCode).toBe(0);
+		expect(readlinkSync(join(state, "current"))).toBe(release);
 	});
 });

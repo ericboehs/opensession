@@ -5,9 +5,11 @@ import type {
 import { isDeliveryReadRequest } from "./delivery-protocol";
 import type { SessionActorReducerCommand } from "./lifecycle-protocol";
 import { sessionKernelStoreRoute } from "./store-routing";
+import { isTranscriptRead } from "./transcript-protocol";
 
 export type SessionActorRoute =
   | { scope: "global" }
+  | { scope: "catalog_read" }
   | { scope: "session"; sessionId: string; mutation: boolean }
   | { scope: "outbox"; id: number; mutation: boolean };
 
@@ -15,6 +17,7 @@ export function isReadReducer(command: SessionActorReducerCommand): boolean {
   if (command.kind === "ask")
     return command.request.op === "snapshot" || command.request.op === "entries";
   if (command.kind === "delivery") return isDeliveryReadRequest(command.request);
+  if (command.kind === "transcript") return isTranscriptRead(command.request);
   return command.kind === "turn" && command.request.op === "snapshot";
 }
 
@@ -23,19 +26,6 @@ export function sessionActorReducerRoute(
   command: SessionActorReducerCommand,
 ): SessionActorRoute {
   switch (command.kind) {
-    case "agent_operation":
-      // Queries fail closed by durably quarantining contradictory receipts.
-      return {
-        scope: "session",
-        sessionId: command.request.identity.sessionId,
-        mutation: true,
-      };
-    case "agent_host_supervision":
-      return {
-        scope: "session",
-        sessionId: command.request.sessionId,
-        mutation: true,
-      };
     case "creation_event":
       return {
         scope: "session",
@@ -53,6 +43,7 @@ export function sessionActorReducerRoute(
     case "turn":
     case "timer":
     case "gateway":
+    case "transcript":
       return "sessionId" in command.request
         ? {
             scope: "session",
@@ -79,6 +70,12 @@ export function sessionActorServiceRoute(
   if (request.t === "call") {
     if (request.request.t === "reduce")
       return sessionActorReducerRoute(request.request.command);
+    // These lists are durable catalog projections. They may be read concurrently
+    // with unrelated session mailboxes; waiting for every session turn would
+    // make the ordinary sessions API disappear during long runs.
+    if (["askEntries", "deliveryEntries", "quarantinedSessions"].includes(
+      request.request.method,
+    )) return { scope: "catalog_read" };
     return sessionKernelStoreRoute(
       request.request.method,
       request.request.args,
@@ -129,8 +126,14 @@ export function isPrioritySessionActorRequest(
   ) {
     const identity = command.request.identity;
     return !!identity && typeof identity === "object" &&
-      "command" in identity &&
-      ["cancel", "steer"].includes(String(identity.command));
+      (("priority" in identity && identity.priority === true) ||
+        ("command" in identity && [
+          "cancel",
+          "steer",
+          "interrupt_prompt",
+          "steer_queued_prompt",
+          "interrupt_queued_prompt",
+        ].includes(String(identity.command))));
   }
   return false;
 }

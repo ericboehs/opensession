@@ -1068,7 +1068,7 @@ export async function handlePrRoutes(
 				"review",
 				target.ghRepo,
 			);
-      const runTarget = sessionKernel(bksId).runState();
+      const runTarget = sessionKernel(bksId).runStateProjection();
       const targetRunId =
         runTarget.currentRunId ||
         (runTarget.state === "starting" || runTarget.state === "preparing"

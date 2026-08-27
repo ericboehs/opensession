@@ -1040,8 +1040,8 @@ function ProviderSummaryRow({
  *
  * It opens collapsed — one row per provider with its account count — because
  * the full list is a page of usage meters and the question people arrive with
- * is "do we have capacity here". "All accounts" restores the flat list. The
- * same view switch and inline foldout are used during onboarding. */
+ * is "do we have capacity here". "All accounts" restores the flat list in
+ * Settings; onboarding keeps the simpler provider summary. */
 export function ProviderAccountsSection({
 	onboarding = false,
 	onChanged,
@@ -1065,7 +1065,10 @@ export function ProviderAccountsSection({
 	return (
 		<>
 			<SettingsGroupLabel
-				className="phone:[&>span]:w-full phone:[&>div]:w-full phone:[&>div]:flex-wrap"
+				className={cn(
+					"phone:[&>span]:w-full phone:[&>div]:w-full phone:[&>div]:flex-wrap",
+					onboarding && "px-6",
+				)}
 				actions={
 				<>
 					{!onboarding && (
@@ -1085,6 +1088,7 @@ export function ProviderAccountsSection({
 							render={
 								<Button
 									size="sm"
+									variant="default"
 									className="phone:min-h-11"
 									icon={<IconPlus size={16} />}
 									caret
@@ -1109,15 +1113,17 @@ export function ProviderAccountsSection({
 			>
 				<span className="inline-flex flex-wrap items-center gap-x-3 gap-y-1.5">
 					Subscriptions
-					<Segmented
-						label="Account view"
-						size="sm"
-						value={view}
-						onValueChange={(next) => setView(next as "providers" | "accounts")}
-					>
-						<SegmentedOption value="providers">Providers</SegmentedOption>
-						<SegmentedOption value="accounts">All accounts</SegmentedOption>
-					</Segmented>
+					{!onboarding && (
+						<Segmented
+							label="Account view"
+							size="sm"
+							value={view}
+							onValueChange={(next) => setView(next as "providers" | "accounts")}
+						>
+							<SegmentedOption value="providers">Providers</SegmentedOption>
+							<SegmentedOption value="accounts">All accounts</SegmentedOption>
+						</Segmented>
+					)}
 				</span>
 			</SettingsGroupLabel>
 
@@ -1155,7 +1161,7 @@ export function ProviderAccountsSection({
 				</Modal.Content>
 			</Modal.Root>
 
-			<SettingCard>
+			<SettingCard className={onboarding ? "p-1" : undefined}>
 				{loading ? (
 					<LoadingState placement="row">Loading accounts…</LoadingState>
 				) : empty ? (
@@ -1194,7 +1200,7 @@ export function ProviderAccountsSection({
 					</>
 				)}
 			</SettingCard>
-			<SettingsHint>
+			<SettingsHint className={onboarding ? "mt-4 px-6" : undefined}>
 				Runs rotate through shared accounts for the selected model. Personal accounts
 				are used only for their owner's runs.
 			</SettingsHint>

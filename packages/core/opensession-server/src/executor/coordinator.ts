@@ -18,6 +18,7 @@ import {
   runHostsDir,
 } from "../runner-host/protocol";
 import { writeJsonAtomic } from "../server/shared/atomic-write";
+import { envCapacity } from "../server/shared/env-capacity";
 import {
   hostUnitActive,
   launchHostUnitDirect,
@@ -27,6 +28,16 @@ import {
 import { timingSafeEqual } from "crypto";
 
 const HOST_ID_RE = /^rh-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+// Bounds concurrent launch requests crossing the control socket, not active
+// hosts. Executor service process: it does not load ~/.opensession.env, so an
+// override only takes effect through a systemd drop-in on
+// opensession-executor.service.
+const LAUNCH_INFLIGHT_LIMIT = envCapacity(
+  "OPENSESSION_EXECUTOR_LAUNCH_CONCURRENCY",
+  8,
+  1,
+  64,
+);
 const HASH_RE = /^[0-9a-f]{64}$/i;
 
 interface LaunchRecord {
@@ -263,7 +274,7 @@ export class ExecutorCoordinator {
       }
       return active.promise;
     }
-    if (this.inflight.size >= 8) {
+    if (this.inflight.size >= LAUNCH_INFLIGHT_LIMIT) {
       throw new CoordinatorError(
         "executor_busy",
         "executor launch capacity is full; retry shortly",

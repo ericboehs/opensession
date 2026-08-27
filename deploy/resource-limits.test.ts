@@ -25,10 +25,28 @@ describe("host resource-limit deployment", () => {
     expect(dropIn).toContain("OOMPolicy=stop");
   });
 
-  test("the host deploy installs both resource-control units", async () => {
+  test("the authoritative kernel has an independent memory fuse", async () => {
+    const dropIn = await Bun.file(
+      resolve(
+        import.meta.dir,
+        "systemd/opensession-session-kernel.service.d/capacity.conf",
+      ),
+    ).text();
+
+    expect(dropIn).toContain("MemoryHigh=4G");
+    expect(dropIn).toContain("MemoryMax=6G");
+    expect(dropIn).toContain("MemorySwapMax=1G");
+    expect(dropIn).toContain("OOMPolicy=stop");
+    expect(dropIn).not.toContain("EnvironmentFile=");
+  });
+
+  test("the host deploy installs all resource-control units", async () => {
     const deploy = await Bun.file(resolve(repoRoot, "deploy/deploy.sh")).text();
 
     expect(deploy).toContain("deploy/systemd/opensession.service.d/resources.conf");
+    expect(deploy).toContain(
+      "deploy/systemd/opensession-session-kernel.service.d/capacity.conf",
+    );
     expect(deploy).toContain("deploy/systemd/user/opensession.slice");
     expect(deploy).toContain("systemctl --user start opensession.slice");
   });

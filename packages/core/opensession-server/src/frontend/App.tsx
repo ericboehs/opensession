@@ -12,6 +12,7 @@ import {
 import { reviewRequestTargetsPerson } from "./lib/review-queue";
 import { repoLabel } from "./lib/repo-label";
 import { NO_REPO } from "./lib/session-repo";
+import { sessionReferenceTitle } from "./lib/session-title";
 import { ASK_BAND } from "./lib/sidebar-workspaces";
 import {
 	sidebarStartsCollapsed,
@@ -85,6 +86,7 @@ import { clearDraft, saveDraft, NEW_SESSION_DRAFT_KEY } from "./lib/drafts";
 import { dropStagingAttachments } from "./lib/attachments";
 import type { NewSessionPrefill } from "./lib/new-session-link";
 import {
+	errorMatchesPendingCreate,
 	shouldApplyCreatedSessionReply,
 	shouldOpenCreatedSession,
 } from "./lib/new-session-navigation";
@@ -828,21 +830,17 @@ export function App(
 	// can't read this from context, so hand it the names we already poll.
 	// No-ops unless a name actually changed.
 	//
-	// The name is the WORKSPACE's, not the session's, for the same reason a
-	// sidebar row takes it (Sidebar.tsx) and the viewer header shows it: a
-	// reference is read as "that piece of work", and clicking one lands on a
-	// page titled after the workspace. Labelling the chip after one of its
-	// tabs promised a name the destination doesn't show. That tab is often a
-	// machine-made per-run label ("Review · PR #5741 …") where the workspace
-	// is what a person recognizes. A session title is the fallback, for a
-	// session whose workspace this client has no name for.
+	// Human sessions name the workspace they open, matching the sidebar and
+	// viewer header. Worker references are different: their session title says
+	// which delegated task the chip opens, while their inherited workspace name
+	// would incorrectly repeat the parent session's subject for every worker.
 	useEffect(() => {
 		setSessionTitles(
 			sessions.map(
 				(s) =>
 					[
 						s.id,
-						s.workspaceName || s.title,
+						sessionReferenceTitle(s),
 						s.isRunning,
 						s.title,
 						s.aliasIds,
@@ -883,7 +881,7 @@ export function App(
 									...(session
 										? {
 												id: session.id,
-												title: session.workspaceName || session.title,
+												title: sessionReferenceTitle(session),
 												tabTitle: session.title,
 												aliases: session.aliasIds,
 												archived: session.archived === true,
@@ -1891,7 +1889,6 @@ const path = await resolveAnonymousUserPath(
 				originPath: routePath(routeRef.current),
 			};
 			pendingCreateDraftRef.current = draft;
-			if (!started.openImmediately) return;
 
 			const shell: UnifiedSession = {
 				id: started.id,
@@ -1916,10 +1913,16 @@ const path = await resolveAnonymousUserPath(
 				workspacePreparing: true,
 			};
 			flushSync(() => {
+				// Every create appears in the sidebar at send time. Background and
+				// "Create more" used to wait for session_created even though the open
+				// action already had this complete deterministic shell.
 				inject(shell, { sticky: true });
-				setOptimisticSession(shell);
-				setPalette({ open: false });
+				if (started.openImmediately) {
+					setOptimisticSession(shell);
+					setPalette({ open: false });
+				}
 			});
+			if (!started.openImmediately) return;
 			if (started.prompt || started.images?.length) {
 				setPendingInitialPrompts((current) => ({
 					...current,
@@ -2150,10 +2153,7 @@ const path = await resolveAnonymousUserPath(
 			if (msg.type === "error") {
 				const draft = pendingCreateDraftRef.current;
 				const errorSessionId = "sessionId" in msg ? msg.sessionId : undefined;
-				if (
-					draft?.openImmediately &&
-					(!errorSessionId || errorSessionId === draft.id)
-				) {
+				if (draft && errorMatchesPendingCreate(errorSessionId, draft.id)) {
 					pendingCreateDraftRef.current = null;
 					clearTimeout(pendingTimer.current);
 					setPendingSessionId((pending) =>
@@ -2170,21 +2170,23 @@ const path = await resolveAnonymousUserPath(
 					});
 					unstick(draft.id);
 					remove(draft.id);
-					// The accepted send cleared the global composer immediately. Put
-					// its submitted payload back before reopening only when creation
-					// itself fails, so recovery never holds the normal path hostage.
-					saveDraft(NEW_SESSION_DRAFT_KEY, {
-						text: draft.prompt,
-						images: draft.images ?? [],
-						files: draft.files ?? [],
-					});
-					if (
-						routeRef.current.view === "session" &&
-						routeRef.current.id === draft.id
-					) navigate(parseRoute(draft.originPath));
-					primeSoftKeyboard();
-					setPaletteState((current) => ({ ...current, open: true }));
-					toast(msg.message || "Couldn't create the session.");
+					if (draft.openImmediately) {
+						// The accepted send cleared the global composer immediately. Put
+						// its submitted payload back before reopening only when creation
+						// itself fails, so recovery never holds the normal path hostage.
+						saveDraft(NEW_SESSION_DRAFT_KEY, {
+							text: draft.prompt,
+							images: draft.images ?? [],
+							files: draft.files ?? [],
+						});
+						if (
+							routeRef.current.view === "session" &&
+							routeRef.current.id === draft.id
+						) navigate(parseRoute(draft.originPath));
+						primeSoftKeyboard();
+						setPaletteState((current) => ({ ...current, open: true }));
+						toast(msg.message || "Couldn't create the session.");
+					}
 					return;
 				}
 			}
@@ -3742,6 +3744,7 @@ console.error("Rename failed:", e);
 					refresh();
 				}}
 				onClose={closeSession}
+				onDelete={deleteSessionFromTab}
 				onToast={showToast}
 				onRestore={restoreSession}
 			/>
@@ -4175,8 +4178,59 @@ if (siblingCreateRef.current === optimisticId)
 	};
 	const confirmRunningClose = (session: UnifiedSession, onConfirm: () => void) =>
 		confirmRunningCloses([session], onConfirm);
+	const archiveWorkspaceFromHeader = (members: UnifiedSession[]) => {
+		if (!members.length) return;
+		confirmRunningCloses(members, () => {
+			void (async () => {
+				goBack();
+				for (const member of members) {
+					patch(member.id, { archived: true, archivedReason: "manual" });
+				}
+				try {
+					await Promise.all(
+						members.map((member) => archiveSessionApi(member.id, true)),
+					);
+					rememberArchived(members.map((member) => member.id));
+					dropStalePins(members);
+					refresh();
+				} catch (error) {
+					console.error("Archive workspace failed:", error);
+					for (const member of members) {
+						patch(member.id, {
+							archived: false,
+							archivedReason: undefined,
+						});
+					}
+				}
+			})();
+		});
+	};
+	const deleteWorkspaceFromHeader = async (workspaceId: string) => {
+		await deleteWorkspaceApi(workspaceId);
+		refreshWorkspaces();
+		refresh();
+		if (route.view === "workspace" && route.id === workspaceId) goBack();
+	};
 	const closeSession = (s: UnifiedSession) =>
 		confirmRunningClose(s, () => void closeSessionNow(s));
+	const deleteSessionFromTab = async (
+		session: UnifiedSession,
+		cleanWorktree: boolean,
+	) => {
+		const wasOpen = currentSession?.id === session.id;
+		const next = wasOpen
+			? workspaceSessions.find((candidate) => candidate.id !== session.id)
+			: undefined;
+		await deleteSessionApi(session.id, cleanWorktree);
+		remove(session.id);
+		if (wasOpen) {
+			if (next) navigate({ view: "session", id: next.id });
+			else if (activeWorkspaceId)
+				navigate({ view: "workspace", id: activeWorkspaceId });
+			else goBack();
+		}
+		refresh();
+	};
 	const selectSessionTab = (next: UnifiedSession) => {
 		const empty =
 			currentSession &&
@@ -4819,6 +4873,7 @@ if (siblingCreateRef.current === optimisticId)
 		<MarkdownRepoProvider key={viewerSession.id} repo={viewerSession.repo}>
 			<SessionViewer
 				key={viewerSession.id}
+				canRepairSafety={auth?.admin === true}
 				onOpenPr={(repo, branch) => navigate({ view: "pr", repo, branch })}
 				session={viewerSession}
 				focused={focused}
@@ -4986,7 +5041,8 @@ console.error("Rename failed:", error);
 				}}
 				workspaceName={
 					activeWorkspaceId
-						? workspaces.find((project) => project.id === activeWorkspaceId)?.name
+						? workspaces.find((project) => project.id === activeWorkspaceId)?.name ??
+							viewerSession.workspaceName
 						: undefined
 				}
 				onRenameWorkspace={
@@ -4999,6 +5055,16 @@ console.error("Rename workspace failed:", error);
 });
 								refreshWorkspaces();
 							}
+						: undefined
+				}
+				onArchiveWorkspace={
+					activeWorkspaceId
+						? () => archiveWorkspaceFromHeader(workspaceSessions)
+						: undefined
+				}
+				onDeleteWorkspace={
+					activeWorkspaceId
+						? () => deleteWorkspaceFromHeader(activeWorkspaceId)
 						: undefined
 				}
 			/>
@@ -5694,16 +5760,14 @@ console.error("Rename workspace failed:", error);
 });
 										refreshWorkspaces();
 									}}
-									onArchiveSession={(session, archived) => {
-										if (archived) closeSession(session);
-										else void unarchiveSessions([session]);
-									}}
-									onDeleteSession={async (session, cleanWorktree) => {
-										await deleteSessionApi(session.id, cleanWorktree);
-										remove(session.id);
-										refresh();
-									}}
-									onOpenNewSession={openPrefilledSession}
+									archivedSessions={archivedSessions}
+									onRestoreSession={restoreSession}
+									onArchiveWorkspace={() =>
+										archiveWorkspaceFromHeader(workspaceSessions)
+									}
+									onDeleteWorkspace={() =>
+										deleteWorkspaceFromHeader(routeWorkspace.id)
+									}
 									rightPanelEl={rightPanelEl}
 								/>
 							) : workspacesLoaded ? (

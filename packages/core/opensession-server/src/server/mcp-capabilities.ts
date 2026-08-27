@@ -41,9 +41,9 @@ export const INTERNAL_MCP_CAPABILITIES = {
       "Search the durable record of past sessions when earlier work, decisions, or findings may answer the task.",
   },
   "opensession-self-deploy": {
-    summary: "Deploy this instance to a sha and restart the live server.",
+    summary: "Standard deploy of an ordinary source change to the live instance.",
     guidance:
-      "Deploy this Open Session instance to a specific commit and restart it. Use only when the task explicitly requires deploying the instance.",
+      "Deploy an ordinary frontend, backend, protocol, or dependency change to a specific commit. It restarts all three runtime services but does not refresh root-owned host artifacts; changes to live deploy controllers, service templates, credential installers, the run-host helper, or root-managed systemd artifacts require the documented full root deploy instead. Use only when the task explicitly requires deploying the instance.",
   },
   "opensession-humans": {
     summary: "Ask a teammate and fold their answer back into this session.",

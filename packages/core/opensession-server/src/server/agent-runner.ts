@@ -25,7 +25,11 @@ import {
 } from "./run-state";
 import type { StreamEvent, ImageInput } from "./run-events";
 import { isShuttingDown } from "./shutdown-state";
-import { sessionKernelStore, sessionTurn } from "./session-kernel/kernel";
+import {
+  sessionQuarantineSnapshot,
+  sessionTurn,
+  sessionTurnSnapshot,
+} from "./session-kernel/kernel";
 // Type-only, so the direct engines stay lazily loaded (see the dispatch table
 // below): this pulls in the contract's signatures, never the SDKs.
 // Static import is deliberate: the pi-runner module itself is cheap (the
@@ -316,7 +320,10 @@ function recordPoolDryShortCircuit(opts: RunAgentOpts, model: string, reason: st
 }
 
 
-function runOnModel(opts: RunAgentOpts, model: string | undefined): AsyncIterable<StreamEvent> {
+async function* runOnModel(
+  opts: RunAgentOpts,
+  model: string | undefined,
+): AsyncGenerator<StreamEvent> {
   // All production turns route to Pi. The fake seam stays before dispatch so
   // consumer tests exercise the same context logging and fallback walk.
   const requested = model || getDefaultModel();
@@ -340,7 +347,7 @@ function runOnModel(opts: RunAgentOpts, model: string | undefined): AsyncIterabl
   // for EVERY engine — the direct SDK adapters assemble their own tool lists
   // and would each need their own call otherwise. What the runner adds below
   // it (`mcp-servers`) is the resolution of this scope, not a second copy.
-  logStandingJson({
+  await logStandingJson({
     sessionId: opts.journal?.osSessionId || opts.transcriptSessionId,
     turnId: opts.promptEntryId || opts.startToken,
     source: "tools",
@@ -361,9 +368,12 @@ function runOnModel(opts: RunAgentOpts, model: string | undefined): AsyncIterabl
       localWorkspaceToolsDisabled: !!opts.disableLocalWorkspaceTools,
     },
   });
-  if (engineForTest) return engineForTest(opts, mapped);
+  if (engineForTest) {
+    yield* engineForTest(opts, mapped);
+    return;
+  }
   const route = routeModel(requested, { interactive: isInteractiveRun(opts) });
-  return runPi(opts, route.model);
+  yield* runPi(opts, route.model);
 }
 
 /** Pi owns every live engine session transcript. */
@@ -1065,7 +1075,12 @@ export function currentAgentRunToken(id: string): string | undefined {
   const owner = sessionRunOwners.get(id);
   if (owner) return owner;
   const pending = pendingStarts.get(id);
-  return pending?.size === 1 ? pending.values().next().value : undefined;
+  if (pending?.size === 1) return pending.values().next().value;
+  // A detached host survives a gateway restart, while the process-local owner
+  // maps do not. Boot recovery tracks the immutable journal lineage before it
+  // reattaches the host; expose that exact token so steer/cancel can reach the
+  // recovered run instead of silently falling back to the durable queue.
+  return activeRecoveryRuns.get(id)?.runKey;
 }
 
 /** Cancel one exact physical dispatch without crossing onto a successor that
@@ -1237,12 +1252,12 @@ type AskHandler = NonNullable<RunAgentOpts["onAskUser"]>;
  * `inProcessMcpFor` and `reposNoteFor` rebuild trusted interactive context
  * that is deliberately not serialized into the restart journal.
  */
-function durableCancelRecoveryOwnership(
+async function durableCancelRecoveryOwnership(
   run: ActiveRunRecord,
-): "owned" | "none" | "unknown" {
+): Promise<"owned" | "none" | "unknown"> {
   if (!run.osSessionId) return "none";
   try {
-    return sessionKernelStore().turnSnapshot(run.osSessionId).cancel?.runId === run.runKey
+    return (await sessionTurnSnapshot(run.osSessionId)).cancel?.runId === run.runKey
       ? "owned"
       : "none";
   } catch {
@@ -1250,12 +1265,12 @@ function durableCancelRecoveryOwnership(
   }
 }
 
-export function durableCancelOwnsRecovery(run: ActiveRunRecord): boolean {
-  return durableCancelRecoveryOwnership(run) === "owned";
+export async function durableCancelOwnsRecovery(run: ActiveRunRecord): Promise<boolean> {
+  return await durableCancelRecoveryOwnership(run) === "owned";
 }
 
 export async function reissueDurableRecoveryCancel(run: ActiveRunRecord): Promise<boolean> {
-  if (!durableCancelOwnsRecovery(run)) return false;
+  if (!await durableCancelOwnsRecovery(run)) return false;
   // Keep the immutable latch live even when the original outbox already
   // settled before a gateway crash. Once recovery attaches a control under
   // this run key, repeated calls deliver cancellation to that exact owner.
@@ -1263,20 +1278,24 @@ export async function reissueDurableRecoveryCancel(run: ActiveRunRecord): Promis
   return await cancelAgentRun(run.runKey);
 }
 
-function settleDurableCancelForAbsentOwner(run: ActiveRunRecord): boolean {
+async function settleDurableCancelForAbsentOwner(run: ActiveRunRecord): Promise<boolean> {
   if (!run.osSessionId) return false;
-  const cancel = sessionKernelStore().turnSnapshot(run.osSessionId).cancel;
-  if (cancel?.runId !== run.runKey) return false;
-  if (cancel.phase !== "settled") {
-    sessionTurn({
+  const cancel = (await sessionTurnSnapshot(run.osSessionId)).cancel;
+  if (cancel?.runId === run.runKey && cancel.phase !== "settled") {
+    await sessionTurn({
       op: "settle_cancel",
       sessionId: run.osSessionId,
       cancelId: cancel.cancelId,
       outcome: "confirmed",
-    }).then(() => journalClearIfLineage(run)).catch((error) =>
-      console.error(`[runner] Failed to settle recovered cancellation for ${run.runKey}:`, error),
-    );
-  } else journalClearIfLineage(run);
+    });
+  }
+  // A queue interrupt records its cancellation fence in delivery state rather
+  // than session_kernel_turn.cancel. Once the host probe has positively proved
+  // this exact journal lineage absent, a stopped actor is sufficient authority
+  // to retire it; without the host proof this would be unsafe.
+  if (cancel?.runId !== run.runKey && getRunState(run.osSessionId) !== "stopped")
+    return false;
+  journalClearIfLineage(run);
   return true;
 }
 
@@ -1289,9 +1308,9 @@ export async function resumeInterruptedRuns(
   askHandlerFor?: (osSessionId: string) => AskHandler | undefined,
   inProcessMcpFor?: (osSessionId: string, user?: string) => Record<string, unknown> | undefined,
   reposNoteFor?: (osSessionId: string) => string | undefined,
-  onEvent?: (osSessionId: string, event: StreamEvent) => void,
+  onEvent?: (osSessionId: string, event: StreamEvent) => void | Promise<void>,
   snapshotLocalHostRuns: ActiveRunRecord[] = [],
-  deferRecovery?: (run: ActiveRunRecord) => boolean,
+  deferRecovery?: (run: ActiveRunRecord) => boolean | Promise<boolean>,
 ): Promise<string[]> {
   const resumed: string[] = [];
   const settledRunKeys = new Set<string>();
@@ -1300,10 +1319,13 @@ export async function resumeInterruptedRuns(
     if (run.osSessionId && !resumed.includes(run.osSessionId))
       resumed.push(run.osSessionId);
   };
-  const emitRecoveryEvent = (run: ActiveRunRecord, event: StreamEvent) => {
+  const emitRecoveryEvent = async (
+    run: ActiveRunRecord,
+    event: StreamEvent,
+  ): Promise<void> => {
     if (!run.osSessionId) return;
     try {
-      onEvent?.(run.osSessionId, event);
+      await onEvent?.(run.osSessionId, event);
     } catch (e) {
       console.error(`[runner] Recovered event observer failed for ${run.runKey}:`, e);
     }
@@ -1314,14 +1336,14 @@ export async function resumeInterruptedRuns(
     settlingRunKeys.add(run.runKey);
     rememberHandledSession(run);
     try {
-      emitRecoveryEvent(run, event);
+      await emitRecoveryEvent(run, event);
       try {
         await onResumed?.(run.osSessionId, event, run);
       } catch (e) {
         console.error(`[runner] Recovery settlement callback failed for ${run.runKey}:`, e);
       }
       if (run.osSessionId) {
-        const cancel = sessionKernelStore().turnSnapshot(run.osSessionId).cancel;
+        const cancel = (await sessionTurnSnapshot(run.osSessionId)).cancel;
         if (cancel?.runId === run.runKey && cancel.phase !== "settled")
           await sessionTurn({
             op: "settle_cancel",
@@ -1360,12 +1382,13 @@ export async function resumeInterruptedRuns(
       (current.firstJournaledAt || current.startedAt) === expectedLineage
     );
   };
-  const abandonStoppedRecovery = (
+  const abandonStoppedRecovery = async (
     run: ActiveRunRecord,
     cancelOwnership: "owned" | "none" | "unknown",
-  ): boolean => {
+  ): Promise<boolean> => {
     const stopped =
       !!run.osSessionId && getRunState(run.osSessionId) === "stopped";
+    const detached = !!(run.hostId || run.runnerId || run.sandboxId);
     // The durable effect owns this exact physical dispatch. Keep recovery
     // attached and its journal intact until cancellation and natural source
     // completion retire it.
@@ -1380,12 +1403,16 @@ export async function resumeInterruptedRuns(
       // including after a crash that followed actor settlement but preceded
       // source completion. A pre-engine in-process journal has no surviving
       // process after this boot and must never be re-run.
-      const detached = !!(run.hostId || run.runnerId || run.sandboxId);
-      if (detached) reissueDurableRecoveryCancel(run);
+      if (detached) await reissueDurableRecoveryCancel(run);
       return !detached;
     }
     const cancelled = cancelledRecoveries.delete(run);
     if (!cancelled && !stopped) return false;
+    // Actor state can prove that the logical turn stopped, but it cannot prove
+    // a detached physical owner exited. Reattach/probe the exact host lineage
+    // before clearing its journal; otherwise a queue successor can overlap a
+    // still-running predecessor.
+    if (detached) return false;
     journalClearIfLineage(run);
     return true;
   };
@@ -1393,16 +1420,33 @@ export async function resumeInterruptedRuns(
     run: ActiveRunRecord,
   ): Promise<boolean> => {
     let ownershipBackoffMs = 100;
-    let ownership = durableCancelRecoveryOwnership(run);
-    while (ownership === "unknown") {
+    const ownershipDeadline = Date.now() + 15_000;
+    let ownership = await durableCancelRecoveryOwnership(run);
+    while (ownership === "unknown" && Date.now() < ownershipDeadline) {
       // Keep the bounded worker, attached source, and lineage alive. Every
       // checkpoint retries actor ownership instead of one-shot abandoning.
       if (isShuttingDown()) return true;
       await Bun.sleep(ownershipBackoffMs);
       ownershipBackoffMs = Math.min(5_000, ownershipBackoffMs * 2);
-      ownership = durableCancelRecoveryOwnership(run);
+      ownership = await durableCancelRecoveryOwnership(run);
     }
-    return abandonStoppedRecovery(run, ownership);
+    if (ownership === "unknown") {
+      console.error(`[runner] Parking recovery ${run.runKey}: kernel ownership remained unavailable`);
+      return true;
+    }
+    const abandoned = await abandonStoppedRecovery(run, ownership);
+    if (
+      !abandoned &&
+      run.osSessionId &&
+      getRunState(run.osSessionId) === "stopped" &&
+      (run.hostId || run.runnerId || run.sandboxId)
+    ) {
+      // Before attach this is a harmless no-op; after attach it reaches the
+      // physical owner by immutable run/host aliases. Keep consuming recovery
+      // until terminal evidence arrives instead of dropping journal ownership.
+      cancelRecoveredEngine(run);
+    }
+    return abandoned;
   };
   const recoveryTask = (
     run: ActiveRunRecord,
@@ -1487,12 +1531,15 @@ export async function resumeInterruptedRuns(
   const snapshotSeeds = snapshotLocalHostRuns.filter(
     (run) => !!run.hostId && !run.sandboxId && !run.runnerId,
   );
-  const taken = (await takeInterruptedRuns(
+  const candidates = await takeInterruptedRuns(
     snapshotSeeds,
-    (run) =>
-      !run.osSessionId ||
-      !sessionKernelStore().quarantinedSession(run.osSessionId),
-  )).filter((run) => !deferRecovery?.(run));
+    async (run) =>
+      !run.osSessionId || !(await sessionQuarantineSnapshot(run.osSessionId)),
+  );
+  const taken: ActiveRunRecord[] = [];
+  for (const run of candidates) {
+    if (!await deferRecovery?.(run)) taken.push(run);
+  }
   // A graceful shutdown snapshot is intentionally broader than the shared
   // run journal: it also covers turns that finish during the drain. A local
   // detached host can still be alive even when its shared record disappeared
@@ -1580,7 +1627,7 @@ export async function resumeInterruptedRuns(
             markRecoveryProgress(run, event);
             if (event.type === "done" || event.type === "error") {
               terminalSeen = (await settleRecovery(run, event)) || terminalSeen;
-            } else emitRecoveryEvent(run, event);
+            } else await emitRecoveryEvent(run, event);
           }
           if (await checkpointStoppedRecovery(run)) return;
           if (!terminalSeen) {
@@ -1671,7 +1718,7 @@ export async function resumeInterruptedRuns(
             if (event.type === "done" || event.type === "error") {
               terminalSeen = (await settleRecovery(run, event)) || terminalSeen;
               recordRecovery(event.type === "done" ? "ok" : "failed", event.type);
-            } else emitRecoveryEvent(run, event);
+            } else await emitRecoveryEvent(run, event);
           }
           if (await checkpointStoppedRecovery(run)) return;
           if (!terminalSeen) {
@@ -1709,7 +1756,7 @@ export async function resumeInterruptedRuns(
         try {
           if (await checkpointStoppedRecovery(run)) return;
           Object.assign(run, journalStartRecovery(run));
-          if (run.osSessionId && !durableCancelOwnsRecovery(run))
+          if (run.osSessionId && !await durableCancelOwnsRecovery(run))
             await transitionRunState(run.osSessionId, "reattach_start", { run_key: run.runKey });
           const resumeLocalHost =
             localHostResumeForTest ??
@@ -1731,7 +1778,7 @@ export async function resumeInterruptedRuns(
             );
             return;
           }
-          if (run.osSessionId && !durableCancelOwnsRecovery(run))
+          if (run.osSessionId && !await durableCancelOwnsRecovery(run))
             await transitionRunState(
               run.osSessionId,
               reattached ? "reattach_ok" : "reattach_fail",
@@ -1745,7 +1792,7 @@ export async function resumeInterruptedRuns(
             // The launcher positively proved this cancelled host absent. Settle
             // actor ownership before retiring its journal and never resurrect
             // the stopped turn as a fresh engine run.
-            if (settleDurableCancelForAbsentOwner(run)) return;
+            if (await settleDurableCancelForAbsentOwner(run)) return;
             if (!run.prompt && !run.claudeSessionId) {
               await reportRecoveryFailure(
                 run,
@@ -1806,7 +1853,7 @@ export async function resumeInterruptedRuns(
             markRecoveryProgress(run, event);
             if (event.type === "done" || event.type === "error") {
               terminalSeen = (await settleRecovery(run, event)) || terminalSeen;
-            } else emitRecoveryEvent(run, event);
+            } else await emitRecoveryEvent(run, event);
           }
           if (await checkpointStoppedRecovery(run)) return;
           if (!terminalSeen && recoveryStillOwnsJournal(run)) {
@@ -1904,7 +1951,7 @@ export async function resumeInterruptedRuns(
             markRecoveryProgress(run, event);
             if (event.type === "done" || event.type === "error") {
               terminalSeen = (await settleRecovery(run, event)) || terminalSeen;
-            } else emitRecoveryEvent(run, event);
+            } else await emitRecoveryEvent(run, event);
           }
           if (await checkpointStoppedRecovery(run)) return;
           if (!terminalSeen)
@@ -1992,7 +2039,7 @@ export async function resumeInterruptedRuns(
           markRecoveryProgress(run, event);
           if (event.type === "done" || event.type === "error") {
             recoverySettled = (await settleRecovery(run, event)) || recoverySettled;
-          } else emitRecoveryEvent(run, event);
+          } else await emitRecoveryEvent(run, event);
         }
         if (await checkpointStoppedRecovery(run)) return;
         if (!recoverySettled)

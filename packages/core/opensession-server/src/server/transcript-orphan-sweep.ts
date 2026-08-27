@@ -15,10 +15,10 @@
  *
  * A stored session with ALL of:
  *
- * - **No session behind it.** Not in `getAllSessions()` (the native, linear
- *   and slack scanners, plus every alias id a dedupe folded away) and no
- *   session file of its own in the sessions dir. Both, because either source
- *   alone has a way of missing a real session.
+ * - **No session behind it.** Not in the durable session-list projection (the
+ *   native, linear and slack scanners, plus every alias id a dedupe folded
+ *   away) and no session file of its own in the sessions dir. Both, because
+ *   either source alone has a way of missing a real session.
  * - **A transcript made entirely of context-log records** (`isContextInjection`).
  *   This is the provable part: a session whose whole stored history is the
  *   harness's own bookkeeping never held a conversation, so there is nothing
@@ -53,7 +53,35 @@ import { readdirSync } from "fs";
 import { isContextInjection } from "@tellahq/opensession-protocol/notices";
 import { audit } from "./audit";
 import { OPENSESSION_SESSIONS_DIR } from "./paths";
-import { transcriptStore, type TranscriptStore } from "./transcript-store";
+import { transcript } from "./actor-transcript";
+import type { TranscriptEntry } from "./types";
+
+
+interface OrphanStore {
+	listStoredSessions(): Array<{ sessionId: string; lastTs: number | null; seqHighWater: number }> | Promise<Array<{ sessionId: string; lastTs: number | null; seqHighWater: number }>>;
+	countEvents(sessionId: string): number | Promise<number>;
+	readTail(sessionId: string, limit: number): { entries: TranscriptEntry[] } | Promise<{ entries: TranscriptEntry[] }>;
+	deleteSessionTranscript(sessionId: string): void | Promise<void>;
+}
+
+const actorOrphanStore: OrphanStore = {
+	async listStoredSessions() {
+		const rows: Array<{ sessionId: string; lastTs: number | null; seqHighWater: number }> = [];
+		let after = "";
+		for (;;) {
+			const ids = await transcript.sessionIds(200, after);
+			for (const sessionId of ids) {
+				const summary = await transcript.summary(sessionId);
+				if (summary) rows.push({ sessionId, ...summary });
+			}
+			if (ids.length < 200) return rows;
+			after = ids.at(-1)!;
+		}
+	},
+	countEvents: transcript.countEvents,
+	readTail: transcript.readTail,
+	deleteSessionTranscript: transcript.deleteSessionTranscript,
+};
 
 /** A stored session younger than this is never a candidate, whatever it holds. */
 const MIN_AGE_MS = 60 * 60_000;
@@ -94,21 +122,21 @@ function message(e: unknown): string {
 /**
  * Every session id that has something behind it. Two sources on purpose: the
  * sessions dir is the native store and a file there means a session exists
- * whatever a scanner made of it, while `getAllSessions()` is where the slack
- * and linear families live — along with the alias ids of sessions its dedupe
- * folded into another, which are exactly the ids that still own transcript
- * rows.
+ * whatever a scanner made of it, while the session-list projection is where
+ * the slack and linear families live — along with the alias ids of sessions
+ * its dedupe folded into another, which are exactly the ids that still own
+ * transcript rows.
  */
 async function knownSessionIdsFromDisk(): Promise<Set<string>> {
 	const known = new Set<string>();
 	for (const name of readdirSync(OPENSESSION_SESSIONS_DIR)) {
 		if (name.endsWith(".json")) known.add(name.slice(0, -5));
 	}
-	// Dynamic import: sessions.ts reaches run-rpc.ts, and this module must stay
+	// Dynamic import: session-cache.ts reaches run-rpc.ts, and this module must stay
 	// importable from a test (or any script) without binding the live socket.
 	// In the live process it resolves to the already-loaded module.
-	const { getAllSessions } = await import("./sessions");
-	for (const session of getAllSessions()) {
+	const { getSessionListSnapshotAsync } = await import("./session-cache");
+	for (const session of await getSessionListSnapshotAsync()) {
 		known.add(session.id);
 		for (const alias of session.aliasIds || []) known.add(alias);
 	}
@@ -118,13 +146,13 @@ async function knownSessionIdsFromDisk(): Promise<Set<string>> {
 /** True when every stored entry is a context-log record — and only when all of
  *  them were read, so a short read keeps the session rather than condemning it
  *  on a partial view. */
-function onlyContextRecords(
-	store: TranscriptStore,
+async function onlyContextRecords(
+	store: OrphanStore,
 	sessionId: string,
 	events: number,
-): boolean {
+): Promise<boolean> {
 	if (events === 0) return true;
-	const entries = store.readTail(sessionId, events).entries;
+	const entries = (await store.readTail(sessionId, events)).entries;
 	return entries.length === events && entries.every(isContextInjection);
 }
 
@@ -136,14 +164,14 @@ export async function sweepOrphanTranscripts(
 	opts: {
 		dryRun?: boolean;
 		/** Test seams: which store to sweep, who counts as known, what time it is. */
-		store?: TranscriptStore;
+		store?: OrphanStore;
 		knownSessionIds?: () => Set<string> | Promise<Set<string>>;
 		now?: number;
 	} = {},
 ): Promise<OrphanSweepSummary> {
 	const started = Date.now();
 	const now = opts.now ?? started;
-	const store = opts.store ?? transcriptStore();
+	const store = opts.store ?? actorOrphanStore;
 	const summary: OrphanSweepSummary = {
 		stored: 0,
 		known: 0,
@@ -184,9 +212,9 @@ export async function sweepOrphanTranscripts(
 	}
 	summary.known = known.size;
 
-	let stored: ReturnType<TranscriptStore["listStoredSessions"]>;
+	let stored: Awaited<ReturnType<OrphanStore["listStoredSessions"]>>;
 	try {
-		stored = store.listStoredSessions();
+		stored = await store.listStoredSessions();
 	} catch (e) {
 		summary.refused = `could not read the store: ${message(e)}`;
 		return finish();
@@ -205,7 +233,7 @@ export async function sweepOrphanTranscripts(
 		summary.orphans++;
 		let events = row.seqHighWater;
 		try {
-			if (events <= MAX_RECORD_ENTRIES) events = store.countEvents(row.sessionId);
+			if (events <= MAX_RECORD_ENTRIES) events = await store.countEvents(row.sessionId);
 		} catch (e) {
 			console.warn(
 				`[transcript-orphan-sweep] ${row.sessionId}: count failed: ${message(e)}`,
@@ -215,7 +243,7 @@ export async function sweepOrphanTranscripts(
 		const keep =
 			tooNew ||
 			events > MAX_RECORD_ENTRIES ||
-			!onlyContextRecords(store, row.sessionId, events);
+			!(await onlyContextRecords(store, row.sessionId, events));
 		if (keep) {
 			summary.keptOrphans++;
 			summary.keptEvents += events;

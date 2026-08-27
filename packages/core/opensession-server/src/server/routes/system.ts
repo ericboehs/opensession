@@ -13,28 +13,32 @@ import { configuredServer } from "../config";
 import { IS_DEV, buildFrontend, frontend, isPrebuiltFrontend, sharedCheckoutEditors } from "../frontend-build";
 import { getPins } from "../pins";
 import { getReads, isUnread } from "../reads";
-import { runErrors } from "../session-cache";
+import { invalidateSessionsCache, runErrors } from "../session-cache";
 import { getSessionControl } from "../session-control";
 import { MAX_UPLOAD_BYTES, stageHttpUpload } from "../uploads";
 import { systemStats } from "../system-stats";
-import { BOOT_ID, broadcastToAll } from "../ws-hub";
+import { BOOT_ID, broadcastToAll, broadcastToSession } from "../ws-hub";
 import {
 	executorClientHealth,
 	executorClientReadinessSnapshot,
 } from "../executor-client";
 import {
+	discardSessionDeadOutbox,
+	discardSessionDeadTimer,
+	releaseSessionQuarantine,
+	retrySessionDeadOutbox,
+	retrySessionDeadTimer,
+	sessionKernelDeadLetters,
 	sessionKernelHealth,
 	sessionKernelReadinessSnapshot,
-	sessionKernelStore,
 } from "../session-kernel";
 import { requireWorkspaceAdmin } from "../workspace-auth";
 import { audit } from "../audit";
 import { serviceReadiness } from "../service-readiness";
 
 // Each dead-letter listing fans out across every isolated session database on
-// the actor's catalog lane, and the synchronous bridge blocks the gateway for
-// the duration. Polling this endpoint therefore amplifies actor load exactly
-// when the actor is already degraded. Serve a short-TTL snapshot with
+// the actor's catalog lane. Polling this endpoint therefore amplifies actor
+// load exactly when the actor is already degraded. Serve a short-TTL snapshot with
 // single-flight refresh instead; mutations invalidate it immediately.
 const DEAD_LETTERS_CACHE_TTL_MS = 5_000;
 type DeadLettersEntry = {
@@ -53,7 +57,7 @@ export function deadLettersSnapshot(
 	limit: number,
 	offset: number,
 	load: (limit: number, offset: number) => unknown = () =>
-		sessionKernelStore().deadLetters(limit, offset),
+		sessionKernelDeadLetters(limit, offset),
 ): Promise<unknown> {
 	// One entry per page: a cached page A must never be served for page B.
 	const key = `${limit}:${offset}`;
@@ -136,15 +140,15 @@ export async function handleSystemRoutes(
 					{ status: 400 },
 				);
 			const discard = body.action === "discard";
-			const changed = validQuarantine
-				? sessionKernelStore().releaseQuarantine(body.sessionId as string)
+			const changed = await (validQuarantine
+				? releaseSessionQuarantine(body.sessionId as string)
 				: validTimer
 					? discard
-						? sessionKernelStore().discardDeadTimer(body.sessionId as string, body.timerId as string)
-						: sessionKernelStore().retryDeadTimer(body.sessionId as string, body.timerId as string)
+						? discardSessionDeadTimer(body.sessionId as string, body.timerId as string)
+						: retrySessionDeadTimer(body.sessionId as string, body.timerId as string)
 					: discard
-						? sessionKernelStore().discardDeadOutbox(Number(body.id))
-						: sessionKernelStore().retryDeadOutbox(Number(body.id));
+						? discardSessionDeadOutbox(Number(body.id))
+						: retrySessionDeadOutbox(Number(body.id)));
 			audit({
 				msg: "session_kernel_dead_letter_changed",
 				user: requestUser(ctx),
@@ -156,7 +160,17 @@ export async function handleSystemRoutes(
 				outbox_id: Number.isSafeInteger(body?.id) ? Number(body?.id) : undefined,
 				changed,
 			});
-			if (changed) deadLettersCaches.clear();
+			if (changed) {
+				deadLettersCaches.clear();
+				if (validQuarantine) {
+					invalidateSessionsCache();
+					broadcastToSession(body.sessionId as string, {
+						type: "session_status",
+						sessionId: body.sessionId,
+						isRunning: false,
+					});
+				}
+			}
 			return Response.json(
 				{ changed, action: validQuarantine ? "release" : discard ? "discard" : "retry" },
 				{ status: changed ? 200 : 404 },

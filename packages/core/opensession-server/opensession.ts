@@ -17,8 +17,10 @@ import { startRunnerPortalReaper } from "./src/server/runner-portals";
 import { startTodoReminderTicker } from "./src/server/todos";
 import { startGeneratedTitleSweep } from "./src/server/generated-titles";
 import { startLiveActivitySync } from "./src/server/live-activities";
-import { kickTranscriptBackfillOnce } from "./src/server/transcript-backfill";
-import { kickOrphanTranscriptSweep } from "./src/server/transcript-orphan-sweep";
+import {
+	drainPendingTranscriptWakeBatch,
+	drainPendingTranscriptWakesAfter,
+} from "./src/server/actor-transcript";
 import { makeAskHandler, restorePendingAsks } from "./src/server/asks";
 import { activeAutomationPreparationCount, automationResumeMcpForSession, ensureConfiguredAutomations, getWebhookRoutes, resumePendingAutomationRuns, setEventSessionCallback, settleResumedAutomationRun, startScheduler } from "./src/server/automations";
 import { startUsagePoller } from "./src/server/claude-accounts";
@@ -47,6 +49,7 @@ import {
 } from "./src/server/github-auth";
 import { startGoalTicker } from "./src/server/goal-runner";
 import { startSessionIndexSweeper } from "./src/server/session-index";
+import { startEventLoopLagMonitor } from "./src/server/system-stats";
 import { ensureWarmTemplateScheduler } from "./src/server/warm-template";
 import { handleRunnerWsUpgrade } from "./src/server/runner-ws";
 import { handleSandboxPortalRelayUpgrade } from "./src/server/sandbox-portal-relay";
@@ -55,7 +58,10 @@ import {
 	findSession,
 	findSessionAsync,
 	invalidateSessionsCache,
+	reconcileRecoverableSafetyFences,
 	recordRunOutcome,
+	startSessionOwnershipWatchdog,
+	stopSessionOwnershipWatchdog,
 } from "./src/server/session-cache";
 import { getSessionControl } from "./src/server/session-control";
 import { buildReposNote } from "./src/server/session-repos";
@@ -597,6 +603,17 @@ if (!g.__opensessionBooted) {
 			console.log(`[engine] claude CLI ${claudeBin}`);
 		}
 	}
+
+	// Pi's SDK can take over a minute to load cold. Keep the loader import-inert,
+	// then warm it explicitly from the process boot owner when Pi is enabled.
+	void import("./src/server/pi-config")
+		.then(async ({ piEngineEnabled }) => {
+			if (!piEngineEnabled()) return;
+			const { prewarmPiSdk } = await import("./src/server/pi-runner");
+			await prewarmPiSdk();
+		})
+		.catch((error) => console.warn("[pi-runner] Pi SDK prewarm failed:", error));
+
 	// Dev instances (src/server/dev-mode.ts) skip background work here:
 	// no agents, no webhook intake, no schedulers/sweeps, no detached-server
 	// adoption — a second instance next to production must never double-send
@@ -726,24 +743,17 @@ if (!g.__opensessionBooted) {
 	// Distil finished sessions into the search index (session-index.ts).
 	startSessionIndexSweeper();
 
+	// Gateway event-loop lag telemetry for /api/health and the health MCP tool
+	// (system-stats.ts). The session-performance contract only measures the
+	// client; this is the server-side counterpart.
+	startEventLoopLagMonitor();
+
 	// Re-try sidebar titles whose one-shot died in flight (a restart, or an
 	// engine-spawn outage) — without this they stay raw forever.
 	startGeneratedTitleSweep(() => {
 		invalidateSessionsCache();
 	});
 
-	// Transcript v2 (docs/transcripts.md): one-time full backfill of
-	// legacy transcripts into transcripts.db. The helper self-gates (marker
-	// file once it completed — already done since 2026-07-23); the delay keeps
-	// its import chunks out of the restart-resume window below.
-	setTimeout(() => kickTranscriptBackfillOnce(), 15_000);
-
-	// Junk transcripts: rows written under session ids that never had a session
-	// behind them (test harnesses, before the store's per-pid scratch database).
-	// Deletes only what it can prove is bookkeeping — see the module doc — and
-	// is idempotent, so it runs every boot rather than once ever. Delayed past
-	// the restart-resume window so it never competes with a waking session.
-	setTimeout(() => kickOrphanTranscriptSweep(), 45_000);
 	} else {
 		agents = [];
 		g.__agents = agents;
@@ -773,6 +783,11 @@ if (!g.__opensessionBooted) {
 		setTimeout(() => {
 		void (async () => {
 		try {
+		// Release only actor-proven repairable safety fences before claiming the
+		// run journal. If this happens later in the watchdog, the boot recovery
+		// sweep has already skipped the quarantined lineage and its terminal host
+		// receipt can remain stranded behind a ghost owner until another restart.
+		await reconcileRecoverableSafetyFences();
 		const shutdownRecords = readActiveShutdownSnapshot();
 		const resumedIds = await resumeInterruptedRuns(
 			async (bksSessionId, terminalEvent, recoveredRun) => {
@@ -795,7 +810,7 @@ if (!g.__opensessionBooted) {
               ...(recoveredRun?.runKey
                 ? {
                     runId: recoveredRun.runKey,
-                    runGeneration: sessionKernel(bksSessionId).runState().generation,
+                    runGeneration: sessionKernel(bksSessionId).runStateProjection().generation,
                     projectionId: `outcome:${recoveredRun.runKey}`,
                   }
                 : {}),
@@ -931,9 +946,21 @@ if (!g.__opensessionBooted) {
 			console.warn(
 				`[session-kernel] Reconciled ${reconciledBranchEffects.length} compatible branch effect(s)`,
 			);
+		// Transcript mutations commit their durable wake before gateway bus
+		// delivery. Drain crash-window wakes before readiness so a replacement or
+		// deletion does not wait for another mutation to become visible.
+		const transcriptWakeBatch = await drainPendingTranscriptWakeBatch();
+		if (transcriptWakeBatch.drained > 0)
+			console.log(
+				`[transcript] Reconciled ${transcriptWakeBatch.drained} pending wake(s) before readiness`,
+			);
+		if (!transcriptWakeBatch.complete)
+			void drainPendingTranscriptWakesAfter(transcriptWakeBatch.nextAfter)
+				.catch((error) => console.error("[transcript] background wake drain failed:", error));
 		// Only now may durable timers and effects wake actors: every recovery
 		// stage above completed and ownership is established.
 		startSessionKernelRuntime();
+		startSessionOwnershipWatchdog();
 		setServiceReadiness("ready");
 		})().catch((error) => {
 			setServiceReadiness("failed", error);
@@ -1015,6 +1042,7 @@ if (!g.__opensessionBooted) {
 		// race the drain deadline.
 		beginShutdown();
 		stopSessionKernelRuntime();
+		stopSessionOwnershipWatchdog();
 		// With poisoned timers (see run-ws.ts tripwire)
 		// every `await sleep` and Promise.race timeout below would wedge forever
 		// and systemd would SIGKILL us at TimeoutStopSec (observed: an 80s

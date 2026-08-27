@@ -9,7 +9,11 @@
  */
 
 import { audit } from "./audit";
-import { clearSessionKernel, sessionKernel, sessionKernelStore } from "./session-kernel";
+import {
+	clearSessionKernel,
+	sessionKernel,
+	sessionRunStateProjection,
+} from "./session-kernel";
 
 export {
 	RUN_STATE_TRANSITIONS,
@@ -47,7 +51,7 @@ const detachedRunHost = () => !!process.env.OPENSESSION_RUN_JOURNAL;
 export const runStates = {
 	get(sessionId: string): RunStateEntry | undefined {
 		if (detachedRunHost()) return detachedHostStates.get(sessionId);
-		const current = sessionKernelStore().runState(sessionId);
+		const current = sessionRunStateProjection(sessionId);
 		if (current.changeSeq === 0) return undefined;
 		return {
 			state: current.state as RunState,
@@ -59,7 +63,7 @@ export const runStates = {
 
 export function getRunState(sessionId: string): RunState {
 	if (detachedRunHost()) return detachedHostStates.get(sessionId)?.state ?? "idle";
-	return sessionKernelStore().runState(sessionId).state as RunState;
+	return sessionRunStateProjection(sessionId).state as RunState;
 }
 
 type AuditEmit = (event: Record<string, unknown>) => void;

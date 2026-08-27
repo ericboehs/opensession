@@ -599,9 +599,10 @@ place.
 On Linux system scope, detached run hosts survive a gateway restart and the run
 journal reattaches them. User-scope Linux and macOS turns run in the gateway;
 they get the graceful drain window but are not detached across a restart.
-Executor-only deploys restart `opensession-executor.service` without dropping
-browser sockets, session state, or active hosts. Restart once after a backend
-change rather than after every save.
+An executor-only operational restart does not drop browser sockets, session
+state, or active hosts, but the immutable source-release deploy paths roll out
+the executor, kernel, and gateway as one version. On a direct-checkout source
+install, restart once after a backend change rather than after every save.
 
 ## 11. Next
 

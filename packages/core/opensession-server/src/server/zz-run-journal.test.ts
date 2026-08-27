@@ -9,7 +9,7 @@ import * as shared from "./runner-shared";
 import type { StreamEvent } from "./run-events";
 import { makeFakeEngine } from "./testing/fake-engine";
 import { stripContext } from "./prompt-context";
-import { sessionKernelStore } from "./session-kernel/kernel";
+import { __sessionKernelStoreForTest } from "./session-kernel/kernel";
 
 // __setActiveRunsPathForTest repoints the LIVE ACTIVE_RUNS_PATH binding, so
 // agent-runner.ts's own (already-cached, possibly earlier-imported-with-the-
@@ -141,18 +141,39 @@ describe("run journal", () => {
 		await clearRunState(sessionId);
 		expect(agent.isAgentSessionBusy(sessionId)).toBe(true);
 		let terminal: StreamEvent | undefined;
+		let settlementStarted = false;
+		const observerStarted = Promise.withResolvers<void>();
+		const observerGate = Promise.withResolvers<void>();
 		const errorLog = spyOn(console, "error").mockImplementation(() => {});
 		try {
-			const handled = await agent.resumeInterruptedRuns((_id, event) => {
-				terminal = event;
-				throw new Error("observer failed");
-			});
-			expect(handled).toEqual([sessionId]);
+			const recovery = agent.resumeInterruptedRuns(
+				(_id, event) => {
+					settlementStarted = true;
+					terminal = event;
+				},
+				undefined,
+				undefined,
+				undefined,
+				async () => {
+					observerStarted.resolve();
+					await observerGate.promise;
+					throw new Error("observer failed");
+				},
+			);
+			await observerStarted.promise;
+			expect(settlementStarted).toBe(false);
+			expect(agent.isAgentSessionBusy(sessionId)).toBe(true);
+			observerGate.resolve();
+			expect(await recovery).toEqual([sessionId]);
 			expect(terminal).toMatchObject({
 				type: "error",
 				content:
 					"Restart recovery failed twice. Send the prompt again to continue.",
 			});
+			expect(errorLog).toHaveBeenCalledWith(
+				expect.stringContaining("Recovered event observer failed"),
+				expect.objectContaining({ message: "observer failed" }),
+			);
 			expect(agent.isAgentSessionBusy(sessionId)).toBe(false);
 			expect(mod.activeRunRecords()).toEqual([]);
 		} finally {
@@ -212,7 +233,7 @@ describe("run journal", () => {
   it("preserves a stopped journal owned by a durable cancel effect", async () => {
     const sessionId = `durable-stop-recovery-${crypto.randomUUID()}`;
     const runKey = `rh-${crypto.randomUUID()}`;
-    const store = sessionKernelStore();
+    const store = __sessionKernelStoreForTest();
     try {
       store.applyRunEvent({ sessionId, event: "prompt" });
       store.applyRunEvent({ sessionId, event: "run_registered", runKey });
@@ -233,7 +254,7 @@ describe("run journal", () => {
         cwd: "/tmp",
         startedAt: new Date().toISOString(),
       };
-      expect(agent.durableCancelOwnsRecovery(recovery)).toBe(true);
+      expect(await agent.durableCancelOwnsRecovery(recovery)).toBe(true);
       store.settleTurnCancel({
         sessionId,
         cancelId: `stop:${runKey}`,
@@ -257,7 +278,7 @@ describe("run journal", () => {
   it("retires abnormal ownership when actor settlement wins the reverse race", async () => {
     const sessionId = `cancel-abnormal-reverse-${crypto.randomUUID()}`;
     const runKey = `rh-${crypto.randomUUID()}`;
-    const store = sessionKernelStore();
+    const store = __sessionKernelStoreForTest();
     const record: mod.ActiveRunRecord = {
       runKey,
       hostId: runKey,
@@ -291,7 +312,7 @@ describe("run journal", () => {
         cancelId: `stop:${runKey}`,
         outcome: "confirmed",
       });
-      expect(mod.journalRetireSettledCancelAbnormal(sessionId, runKey)).toBe(true);
+      expect(await mod.journalRetireSettledCancelAbnormal(sessionId, runKey)).toBe(true);
       expect(mod.activeRunRecords().some((run) => run.runKey === runKey)).toBe(false);
     } finally {
       mod.journalClear(runKey);
@@ -300,7 +321,7 @@ describe("run journal", () => {
   });
 
   it("retires confirmed interrupt abnormal ownership in both race orders", async () => {
-    const store = sessionKernelStore();
+    const store = __sessionKernelStoreForTest();
     for (const sourceFirst of [true, false]) {
       const sessionId = `interrupt-abnormal-${sourceFirst}-${crypto.randomUUID()}`;
       const runKey = `rh-${crypto.randomUUID()}`;
@@ -402,7 +423,7 @@ describe("run journal", () => {
     const sessionId = `pre-journal-terminal-${crypto.randomUUID()}`;
     const token = await agent.markSessionStarting(sessionId);
     try {
-      expect(sessionKernelStore().runState(sessionId)).toMatchObject({
+      expect(__sessionKernelStoreForTest().runState(sessionId)).toMatchObject({
         state: "starting",
         currentRunId: token,
       });
@@ -421,7 +442,7 @@ describe("run journal", () => {
     const sessionId = `preparation-winner-${crypto.randomUUID()}`;
     const firstToken = await agent.markSessionStarting(sessionId);
     const secondToken = await agent.markSessionStarting(sessionId);
-    const store = sessionKernelStore();
+    const store = __sessionKernelStoreForTest();
     try {
       expect(secondToken).not.toBe(firstToken);
       expect(agent.isAgentSessionCancelled(sessionId, secondToken)).toBe(true);
@@ -459,7 +480,7 @@ describe("run journal", () => {
       expect(rejected).not.toBe(stableToken);
       expect(agent.isAgentSessionCancelled(sessionId, rejected)).toBe(true);
       expect(agent.currentAgentRunToken(sessionId)).toBe(stableToken);
-      expect(sessionKernelStore().runState(sessionId)).toMatchObject({
+      expect(__sessionKernelStoreForTest().runState(sessionId)).toMatchObject({
         currentRunId: stableToken,
       });
     } finally {
@@ -477,7 +498,7 @@ describe("run journal", () => {
     try {
       expect(agent.isAgentSessionCancelled(sessionId, rejectedToken)).toBe(true);
       expect(agent.currentAgentRunToken(sessionId)).toBeUndefined();
-      expect(sessionKernelStore().runState(sessionId)).toMatchObject({
+      expect(__sessionKernelStoreForTest().runState(sessionId)).toMatchObject({
         state: "starting",
         currentRunId: firstToken,
       });
@@ -1479,6 +1500,60 @@ describe("restart recovery reattach", () => {
 		}
 	});
 
+	it("restores the immutable steering token while a detached host is attached", async () => {
+		const sessionId = `local-host-steer-owner-${crypto.randomUUID()}`;
+		const hostId = `rh-${crypto.randomUUID()}`;
+		const release = Promise.withResolvers<void>();
+		const terminal = Promise.withResolvers<StreamEvent>();
+		agent.__setLocalHostResumeForTest(async (run) => (async function* () {
+			yield {
+				type: "init" as const,
+				sessionId: run.claudeSessionId,
+				provider: "pi",
+				model: run.model,
+			};
+			await release.promise;
+			yield {
+				type: "done" as const,
+				sessionId: run.claudeSessionId,
+				provider: "pi",
+				model: run.model,
+				result: "attached host finished",
+			};
+		})());
+		const snapshotRun: mod.ActiveRunRecord = {
+			runKey: hostId,
+			hostId,
+			osSessionId: sessionId,
+			claudeSessionId: `pi-${crypto.randomUUID()}`,
+			prompt: "keep running",
+			cwd: "/tmp",
+			model: "pi/anthropic/claude-sonnet-5",
+			kind: "prompt",
+			startedAt: new Date().toISOString(),
+		};
+		try {
+			await agent.resumeInterruptedRuns(
+				(_id, event) => {
+					if (event?.type === "done") terminal.resolve(event);
+				},
+				undefined,
+				undefined,
+				undefined,
+				undefined,
+				[snapshotRun],
+			);
+			expect(agent.currentAgentRunToken(sessionId)).toBe(hostId);
+			expect(agent.currentAgentRunToken(snapshotRun.claudeSessionId!)).toBe(hostId);
+			release.resolve();
+			await terminal.promise;
+		} finally {
+			release.resolve();
+			mod.journalClear(hostId);
+			await clearRunState(sessionId);
+		}
+	});
+
   it("keeps the old lineage when a missing local host falls back in-process", async () => {
     const sessionId = `local-host-fallback-lineage-${crypto.randomUUID()}`;
     const hostId = `rh-${crypto.randomUUID()}`;
@@ -1539,7 +1614,7 @@ describe("restart recovery reattach", () => {
       kind: "prompt",
       startedAt: new Date().toISOString(),
     };
-    const store = sessionKernelStore();
+    const store = __sessionKernelStoreForTest();
     try {
       store.applyRunEvent({ sessionId, event: "prompt" });
       store.applyRunEvent({ sessionId, event: "run_registered", runKey: hostId });
@@ -1568,6 +1643,62 @@ describe("restart recovery reattach", () => {
       );
       while (resumeCalls === 0) await Bun.sleep(5);
       await Bun.sleep(10);
+      expect(fake.calls).toHaveLength(0);
+      expect(mod.activeRunRecords().some((run) => run.runKey === hostId)).toBe(false);
+    } finally {
+      mod.journalClear(hostId);
+      store.clearSession(sessionId);
+    }
+  });
+
+  it("consumes terminal host evidence before retiring a stopped delivery-cancel lineage", async () => {
+    const sessionId = `local-host-stopped-terminal-${crypto.randomUUID()}`;
+    const hostId = `rh-${crypto.randomUUID()}`;
+    const fake = makeFakeEngine([{ kind: "clean" }]);
+    agent.__setEngineForTest(fake.engine);
+    let resumeCalls = 0;
+    agent.__setLocalHostResumeForTest(async (run) => {
+      resumeCalls++;
+      return (async function* () {
+        yield {
+          type: "done" as const,
+          sessionId: run.claudeSessionId,
+          provider: "pi",
+          model: run.model,
+          result: "HOST_COMPLETED_BEFORE_RECOVERY",
+        };
+      })();
+    });
+    const snapshotRun: mod.ActiveRunRecord = {
+      runKey: hostId,
+      hostId,
+      osSessionId: sessionId,
+      claudeSessionId: `pi-${crypto.randomUUID()}`,
+      prompt: "must not run twice",
+      cwd: "/tmp",
+      model: "pi/anthropic/claude-sonnet-5",
+      kind: "prompt",
+      startedAt: new Date().toISOString(),
+    };
+    const terminal = Promise.withResolvers<StreamEvent>();
+    const store = __sessionKernelStoreForTest();
+    try {
+      store.applyRunEvent({ sessionId, event: "prompt" });
+      store.applyRunEvent({ sessionId, event: "run_registered", runKey: hostId });
+      store.applyRunEvent({ sessionId, event: "cancel" });
+      await agent.resumeInterruptedRuns(
+        (_id, event) => event && terminal.resolve(event),
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        [snapshotRun],
+      );
+      await expect(terminal.promise).resolves.toMatchObject({
+        type: "done",
+        result: "HOST_COMPLETED_BEFORE_RECOVERY",
+      });
+      expect(resumeCalls).toBe(1);
       expect(fake.calls).toHaveLength(0);
       expect(mod.activeRunRecords().some((run) => run.runKey === hostId)).toBe(false);
     } finally {

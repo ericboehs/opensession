@@ -164,6 +164,46 @@ describe("transcriptExcerpt", () => {
 		expect(ex.windows[0]!.entries[0]!.seq).toBe(1);
 	});
 
+	it("pages actor scans within the 200-row wire limit", async () => {
+		const many = Array.from({ length: 450 }, (_, i) =>
+			entry(i + 1, { content: i === 10 ? "older bounded needle" : `row ${i}` }),
+		);
+		const limits: number[] = [];
+		const store = fakeStore(many);
+		const readSince = store.readSince;
+		store.readSince = (sessionId, sinceSeq, limit) => {
+			limits.push(limit ?? 0);
+			return readSince(sessionId, sinceSeq, limit);
+		};
+		const ex = await transcriptExcerpt(
+			"bks-many",
+			{ query: "bounded needle", windows: 1 },
+			deps(store),
+		);
+		expect(ex.source).toBe("store");
+		expect(ex.windows[0]?.matchSeq).toBe(11);
+		expect(limits.length).toBeGreaterThan(1);
+		expect(limits.every((limit) => limit <= 200)).toBe(true);
+	});
+
+	it("does not replace a failed actor scan with an unbounded legacy read", async () => {
+		let legacyReads = 0;
+		const store: ExcerptStore = {
+			getLastSeq: () => 500,
+			readSince: () => { throw new Error("actor unavailable"); },
+			getFullEntry: () => null,
+		};
+		const ex = await transcriptExcerpt("bks-failed", { query: "needle" }, {
+			store,
+			legacy: async () => {
+				legacyReads++;
+				return [entry(1, { content: "needle" })];
+			},
+		});
+		expect(ex).toMatchObject({ source: "none", truncated: true, windows: [] });
+		expect(legacyReads).toBe(0);
+	});
+
 	it("falls back to the legacy transcript when the store has nothing", async () => {
 		const legacy = [
 			{ id: "l1", type: "user", content: "old session question", timestamp: "2026-01-01T00:00:00Z" },

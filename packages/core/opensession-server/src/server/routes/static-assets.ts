@@ -163,31 +163,22 @@ export async function handleStaticAssetsRoutes(
 		});
 	}
 
-	// The sign-in screen's backdrop: the "Silver Silk" loop the landing page
-	// runs, re-encoded down from the site's 4K/7.4MB master (1920x1080, no
-	// audio track, 435KB) and vendored rather than pulled from the site's CDN.
-	// A login screen is the one surface that has to render before anything is
-	// trusted, on a server that is usually private, so it cannot depend on a
-	// third-party fetch, and nobody should have to talk to a CDN to look at our
-	// sign-in box. The `-dark` pair is the same footage graded to charcoal for
-	// the dark palette; the browser fetches one cut, not both. Each webp is its
-	// own video's first frame, so the swap when the loop starts is invisible,
-	// and it is the whole picture for a reduced-motion visitor.
-	// scripts/signin-bg.sh regenerates all four from the master.
+	// The exact fixed light/dark artwork used behind opensession.com. Keep the
+	// sign-in gate and onboarding independent of the marketing deployment and
+	// public network. The old sign-in poster URLs remain aliases so a page still
+	// running the previous bundle switches artwork immediately; its retired mp4
+	// request simply falls back to this poster.
 	const mediaFiles: Record<string, string> = {
-		"/signin-bg.mp4": "signin-bg.mp4",
-		"/signin-bg.webp": "signin-bg.webp",
-		"/signin-bg-dark.mp4": "signin-bg-dark.mp4",
-		"/signin-bg-dark.webp": "signin-bg-dark.webp",
-		// The exact fixed artwork used behind opensession.com. Keep onboarding
-		// independent of the marketing deployment and public network.
+		"/signin-bg.webp": "onboarding-bg.webp",
+		"/signin-bg-dark.webp": "onboarding-bg-dark.webp",
 		"/onboarding-bg.webp": "onboarding-bg.webp",
 		"/onboarding-bg-dark.webp": "onboarding-bg-dark.webp",
 		// DownloadAppsDialog's app-card previews. Referenced by URL (not bundler
 		// imports) so both the Bun SPA build and the Next.js website build see a
-		// plain string instead of diverging asset module types. The background is
-		// the exact artwork used by the matching cards on opensession.com.
+		// plain string instead of diverging asset module types. The backgrounds are
+		// the exact light and dark artwork used behind opensession.com's landing page.
 		"/download-background.webp": "download-background.webp",
+		"/download-background-dark.webp": "download-background-dark.webp",
 		"/download-mac.webp": "download-mac.webp",
 		"/download-phone.webp": "download-phone.webp",
 	};

@@ -8,15 +8,19 @@ import {
   githubAppCredentialHealth,
   githubAppInstallationToken,
   githubRepositoryMatchesInstallation,
+  updateGithubAppWebhook,
 } from "./github-app";
 
 const savedConfig = process.env.OPENSESSION_CONFIG;
+const savedClientId = process.env.OPENSESSION_GITHUB_CLIENT_ID;
 const originalFetch = globalThis.fetch;
 const dirs: string[] = [];
 
 afterEach(() => {
   if (savedConfig === undefined) delete process.env.OPENSESSION_CONFIG;
   else process.env.OPENSESSION_CONFIG = savedConfig;
+  if (savedClientId === undefined) delete process.env.OPENSESSION_GITHUB_CLIENT_ID;
+  else process.env.OPENSESSION_GITHUB_CLIENT_ID = savedClientId;
   globalThis.fetch = originalFetch;
   __setGithubAppKeyPathForTest(undefined);
   const cache = globalThis as any;
@@ -25,6 +29,47 @@ afterEach(() => {
   cache.__ghAppLastMintOk = undefined;
   cache.__ghAppLastMintIdentity = undefined;
   for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+});
+
+describe("GitHub App webhook", () => {
+  test("connects a later public callback origin with the App JWT", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "opensession-github-webhook-"));
+    dirs.push(dir);
+    const config = join(dir, "config.json");
+    const keyPath = join(dir, "github-app.pem");
+    const { privateKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
+    writeFileSync(keyPath, privateKey.export({ format: "pem", type: "pkcs8" }));
+    writeFileSync(
+      config,
+      JSON.stringify({
+        integrations: {
+          github: { oauthClientId: "Iv-webhook-test" },
+        },
+      }),
+    );
+    process.env.OPENSESSION_CONFIG = config;
+    delete process.env.OPENSESSION_GITHUB_CLIENT_ID;
+    __setGithubAppKeyPathForTest(keyPath);
+    globalThis.fetch = (async (input, init) => {
+      expect(String(input)).toBe("https://api.github.com/app/hook/config");
+      expect(init?.method).toBe("PATCH");
+      expect(String((init?.headers as Record<string, string>).Authorization)).toMatch(
+        /^Bearer /,
+      );
+      expect(JSON.parse(String(init?.body))).toEqual({
+        url: "https://ingress.example.test/github/webhook",
+        content_type: "json",
+        secret: "shared-secret",
+        insecure_ssl: "0",
+      });
+      return Response.json({ url: "https://ingress.example.test/github/webhook" });
+    }) as typeof fetch;
+
+    await updateGithubAppWebhook(
+      "https://ingress.example.test",
+      "shared-secret",
+    );
+  });
 });
 
 describe("repository-scoped App installation identity", () => {

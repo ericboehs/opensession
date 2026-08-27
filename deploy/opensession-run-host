@@ -102,7 +102,10 @@ if [ "$action" = "self-deploy" ]; then
   if [ -n "$health_url" ]; then
     set -- "$@" -p "Environment=OPENSESSION_HEALTH_URL=$health_url"
   fi
-  exec "$@" /bin/bash "$deploy_checkout/deploy/self-deploy.sh" --sha "$target_sha"
+  # Launch the deploy controller from the pinned runtime release, never from
+  # the shared WIP checkout it uses only as a git object source. That keeps an
+  # unfinished edit in the WIP tree from changing a live deployment mid-run.
+  exec "$@" /bin/bash "$repo_dir/deploy/self-deploy.sh" --sha "$target_sha"
 fi
 
 host_id="${2:-}"

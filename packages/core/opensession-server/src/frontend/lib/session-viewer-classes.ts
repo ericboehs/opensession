@@ -179,8 +179,6 @@ export const VIEWER_OVERFLOW = "relative inline-flex";
 export const VIEWER_MENU_SEP =
 	"session-menu-sep first:hidden [.session-menu-sep+&]:hidden";
 
-export const VIEWER_DELETE_CONFIRM = "flex gap-1.5";
-
 /* ── Panes ──────────────────────────────────────────────────────────────── */
 
 /**

@@ -974,9 +974,9 @@ setFixBusy(false);
 							? "h-11"
 							: cn(
 									"h-7",
-									// Match the sibling group wrappers, then reach into Review. Keep one
-									// 8px gap rather than stacking the band's 4px with this section's 12px.
-									"[.ws-summary-pr-group:has(>.ws-summary-band:last-child)+.ws-summary-review-group_&]:mt-2",
+									// Match the sibling group wrappers, then reach into Review. The PR
+									// band already closes the group, so do not add a second visual break.
+									"[.ws-summary-pr-group:has(>.ws-summary-band:last-child)+.ws-summary-review-group_&]:mt-0",
 								),
 					)}
 				>

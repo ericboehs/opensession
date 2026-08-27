@@ -44,7 +44,11 @@ import { unarchiveForHumanTurn } from "./session-unarchive";
 import { resizeTerminal, startSessionTerminal, stopAllTerminals, stopTerminal, writeTerminal, } from "./terminals";
 import { subscribeTranscript } from "./transcript-bus";
 import { resumeSessionFeed } from "./session-feed";
-import { type SeqEntry, transcriptStore } from "./transcript-store";
+import type { SeqEntry } from "./transcript-store";
+import {
+  importLegacyTranscript,
+  transcript,
+} from "./actor-transcript";
 import { startTranscriptWatch } from "./transcript-watch";
 import { clampV2InitEntries } from "./transcript-wire";
 import { MAX_UPLOAD_BYTES, WS_MAX_PAYLOAD_BYTES, asDataUrlList, parseImageDataUrls, } from "./uploads";
@@ -59,15 +63,19 @@ import {
 	acknowledgeSessionCommand,
   deliveryInterruptForAnchor,
   durableSessionCommand,
+	isCreationEffectPendingError,
 	isRetryableSessionCommandError,
   sessionProjectionOr,
   sessionGatewayCommand,
   sessionDelivery,
 	sessionKernel,
+	sessionQuarantineSnapshot,
   sessionTurn,
   targetForDeliveryInterrupt,
   targetForTurnCancel,
 } from "./session-kernel";
+import { publicSessionSafety } from "./session-safety";
+import { TRANSCRIPT_ACTOR_RANGE_PAGE_LIMIT } from "./session-kernel/transcript-protocol";
 
 // Who likely triggered the restart that booted THIS process — read once from
 // the marker the previous process wrote in gracefulShutdown, and only trusted
@@ -128,17 +136,21 @@ async function sendWatchExtras(
 			}),
 		);
 	}
+	const quarantine = await sessionQuarantineSnapshot(sessionId);
+	const safety = quarantine ? publicSessionSafety(quarantine) : undefined;
 	ws.send(
 		JSON.stringify({
 			type: "session_status",
 			sessionId,
 			isRunning:
-				session.isRunning ||
-				isAgentSessionBusy(
-					session.claudeSessionId,
-					session.codexThreadId,
-					session.id,
-				),
+				!safety &&
+				(session.isRunning ||
+					isAgentSessionBusy(
+						session.claudeSessionId,
+						session.codexThreadId,
+						session.id,
+					)),
+			...(safety ? { safety } : {}),
 		}),
 	);
 
@@ -222,10 +234,8 @@ async function sendTranscriptIndex(
 	sessionId: string,
 	isCurrent: () => boolean,
 ): Promise<void> {
-	const store = transcriptStore();
-	await store.ensureTranscriptOutline(sessionId);
+	const index = await transcript.readTranscriptIndex(sessionId);
 	if (!isCurrent()) return;
-	const index = store.readTranscriptIndex(sessionId);
 	ws.send(
 		JSON.stringify({
 			type: "transcript_index",
@@ -282,7 +292,7 @@ async function v2FinishImport(
 		const files = v2MirrorFiles(session);
 		if (files.length) watermark = files.reduce((sum, f) => sum + f.size, 0);
 	} catch {}
-	await transcriptStore().importLegacyTranscript(
+	await importLegacyTranscript(
 		session.id,
 		entries,
 		entries.length ? "merged" : "live-only",
@@ -303,7 +313,7 @@ function v2QueueBackgroundImport(sessionId: string, reimport = false): void {
 	setTimeout(async () => {
 		try {
 			const session = await findSessionAsync(sessionId);
-			if (session && (reimport || transcriptStore().needsImport(sessionId)))
+			if (session && (reimport || await transcript.needsImport(sessionId)))
 				await v2ImportSessionAsync(session);
 		} catch (e) {
 			console.warn(`[ws] v2 background import failed for ${sessionId}:`, e);
@@ -346,10 +356,9 @@ async function serveTranscriptV2(
 	)
 		return false;
 
-	let store: ReturnType<typeof transcriptStore>;
+	const store = transcript;
 	try {
-		store = transcriptStore();
-		if (store.needsImport(sessionId)) {
+		if (await store.needsImport(sessionId)) {
 			// Lazy import: small legacy transcripts import synchronously inside
 			// the watch; big ones import in the background and THIS watch serves
 			// legacy (the next one upgrades). The ceiling measures the WHOLE §8
@@ -365,7 +374,7 @@ async function serveTranscriptV2(
 				return false;
 			}
 			await v2ImportSession(session);
-		} else if (v2TranscriptHasDrift(store, sessionId, session)) {
+		} else if (await v2TranscriptHasDrift(store, sessionId, session)) {
 			// Imported but stale (§8): the mirror grew in a way the store can't
 			// explain — external CLI/tmux runs while we were idle, unmapped oc
 			// ids, failed store appends, kill-switch windows — or the failure-side
@@ -409,7 +418,7 @@ async function serveTranscriptV2(
 		}, 0);
 	};
 	try {
-		const watch = startTranscriptWatch({
+		const watch = await startTranscriptWatch({
 			sessionId,
 			store,
 			socket: ws,
@@ -587,7 +596,7 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
       const targetsRun =
         msg.type === "cancel" || msg.type === "interrupt_prompt";
       const targetRun = targetsRun
-        ? sessionKernel(commandSessionId).runState()
+        ? sessionKernel(commandSessionId).runStateProjection()
         : undefined;
       const persistedCancel =
         msg.type === "cancel"
@@ -603,10 +612,10 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
               requestId,
             )
           : undefined;
-      const priorCommandPayload = durableSessionCommand(
+      const priorCommandPayload = (await durableSessionCommand(
         commandSessionId,
         requestId,
-      )?.payload as
+      ))?.payload as
         | {
             command?: string;
             targetRunId?: string | null;
@@ -651,6 +660,9 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
             identity: {
               command: msg.type,
               messageHash,
+              ...((msg.type === "prompt" && msg.busyMode === "steer")
+                ? { priority: true }
+                : {}),
               ...(targetRunId !== undefined
                 ? { targetRunId, targetRunGeneration }
                 : {}),
@@ -665,7 +677,7 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
             ? { result: plan.result, duplicate: true }
             : await withSessionMutationLock(commandSessionId, async () => {
           if (targetRunId !== undefined) {
-            const current = sessionKernel(commandSessionId).runState();
+            const current = sessionKernel(commandSessionId).runStateProjection();
             const currentTargetId =
               current.currentRunId ||
               (current.state === "starting" || current.state === "preparing"
@@ -1012,13 +1024,12 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 						? Math.floor(msg.afterSeq)
 						: firstSeq - 1;
 				try {
-					const store = transcriptStore();
-					const page = store.readRange(
+					const page = await transcript.readRange(
 						msg.sessionId,
 						firstSeq,
 						lastSeq,
 						afterSeq,
-						500,
+						TRANSCRIPT_ACTOR_RANGE_PAGE_LIMIT,
 					);
 					ws.send(
 						JSON.stringify({
@@ -1032,8 +1043,8 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 							lastSeq: page.lastSeq,
 							coveredThroughSeq: page.coveredThroughSeq,
 							complete: page.complete,
-							epoch: store.getLastResetChangeSeq(msg.sessionId),
-							lastChangeSeq: store.getLastChangeSeq(msg.sessionId),
+								epoch: await transcript.getLastResetChangeSeq(msg.sessionId),
+							lastChangeSeq: await transcript.getLastChangeSeq(msg.sessionId),
 						}),
 					);
 				} catch (error) {
@@ -1063,10 +1074,10 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 						// fatter pages: fewer round trips, and — the real cost — fewer
 						// whole-transcript reconciliations per entry recovered. Capped
 						// because each entry is only clamped to 8KB on the wire.
-						const page = transcriptStore().readBefore(
+						const page = await transcript.readBefore(
 							msg.sessionId,
 							Math.floor(msg.beforeSeq),
-							Math.min(Math.max(1, Math.floor(msg.limit ?? 40)), 500),
+							Math.min(Math.max(1, Math.floor(msg.limit ?? 40)), 200),
 						);
 						ws.send(
 							JSON.stringify({
@@ -1646,11 +1657,28 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 					kernelToken,
 					e instanceof Error ? e : new Error(String(e)),
 				);
+			} else if (
+				msg?.type === "create_session" &&
+				isCreationEffectPendingError(e)
+			) {
+				// No terminal response: the deterministic create is still durable.
+				// Reconnect makes the client replay it instead of reopening the modal
+				// while the actor completes the same session in the background.
+				setTimeout(() => ws.close(1012, "Retry session create"), 50).unref?.();
 			} else {
+				const errorSessionId =
+					msg?.type === "create_session"
+						? typeof msg.clientSessionId === "string"
+							? msg.clientSessionId
+							: undefined
+						: typeof msg?.sessionId === "string"
+							? msg.sessionId
+							: undefined;
 				try {
 					ws.send(
 						JSON.stringify({
 							type: "error",
+							...(errorSessionId ? { sessionId: errorSessionId } : {}),
 							message: `Internal error handling "${msg?.type || "message"}" — see server log`,
 						}),
 					);

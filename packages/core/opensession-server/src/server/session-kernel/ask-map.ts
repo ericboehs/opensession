@@ -1,4 +1,4 @@
-import { sessionAsk, sessionKernelStore } from "./kernel";
+import { sessionAsk } from "./kernel";
 import { immutableCopy } from "./immutable-copy";
 
 const globalResolvers = globalThis as typeof globalThis & {
@@ -6,6 +6,7 @@ const globalResolvers = globalThis as typeof globalThis & {
 };
 const runtimeFields = (globalResolvers.__opensessionAskRuntimeFields ??=
   new Map());
+const durableProjection = new Map<string, unknown>();
 
 function splitValue(value: unknown): {
   durable: unknown;
@@ -26,23 +27,26 @@ function splitValue(value: unknown): {
 export class AskOwnedMap<V> {
   readonly [Symbol.toStringTag] = "AskOwnedMap";
   get size(): number {
-    return sessionKernelStore().askEntries().length;
+    return durableProjection.size;
   }
   async clear(): Promise<void> {
     await sessionAsk({ op: "clear" });
+    durableProjection.clear();
     runtimeFields.clear();
   }
   async delete(sessionId: string): Promise<boolean> {
     const deleted = await sessionAsk({ op: "delete", sessionId });
+    durableProjection.delete(sessionId);
     runtimeFields.delete(sessionId);
     return deleted;
   }
   get(sessionId: string): V | undefined {
-    const durable = sessionKernelStore().askSnapshot(sessionId);
-    return this.mergeRuntimeFields(sessionId, durable);
+    return this.mergeRuntimeFields(sessionId, durableProjection.get(sessionId));
   }
   async getAsync(sessionId: string): Promise<V | undefined> {
     const durable = await sessionAsk({ op: "snapshot", sessionId });
+    if (durable === undefined) durableProjection.delete(sessionId);
+    else durableProjection.set(sessionId, durable);
     return this.mergeRuntimeFields(sessionId, durable);
   }
   private mergeRuntimeFields(sessionId: string, durable: unknown): V | undefined {
@@ -53,17 +57,18 @@ export class AskOwnedMap<V> {
     } as V);
   }
   has(sessionId: string): boolean {
-    return sessionKernelStore().askSnapshot(sessionId) !== undefined;
+    return durableProjection.has(sessionId);
   }
   async set(sessionId: string, value: V): Promise<this> {
     const { durable, ephemeral } = splitValue(value);
     await sessionAsk({ op: "set", sessionId, value: durable });
+    durableProjection.set(sessionId, durable);
     if (Object.keys(ephemeral).length) runtimeFields.set(sessionId, ephemeral);
     else runtimeFields.delete(sessionId);
     return this;
   }
   private list(): Array<[string, V]> {
-    return sessionKernelStore().askEntries().map(([sessionId]) => [
+    return [...durableProjection].map(([sessionId]) => [
       sessionId,
       this.get(sessionId)!,
     ]);

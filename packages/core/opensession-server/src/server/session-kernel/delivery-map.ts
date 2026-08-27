@@ -1,5 +1,9 @@
 import type { DeliverySlot } from "./store";
-import { sessionDelivery, sessionKernelStore } from "./kernel";
+import {
+  sessionDelivery,
+  sessionDeliveryEntriesCached,
+  sessionDeliveryProjectionCached,
+} from "./kernel";
 import { immutableCopy } from "./immutable-copy";
 
 /** Map-compatible projection backed by the actor's durable delivery aggregate. */
@@ -20,7 +24,7 @@ export class DeliveryOwnedMap<V> {
   }
 
   get(sessionId: string): V | undefined {
-    const state = sessionKernelStore().deliverySnapshot(sessionId);
+    const state = sessionDeliveryProjectionCached(sessionId);
     const value =
       this.slot === "queued"
         ? state.queued
@@ -47,7 +51,7 @@ export class DeliveryOwnedMap<V> {
   }
 
   private entriesArray(): Array<[string, V]> {
-    return sessionKernelStore().deliveryEntries(this.slot).map(
+    return sessionDeliveryEntriesCached(this.slot).map(
       ([sessionId, value]) => [sessionId, immutableCopy(value as V)],
     );
   }

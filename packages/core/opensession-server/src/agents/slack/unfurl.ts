@@ -108,7 +108,7 @@ export async function unfurlForSession(
   s: UnifiedSession,
   url: string,
 ): Promise<{ blocks: any[] }> {
-  const card = sessionSocialCardData(s, { includeShot: true });
+  const card = await sessionSocialCardData(s, { includeShot: true });
   const { title } = card;
 
   // The linked title always leads. The card below it is the session's own

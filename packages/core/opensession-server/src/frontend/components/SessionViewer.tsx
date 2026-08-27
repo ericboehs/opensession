@@ -75,6 +75,7 @@ import {
 } from "./ToolCallBlock";
 import { parsePlanItems, type PlanItem } from "@tellahq/opensession-protocol/todo-plan";
 import { ReplySuggestions } from "./ReplySuggestions";
+import { SessionSafetyNotice } from "./SessionSafetyNotice";
 import {
 	getReplySuggestionsPref,
 	onReplySuggestionsChanged,
@@ -124,6 +125,8 @@ import { prPhoneChipClass } from "../lib/pr-tone-classes";
 import type { PrFocus } from "../lib/pr-focus";
 import { reviewLoopResult } from "../lib/review-loop";
 import { CONTINUE_AFTER_FAILURE_PROMPT } from "../lib/continue-run";
+import { repairPausedSession } from "../lib/api/session-safety";
+import { safetyContinuationPrompt } from "../lib/session-safety";
 import {
 	cancelSlackComposer,
 	fetchSlackChannels,
@@ -188,8 +191,10 @@ import {
 	unhideForSession,
 } from "../lib/hides";
 import {
+	markPendingBusy,
 	markPendingStarted,
 	type OptimisticPendingPrompt,
+	optimisticOutboxFallbacks,
 	reconcilePending,
 } from "../lib/pending-reconcile";
 import {
@@ -263,6 +268,7 @@ import {
 	WorkspaceSummaryBody,
 } from "./WorkspaceSummary";
 import { SpinOffMenu } from "./SpinOffMenu";
+import { DeleteSessionDialog } from "./DeleteSessionDialog";
 import {
 	IconSidebarRight,
 	IconTrash,
@@ -394,7 +400,6 @@ import {
 	VIEWER_BRANCH_EDITABLE,
 	VIEWER_BRANCH_RENAME,
 	VIEWER_CRUMB_UP,
-	VIEWER_DELETE_CONFIRM,
 	VIEWER_HEADER,
 	VIEWER_HEADER_ACTIONS,
 	VIEWER_INPUT,
@@ -443,6 +448,8 @@ type QueueReceipt = {
 
 interface Props {
 	session: UnifiedSession;
+	/** Verified workspace role from the ordinary auth bootstrap. */
+	canRepairSafety?: boolean;
 	/** Only the focused pane in a desktop tab split owns global shortcuts/title. */
 	focused?: boolean;
 	/** The unfocused half of a split keeps its conversation chrome-free. */
@@ -511,6 +518,9 @@ interface Props {
 	 */
 	workspaceName?: string;
 	onRenameWorkspace?: (name: string) => void;
+	/** The header overflow is workspace-scoped; session lifecycle belongs to its tab. */
+	onArchiveWorkspace?: () => void;
+	onDeleteWorkspace?: () => void | Promise<void>;
 	/** Sibling sessions in this session's workspace (the tab strip's list, oldest
 	    first) — feeds the floating overview panel's cross-session media. */
 	workspaceSessions?: UnifiedSession[];
@@ -734,9 +744,14 @@ const OPEN_SETTLE_MAX_MS = 350;
 const JUMP_PAGE_ENTRIES = HISTORY_PAGE_ENTRIES;
 const JUMP_MAX_ENTRIES = 4_000;
 const EMPTY_TRANSCRIPT_ENTRIES: TranscriptEntry[] = [];
+// One visible range can span several actor pages. Keep the client comfortably
+// below the per-session mailbox bound so a reconnect cannot enqueue a whole
+// outline at once and crowd out live transcript reads for the same session.
+const TRANSCRIPT_RANGE_CONCURRENCY = 6;
 
 export function SessionViewer({
 	session,
+	canRepairSafety = false,
 	focused = true,
 	hideHeader = false,
 	hideRightPanel = false,
@@ -763,6 +778,8 @@ export function SessionViewer({
 	onRename,
 	workspaceName,
 	onRenameWorkspace,
+	onArchiveWorkspace,
+	onDeleteWorkspace,
 	workspaceSessions,
 	onSetStatus,
 	allSessions,
@@ -1212,6 +1229,16 @@ export function SessionViewer({
 	const [transcriptRangeRetryGeneration, setTranscriptRangeRetryGeneration] =
 		useState(0);
 	const indexAnchorHoldCancelRef = useRef<(() => void) | null>(null);
+	// Retire the bounded index-anchor hold on an explicit return to the live
+	// edge. The hold repositions scrollTop toward the pre-refresh anchor every
+	// frame and only stops on gestures aimed at the scroller itself — a Send
+	// click or the jump pill happens outside it, so without this the hold drags
+	// the reader back up for the rest of its window while they watch their own
+	// message fail to stay in view.
+	function cancelIndexAnchorHold() {
+		indexAnchorHoldCancelRef.current?.();
+		indexAnchorHoldCancelRef.current = null;
+	}
 	const pendingIndexPositionRef = useRef<{
 		sessionId: string;
 		keepLiveEdge: boolean;
@@ -1280,6 +1307,11 @@ export function SessionViewer({
 	}, [session.id]);
 	const [isStreaming, setIsStreaming] = useState(false);
 	const [isRunningLive, setIsRunningLive] = useState(session.isRunning);
+	const [safety, setSafety] = useState(session.safety);
+	useEffect(() => {
+		setSafety(session.safety);
+		if (session.safety) setIsRunningLive(false);
+	}, [session.id, session.safety]);
 	// Bumped on git pushes and matching GitHub webhook events so every mounted PR
 	// surface revalidates immediately.
 	const [gitRefreshTick, setGitRefreshTick] = useState(0);
@@ -1377,19 +1409,33 @@ export function SessionViewer({
 		const stopObserving = promptOutbox.observeDelivery((item, result) => {
 			if (item.sessionId !== session.id) return;
 			const pendingId = `outbox-${item.clientId}`;
+			const deliveredPrompt: OptimisticPendingPrompt = {
+				id: pendingId,
+				content: item.content,
+				user: item.user || getCurrentUser(),
+				sentAt: item.createdAt,
+				...(item.images?.length ? { images: item.images } : {}),
+			};
 			if (result.status === "started") {
 				// Placement guessed from local running state can lose a turn-end race.
 				// The server started a turn, so this is an optimistic transcript bubble,
-				// not a queued row. Restore it if a transient admission-queue echo had
-				// already claimed it before the REST response arrived.
+				// not a queued row.
 				setPending((current) =>
-					markPendingStarted(current, {
-						id: pendingId,
-						content: item.content,
-						user: item.user || getCurrentUser(),
-						sentAt: item.createdAt,
-						...(item.images?.length ? { images: item.images } : {}),
-					}),
+					markPendingStarted(current, deliveredPrompt),
+				);
+				setIsRunningLive(true);
+				return;
+			}
+			if (result.status === "queued" || result.status === "steered") {
+				// The queue's admission echo may arrive before this response. Only now
+				// is it authoritative placement rather than the transient dispatch record
+				// every idle prompt passes through.
+				setPending((current) =>
+					markPendingBusy(
+						current,
+						deliveredPrompt,
+						result.status === "queued" ? "queue" : "steer",
+					),
 				);
 				setIsRunningLive(true);
 				return;
@@ -1885,6 +1931,12 @@ export function SessionViewer({
 		suspendEndMaintenance,
 		onScroll,
 	} = useSessionScroll(true);
+	// An explicit send first resumes live-edge following immediately, then needs
+	// one more positioning pass after React has committed the optimistic row.
+	// Scrolling only in the event handler targets the old scrollHeight; the row
+	// does not exist in the DOM yet, so selection/disclosure guards or delayed
+	// virtualizer measurement can otherwise leave part of it below the composer.
+	const sentPromptNeedsLayoutScrollRef = useRef(false);
 
 	// A fold toggle (turn work blocks, tool-call details, review loops) changes
 	// block heights above the reader. Hold the live-edge glue off for the two
@@ -2499,7 +2551,7 @@ export function SessionViewer({
 			workflowRuns.length > 0 ||
 			subagents.length > 0 ||
 			sessionReports.length > 0);
-	const isBusy = isRunningLive || isStreaming;
+	const isBusy = !safety && (isRunningLive || isStreaming);
 	// Sub-agent list: fetch on open, then re-poll while the session runs so
 	// live task-tool spawns appear/settle. Keyed on isBusy too: a run starting
 	// after mount restarts the poll loop, and the flip back to idle lands one
@@ -2762,7 +2814,13 @@ export function SessionViewer({
 		(ranges: TranscriptIndexedRange[]) => {
 			const epoch = transcriptIndexEpochRef.current;
 			if (epoch === null || !transcriptRangeDemandReadyRef.current) return;
+			let capacity = Math.max(
+				0,
+				TRANSCRIPT_RANGE_CONCURRENCY -
+					transcriptRangeRequestsRef.current.size,
+			);
 			for (const range of ranges) {
+				if (capacity <= 0) break;
 				const key = `${range.firstSeq}:${range.lastSeq}`;
 				if (
 					completedTranscriptRangeKeysRef.current.has(key) ||
@@ -2779,6 +2837,7 @@ export function SessionViewer({
 					requestId,
 					timer,
 				});
+				capacity -= 1;
 				send({
 					type: "load_transcript_range",
 					sessionId: session.id,
@@ -2937,8 +2996,20 @@ export function SessionViewer({
 					break;
 				}
 				case "transcript_index": {
-					const keepLiveEdge = followingLive.current;
 					const scrollContainer = messagesRef.current;
+					// `following` can be silently dropped by a layout-driven scroll
+					// event (only a real gesture re-engages it), so a reader visually
+					// parked at the bottom still counts as at the live edge. Treating
+					// them as a history reader armed a long anchor hold at the
+					// pre-refresh position, which then fought the next send's jump and
+					// crawled the transcript back up.
+					const keepLiveEdge =
+						followingLive.current ||
+						(!!scrollContainer &&
+							scrollContainer.scrollHeight -
+								scrollContainer.scrollTop -
+								scrollContainer.clientHeight <
+								90);
 					const previousBottomGap =
 						!keepLiveEdge && scrollContainer
 							? Math.max(
@@ -2990,6 +3061,9 @@ export function SessionViewer({
 					if (msg.complete) {
 						completedTranscriptRangeKeysRef.current.add(key);
 						transcriptRangeRequestsRef.current.delete(key);
+						setTranscriptRangeRetryGeneration(
+							(generation) => generation + 1,
+						);
 					} else {
 						request.timer = setTimeout(() => {
 							transcriptRangeRequestsRef.current.delete(key);
@@ -3239,9 +3313,11 @@ export function SessionViewer({
 						}
 					}
 					break;
-				case "session_status":
-					setIsRunningLive(msg.isRunning);
-					if (!msg.isRunning) {
+				case "session_status": {
+					const running = !!msg.isRunning && !msg.safety;
+					setSafety(msg.safety);
+					setIsRunningLive(running);
+					if (!running) {
 						// Every isRunning:false broadcast follows its run's stream_done,
 						// so a live turn never gets cut here. This clears the stale case:
 						// a socket that died mid-stream (server restart) reconnects, the
@@ -3250,8 +3326,9 @@ export function SessionViewer({
 						setIsStreaming(false);
 						liveTurnStore.finish();
 					}
-					onRunningChange?.(session.id, msg.isRunning);
+					onRunningChange?.(session.id, running);
 					break;
+				}
 				case "git_pushed":
 					if (msg.sessionId === session.id) setGitRefreshTick((t) => t + 1);
 					break;
@@ -3645,7 +3722,17 @@ export function SessionViewer({
 	// Layout effect so the adjustment happens before the browser paints — no flicker.
 	useLayoutEffect(() => {
 		relayout();
-	}, [entries, queued, visibleSteered, pending, relayout]);
+		if (!sentPromptNeedsLayoutScrollRef.current) return;
+		sentPromptNeedsLayoutScrollRef.current = false;
+		scrollToLatest("auto");
+	}, [
+		entries,
+		queued,
+		visibleSteered,
+		pending,
+		relayout,
+		scrollToLatest,
+	]);
 
 	// Shared preamble: stop tracking the live edge, and pin the reader to the
 	// content they're on while the page prepends above it.
@@ -4047,6 +4134,32 @@ export function SessionViewer({
 		});
 	}, [send, session.id]);
 
+	const continuePausedSession = useCallback(() => {
+		const lastMessageId = entries.findLast(
+			(entry) => entry.type === "assistant" || entry.type === "user",
+		)?.id;
+		const carriedImages = queued.flatMap((item) => item.images || []);
+		send({
+			type: "create_session",
+			branch: "",
+			prompt: safetyContinuationPrompt(session.title, queued),
+			user: getCurrentUser(),
+			forkFrom: {
+				sourceId: session.id,
+				...(lastMessageId ? { messageId: lastMessageId } : {}),
+			},
+			...(carriedImages.length ? { images: carriedImages } : {}),
+		});
+	}, [entries, queued, send, session.id, session.title]);
+
+	const repairSafetyPause = useCallback(async () => {
+		await repairPausedSession(session.id);
+		setSafety(undefined);
+		setIsRunningLive(false);
+		onRunningChange?.(session.id, false);
+		toast("Session repaired");
+	}, [onRunningChange, session.id]);
+
 	// Session and asset links navigate on a delegated click. markdown.ts renders
 	// them into dangerouslySetInnerHTML, where they cannot carry React handlers;
 	// data attributes identify which in-app surface should open.
@@ -4296,6 +4409,9 @@ export function SessionViewer({
 		if (!isBusy) {
 			setIsRunningLive(true);
 			onRunningChange?.(session.id, true);
+			// The event-handler scroll below can only target the pre-send DOM. Arm a
+			// second, pre-paint pass for the commit that contains this optimistic row.
+			sentPromptNeedsLayoutScrollRef.current = true;
 			// Show it immediately; it reconciles away when the real transcript entry
 			// arrives (or the queue echo, if the server turns out to be busy).
 			setPending((p) => [
@@ -4332,6 +4448,7 @@ export function SessionViewer({
 		// optimistic bubble arrives below the fold with nothing moving — and a
 		// send is unambiguous intent to watch this turn. Instant, not smooth: the
 		// glue that follows sets scrollTop directly and would fight an animation.
+		cancelIndexAnchorHold();
 		scrollToLatest("auto");
 		if (!isolated) {
 			dropStagingAttachments(draftKey);
@@ -4511,11 +4628,13 @@ export function SessionViewer({
 			.filter((item) => item.state === "failed")
 			.map((item) => `outbox-${item.clientId}`),
 	);
+	const reconciliationNow = Date.now();
+	const deliveryEchoes = [...queued, ...steered];
 	const pendingReconciliation = reconcilePending(
 		pending,
 		entries,
-		[...queued, ...steered],
-		Date.now(),
+		deliveryEchoes,
+		reconciliationNow,
 	);
 	const visiblePending = pending.filter(
 		(item) =>
@@ -4523,10 +4642,34 @@ export function SessionViewer({
 			!pendingReconciliation.landed.has(item.id) &&
 			!pendingReconciliation.expired.has(item.id),
 	);
-	const pendingQueue = visiblePending.filter((p) => p.busyMode || settingUpWorkspace);
-	const pendingBubbles = visiblePending.filter(
-		(p) => !p.busyMode && !settingUpWorkspace,
+	// React pending state, transcript frames, queue echoes and the REST outbox
+	// settle on independent clocks. If the local row drops first, keep a pristine
+	// idle outbox item on the same optimistic surface instead of flashing its
+	// transport-only "Waiting to send" state between two copies of the bubble.
+	const fallbackCandidates = optimisticOutboxFallbacks(
+		outboxItems,
+		new Set(pending.map((item) => item.id)),
+		landedOutboxIds,
 	);
+	const fallbackReconciliation = reconcilePending(
+		fallbackCandidates,
+		entries,
+		deliveryEchoes,
+		reconciliationNow,
+	);
+	const fallbackPending = fallbackCandidates.filter(
+		(item) =>
+			!fallbackReconciliation.landed.has(item.id) &&
+			!fallbackReconciliation.expired.has(item.id),
+	);
+	const pendingQueue = [
+		...visiblePending.filter((p) => p.busyMode || settingUpWorkspace),
+		...(settingUpWorkspace ? fallbackPending : []),
+	];
+	const pendingBubbles = [
+		...visiblePending.filter((p) => !p.busyMode && !settingUpWorkspace),
+		...(settingUpWorkspace ? [] : fallbackPending),
+	];
 	const optimisticTranscriptEntries: TranscriptEntry[] =
 		pendingBubbles.length === 0
 			? EMPTY_TRANSCRIPT_ENTRIES
@@ -4537,17 +4680,14 @@ export function SessionViewer({
 					timestamp: new Date(pending.sentAt).toISOString(),
 					...(pending.images?.length ? { images: pending.images } : {}),
 				}));
-	// The durable row covers a prompt the store still holds: one this tab never
-	// showed a bubble for (another tab's send, or a reload), or one whose bubble
-	// is still up. A prompt already confirmed by the server is dropped from the
-	// row instead of rendering twice. Dropped, not discarded: the store is
-	// localStorage-backed and cross-tab, so a discard is durable and a wrong
-	// match would lose the message, while a wrong hide only costs a row until
-	// delivery removes the item itself.
+	// Retried, failed and authoritatively busy prompts keep the explicit outbox
+	// surface. A pristine idle item is already represented by the fallback above.
+	const fallbackIds = new Set(fallbackCandidates.map((item) => item.id));
 	const durableOutbox = outboxItems.filter(
 		(item) =>
 			item.state === "failed" ||
-			(!pending.some((entry) => entry.id === `outbox-${item.clientId}`) &&
+			(!fallbackIds.has(`outbox-${item.clientId}`) &&
+				!pending.some((entry) => entry.id === `outbox-${item.clientId}`) &&
 				!landedOutboxIds.has(`outbox-${item.clientId}`)),
 	);
 	const hasLiveConversation =
@@ -4558,6 +4698,7 @@ export function SessionViewer({
 	// the same durable error, so use it as an inline fallback instead of leaving
 	// the conversation blank while only the sidebar hover card explains why.
 	const inlineRunFailure =
+		!safety &&
 		!isBusy &&
 		session.lastRunError &&
 		!entries.some(
@@ -4957,6 +5098,16 @@ export function SessionViewer({
 		send({ type: "cancel", sessionId: session.id });
 	}
 
+	function handleShareWorkspace() {
+		const path = session.workspaceId
+			? `${BASE_PATH}/workspace/${encodeURIComponent(session.workspaceId)}`
+			: sessionPath(session);
+		shareLink(absoluteLink(path), {
+			toast: "Link copied",
+			title: workspaceName || session.title || undefined,
+		});
+	}
+
 	function handleShare() {
 		// Share the workspace pane on screen rather than the session that happened
 		// to host it. Session and sub-agent links keep their existing canonical form.
@@ -5004,7 +5155,7 @@ export function SessionViewer({
 			// every sibling session picks the new name up. Session titles live on tabs.
 			// A worker's header titles the WORKER (the workspace is the crumb before
 			// it), so the same edit there renames just this session.
-			if (workspaceName && !parentSession && onRenameWorkspace)
+			if (session.workspaceId && onRenameWorkspace)
 				onRenameWorkspace(renameDraft.trim());
 			else onRename?.(session.id, renameDraft.trim());
 		}
@@ -5363,11 +5514,6 @@ export function SessionViewer({
 		return () =>
 			window.removeEventListener("opensession:toggle-session-settings", toggle);
 	}, [session.id]);
-	// Closing the menu disarms a half-finished delete confirm — reopening it
-	// later shouldn't present the destructive choices without a fresh click.
-	useEffect(() => {
-		if (!overflowOpen && !infoPageOpen) setShowDeleteConfirm(false);
-	}, [overflowOpen, infoPageOpen]);
 	// The menu's contents change across the breakpoint — don't leave it stuck open.
 	useEffect(() => {
 		setOverflowOpen(false);
@@ -5765,6 +5911,13 @@ export function SessionViewer({
 					</div>
 				</div>
 			)}
+			<DeleteSessionDialog
+				open={showDeleteConfirm}
+				onOpenChange={setShowDeleteConfirm}
+				hasWorktree={Boolean(session.worktreeDir && !isAsk)}
+				deleting={deleting}
+				onDelete={(cleanWorktree) => void handleDelete(cleanWorktree)}
+			/>
 			<Modal.Root
 				open={branchConfirmOpen}
 				onOpenChange={(open) => {
@@ -5810,6 +5963,7 @@ export function SessionViewer({
 				</Modal.Content>
 			</Modal.Root>
 			{!hideHeader && (() => {
+				const workspaceScopedMenu = Boolean(session.workspaceId);
 				const addToSidebarAction = (inMenu: boolean) =>
 					canAddToSidebar &&
 					(inMenu ? (
@@ -5837,9 +5991,22 @@ export function SessionViewer({
 				// copied confirmation is CopyCheck's green checkmark in both.
 				const shareAction = (inMenu: boolean) =>
 					inMenu ? (
-						<Menu.Item onClick={handleShare} title="Copy a link to this session">
+						<Menu.Item
+							onClick={workspaceScopedMenu ? handleShareWorkspace : handleShare}
+							title={
+								workspaceScopedMenu
+									? "Copy a link to this workspace"
+									: "Copy a link to this session"
+							}
+						>
 							<CopyCheck copied={copied} idle={<IconLink size={20} />} size={20} className={MENU_ICON} />
-							<span className="grow">{copied ? "Copied" : "Share"}</span>
+							<span className="grow">
+								{copied
+									? "Copied"
+									: workspaceScopedMenu
+										? "Share workspace"
+										: "Share"}
+							</span>
 						</Menu.Item>
 					) : (
 						<Button
@@ -6021,14 +6188,14 @@ export function SessionViewer({
 							<Menu.Item
 								onClick={() => setRenameDraft(workspaceName || session.title)}
 								title={
-									workspaceName
+									workspaceScopedMenu
 										? "Rename this workspace"
 										: "Rename this session"
 								}
 							>
 								<IconPencil size={20} className={MENU_ICON} />
 								<span className="grow">
-									{workspaceName ? "Rename workspace" : "Rename session"}
+									{workspaceScopedMenu ? "Rename workspace" : "Rename session"}
 								</span>
 							</Menu.Item>
 						)}
@@ -6099,9 +6266,8 @@ export function SessionViewer({
 				);
 				// Delete is destructive, so it never rides in the visible action bar —
 				// it always lives inside the ⋯ menu, one deliberate hop away.
-				const deleteAction = !showDeleteConfirm ? (
+				const deleteAction = (
 					<Menu.Item
-						closeOnClick={false}
 						// Red at rest, not only under the cursor. This is the one row in
 						// the menu that cannot be undone, and a row that looks ordinary
 						// until you are already on it announces that too late.
@@ -6112,38 +6278,29 @@ export function SessionViewer({
 						<IconTrash size={20} />
 						<span className="grow">Delete session</span>
 					</Menu.Item>
-				) : (
-					<div className={VIEWER_DELETE_CONFIRM}>
-						{session.worktreeDir && !isAsk && (
-							<Button
-								variant="danger"
-								size="sm"
-								className="min-h-0 px-3 py-[5px] text-label"
-								onClick={() => handleDelete(true)}
-								disabled={deleting}
-							>
-								{deleting ? "…" : "+ Worktree"}
-							</Button>
+				);
+				const workspaceLifecycleActions = workspaceScopedMenu && (
+					<>
+						{onArchiveWorkspace && (workspaceSessions?.length ?? 0) > 0 && (
+							<Menu.Item onClick={onArchiveWorkspace}>
+								<IconArchive size={20} className={MENU_ICON} />
+								<span className="grow">Archive workspace</span>
+							</Menu.Item>
 						)}
-						<Button
-							variant="warning"
-							size="sm"
-							className="min-h-0 px-3 py-[5px] text-label"
-							onClick={() => handleDelete(false)}
-							disabled={deleting}
-						>
-							{deleting ? "…" : "Session"}
-						</Button>
-						<Button
-							variant="soft"
-							size="sm"
-							className="min-h-0 px-3 py-[5px] text-label"
-							onClick={() => setShowDeleteConfirm(false)}
-							disabled={deleting}
-						>
-							Cancel
-						</Button>
-					</div>
+						{onDeleteWorkspace && (
+							<Menu.Item
+								className="text-red data-[highlighted]:bg-red-soft data-[highlighted]:text-red"
+								onClick={() => {
+									const message = `Delete workspace "${workspaceName || session.title}"? Its sessions become standalone.`;
+									if (window.confirm(message)) void onDeleteWorkspace();
+								}}
+								title="Delete workspace"
+							>
+								<IconTrash size={20} />
+								<span className="grow">Delete workspace</span>
+							</Menu.Item>
+						)}
+					</>
 				);
 				// Secondary header controls (Linear/Plain links). Inline on desktop;
 				// on phones they fold into the ⋯ menu so the single top bar holds only
@@ -6156,7 +6313,7 @@ export function SessionViewer({
 						    beside the workspace name on desktop — it names the session, it
 						    isn't an action. .viewer-title is hidden on phones, so the ⋯
 						    menu keeps carrying it there. */}
-						{session.automation && inMenu && (
+						{session.automation && inMenu && !workspaceScopedMenu && (
 							<Menu.Item
 								render={<a href={`${BASE_PATH}/automations/${encodeURIComponent(session.automationId || session.automation)}`} />}
 								title={session.automation}
@@ -6265,9 +6422,9 @@ export function SessionViewer({
 								{(compactHeader || isPhone) && shareAction(true)}
 								<Menu.Separator className={VIEWER_MENU_SEP} />
 								{newSessionAction}
-								{forkAction}
-								{spinOffAction}
-								{transcriptActions}
+								{!workspaceScopedMenu && forkAction}
+								{!workspaceScopedMenu && spinOffAction}
+								{!workspaceScopedMenu && transcriptActions}
 								{portalsAction}
 								{branchAction && (
 									<>
@@ -6279,8 +6436,14 @@ export function SessionViewer({
 								{isPhone && secondaryActions(true)}
 								{archivedActions}
 								<Menu.Separator className={VIEWER_MENU_SEP} />
-								{(!isPhone || session.archived) && archiveAction}
-								{deleteAction}
+								{workspaceScopedMenu
+									? workspaceLifecycleActions
+									: (
+										<>
+											{(!isPhone || session.archived) && archiveAction}
+											{deleteAction}
+										</>
+									)}
 							</Menu.Popup>
 						</div>
 					</Menu.Root>
@@ -7493,6 +7656,14 @@ export function SessionViewer({
 							)}
 							</AnimatePresence>
 
+							{safety && (
+								<SessionSafetyNotice
+									safety={safety}
+									onContinue={continuePausedSession}
+									onRepair={canRepairSafety ? repairSafetyPause : undefined}
+								/>
+							)}
+
 							{inlineRunFailure && (
 								<InlineAlert
 									title="Run failed"
@@ -7629,7 +7800,10 @@ export function SessionViewer({
 										)}
 										type="button"
 										aria-label="Scroll to the bottom"
-										onClick={() => scrollToLatest("auto")}
+										onClick={() => {
+											cancelIndexAnchorHold();
+											scrollToLatest("auto");
+										}}
 									>
 										<IconArrowDown
 											size={13}
@@ -7705,7 +7879,10 @@ export function SessionViewer({
 															className={TRANSCRIPT_ICON_BUTTON}
 															type="button"
 															aria-label="Scroll to the bottom"
-															onClick={() => scrollToLatest("auto")}
+															onClick={() => {
+																cancelIndexAnchorHold();
+																scrollToLatest("auto");
+															}}
 														>
 															<IconArrowDown
 																size={13}
@@ -7801,8 +7978,10 @@ export function SessionViewer({
 									quote={quote}
 									onQuoteClear={clearQuote}
 									placeholder={
-										settingUpWorkspace
-											? "Queue while workspace sets up…"
+										safety
+											? "Paused for safety"
+											: settingUpWorkspace
+												? "Queue while workspace sets up…"
 											: !connected
 												? "Send when reconnected…"
 											: forkFrom
@@ -7815,8 +7994,9 @@ export function SessionViewer({
 																? `Ask ${AGENT_NAME}, read-only…`
 																: `Ask ${AGENT_NAME}…`
 									}
-									disabled={!connected && !!forkFrom}
+									disabled={!!safety || (!connected && !!forkFrom)}
 									sendDisabled={(text) =>
+										!!safety ||
 										promoting ||
 										(!text.trim() &&
 											images.length === 0 &&

@@ -14,7 +14,10 @@ import type { NativeSessionFile } from "./types";
 const HOME = homeDir();
 const SESSIONS_DIR = OPENSESSION_SESSIONS_DIR;
 
-function activePlainSessions(): Array<{ path: string; data: NativeSessionFile }> {
+type PlainSessionCandidate = { path: string; data: NativeSessionFile };
+type SessionProjector = typeof executeSessionProjection;
+
+function activePlainSessions(): PlainSessionCandidate[] {
   if (!existsSync(SESSIONS_DIR)) return [];
   const out: Array<{ path: string; data: NativeSessionFile }> = [];
   for (const file of readdirSync(SESSIONS_DIR)) {
@@ -53,18 +56,38 @@ export async function clearSessionFileArchive(id: string): Promise<boolean> {
 
 /** Mark every session tied to this thread as archived. Returns count. */
 export async function archiveSessionsForThread(threadId: string): Promise<number> {
+  return archivePlainSessionCandidates(
+    threadId,
+    activePlainSessions(),
+    executeSessionProjection,
+  );
+}
+
+/** Archive matching files independently so one quarantined session cannot
+ * abort the Plain sweep before the remaining sessions are processed. */
+export async function archivePlainSessionCandidates(
+  threadId: string,
+  sessions: PlainSessionCandidate[],
+  project: SessionProjector = executeSessionProjection,
+  reportFailure: (sessionId: string, error: unknown) => void = (sessionId, error) =>
+    console.warn(`[plain-archive] Could not archive session ${sessionId}:`, error),
+): Promise<number> {
   let archived = 0;
-  for (const { path, data } of activePlainSessions()) {
+  for (const { path, data } of sessions) {
     if (data.plainThreadId !== threadId) continue;
-    await executeSessionProjection(data.id, "plain_archive_set", () =>
-      writeJsonAtomic(path, {
-        ...data,
-        archived: true,
-        archivedAt: new Date().toISOString(),
-        archivedReason: "plain",
-      }),
-    );
-    archived++;
+    try {
+      await project(data.id, "plain_archive_set", () =>
+        writeJsonAtomic(path, {
+          ...data,
+          archived: true,
+          archivedAt: new Date().toISOString(),
+          archivedReason: "plain",
+        }),
+      );
+      archived++;
+    } catch (error) {
+      reportFailure(data.id, error);
+    }
   }
   if (archived > 0) invalidateSessionsCache();
   return archived;
@@ -112,7 +135,13 @@ export function startPlainArchiveSweep(onChange?: () => void): void {
     }
   };
 
-  sweepInterval = setInterval(() => void sweep(), 15 * 60 * 1000);
-  setTimeout(() => void sweep(), 60 * 1000); // first pass shortly after boot
+  const runSweep = () => {
+    void sweep().catch((error) =>
+      console.error("[plain-archive] Sweep failed:", error),
+    );
+  };
+
+  sweepInterval = setInterval(runSweep, 15 * 60 * 1000);
+  setTimeout(runSweep, 60 * 1000); // first pass shortly after boot
   console.log("[plain-archive] Sweep started (15m interval)");
 }

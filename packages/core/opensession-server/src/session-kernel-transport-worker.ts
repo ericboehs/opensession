@@ -8,7 +8,6 @@ import {
   type KernelActorClientRequest,
   type KernelActorServiceCall,
   type KernelActorServiceResponse,
-  type KernelActorSyncRequest,
   type KernelActorTransportEnvelope,
 } from "./server/session-kernel/actor-protocol";
 import { isReadReducer } from "./server/session-kernel/actor-routing";
@@ -21,30 +20,32 @@ import {
 const endpoint = `${sessionKernelServiceUrl().replace(/\/$/, "")}/rpc`;
 let tokenPromise: Promise<string> | undefined;
 let inFlight = 0;
-let fatal = false;
 let serviceEpoch: string | undefined;
 
 function sessionKernelToken(): Promise<string> {
   return (tokenPromise ??= readSessionKernelCredential());
 }
 
-function failTransport(message: string): never {
-  fatal = true;
-  throw new Error(message);
+class RetryableTransportError extends Error {
+  readonly retryable = true;
+  constructor(message: string, readonly incarnationChanged = false) {
+    super(message);
+    this.name = "RetryableTransportError";
+  }
 }
 
-async function rpc(
+let handshakePromise: Promise<void> | undefined;
+
+async function exchange(
   request: KernelActorAsyncRequest | KernelActorServiceCall,
+  epoch: string | undefined,
 ): Promise<KernelActorServiceResponse> {
-  if (fatal) throw new Error("Session kernel transport is unavailable");
   if (inFlight >= SESSION_KERNEL_MAX_TRANSPORT_REQUESTS)
-    throw Object.assign(new Error("Session kernel transport is full"), {
-      retryable: true,
-    });
+    throw new RetryableTransportError("Session kernel transport is full");
   const envelope: KernelActorTransportEnvelope = {
     version: SESSION_KERNEL_TRANSPORT_VERSION,
     actorVersion: SESSION_KERNEL_ACTOR_VERSION,
-    ...(serviceEpoch ? { serviceEpoch } : {}),
+    ...(epoch ? { serviceEpoch: epoch } : {}),
     request,
   };
   const body = JSON.stringify(envelope);
@@ -55,10 +56,7 @@ async function rpc(
     const token = await sessionKernelToken();
     const response = await fetch(endpoint, {
       method: "POST",
-      headers: {
-        authorization: `Bearer ${token}`,
-        "content-type": "application/json",
-      },
+      headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
       body,
       signal: AbortSignal.timeout(8_000),
     });
@@ -69,30 +67,31 @@ async function rpc(
         const parsed = JSON.parse(text) as { error?: string };
         if (parsed.error) message = parsed.error;
       } catch {}
-      if (response.status === 429)
-        throw Object.assign(new Error(message), { retryable: true });
-      failTransport(message);
+      if (response.status === 401 || response.status === 413)
+        throw new Error(message);
+      throw new RetryableTransportError(message, response.status === 409);
     }
-    const result = JSON.parse(text) as KernelActorServiceResponse;
+    let result: KernelActorServiceResponse;
+    try {
+      result = JSON.parse(text) as KernelActorServiceResponse;
+    } catch {
+      throw new RetryableTransportError("Session kernel service returned malformed JSON");
+    }
     if (!result || result.rpcId !== request.rpcId)
-      failTransport("Session kernel service returned an invalid response");
-    if (request.t === "hello") {
-      if (result.t !== "ready" || !result.serviceEpoch)
-        failTransport("Session kernel service omitted its incarnation fence");
-      serviceEpoch = result.serviceEpoch;
-    } else if (!serviceEpoch) {
-      failTransport("Session kernel service was used before handshake");
-    }
+      throw new RetryableTransportError("Session kernel service returned an invalid response");
+    if (!result.serviceEpoch)
+      throw new RetryableTransportError("Session kernel service omitted its incarnation fence");
+    if (epoch && result.serviceEpoch !== epoch)
+      throw new RetryableTransportError(
+        "Session kernel service returned a stale incarnation response",
+        true,
+      );
     return result;
   } catch (error) {
-    if (
-      error &&
-      typeof error === "object" &&
-      (error as { retryable?: boolean }).retryable === true
-    )
+    if (error instanceof RetryableTransportError) throw error;
+    if (error instanceof Error && /credential|request is too large/i.test(error.message))
       throw error;
-    if (fatal) throw error;
-    failTransport(
+    throw new RetryableTransportError(
       `Session kernel service request failed: ${error instanceof Error ? error.message : String(error)}`,
     );
   } finally {
@@ -100,41 +99,56 @@ async function rpc(
   }
 }
 
-function settleSync(
-  request: KernelActorSyncRequest,
-  response?: Extract<KernelActorServiceResponse, { t: "call_result" }>,
-  error?: unknown,
-): void {
-  const control = new Int32Array(request.control);
-  const output = new Uint8Array(request.output);
-  if (response) {
-    Atomics.store(control, 0, response.status);
-    Atomics.store(control, 1, response.length);
-    if (response.body) output.set(new TextEncoder().encode(response.body));
-  } else {
-    const bytes = new TextEncoder().encode(
-      JSON.stringify({
-        ok: false,
-        error: error instanceof Error ? error.message : String(error),
-      }),
+async function ensureHandshake(): Promise<void> {
+  if (serviceEpoch) return;
+  if (handshakePromise) return handshakePromise;
+  handshakePromise = (async () => {
+    const rpcId = crypto.randomUUID();
+    const result = await exchange(
+      { t: "hello", rpcId, version: SESSION_KERNEL_ACTOR_VERSION },
+      undefined,
     );
-    output.set(bytes.subarray(0, output.length));
-    Atomics.store(control, 1, Math.min(bytes.length, output.length));
-    Atomics.store(control, 0, -1);
+    if (result.t !== "ready" || !result.serviceEpoch)
+      throw new RetryableTransportError("Session kernel service omitted its incarnation fence");
+    serviceEpoch = result.serviceEpoch;
+  })().finally(() => { handshakePromise = undefined; });
+  return handshakePromise;
+}
+
+async function rpc(
+  request: KernelActorAsyncRequest | KernelActorServiceCall,
+): Promise<KernelActorServiceResponse> {
+  if (request.t === "hello") {
+    const result = await exchange(request, undefined);
+    if (result.t !== "ready" || !result.serviceEpoch)
+      throw new RetryableTransportError("Session kernel service omitted its incarnation fence");
+    serviceEpoch = result.serviceEpoch;
+    return result;
   }
-  Atomics.notify(control, 0);
+  await ensureHandshake();
+  const expectedEpoch = serviceEpoch!;
+  try {
+    return await exchange(request, expectedEpoch);
+  } catch (error) {
+    if (error instanceof RetryableTransportError) {
+      serviceEpoch = undefined;
+      // Re-establish transport for unrelated future work. The failed mutation
+      // itself is not replayed here because its physical outcome may be ambiguous.
+      void ensureHandshake().catch(() => {});
+    }
+    throw error;
+  }
 }
 
 const ASYNC_DEFAULT_OUTPUT_BYTES = 8 * 1024 * 1024;
 const ASYNC_MAX_OUTPUT_BYTES = 128 * 1024 * 1024;
 
 self.onmessage = (
-  event: MessageEvent<KernelActorClientRequest | KernelActorSyncRequest>,
+  event: MessageEvent<KernelActorClientRequest>,
 ) => {
   const request = event.data;
   if (request.t === "store" || request.t === "reduce") {
-    // Async variant: carries an rpcId instead of a SharedArrayBuffer
-    // handshake, so the gateway can await instead of blocking its thread.
+    // Every gateway call carries an rpcId and settles asynchronously.
     if ("rpcId" in request) {
       const rpcId = request.rpcId;
       const buildCall = (outputBytes: number): KernelActorServiceCall => ({
@@ -189,26 +203,6 @@ self.onmessage = (
       });
       return;
     }
-    const call: KernelActorServiceCall = {
-      t: "call",
-      rpcId: crypto.randomUUID(),
-      request:
-        request.t === "store"
-          ? { t: "store", method: request.method, args: request.args }
-          : { t: "reduce", command: request.command },
-      outputBytes: request.output.byteLength,
-    };
-    void rpc(call).then(
-      (response) => {
-        if (response.t !== "call_result") {
-          settleSync(request, undefined, new Error("Invalid kernel call response"));
-          failTransport("Session kernel service returned the wrong response type");
-        }
-        settleSync(request, response);
-      },
-      (error) => settleSync(request, undefined, error),
-    );
-    return;
   }
   void rpc(request).then(
     (response) => self.postMessage(response),

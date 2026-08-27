@@ -654,26 +654,6 @@ summary:focus-visible {
 	background: var(--stage-bg);
 }
 
-.gradient-fallback,
-.hero-video {
-	position: absolute;
-	inset: 0;
-	width: 100%;
-	height: 100%;
-}
-
-.gradient-fallback {
-	background:
-		radial-gradient(circle at 26% 16%, #eceae4 0, transparent 40%),
-		radial-gradient(circle at 74% 34%, #dedcd6 0, transparent 44%),
-		linear-gradient(145deg, #d9d7d1 0%, #cdcbc6 52%, #b8b6b2 100%);
-}
-
-.hero-video {
-	object-fit: cover;
-	pointer-events: none;
-}
-
 .preview-wrap {
 	--demo-scale: 1;
 	position: absolute;
@@ -695,7 +675,16 @@ summary:focus-visible {
 	   it is meant to continue. */
 	border-radius: calc(15px * var(--rf)) 0 0 0;
 	corner-shape: var(--cs);
-	background: var(--window);
+	/* The iframe is a transformed composited surface, and its fixed backdrop
+	   layer can bypass overflow clipping. A border-box clip stays on this outer
+	   surface and follows its squircle exactly, without a circular inset that
+	   leaves a white crescent around the corner. */
+	clip-path: border-box;
+	contain: paint;
+	/* The poster and frame are opaque. Keeping their backing transparent lets
+	   the stage fill the antialiased edge instead of exposing a white halo when
+	   the iframe's search backdrop darkens. */
+	background: transparent;
 	box-shadow: 0 22px 54px var(--window-shadow);
 }
 
@@ -1000,8 +989,8 @@ summary:focus-visible {
 	position: relative;
 	min-height: 100svh;
 	padding-inline: clamp(20px, 5vw, 72px);
-	background: #fff;
-	color: #0a0a0a;
+	background: var(--page);
+	color: var(--ink);
 }
 
 .announcement-scroll {
@@ -1023,20 +1012,25 @@ summary:focus-visible {
 	min-height: 44px;
 	align-items: center;
 	justify-content: center;
-	padding: 0 18px;
-	border: 1px solid #d1d1d1;
+	gap: 4px;
+	padding: 0 18px 0 14px;
+	border: 1px solid var(--line);
 	border-radius: calc(12px * var(--rf));
 	corner-shape: var(--cs);
-	background: #fff;
-	color: #0a0a0a;
+	background: var(--surface);
+	color: var(--ink);
 	font-size: 15px;
 	font-weight: 600;
 	letter-spacing: -0.012em;
 	transition: background-color 140ms ease, transform 140ms cubic-bezier(0.23, 1, 0.32, 1);
 }
 
+.announcement-home svg {
+	flex: none;
+}
+
 .announcement-home:hover {
-	background: #f7f7f7;
+	background: color-mix(in srgb, var(--surface) 94%, var(--ink));
 }
 
 .announcement-home:active {
@@ -1086,7 +1080,7 @@ summary:focus-visible {
 	max-width: 760px;
 	margin-inline: auto;
 	padding-block: clamp(92px, 11vh, 124px) 128px;
-	color: #787878;
+	color: var(--muted);
 	font-size: 20px;
 	font-weight: 450;
 	letter-spacing: -0.012em;
@@ -1102,7 +1096,7 @@ summary:focus-visible {
 }
 
 .announcement-article h1 {
-	color: #0a0a0a;
+	color: var(--ink);
 }
 
 .announcement-article h1 + * {
@@ -1111,7 +1105,7 @@ summary:focus-visible {
 
 .announcement-article h2 {
 	margin-top: 72px;
-	color: #3f3f3f;
+	color: rgba(var(--ink-rgb), 0.75);
 	font-size: 28px;
 	font-weight: 600;
 	letter-spacing: -0.012em;
@@ -1145,6 +1139,7 @@ summary:focus-visible {
 	position: relative;
 	overflow: hidden;
 	aspect-ratio: 16 / 10;
+	margin-inline: 0;
 	border-radius: calc(28px * var(--rf));
 	corner-shape: var(--cs);
 	background: url("./demo-background.webp") center / cover;
@@ -1156,14 +1151,21 @@ summary:focus-visible {
 	max-width: none;
 	border-radius: calc(15px * var(--rf));
 	corner-shape: var(--cs);
-	outline: 1px solid oklch(0 0 0 / 0.1);
-	box-shadow: 0 22px 54px rgba(28, 34, 40, 0.24);
+	outline: 1px solid rgba(var(--ink-rgb), 0.1);
+	box-shadow: 0 22px 54px var(--window-shadow);
 }
 
 .announcement-feature-collaboration img {
 	top: 7%;
 	left: 7%;
-	width: 93%;
+	width: calc(93% + 2px);
+	border-radius: calc(15px * var(--rf)) 0 0 0;
+}
+
+.announcement-feature-desk img {
+	top: 3%;
+	left: 3%;
+	width: 94%;
 }
 
 .announcement-feature-automations {
@@ -1291,6 +1293,26 @@ summary:focus-visible {
 		font-size: 22px;
 	}
 
+	.feature {
+		display: grid;
+		grid-template-columns: 28px minmax(0, 1fr);
+		column-gap: 14px;
+	}
+
+	.feature-icon {
+		margin-bottom: 0;
+	}
+
+	.feature-icon,
+	.feature-head {
+		align-self: center;
+	}
+
+	.feature-head,
+	.feature p {
+		grid-column: 2;
+	}
+
 	.landing-setup-steps > li {
 		padding: 16px;
 	}
@@ -1364,6 +1386,12 @@ summary:focus-visible {
 		top: 6%;
 		left: 5%;
 		width: 95%;
+	}
+
+	.announcement-feature-desk img {
+		top: 2%;
+		left: -12%;
+		width: 124%;
 	}
 
 	.announcement-feature-automations {
@@ -1442,7 +1470,8 @@ summary:focus-visible {
 
 @media (prefers-reduced-motion: no-preference) {
 	.rail > *,
-	.stage {
+	.stage,
+	.feature-card {
 		animation: enter 700ms cubic-bezier(0.23, 1, 0.32, 1) both;
 	}
 
@@ -1459,12 +1488,13 @@ summary:focus-visible {
 	}
 
 	.rail > :nth-child(2) { animation-delay: 60ms; }
-	.rail > :nth-child(3) { animation-delay: 110ms; }
-	.stage { animation-delay: 150ms; }
+	.stage { animation-delay: 110ms; }
+	.feature-card { animation-delay: 150ms; }
+	.rail > :nth-child(3) { animation-delay: 190ms; }
 }
 
 @keyframes enter {
-	from { opacity: 0; transform: translateY(12px); }
+	from { opacity: 0; filter: blur(4px); transform: translateY(12px); }
 }
 
 @keyframes dialog-enter {
@@ -1480,10 +1510,6 @@ summary:focus-visible {
 }
 
 @media (prefers-reduced-motion: reduce) {
-	.hero-video {
-		display: none;
-	}
-
 	.product-demo-poster,
 	.product-demo-frame {
 		transition: none;
@@ -1493,9 +1519,9 @@ summary:focus-visible {
 /* Dark mode follows the system rather than offering a switch: the page has one
    screen of content and no settings, so a preference the visitor already set
    is the whole answer. The product preview reads the same signal inside its
-   frame, and the hero swaps Tella's Silver Silk loop for Midnight Dust.
-   The blue is deliberately unchanged: it is the product's accent, it already
-   clears its contrast on white, and it only gains presence on a dark page. */
+   frame. The blue is deliberately unchanged: it is the product's accent, it
+   already clears its contrast on white, and it only gains presence on a dark
+   page. */
 @media (prefers-color-scheme: dark) {
 	:root {
 		color-scheme: dark;
@@ -1519,23 +1545,6 @@ summary:focus-visible {
 		--field: #1a1a1d;
 		--ok: #3fb950;
 		--err: #f87171;
-	}
-
-	.gradient-fallback {
-		background:
-			radial-gradient(circle at 26% 16%, #262b38 0, transparent 40%),
-			radial-gradient(circle at 74% 34%, #1a1f2b 0, transparent 44%),
-			linear-gradient(145deg, #161a23 0%, #12151c 52%, #0a0b0f 100%);
-	}
-
-	/* Cobalt Veil is one of Tella's daylight silks, so it arrives far too
-	   bright for a dark page. Dimming the clip keeps its movement and its blue
-	   while letting the window on top stay the lightest thing in the frame.
-	   0.6 is measured rather than picked: the panel lands around 110 in
-	   luminance against the window's 30, so the blue is unmistakable and the
-	   product still sits in front of it. */
-	.hero-video {
-		filter: brightness(0.6) saturate(1.12);
 	}
 }
 

@@ -249,6 +249,48 @@ export function githubAppConfigured(): boolean {
   return !!githubUserAuthSettings().clientId && githubAppPrivateKeyConfigured();
 }
 
+/** Point the App-level webhook at the public callback gateway after ingress is
+ * configured. The manifest already granted the event subscriptions and stored
+ * this shared secret; authenticating as the App lets Domains connect the URL
+ * later without sending the operator back through GitHub's settings UI. */
+export async function updateGithubAppWebhook(
+  publicOrigin: string,
+  secret: string,
+): Promise<void> {
+  const origin = new URL(publicOrigin);
+  if (origin.protocol !== "https:" || origin.pathname !== "/") {
+    throw new Error("GitHub webhooks require a public HTTPS origin");
+  }
+  if (!secret || /[\r\n\0]/.test(secret)) {
+    throw new Error("GitHub webhook secret is missing or invalid");
+  }
+  const { clientId } = githubUserAuthSettings();
+  if (!clientId || !existsSync(keyPath())) {
+    throw new Error("GitHub App credentials are not configured");
+  }
+  const key = await Bun.file(keyPath()).text();
+  const response = await fetch("https://api.github.com/app/hook/config", {
+    method: "PATCH",
+    headers: {
+      Authorization: `Bearer ${appJwt(clientId, key)}`,
+      Accept: "application/vnd.github+json",
+      "Content-Type": "application/json",
+      "X-GitHub-Api-Version": "2022-11-28",
+      "User-Agent": "opensession",
+    },
+    body: JSON.stringify({
+      url: `${origin.origin}/github/webhook`,
+      content_type: "json",
+      secret,
+      insecure_ssl: "0",
+    }),
+    signal: AbortSignal.timeout(15_000),
+  });
+  if (!response.ok) {
+    throw new Error(`GitHub rejected the webhook update (${response.status})`);
+  }
+}
+
 /** Persist the App's private key (0600) at the key path — the piece the device-flow
  *  setup never captured, so installation tokens (bot/agent, checks-read) could
  *  never mint. The App-manifest flow returns this PEM at creation. Drops any

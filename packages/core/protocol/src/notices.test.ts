@@ -72,6 +72,17 @@ describe("worker report detection", () => {
 		expect(parseWorkerReport(`<!--os:worker-report:${id}-->\nDone.`)?.sessionId).toBe(id);
 	});
 
+	it("recovers server failure beacons written before they carried a sentinel", () => {
+		expect(
+			parseWorkerReport(
+				`Server notice: worker task \`${id}\` ended in error without reporting back.\nerror: timed out`,
+			),
+		).toEqual({
+			sessionId: id,
+			body: `Worker task \`${id}\` ended in error without reporting back.\nerror: timed out`,
+		});
+	});
+
 	it("drops a stacked notice sentinel the card would render as raw HTML", () => {
 		// A worker whose whole job was a workflow reports the workflow's own
 		// nudge back, so the turn carries both sentinels.

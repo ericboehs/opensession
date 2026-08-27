@@ -125,50 +125,19 @@ await fetch(`${BASE_PATH}/api/auth/logout`, { method: "POST" });
 }
 
 /**
- * The backdrop behind every gate screen: the same "Silver Silk" loop the
- * landing page runs, so the site and the app's front door are one surface.
- * Served from our own origin (routes/static-assets.ts), never the site's CDN.
- *
- * Three layers, each covering for the one above it: a flat fill that is
- * whatever paints first, the loop's own first frame as a background image, and
- * the video. So an offline browser, a slow connection and a reduced-motion
- * visitor all get the same picture, just not moving. `aria-hidden` and
- * `pointer-events-none` because it is wallpaper.
- *
- * Dark gets its OWN cut of the loop rather than the silver one behind a scrim.
- * A dimmed light background is still a light background: it stays the
- * brightest thing on the display and the whole screen glows in a dark room.
- * The dark cut is the same footage graded to charcoal (`scripts/signin-bg.sh`),
- * so it is the same material and the same motion in a different finish, and
- * its darkest point still sits clear of the card's own fill.
- *
- * `key` on the video: swapping a <source> child does not make an already-live
- * <video> reload, so a theme flip would keep playing the old cut. Keying it to
- * the theme replaces the element instead.
+ * The fixed light/dark artwork shared with marketing and onboarding. It is
+ * vendored beside the app so the sign-in gate never depends on a public CDN.
  */
 function AuthBackdrop() {
 	const [theme, setTheme] = useState(effectiveTheme);
 	useEffect(() => onThemeChanged(() => setTheme(effectiveTheme())), []);
-	const name = theme === "dark" ? "signin-bg-dark" : "signin-bg";
-	const poster = `${BASE_PATH}/${name}.webp`;
+	const name = theme === "dark" ? "onboarding-bg-dark" : "onboarding-bg";
 	return (
 		<div
 			aria-hidden="true"
 			className="pointer-events-none absolute inset-0 select-none bg-surface bg-cover bg-center"
-			style={{ backgroundImage: `url(${poster})` }}
-		>
-			<video
-				key={name}
-				className="size-full object-cover motion-reduce:hidden"
-				autoPlay
-				loop
-				muted
-				playsInline
-				poster={poster}
-			>
-				<source src={`${BASE_PATH}/${name}.mp4`} type="video/mp4" />
-			</video>
-		</div>
+			style={{ backgroundImage: `url(${BASE_PATH}/${name}.webp)` }}
+		/>
 	);
 }
 
@@ -179,19 +148,14 @@ function AuthBackdrop() {
  * why the first thing a new teammate saw looked like a different product from
  * the one behind it.
  *
- * One card, one corner, one width. The corner is the container step of the
- * radius scale (`rounded-2xl`) rather than the card step: nothing is stacked
- * around it, so it is the whole page's shape.
+ * One card, one corner, one width. Its `rounded-3xl` shape is a small step
+ * softer than the standard container, and its shared popup glass lets the new
+ * artwork read through without competing with the content. The popup token
+ * becomes opaque when blur is unavailable or reduced transparency is enabled.
  *
- * It is paper (`bg-surface`, the page's own base) rather than the panel grey
- * every other card takes: on the silk it is the only opaque thing on screen,
- * so it reads against the backdrop rather than against a page.
- *
- * Its edge is the one thing that changes with the theme, and `--auth-card-edge`
- * (base.css) holds both answers. Over the silver loop the card is white in
- * front of a picture and takes the `lg` cast a genuinely floating card has
- * earned. Over the charcoal cut there is nothing for a cast to fall on, so it
- * takes a hairline instead.
+ * Its edge still changes with the theme through `--auth-card-edge` (base.css):
+ * light gets a restrained cast, while dark gets the hairline that holds the
+ * translucent shape without muddying the backdrop.
  *
  * Every screen opens on the organization's own mark when one is configured,
  * else the product icon — the same one the loading splash shows (index.html),
@@ -212,7 +176,7 @@ function AuthCard({
 		// shell capability keeps this working if WCO geometry disappears.
 		<div className="relative flex h-screen items-center justify-center overflow-hidden p-6 [html.wco_&]:[-webkit-app-region:drag] [html.wco_&]:[app-region:drag] [html.desktop-shell_&]:[-webkit-app-region:drag] [html.desktop-shell_&]:[app-region:drag]">
 			<AuthBackdrop />
-			<div className="relative w-[400px] max-w-full rounded-2xl bg-surface p-8 text-center shadow-(--auth-card-edge) phone:p-6 [html.wco_&]:[-webkit-app-region:no-drag] [html.wco_&]:[app-region:no-drag] [html.desktop-shell_&]:[-webkit-app-region:no-drag] [html.desktop-shell_&]:[app-region:no-drag]">
+			<div className="relative w-[400px] max-w-full rounded-3xl bg-popup-glass p-8 text-center shadow-(--auth-card-edge) [backdrop-filter:var(--popup-blur)] phone:p-6 [html.wco_&]:[-webkit-app-region:no-drag] [html.wco_&]:[app-region:no-drag] [html.desktop-shell_&]:[-webkit-app-region:no-drag] [html.desktop-shell_&]:[app-region:no-drag]">
 				<AuthMark />
 				{/* Medium, not semibold: at 19px on the card's own paper the heavier
 				    step read as a slab rather than a heading. */}

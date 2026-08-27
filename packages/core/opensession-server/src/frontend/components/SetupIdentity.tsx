@@ -6,6 +6,7 @@ import {
 } from "../lib/api";
 import { AGENT_NAME, PRODUCT_NAME } from "../lib/brand";
 import { cn } from "../ui/cn";
+import { Field } from "../ui/input";
 import {
 	SettingRow,
 	SettingRowDescription,
@@ -18,7 +19,7 @@ import { toast } from "../ui/toast";
 // What this instance and its agent are called. These rows sit inside the
 // organization card, so Setup and Workspace > General both show one section.
 
-const IDENTITY_INPUT_CLASS = cn(settingsInputClass, "w-[140px]");
+const IDENTITY_INPUT_CLASS = cn(settingsInputClass, "w-[140px] max-w-full");
 
 /** One identity field: saves on blur or Enter, reverts on Escape or failure. */
 function IdentityInput({
@@ -26,11 +27,13 @@ function IdentityInput({
 	value,
 	placeholder,
 	onSave,
+	className,
 }: {
 	label: string;
 	value: string;
 	placeholder: string;
 	onSave: (next: string) => Promise<void>;
+	className?: string;
 }) {
 	const [draft, setDraft] = useState(value);
 	const [saving, setSaving] = useState(false);
@@ -53,7 +56,7 @@ setSaving(false);
 	};
 	return (
 		<input
-			className={IDENTITY_INPUT_CLASS}
+			className={cn(IDENTITY_INPUT_CLASS, className)}
 			// data-setup-field: FirstMile's onboarding wrapper widens these fields
 			// past their settings-page width; settings ignores the attribute.
 			data-setup-field="identity"
@@ -73,7 +76,15 @@ setSaving(false);
 
 /** The instance's own names, as rows. They live inside the organization card
  *  so setup and settings show one section rather than two near-identical ones. */
-export function IdentityRows() {
+export function IdentityRows({
+	showProductName = true,
+	rowClassName,
+	compact = false,
+}: {
+	showProductName?: boolean;
+	rowClassName?: string;
+	compact?: boolean;
+} = {}) {
 	const [identity, setIdentity] = useState<InstanceIdentityDto | null>(null);
 	useEffect(() => {
 		let cancelled = false;
@@ -98,9 +109,29 @@ toast(e?.message || "Failed to save", { variant: "error" });
 });
 	};
 
+	if (compact) {
+		return (
+			<Field label={<span className="text-fg">Agent name</span>}>
+				<IdentityInput
+					label="Agent name"
+					value={identity?.personaName ?? AGENT_NAME}
+					placeholder="Assistant"
+					onSave={(next) => save({ personaName: next })}
+					className="h-12! min-h-12! w-full! px-3.5! text-base!"
+				/>
+				<span
+					data-onboarding-caption=""
+					className="text-supporting font-normal text-dim"
+				>
+					Shown in prompts, Slack messages, and the app.
+				</span>
+			</Field>
+		);
+	}
+
 	return (
 		<>
-			<SettingRow>
+			<SettingRow className={rowClassName}>
 				<SettingRowText>
 					<SettingRowTitle>Agent name</SettingRowTitle>
 					<SettingRowDescription>
@@ -114,20 +145,22 @@ toast(e?.message || "Failed to save", { variant: "error" });
 					onSave={(next) => save({ personaName: next })}
 				/>
 			</SettingRow>
-			<SettingRow>
-				<SettingRowText>
-					<SettingRowTitle>Product name</SettingRowTitle>
-					<SettingRowDescription>
-						Shown in titles and headings.
-					</SettingRowDescription>
-				</SettingRowText>
-				<IdentityInput
-					label="Product name"
-					value={identity?.productName ?? PRODUCT_NAME}
-					placeholder="Open Session"
-					onSave={(next) => save({ productName: next })}
-				/>
-			</SettingRow>
+			{showProductName && (
+				<SettingRow className={rowClassName}>
+					<SettingRowText>
+						<SettingRowTitle>Product name</SettingRowTitle>
+						<SettingRowDescription>
+							Shown in titles and headings.
+						</SettingRowDescription>
+					</SettingRowText>
+					<IdentityInput
+						label="Product name"
+						value={identity?.productName ?? PRODUCT_NAME}
+						placeholder="Open Session"
+						onSave={(next) => save({ productName: next })}
+					/>
+				</SettingRow>
+			)}
 		</>
 	);
 }

@@ -22,10 +22,9 @@ test("workspace surfaces keep committed and uncommitted work separate", () => {
 	expect(infoSource).toContain("<CommitRow key={commit.sha} commit={commit} />");
 });
 
-test("popup review heading keeps one small gap after a lone PR band", () => {
+test("popup review heading does not split from a lone PR band", () => {
 	expect(summarySource).toContain('"[&>.ws-summary-band:last-child]:mb-0"');
 	expect(summarySource).toContain(
-		'"[.ws-summary-pr-group:has(>.ws-summary-band:last-child)+.ws-summary-review-group_&]:mt-2"',
+		'"[.ws-summary-pr-group:has(>.ws-summary-band:last-child)+.ws-summary-review-group_&]:mt-0"',
 	);
-	expect(summarySource).not.toContain('embedded ? "h-11" : "h-7 mt-0"');
 });

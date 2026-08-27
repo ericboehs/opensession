@@ -66,6 +66,7 @@ import {
 } from "./icons";
 import type { WSClientMessage, WSServerMessage } from "../lib/types";
 import { newClientSessionId } from "../lib/session-id";
+import { errorMatchesPendingCreate } from "../lib/new-session-navigation";
 import { VoiceInput } from "./VoiceInput";
 import { useIsPhone } from "../hooks/useIsPhone";
 import { handOffSoftKeyboard } from "../lib/soft-keyboard";
@@ -1014,7 +1015,10 @@ export function NewSession({ onBack, inline, focusSeq, send, addHandler, connect
   const createdRef = useRef(false);
   const handleCreationMessage = useEffectEvent((msg: WSServerMessage) => {
     if (!creatingRef.current) return;
-    if (msg.type === "error") {
+    if (
+      msg.type === "error" &&
+      errorMatchesPendingCreate(msg.sessionId, createSessionIdRef.current)
+    ) {
       creatingRef.current = false;
       createSessionIdRef.current = null;
       createMessageRef.current = null;

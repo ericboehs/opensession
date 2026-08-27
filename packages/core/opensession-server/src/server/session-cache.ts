@@ -39,11 +39,19 @@ import {
 import { writeJsonAtomic } from "./shared/atomic-write";
 import type { UnifiedSession, NativeSessionFile } from "./types";
 import {
+	publicSessionSafety,
+	reconcileAutomaticallyRecoverableSessionSafety,
+} from "./session-safety";
+import {
   sessionDeliveryProjection,
+  sessionDeliveryProjectionCached,
+  quarantineSessionForSafety,
+  releaseSessionQuarantine,
   sessionGatewayCommand,
   sessionKernel,
-  sessionKernelStore,
   sessionKernelActorActive,
+  sessionQuarantines,
+  sessionRunStateProjections,
   sessionTurn,
 } from "./session-kernel";
 import { withSessionMutationLock } from "./session-mutation-lock";
@@ -143,7 +151,7 @@ export function enrichSessionRuntime(
 	// idle. Small detail updates keep the targeted accessor to avoid copying the
 	// whole projection for a single session.
 	const runStateBySession = data.length > 32
-		? new Map(sessionKernelStore().runStates().map((state) => [state.sessionId, state]))
+		? new Map(sessionRunStateProjections().map((state) => [state.sessionId, state]))
 		: undefined;
 	// Sessions driven from the web UI run in-process; surface those too
 	for (const s of data) {
@@ -178,7 +186,7 @@ export function enrichSessionRuntime(
 			delete s.runStartedAt;
 		}
 		if (rs !== "idle") s.runState = rs;
-		checkRunStateWedge(s.id, rs, liveEngineBusy);
+		checkRunStateWedge(s.id, rs, liveEngineBusy || recoveryBusy);
 	}
 	return data;
 }
@@ -336,7 +344,7 @@ export function isRunSettled(sessionId: string): boolean {
 	}
 	// Queue authority lives in the actor. Read its per-session delivery snapshot
 	// directly rather than reaching through queue-state's former global map.
-	if (sessionKernelStore().deliverySnapshot(id).queued.length > 0)
+	if (sessionDeliveryProjectionCached(id).queued.length > 0)
 		return false;
 	return true;
 }
@@ -351,20 +359,28 @@ const WEDGE_AFTER_MS = 3 * 60 * 1000;
 const wedgeSince: Map<string, number> = (g.__runStateWedgeSince ??= new Map());
 const wedgeReported: Set<string> = (g.__runStateWedgeReported ??= new Set());
 
+export function runStateRequiresLiveOwner(state: RunState): boolean {
+	return (
+		state === "preparing" ||
+		state === "starting" ||
+		state === "running" ||
+		state === "interrupted" ||
+		state === "reattaching"
+	);
+}
+
 function checkRunStateWedge(
 	sessionId: string,
 	state: RunState,
-	engineBusy: boolean,
+	ownerBusy: boolean,
 ): void {
-	const fsmActive =
-		state === "running" || state === "starting" || state === "ask_blocked";
-	// ask_blocked idles the engine legitimately (the turn is parked on a
-	// question card) — only a busy-engine-while-FSM-idle or an idle-engine
-	// while the FSM believes a turn is RUNNING counts as divergence.
-	const diverged =
-		state === "ask_blocked"
-			? false
-			: fsmActive !== engineBusy;
+	// ask_blocked is visibly waiting on a person. Other unsettled states must
+	// have either a live engine or a claimed recovery journal; without one they
+	// are not allowed to remain a green "running" projection indefinitely.
+	const missingOwner = runStateRequiresLiveOwner(state) && !ownerBusy;
+	// Keep auditing the inverse mismatch too. A live engine during a nominally
+	// settled state can be a short fallback gap, so it is never auto-quarantined.
+	const diverged = missingOwner || (!isRunStateUnsettled(state) && ownerBusy);
 	if (!diverged) {
 		wedgeSince.delete(sessionId);
 		wedgeReported.delete(sessionId);
@@ -379,15 +395,108 @@ function checkRunStateWedge(
 		return;
 	wedgeReported.add(sessionId);
 	console.warn(
-		`[run-state] wedge: session ${sessionId} FSM=${state} engineBusy=${engineBusy} for ${Math.round((Date.now() - since) / 1000)}s`,
+		`[run-state] wedge: session ${sessionId} FSM=${state} ownerBusy=${ownerBusy} for ${Math.round((Date.now() - since) / 1000)}s`,
 	);
 	audit({
 		msg: "run_state_wedge",
 		session_id: sessionId,
 		run_state: state,
-		engine_busy: engineBusy,
+		owner_busy: ownerBusy,
 		diverged_for_ms: Date.now() - since,
 	});
+	if (!missingOwner) return;
+	void quarantineSessionForSafety(
+		sessionId,
+		"The active run no longer has a live execution owner or recovery claim",
+		`run_state:${state}`,
+	).then((quarantine) => {
+		invalidateSessionsCache();
+		broadcastToAll({
+			type: "session_status",
+			sessionId,
+			isRunning: false,
+			safety: publicSessionSafety(quarantine),
+		});
+	}).catch((error) => {
+		// Let the next cache refresh retry rather than leaving the invisible wedge
+		// permanently marked as handled after a transient actor outage.
+		wedgeReported.delete(sessionId);
+		console.error(`[run-state] could not pause orphaned session ${sessionId}:`, error);
+	});
+}
+
+type OwnershipWatchdogState = {
+	timer?: ReturnType<typeof setTimeout>;
+	safetyReconciliation?: Promise<string[]>;
+};
+const ownershipWatchdog: OwnershipWatchdogState = (g.__sessionOwnershipWatchdog ??= {});
+
+export async function reconcileRecoverableSafetyFences(): Promise<string[]> {
+	if (ownershipWatchdog.safetyReconciliation)
+		return ownershipWatchdog.safetyReconciliation;
+	const reconciliation = (async () => {
+		const released = await reconcileAutomaticallyRecoverableSessionSafety(
+			await sessionQuarantines(),
+			releaseSessionQuarantine,
+		);
+		if (!released.length) return released;
+		invalidateSessionsCache();
+		for (const sessionId of released) {
+			audit({
+				msg: "session_safety_automatically_reconciled",
+				session_id: sessionId,
+			});
+			broadcastToAll({
+				type: "session_status",
+				sessionId,
+				isRunning: isAgentSessionBusy(sessionId),
+			});
+		}
+		return released;
+	})().catch((error) => {
+		console.error("[session-safety] automatic reconciliation failed:", error);
+		return [];
+	}).finally(() => {
+		if (ownershipWatchdog.safetyReconciliation === reconciliation)
+			ownershipWatchdog.safetyReconciliation = undefined;
+	});
+	ownershipWatchdog.safetyReconciliation = reconciliation;
+	return reconciliation;
+}
+
+/** Independently enforce the visible-ownership invariant even when nobody has
+ * the session list open. The scan reads the actor client's local projection
+ * and process-local owner registries only; it never fans out to session files. */
+export function startSessionOwnershipWatchdog(): void {
+	if (ownershipWatchdog.timer) return;
+	const tick = () => {
+		void reconcileRecoverableSafetyFences();
+		try {
+			const recovery = sessionRuntimeSnapshot();
+			for (const run of sessionRunStateProjections()) {
+				const state = run.state as RunState;
+				const ownerBusy =
+					isAgentLiveEngineBusy(undefined, undefined, run.sessionId) ||
+					recovery.journalBusy.has(run.sessionId);
+				checkRunStateWedge(run.sessionId, state, ownerBusy);
+			}
+		} catch (error) {
+			console.error("[run-state] ownership watchdog scan failed:", error);
+		} finally {
+			ownershipWatchdog.timer = setTimeout(tick, 30_000);
+			ownershipWatchdog.timer.unref?.();
+		}
+	};
+	// Reconcile proven actor-restart fences as soon as boot recovery establishes
+	// ownership. The regular tick catches evidence that becomes sufficient later.
+	reconcileRecoverableSafetyFences();
+	ownershipWatchdog.timer = setTimeout(tick, 30_000);
+	ownershipWatchdog.timer.unref?.();
+}
+
+export function stopSessionOwnershipWatchdog(): void {
+	if (ownershipWatchdog.timer) clearTimeout(ownershipWatchdog.timer);
+	ownershipWatchdog.timer = undefined;
 }
 
 export function findSession(sessionId: string): UnifiedSession | undefined {
@@ -779,7 +888,7 @@ export async function recordRunOutcome(
 		});
 	if (opts?.projectionId && opts.runId && sessionKernelActorActive()) {
 		const runGeneration =
-			opts.runGeneration ?? sessionKernel(id).runState().generation;
+			opts.runGeneration ?? sessionKernel(id).runStateProjection().generation;
 		await sessionTurn({
 			op: "prepare_outcome_projection",
 			sessionId: id,

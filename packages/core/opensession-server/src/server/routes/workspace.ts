@@ -27,13 +27,14 @@ import {
 	SESSIONS_DIR,
 	findSessionAsync,
 	getCachedSessionsAsync,
+	getSessionListSnapshotAsync,
 	invalidateSessionsCache,
 	peekCachedSessions,
 	touchNativeSession,
 	updateSessionFile,
 } from "../session-cache";
 import { attachRepo, switchPrimaryRepo, workspaceOwningWorktree } from "../session-repos";
-import { getAllSessions, getOpenPrs, getTranscriptPath } from "../sessions";
+import { getOpenPrs, getTranscriptPath } from "../sessions";
 import { configuredIdentity, configuredRepos, defaultRepo, newSessionRepoDefault } from "../config";
 import { persistRawConfig, rawConfig, withConfigMutationLock } from "../config-mutation";
 import { AUTO_REPO } from "../worktree";
@@ -574,7 +575,7 @@ export async function handleWorkspaceRoutes(
 		const id = decodeURIComponent(workspaceMatch[1]);
 		// Membership is derived from each session's workspaceId — clear it so member
 		// sessions fall back to standalone rather than pointing at a dead folder.
-		for (const s of getAllSessions()) {
+		for (const s of await getSessionListSnapshotAsync()) {
 			if (s.workspaceId === id)
 				touchNativeSession(s.id, { workspaceId: null });
 		}

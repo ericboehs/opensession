@@ -70,7 +70,7 @@ describe("session kernel service deployment", () => {
       "systemctl restart opensession-session-kernel.service",
     );
     const publishGateway = deploy.indexOf(
-      'cp "$REPO_DIR/opensession.service"',
+      'cp "$GATEWAY_UNIT_RENDERED"',
     );
     expect(stopGateway).toBeGreaterThan(0);
     expect(restartActor).toBeGreaterThan(stopGateway);

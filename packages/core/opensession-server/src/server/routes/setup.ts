@@ -28,6 +28,7 @@ import { setupAccessSnapshot } from "../setup-access";
 import { requireWorkspaceAdmin } from "../workspace-auth";
 import type { RouteContext } from "./context";
 import { handleSetupCodestorageRoutes } from "./setup-codestorage";
+import { handleSetupGithubManifestRoutes } from "./setup-github-manifest";
 import { handleSetupRepoRoutes } from "./setup-repos";
 import { handleSetupTeamRoutes } from "./setup-team";
 
@@ -128,9 +129,6 @@ export function buildOnboardingGithubAppCreateUrl(
     // permissions the installation token mints request, so a created App is
     // never born missing a scope the server needs.
     ...GITHUB_APP_GRANT_PERMISSIONS,
-    // Undocumented by GitHub, but supported by the new-App form. The onboarding
-    // still tells the person to check it in case GitHub ever drops the parameter.
-    device_flow_enabled: "true",
   });
   const owner = org?.trim();
   const base = owner
@@ -237,6 +235,9 @@ export async function handleSetupRoutes(
   const forbidden = requireWorkspaceAdmin(ctx);
   if (forbidden) return forbidden;
 
+  const githubManifestResponse = await handleSetupGithubManifestRoutes(ctx);
+  if (githubManifestResponse) return githubManifestResponse;
+
   if (path === "/api/setup/onboarding" && req.method === "PUT") {
     const body = (await req.json().catch(() => null)) as { completed?: unknown } | null;
     if (body?.completed !== true) {
@@ -247,6 +248,33 @@ export async function handleSetupRoutes(
     return withConfigMutationLock(async () => {
       const config = rawConfig();
       if (config.onboardingCompleted !== true) {
+        const { parseTeamMember } = await import("../config");
+        const { connectedGithubAccounts, soleGithubLogin } = await import(
+          "../github-auth"
+        );
+        const { rawTeam } = await import("./setup-team");
+        const team = rawTeam(config);
+        if (!team.some((member) => parseTeamMember(member))) {
+          const connectedLogin = ctx.authUser?.login || soleGithubLogin() || "";
+          const connectedAccount = connectedLogin
+            ? connectedGithubAccounts().find(
+                (account) =>
+                  account.login.toLowerCase() === connectedLogin.toLowerCase(),
+              )
+            : undefined;
+          const name =
+            ctx.authUser?.name?.trim() ||
+            connectedAccount?.name?.trim() ||
+            connectedLogin ||
+            "Local User";
+          team.push({
+            name,
+            ...(connectedLogin
+              ? { github: connectedLogin, admin: true }
+              : {}),
+          });
+          (config.identity as Record<string, unknown>).team = team;
+        }
         config.onboardingCompleted = true;
         persistRawConfig(config);
         audit({ kind: "setup_onboarding_complete", by: ctx.authUser?.login || null });

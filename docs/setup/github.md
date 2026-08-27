@@ -33,7 +33,7 @@ Configure it from Settings → Integrations, or under
 }
 ```
 
-The private key is not stored in JSON. Paste the PEM in Settings →
+The private key is not stored in JSON. Upload the PEM in Settings →
 Integrations; Open Session writes it atomically with mode 0600 to `~/.opensession/github-app.pem`. Operators
 may instead set `OPENSESSION_GITHUB_APP_KEY` to an externally managed PEM path.
 The UI will not overwrite or delete an operator-managed key.
@@ -287,32 +287,31 @@ needs their **private** repos available, to list them in the repo picker, clone
 them, and open PRs as themselves. Simple mode connects with a **GitHub App you
 create**, configured entirely in the UI: no file editing, no restart.
 
-1. **Create the app.** Settings → Account → **GitHub** opens a wizard whose
-   link lands on `github.com/settings/apps/new` pre-filled with a generated,
-   likely-unique name, a private App, the current webhook URL and active state,
-   **Device Flow enabled**, and the complete permission set in
-   [Required permissions](#required-permissions). Confirm Device Flow because
-   its URL parameter is undocumented. If you will enable the event-driven
-   GitHub agent, configure Public ingress first, then set the webhook secret
-   and event subscriptions described in [Webhook intake](#webhook-intake)
-   after creating the App. The Members permission lets org setup import private
-   memberships into the sign-in roster. Pick the owner: your personal account,
-   or an organization (a team's App should be org-owned so the org owns it and
-   can reach org repos). Create the App, then generate a client secret on its
-   settings page. Also generate a private key if the App will do bot work.
-2. **Paste the details.** Back in the wizard, paste the **Client ID**, App
-   **slug**, and **client secret**. Paste the generated **private key** when the
-   App will do installation-token bot work; a personal sign-in-only simple-mode
-   connection can leave it blank. The secret refreshes ~8h user-to-server
-   tokens; Open Session stores a pasted private key with mode 0600. Choosing an
-   organization owner records it as the installation owner; otherwise configure
-   `installationOwner` under Settings → Integrations before enabling bot work.
+1. **Create the app.** The GitHub step in `/welcome` submits a GitHub App
+   manifest for either a personal account or an organization. The manifest
+   carries the private App name, complete permission set, event subscriptions,
+   and the current public webhook URL when one exists. Confirm **Device Flow**
+   because its URL parameter is undocumented, then create the App.
+2. **Return automatically.** GitHub redirects the browser to the private Open
+   Session address with a one-time conversion code. The server exchanges it for
+   the App slug, Client ID, client secret, webhook secret, and private key. It
+   stores the key with mode 0600 and never sends any of those secrets back to
+   the browser. The **Use an existing GitHub App** disclosure keeps the manual
+   path for an App that was created elsewhere.
 3. **Install on your repositories.** Follow the install link and pick the repos
-   to expose. A user-to-server token only reaches repos the app is installed on.
+   to expose. An App credential reaches only repositories included in that
+   installation.
 4. **Connect.** Enter the one-time code at `github.com/login/device`. The token
    is stored under the login GitHub reports (`~/.opensession/github-auth.json`,
    0600, never shown again). Interactive HTTPS clones and pushes receive it
    through a process-local credential helper. No static GitHub token is involved.
+
+A public callback origin is not required for App creation, repository access,
+or sign-in. When no public ingress exists, the manifest omits its webhook.
+Configuring Public callbacks later under **Settings → Domains and ingress**
+updates the App webhook URL and shared secret with App JWT authentication. This
+keeps networking out of first-run onboarding while allowing comments, labels,
+and other webhook events to be enabled later.
 
 The single connected account is *the* account for this install (there is no
 roster in simple mode; the one connected account is the acting identity).
@@ -347,23 +346,32 @@ sudo deploy/deploy.sh <git-sha>   # deploy a specific fetched revision
 
 There is no deployment workflow in this repository. The script:
 
-1. fetches origin and runs `git merge --ff-only <target>` as the checkout owner;
-   it never resets the live shared checkout,
-2. runs `bun install --frozen-lockfile` when `bun.lock` or the root
-   `package.json` changed,
-3. classifies changed files by runtime layer, installs the executor and session
-   kernel credentials and fixed run-host helper, syncs the executor, session
-   kernel, and gateway units as needed, and health-gates both actor services,
-4. installs the gateway resource override and the per-user
-   `opensession.slice` aggregate budget for detached engine and preview scopes,
-5. when Caddy is installed, syncs its Tailscale boot-order/retry drop-in and
-   restarts a failed Caddy after that drop-in changes,
-6. only when gateway changes require a restart, waits up to
-   `MAX_DRAIN_WAIT` (480 seconds) for `activeRuns == 0` on `/api/health`, then
-   restarts `opensession.service` and requires `/ready` to recover. An
-   executor-only deploy leaves the gateway, browser sockets, and active run
-   hosts alone.
+1. fetches origin and resolves the target without checking out, merging,
+   resetting, or installing dependencies in the shared WIP checkout,
+2. refuses a target that does not descend from the pinned runtime unless the
+   operator deliberately sets `OPENSESSION_DEPLOY_ALLOW_DIVERGED=1`,
+3. creates or reuses a detached worktree for the exact commit under the deploy
+   state directory, runs `bun install --frozen-lockfile` there, and verifies its
+   tracked files,
+4. installs the executor and session-kernel credentials and fixed run-host
+   helper, synchronizes all three units and the gateway release environment,
+   and validates the installed helper policy,
+5. installs the gateway resource override and per-user `opensession.slice`, and
+   when Caddy is installed, synchronizes its Tailscale boot-order drop-in,
+6. waits up to `MAX_DRAIN_WAIT` (480 seconds by default) for
+   `activeRuns == 0`, records the previous release as last-known-good, and
+   atomically switches the `current` release pointer,
+7. stops the gateway before replacing its protocol peer, runs the offline
+   session migration, restarts and readiness-checks the executor and session
+   kernel, then restarts the gateway and requires `/ready` to recover, and
+8. switches the pointer back and restarts the previous release when a
+   post-switch readiness or health check fails, subject to the kernel schema
+   compatibility floor.
 
-The core contract is fast-forward-only update, conditional dependency install,
-change-scoped service rollout, and a drain before gateway restart. Divergence
-aborts instead of discarding work.
+Every source release is one gateway + kernel + executor version, so the root
+script rolls out all three even for a frontend-only commit. Detached run-host
+units keep executing their original release until their turns finish. For
+ordinary source changes that do not update privileged installed artifacts, an
+interactive admin can use the lighter `deploy_self` path described in
+[self-development.md](../self-development.md); it still restarts all three
+runtime services.

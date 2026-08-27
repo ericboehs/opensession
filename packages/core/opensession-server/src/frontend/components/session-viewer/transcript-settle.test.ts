@@ -35,6 +35,19 @@ test("late action clearance keeps a following transcript at the bottom", () => {
 	expect(viewer).toContain("actionClearance,");
 });
 
+test("a sent prompt scrolls again after its optimistic row commits", () => {
+	expect(viewer).toContain("sentPromptNeedsLayoutScrollRef.current = true");
+	const contentLayoutEffect = viewer.match(
+		/\/\/ After any content change:[\s\S]*?\}, \[\s*entries,[\s\S]*?scrollToLatest,[\s\S]*?\]\);/,
+	)?.[0];
+
+	expect(contentLayoutEffect).toContain("relayout()");
+	expect(contentLayoutEffect).toContain(
+		"if (!sentPromptNeedsLayoutScrollRef.current) return",
+	);
+	expect(contentLayoutEffect).toContain('scrollToLatest("auto")');
+});
+
 test("the stable callback reads current live-edge intent when it runs", () => {
 	const following = { current: true };
 	expect(readFollowingLive(following)).toBe(true);

@@ -93,8 +93,8 @@ function session(patch: Partial<UnifiedSession> = {}): UnifiedSession {
 }
 
 describe("session social card", () => {
-	test("normalizes the title and external preview metadata", () => {
-		const data = sessionSocialCardData(session());
+	test("normalizes the title and external preview metadata", async () => {
+		const data = await sessionSocialCardData(session());
 		expect(data).toMatchObject({
 			title: "Ship dynamic social cards",
 			owner: "Test Person",
@@ -128,11 +128,11 @@ describe("session social card", () => {
 		]);
 
 		expect(
-			sessionSocialCardData(session({ id: sessionId }), { includeShot: true })
+			(await sessionSocialCardData(session({ id: sessionId }), { includeShot: true }))
 				.shots,
 		).toEqual([featured, opening]);
 		expect(
-			sessionSocialCardData(
+			(await sessionSocialCardData(
 				session({
 					id: sessionId,
 					walkthrough: {
@@ -142,7 +142,7 @@ describe("session social card", () => {
 					},
 				}),
 				{ includeShot: true },
-			).shots,
+			)).shots,
 		).toEqual([walkthrough, featured, opening]);
 
 		const personOnlyId = "sess-social-person-shot";
@@ -163,9 +163,9 @@ describe("session social card", () => {
 			},
 		]);
 		expect(
-			sessionSocialCardData(session({ id: personOnlyId }), {
+			(await sessionSocialCardData(session({ id: personOnlyId }), {
 				includeShot: true,
-			}).shots,
+			})).shots,
 		).toEqual([opening]);
 	});
 
@@ -184,12 +184,12 @@ describe("session social card", () => {
 		const wire = transcriptStore().readTail(sessionId).entries[0];
 		expect(wire.images).toEqual(["os-blob:data-shot/0"]);
 		expect(
-			sessionSocialCardData(session({ id: sessionId }), { includeShot: true })
+			(await sessionSocialCardData(session({ id: sessionId }), { includeShot: true }))
 				.shots?.[0],
 		).toBe(dataUrl);
 	});
 
-	test("draws the screenshot and nothing else", () => {
+	test("draws the screenshot and nothing else", async () => {
 		const svg = sessionSocialCardSvg([
 			{ dataUrl: "data:image/png;base64,primary", width: 640, height: 360 },
 		]);
@@ -219,7 +219,7 @@ describe("session social card", () => {
 		expect(svg).not.toContain("gradient");
 	});
 
-	test("fans a second screenshot up from behind the first", () => {
+	test("fans a second screenshot up from behind the first", async () => {
 		const svg = sessionSocialCardSvg([
 			{ dataUrl: "data:image/png;base64,primary", width: 640, height: 360 },
 			{ dataUrl: "data:image/png;base64,secondary", width: 640, height: 360 },
@@ -246,8 +246,8 @@ describe("session social card", () => {
 
 	test("has no card at all without a usable screenshot", async () => {
 		expect(sessionSocialCardSvg([])).toBe("");
-		expect(await renderSessionSocialCard(sessionSocialCardData(session()))).toBeNull();
-		expect(await hasUsableSessionShot(sessionSocialCardData(session()))).toBe(
+		expect(await renderSessionSocialCard(await sessionSocialCardData(session()))).toBeNull();
+		expect(await hasUsableSessionShot(await sessionSocialCardData(session()))).toBe(
 			false,
 		);
 	});
@@ -342,7 +342,7 @@ describe("session social card", () => {
 		expect(await renderSessionSocialCard(data)).toBeNull();
 	});
 
-	test("injects large-image metadata into the session HTML", () => {
+	test("injects large-image metadata into the session HTML", async () => {
 		const source = `<head>
 <title>Open Session</title>
 <meta property="og:type" content="website" />
@@ -370,7 +370,7 @@ describe("session social card", () => {
 		expect(output).not.toContain("og:image:height");
 	});
 
-	test("parses both session link shapes", () => {
+	test("parses both session link shapes", async () => {
 		expect(socialSessionIdFromPath("/session/sess-social-1")).toBe("sess-social-1");
 		expect(
 			socialSessionIdFromPath("/workspace/ws-1/session/sess-social-1"),
@@ -381,7 +381,7 @@ describe("session social card", () => {
 		);
 	});
 
-	test("signs ids containing Slack timestamp dots", () => {
+	test("signs ids containing Slack timestamp dots", async () => {
 		expect(sessionSocialCardUrl("slack-C123-1719860000.000000")).toMatch(
 			/^https:\/\/media\.example\.test\/session-card\/slack-C123-1719860000\.000000\/[A-Za-z0-9_-]{32}\.png\?v=26$/,
 		);

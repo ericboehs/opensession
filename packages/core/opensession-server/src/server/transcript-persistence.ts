@@ -6,7 +6,7 @@ import type { TranscriptEntry } from "./types";
 import type { AnsweredAskData } from "@tellahq/opensession-protocol/notices";
 import type { ImageInput } from "./run-events";
 import { parseJsonlLines } from "./jsonl-parser";
-import { transcriptStore } from "./transcript-store";
+import { appendTranscriptEvents } from "./actor-transcript";
 import { transcriptForwarder } from "./transcript-forward";
 
 let ENGINE_SESSION_MAP_PATH =
@@ -123,17 +123,18 @@ async function appendLines(engineSessionId: string, lines: JsonlLine[]): Promise
   }
   try {
     const entries = parseJsonlLines(lines.map((line) => JSON.stringify(line)));
-    if (entries.length) await transcriptStore().appendTranscriptEvents(sessionId, entries);
+    if (entries.length) await appendTranscriptEvents(sessionId, entries);
   } catch (error) {
     markTranscriptStoreDegraded(sessionId);
     warnFailureOnce(sessionId, `[transcript] append failed for ${sessionId}`, error);
   }
 }
 
-export function storeAppendUserLineEarly(
+export async function storeAppendUserLineEarly(
   sessionId: string,
   line: Record<string, unknown>,
-): void {
+  options: { required?: boolean } = {},
+): Promise<void> {
   if (!sessionId) return;
   const forward = transcriptForwarder();
   if (forward) {
@@ -142,13 +143,10 @@ export function storeAppendUserLineEarly(
   }
   try {
     const entries = parseJsonlLines([JSON.stringify(line)]);
-    if (entries.length) {
-      void transcriptStore().appendTranscriptEvents(sessionId, entries).catch((error) => {
-        warnFailureOnce(sessionId, `[transcript] early user-line persist failed for ${sessionId}`, error);
-      });
-    }
+    if (entries.length) await appendTranscriptEvents(sessionId, entries);
   } catch (error) {
     warnFailureOnce(sessionId, `[transcript] early user-line persist failed for ${sessionId}`, error);
+    if (options.required) throw error;
   }
 }
 
@@ -431,7 +429,7 @@ export async function applyForwardedTranscriptStrict(
   if (engineSessionId && engineSessionId !== sessionId)
     recordEngineSessionOwner(engineSessionId, sessionId);
   const entries = parseJsonlLines(lines.map((line) => JSON.stringify(line)));
-  if (entries.length) await transcriptStore().appendTranscriptEvents(sessionId, entries);
+  if (entries.length) await appendTranscriptEvents(sessionId, entries);
 }
 
 export async function applyForwardedTranscript(
@@ -443,7 +441,7 @@ export async function applyForwardedTranscript(
   try {
     if (!engineSessionId || engineSessionId === sessionId) {
       const entries = parseJsonlLines(lines.map((line) => JSON.stringify(line)));
-      if (entries.length) await transcriptStore().appendTranscriptEvents(sessionId, entries);
+      if (entries.length) await appendTranscriptEvents(sessionId, entries);
       return;
     }
     recordEngineSessionOwner(engineSessionId, sessionId);

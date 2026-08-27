@@ -168,6 +168,30 @@ describe("transcript client state", () => {
 		}
 	});
 
+	test("classifies server-generated worker failures as worker reports", () => {
+		const id = "bks-01a03a08-8dec-759f-9970-5766bb898909";
+		const body = `Worker task \`${id}\` ended in error without reporting back.`;
+		const current = classifyQueuedContent(
+			`<!--os:worker-report:${id}-->\n${body}`,
+		);
+		const legacy = classifyQueuedContent(`Server notice: ${body}`);
+
+		for (const classified of [current, legacy]) {
+			expect(classified.notice).toMatchObject({
+				kind: "worker-report",
+				title: "Worker report",
+				link: { label: "Open worker", sessionId: id },
+			});
+			expect(classified.content).toBe(body);
+		}
+		expect(summarizeInFlightContent([current, legacy])).toEqual({
+			messages: 0,
+			reviews: 0,
+			workerReports: 2,
+			sessionMessages: 0,
+		});
+	});
+
 	test("keeps steered agent traffic grouped as reports and session messages", () => {
 		const worker = classifyQueuedContent(
 			"<!--os:worker-report-->\nReview complete.",

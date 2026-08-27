@@ -17,7 +17,11 @@ import { warmWorkspaceNamesAsync } from "./workspaces";
 import { findCodexRollout } from "./codex-accounts";
 import { providerFor } from "./models";
 import { parseTranscript, parseTranscriptAsync } from "./jsonl-parser";
-import { type SeqEntry, type TranscriptStore, transcriptStore } from "./transcript-store";
+import type { SeqEntry } from "./transcript-store";
+import {
+  importLegacyTranscript,
+  transcript,
+} from "./actor-transcript";
 import {
   isTranscriptStoreDegraded,
   clearTranscriptStoreDegraded,
@@ -160,9 +164,9 @@ export async function readEngineTranscriptAsync(
   engineSessionId: string,
   provider: "claude" | "codex" | "pi"
 ): Promise<TranscriptEntry[]> {
-  if (provider === "pi") return engineStoreTranscript(engineSessionId);
+  if (provider === "pi") return engineStoreTranscriptAsync(engineSessionId);
   const path = getEngineTranscriptPath(worktreeDir, engineSessionId, provider);
-  if (!path || !existsSync(path)) return engineStoreTranscript(engineSessionId);
+  if (!path || !existsSync(path)) return engineStoreTranscriptAsync(engineSessionId);
   return parseTranscriptAsync(path);
 }
 
@@ -176,10 +180,10 @@ export async function readEngineHandoffTranscriptAsync(
   engineSessionId: string,
   provider: "claude" | "codex" | "pi"
 ): Promise<TranscriptEntry[]> {
-  if (provider === "pi") return engineStoreHandoffTranscript(engineSessionId);
+  if (provider === "pi") return engineStoreHandoffTranscriptAsync(engineSessionId);
   const path = getEngineTranscriptPath(worktreeDir, engineSessionId, provider);
   if (!path || !existsSync(path))
-    return engineStoreHandoffTranscript(engineSessionId);
+    return engineStoreHandoffTranscriptAsync(engineSessionId);
   return parseTranscriptAsync(path);
 }
 
@@ -213,6 +217,7 @@ export async function readEngineHandoffTranscriptAsync(
  */
 function engineStoreOwner(engineSessionId: string): UnifiedSession | undefined {
   if (!engineSessionId) return undefined;
+  try {
     // Call-time require, not a static import: session-cache imports this
     // module (getAllSessions), so the static edge must stay one-directional.
     // By the time a transcript is read the cache module is long-loaded —
@@ -239,31 +244,35 @@ function engineStoreOwner(engineSessionId: string): UnifiedSession | undefined {
           s.claudeSessionId === engineSessionId
       )
     );
-}
-
-function engineStoreTranscript(engineSessionId: string): TranscriptEntry[] {
-  try {
-    const owner = engineStoreOwner(engineSessionId);
-    return owner ? mergedSessionTranscript(owner) : [];
   } catch (e) {
     console.warn(
-      `[sessions] engine store transcript read failed for ${engineSessionId}:`,
+      `[sessions] engine store owner resolution failed for ${engineSessionId}:`,
       e instanceof Error ? e.message : e
     );
-    return [];
+    return undefined;
   }
 }
 
+function engineStoreTranscript(engineSessionId: string): TranscriptEntry[] {
+  const owner = engineStoreOwner(engineSessionId);
+  return owner ? mergedSessionTranscript(owner) : [];
+}
+
+async function engineStoreTranscriptAsync(engineSessionId: string): Promise<TranscriptEntry[]> {
+  const owner = engineStoreOwner(engineSessionId);
+  return owner ? mergedSessionTranscriptAsync(owner) : [];
+}
+
 /** The handoff renderer clips each conversational row to 8 KB and the whole
- * note to 180 KB. Read just enough bounded store rows to satisfy that budget;
- * never resolve full_ref blobs for history the renderer will discard. */
-function engineStoreHandoffTranscript(engineSessionId: string): TranscriptEntry[] {
+ * note to 180 KB. Read a bounded actor page and never resolve full_ref blobs
+ * for history the renderer will discard. */
+async function engineStoreHandoffTranscriptAsync(
+  engineSessionId: string,
+): Promise<TranscriptEntry[]> {
+  const owner = engineStoreOwner(engineSessionId);
+  if (!owner || owner.id.startsWith("plain-")) return [];
   try {
-    const owner = engineStoreOwner(engineSessionId);
-    if (!owner || owner.id.startsWith("plain-")) return [];
-    const store = transcriptStore();
-    if (!store.hasImported(owner.id)) return mergedSessionTranscript(owner);
-    return store.readHandoffTail(owner.id).entries;
+    return (await transcript.readHandoffTail(owner.id)).entries;
   } catch (e) {
     console.warn(
       `[sessions] engine handoff transcript read failed for ${engineSessionId}:`,
@@ -282,17 +291,6 @@ type TranscriptSessionRef = Pick<UnifiedSession, "transcriptPath"> & {
 export function mergedSessionTranscript(
   session: TranscriptSessionRef,
 ): TranscriptEntry[] {
-  if (session.id && !session.id.startsWith("plain-")) {
-    try {
-      const served = v2StoreTranscript(session.id, session);
-      if (served) return served;
-    } catch (error) {
-      console.warn(
-        `[sessions] transcript store read failed for ${session.id}:`,
-        error instanceof Error ? error.message : error,
-      );
-    }
-  }
   return session.transcriptPath ? parseTranscript(session.transcriptPath) : [];
 }
 
@@ -301,7 +299,7 @@ export async function mergedSessionTranscriptAsync(
 ): Promise<TranscriptEntry[]> {
   if (session.id && !session.id.startsWith("plain-")) {
     try {
-      const served = v2StoreTranscript(session.id, session);
+      const served = await v2StoreTranscript(session.id, session);
       if (served) return served;
     } catch (error) {
       console.warn(
@@ -331,27 +329,22 @@ export function v2MirrorFiles(
 
 /**
  * Every stored entry for the session, ascending seq (paged readSince),
- * hydrated to FULL forms: rows whose 32KB-bounded `data` is a stripped wire
- * form resolve their original entry from transcript_blobs via getFullEntry
- * (which falls back to the row's own data, so non-stripped entries round-trip
- * unchanged). This feeds FTS distill / get_session / the HTTP transcript
- * route — not the WS hot path — and legacy served those consumers unstripped
- * content; wire-level clamping stays the serializers' job
- * (clampEntriesForWire at the send sites).
+ * hydrated to FULL forms in bounded actor pages. Blob joins and byte accounting
+ * happen inside the read-only actor operation, avoiding one RPC per entry.
+ * This feeds FTS distill / get_session / the HTTP transcript route — not the WS
+ * hot path — and legacy served those consumers unstripped content; wire-level
+ * clamping stays the serializers' job (clampEntriesForWire at send sites).
  */
-function v2ReadAll(store: TranscriptStore, sessionId: string): TranscriptEntry[] {
-  const PAGE = 2000;
+async function v2ReadAll(sessionId: string): Promise<TranscriptEntry[]> {
   const out: SeqEntry[] = [];
   let since = 0;
   for (;;) {
-    const page = store.readSince(sessionId, since, PAGE);
-    if (!page.entries.length) break;
-    for (const e of page.entries) {
-      const full = store.getFullEntry(sessionId, e.id);
-      out.push(full ? { ...full, seq: e.seq, changeSeq: e.changeSeq } : e);
-    }
-    since = page.entries[page.entries.length - 1].seq;
-    if (page.entries.length < PAGE) break;
+    const page = await transcript.readHydratedSince(sessionId, since);
+    out.push(...page.entries);
+    if (page.complete) break;
+    if (page.coveredThroughSeq <= since)
+      throw new Error(`Hydrated transcript page made no progress for ${sessionId}`);
+    since = page.coveredThroughSeq;
   }
   return out;
 }
@@ -371,11 +364,11 @@ function v2ReadAll(store: TranscriptStore, sessionId: string): TranscriptEntry[]
  * so growth costs once per burst, not per read. Callers react to drift with a
  * full re-import + clearTranscriptStoreDegraded.
  */
-export function v2TranscriptHasDrift(
-  store: TranscriptStore,
+export async function v2TranscriptHasDrift(
+  store: Pick<typeof transcript, "getImportInfo">,
   sessionId: string,
   session: TranscriptSessionRef
-): boolean {
+): Promise<boolean> {
   if (
     isTranscriptStoreDegraded(sessionId)
   )
@@ -384,7 +377,7 @@ export function v2TranscriptHasDrift(
   // No legacy files at all (every post-retirement session) → nothing to
   // drift against; the store is the only source.
   if (!files.length) return false;
-  const info = store.getImportInfo(sessionId);
+  const info = await store.getImportInfo(sessionId);
   const totalSize = files.reduce((sum, f) => sum + f.size, 0);
   return !(info?.watermark != null && totalSize <= info.watermark);
 }
@@ -394,24 +387,24 @@ export function v2TranscriptHasDrift(
  * drift-free; null → caller falls back to legacy; on drift this re-imports
  * (idempotent upserts) and returns the legacy merge for this call directly.
  */
-function v2StoreTranscript(
+async function v2StoreTranscript(
   sessionId: string,
   session: TranscriptSessionRef
-): TranscriptEntry[] | null {
-  const store = transcriptStore();
-  if (!store.hasImported(sessionId)) return null;
-  if (!v2TranscriptHasDrift(store, sessionId, session))
-    return v2ReadAll(store, sessionId);
+): Promise<TranscriptEntry[] | null> {
+  if (await transcript.needsImport(sessionId)) return null;
+  if (!await v2TranscriptHasDrift(transcript, sessionId, session))
+    return v2ReadAll(sessionId);
   // Drift (§8): re-import (upserts keep original seqs, making this safe to
   // repeat) and serve legacy for THIS call. Watermark = candidate-set size
   // measured BEFORE the legacy parse — lines appended during the parse then
   // read as growth next time instead of being silently covered.
   const totalSize = v2MirrorFiles(session).reduce((sum, f) => sum + f.size, 0);
   const legacy = session.transcriptPath ? parseTranscript(session.transcriptPath) : [];
-  void store.importLegacyTranscript(
+  const importInfo = await transcript.getImportInfo(sessionId);
+  void importLegacyTranscript(
     sessionId,
     legacy,
-    store.getImportInfo(sessionId)?.src || "merged",
+    importInfo?.src || "merged",
     totalSize
   ).then(() => {
     // The full re-import restored every entry the store had missed. Release
@@ -441,16 +434,16 @@ function v2StoreTranscript(
  * stays optional so old callers (and runner closures pre-restart) keep
  * working unchanged.
  */
-export function engineUserTexts(session: {
+export async function engineUserTexts(session: {
 	id?: string;
 	transcriptPath?: string | null;
 	claudeSessionId?: string | null;
-}): string[] {
+}): Promise<string[]> {
 	try {
-		return mergedSessionTranscript({
+		return (await mergedSessionTranscriptAsync({
 			id: session.id,
 			transcriptPath: session.transcriptPath ?? null,
-		})
+		}))
 			.filter((e) => e.type === "user")
 			.map((e) => e.content.trim());
 	} catch {
@@ -467,13 +460,13 @@ export function engineUserTexts(session: {
  * don't count as a response: the run-failure notice lands after the stranded
  * message and would otherwise mask it.
  */
-export function trailingUserTexts(session: {
+export async function trailingUserTexts(session: {
 	id?: string;
 	transcriptPath?: string | null;
 	claudeSessionId?: string | null;
-}): string[] {
+}): Promise<string[]> {
 	try {
-		const entries = mergedSessionTranscript({
+		const entries = await mergedSessionTranscriptAsync({
 			id: session.id,
 			transcriptPath: session.transcriptPath ?? null,
 		});

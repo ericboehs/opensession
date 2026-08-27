@@ -8,10 +8,7 @@ const config: NextConfig = {
     root: path.resolve(__dirname, "../../.."),
   },
   async rewrites() {
-    return [
-      { source: "/product-demo.html", destination: "/product-demo" },
-      { source: "/setup.html", destination: "/setup" },
-    ];
+    return [{ source: "/product-demo.html", destination: "/product-demo" }];
   },
 };
 

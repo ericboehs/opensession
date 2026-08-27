@@ -461,7 +461,8 @@ export async function notifyParentOfFailedRun(
 			} catch {}
 		}
 		const content =
-			`Server notice: worker task \`${sessionId}\` ended in error without reporting back.\n` +
+			`<!--os:worker-report:${sessionId}-->\n` +
+			`Worker task \`${sessionId}\` ended in error without reporting back.\n` +
 			`error: ${String(errorMessage).slice(0, 300)}\n` +
 			`Inspect with task_status("${sessionId}"), or resume it with send_to_session.` +
 			block;

@@ -21,7 +21,7 @@ import {
 import { teamDirectory, type DirectoryPerson } from "./people";
 import { stateDir } from "./paths";
 import { findSessionAsync } from "./session-cache";
-import { transcriptStore } from "./transcript-store";
+import { transcript } from "./actor-transcript";
 import { isWithinUploads, stagedImageRef } from "./uploads";
 import type { TranscriptEntry, UnifiedSession } from "./types";
 
@@ -102,20 +102,24 @@ export function sessionCardTitle(
 	return { title: sessionTitle };
 }
 
-export function sessionSocialCardData(
-	session: UnifiedSession,
-	options: { includeShot?: boolean } = {},
-): SessionSocialCardData {
+function sessionSocialCardBaseData(session: UnifiedSession): SessionSocialCardData {
 	const heading = sessionCardTitle(session);
 	const ownerRef = clean(session.createdBy || session.startedBy) || productName();
 	const person = teamDirectory().find((candidate) => samePerson(candidate, ownerRef));
-	const shots = options.includeShot ? sessionShotPaths(session) : [];
 	return {
 		title: heading.title,
 		owner: person?.fullName || ownerRef,
 		...(session.repo ? { repo: session.repo } : {}),
-		...(shots.length ? { shots } : {}),
 	};
+}
+
+export async function sessionSocialCardData(
+	session: UnifiedSession,
+	options: { includeShot?: boolean } = {},
+): Promise<SessionSocialCardData> {
+	const base = sessionSocialCardBaseData(session);
+	const shots = options.includeShot ? await sessionShotPaths(session) : [];
+	return { ...base, ...(shots.length ? { shots } : {}) };
 }
 
 const SHOT_MAX_BYTES = 24 * 1024 * 1024;
@@ -172,20 +176,19 @@ function transcriptShot(src: string): string | undefined {
 }
 
 /** Add eligible images from the requested entry order without duplicates. */
-function appendEntryShots(
+async function appendEntryShots(
 	sessionId: string,
 	entries: TranscriptEntry[],
 	field: "images" | "featuredMedia",
 	append: (source: string | undefined) => boolean,
-): void {
-	const store = transcriptStore();
+): Promise<void> {
 	for (const entry of entries) {
 		// Bounded transcript rows replace large data images with os-blob markers.
 		// Hydrate that one row so chat screenshots remain available to the card.
 		const needsFull =
 			entry.images?.some((src) => src.startsWith("os-blob:")) ||
 			entry.featuredMedia?.some((src) => src.startsWith("os-blob:"));
-		const source = needsFull ? store.getFullEntry(sessionId, entry.id) ?? entry : entry;
+		const source = needsFull ? (await transcript.getFullEntry(sessionId, entry.id)) ?? entry : entry;
 		for (const src of [...(source[field] ?? [])].reverse()) {
 			if (!append(transcriptShot(src))) return;
 		}
@@ -199,7 +202,7 @@ function appendEntryShots(
  * person attached in the conversation. Ordinary tool attachments are excluded
  * because a file the agent merely read is not a useful social preview.
  */
-function sessionShotPaths(session: UnifiedSession): string[] {
+async function sessionShotPaths(session: UnifiedSession): Promise<string[]> {
 	const paths: string[] = [];
 	const seen = new Set<string>();
 	const append = (source: string | undefined): boolean => {
@@ -215,11 +218,10 @@ function sessionShotPaths(session: UnifiedSession): string[] {
 	if (paths.length >= SHOT_CANDIDATE_LIMIT) return paths;
 
 	try {
-		const store = transcriptStore();
-		const tail = store.readTail(session.id, SHOT_SCAN_ENTRIES);
+		const tail = await transcript.readTail(session.id, SHOT_SCAN_ENTRIES);
 		const newestFirst = [...tail.entries].reverse();
-		appendEntryShots(session.id, newestFirst, "featuredMedia", append);
-		appendEntryShots(
+		await appendEntryShots(session.id, newestFirst, "featuredMedia", append);
+		await appendEntryShots(
 			session.id,
 			newestFirst.filter((entry) => entry.type === "user"),
 			"images",
@@ -227,14 +229,14 @@ function sessionShotPaths(session: UnifiedSession): string[] {
 		);
 
 		if (paths.length < SHOT_CANDIDATE_LIMIT && tail.firstSeq > 1) {
-			const opening = store.readRange(
+			const opening = await transcript.readRange(
 				session.id,
 				1,
 				Number.MAX_SAFE_INTEGER,
 				0,
 				SHOT_SCAN_ENTRIES,
 			);
-			appendEntryShots(
+			await appendEntryShots(
 				session.id,
 				opening.entries.filter((entry) => entry.type === "user"),
 				"images",
@@ -616,7 +618,7 @@ export function sessionHtmlWithSocialMeta(
 	session: UnifiedSession,
 	pathname: string,
 ): string {
-	const data = sessionSocialCardData(session);
+	const data = sessionSocialCardBaseData(session);
 	const image = sessionSocialCardUrl(session.id);
 	const page = `${configuredServer().publicBaseUrl.replace(/\/+$/, "")}${pathname}`;
 	const documentTitle = `${data.title} · ${productName()}`;
@@ -701,7 +703,7 @@ export function sessionSocialCardPublicRoutes(): Map<
 			return Response.json({ error: "Not found" }, { status: 404 });
 		const session = await findSessionAsync(sessionId);
 		if (!session) return Response.json({ error: "Not found" }, { status: 404 });
-		const data = sessionSocialCardData(session, { includeShot: true });
+		const data = await sessionSocialCardData(session, { includeShot: true });
 		if (!(await loadSharp()))
 			return Response.json(
 				{ error: "Social card rendering unavailable (sharp not installed)" },

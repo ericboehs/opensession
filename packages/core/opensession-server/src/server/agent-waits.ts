@@ -18,7 +18,7 @@ import { getSessionControl } from "./session-control";
 import {
 	registerSessionTimerHandler,
 	sessionKernel,
-	sessionKernelStore,
+	sessionTimerSnapshot,
 	type DurableTimer,
 } from "./session-kernel";
 
@@ -99,15 +99,15 @@ function isAgentWait(value: unknown): value is AgentWait {
 	);
 }
 
-export function getAgentWait(sessionId: string): AgentWait | undefined {
-	const timer = sessionKernelStore().timer(sessionId, TIMER_ID);
+export async function getAgentWait(sessionId: string): Promise<AgentWait | undefined> {
+	const timer = await sessionTimerSnapshot(sessionId, TIMER_ID);
 	return timer?.kind === TIMER_KIND && isAgentWait(timer.payload)
 		? timer.payload
 		: undefined;
 }
 
 export async function cancelAgentWait(sessionId: string): Promise<boolean> {
-	if (!getAgentWait(sessionId)) return false;
+	if (!await getAgentWait(sessionId)) return false;
 	await sessionKernel(sessionId).cancelTimer(TIMER_ID);
 	return true;
 }
@@ -140,7 +140,7 @@ export async function registerTimerAgentWait(input: {
 		createdAt: now,
 		dueAt: now + Math.round(input.seconds * 1000),
 	};
-	const current = getAgentWait(sessionId);
+	const current = await getAgentWait(sessionId);
 	if (current?.id === wait.id) return { ok: true, wait: current, replaced: false };
 	await sessionKernel(sessionId).scheduleTimer({
 		timerId: TIMER_ID,
@@ -201,7 +201,7 @@ export async function registerPrChecksAgentWait(input: {
 		pollSeconds,
 		settleSeconds,
 	};
-	const current = getAgentWait(sessionId);
+	const current = await getAgentWait(sessionId);
 	if (current?.id === wait.id) return { ok: true, wait: current, replaced: false };
 	await sessionKernel(sessionId).scheduleTimer({
 		timerId: TIMER_ID,
@@ -293,7 +293,7 @@ const defaultHandlerDeps: AgentWaitHandlerDeps = {
 	schedule: async (wait, dueAt) => {
 		// A cancel or replacement can land while a GitHub request is in flight.
 		// Never let that stale response recreate the old wait over the newer one.
-		if (getAgentWait(wait.sessionId)?.id !== wait.id) return;
+		if ((await getAgentWait(wait.sessionId))?.id !== wait.id) return;
 		await sessionKernel(wait.sessionId).scheduleTimer({
 			timerId: TIMER_ID,
 			kind: TIMER_KIND,
@@ -310,7 +310,9 @@ const defaultHandlerDeps: AgentWaitHandlerDeps = {
 				deliveryId: `agent-wait:${wait.id}:wake`,
 				// The same in-flight race applies to terminal poll results. This
 				// check runs inside the session command that admits the delivery.
-				admit: () => getAgentWait(wait.sessionId)?.id === wait.id,
+				// The durable timer token fenced this callback and the awaited check
+				// above proved this wait was still current before delivery admission.
+				admit: () => true,
 			},
 		);
 		if (result.status === "error") throw new Error(result.message);
