@@ -1,14 +1,16 @@
+import { mergeStylexProps, mergeStylexOverrideClassName } from "../ui/cn";
+import { utilityClassName } from "../ui/cn";
 import { BASE_PATH } from "../lib/base";
 import { GITHUB_APP_GRANT_PERMISSIONS } from "../../shared/github-app-permissions";
-import React, { useEffect, useState, useRef } from "react";
+import React, { useCallback, useEffect, useEffectEvent, useState, useRef } from "react";
 import { Menu } from "../ui/menu";
 import { OptionSelect } from "../ui/select";
-import { cn, mergeStylexProps, mergeStylexClassName, mergeStylexOverrideClassName } from "../ui/cn";
+import { cn } from "../ui/cn";
 import { Button } from "../ui/button";
 import { DeviceCode } from "../ui/device-code";
 import { Modal } from "../ui/modal";
 import { Segmented, SegmentedOption } from "../ui/segmented";
-import { InlineAlert, Skeleton, SkeletonBar } from "../ui/state";
+import { InlineAlert } from "../ui/state";
 import { PulseDot } from "../ui/status";
 import {
   SettingCard,
@@ -27,7 +29,6 @@ import {
   SettingsHeader,
   SettingsHint,
   SettingsPanel,
-  SettingsSection,
   StatusChip,
   rowMenuTriggerClasses,
   settingsInputClass,
@@ -44,77 +45,33 @@ import {
 import { displayName } from "../brand-logos";
 import { IconTile } from "./BrandTile";
 import { UserAvatar } from "./UserAvatar";
-import { AGENT_NAME, docTitle, DEFAULT_DOC_TITLE } from "../lib/brand";
+import { docTitle, DEFAULT_DOC_TITLE } from "../lib/brand";
 import { ProjectsSection } from "./ProjectsSection";
-import {
-  connectCodeStorage,
-  disconnectCodeStorage,
-  fetchCodeStorageStatus,
-  relativeTime,
-  type CodeStorageStatus,
-} from "../lib/api";
+import { GithubPrivateKeyField } from "./GithubPrivateKeyField";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
-import { sharedClassStyles } from "../styles/shared-class-styles.stylex";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
-	grid: {
-			display: "grid"
-	},
-	gap25: {
-			gap: "10px"
-	},
 	flex: {
 			display: "flex"
 	},
-	flexCol: {
-			flexDirection: "column"
+	itemsStart: {
+			alignItems: "flex-start"
 	},
-	gap2: {
-			gap: "8px"
+	gap3: {
+			gap: "calc(4px * 3)"
 	},
-	p35: {
-			padding: "14px"
+	px5: {
+			paddingInline: "calc(4px * 5)"
 	},
-	itemsCenter: {
-			alignItems: "center"
+	py3: {
+			paddingBlock: "calc(4px * 3)"
 	},
-	size30px: {
-			width: "30px",
-			height: "30px"
-	},
-	shrink0: {
-			flexShrink: "0"
-	},
-	roundedControl: {
-			borderRadius: "calc(12px * var(--rf))"
-	,
-		cornerShape: "var(--cs)"},
-	w38: {
-			width: "38%"
-	},
-	mlAuto: {
-			marginLeft: "auto"
-	},
-	h5: {
-			height: "20px"
-	},
-	w16: {
-			width: "64px"
-	},
-	rounded999px: {
-			borderRadius: "999px"
-	,
-		cornerShape: "var(--cs)"},
-	h25: {
-			height: "10px"
-	},
-	w72: {
-			width: "72%"
-	},
-	w34: {
-			width: "34%"
+	transitionColors: {
+			transitionProperty: "color, background-color, border-color, outline-color, text-decoration-color, fill, stroke, --tw-gradient-from, --tw-gradient-via, --tw-gradient-to",
+			transitionTimingFunction: "var(--tw-ease, var(--ease))",
+			transitionDuration: "var(--tw-duration, var(--dur-micro))"
 	},
 	minW0: {
 			minWidth: "0"
@@ -122,42 +79,22 @@ const sx = stylex.create({
 	flex1: {
 			flex: "1"
 	},
+	itemsCenter: {
+			alignItems: "center"
+	},
+	gap2: {
+			gap: "calc(4px * 2)"
+	},
 	truncate: {
+			overflow: "hidden",
 			textOverflow: "ellipsis",
-			whiteSpace: "nowrap",
-			overflow: "hidden"
+			whiteSpace: "nowrap"
 	},
 	fontMedium: {
 			fontWeight: "var(--font-weight-medium)"
 	},
 	textFg: {
 			color: "var(--text)"
-	},
-	leadingSnug: {
-			lineHeight: "var(--leading-snug)"
-	},
-	textDim: {
-			color: "var(--text-dim)"
-	},
-	textFaint: {
-			color: "var(--text-faint)"
-	},
-	itemsStart: {
-			alignItems: "flex-start"
-	},
-	gap3: {
-			gap: "12px"
-	},
-	px5: {
-			paddingInline: "20px"
-	},
-	py3: {
-			paddingBlock: "12px"
-	},
-	transitionColors: {
-			transitionProperty: "color,background-color,border-color,outline-color,text-decoration-color,fill,stroke,--tw-gradient-from,--tw-gradient-via,--tw-gradient-to",
-			transitionTimingFunction: "var(--tw-ease,var(--ease))",
-			transitionDuration: "var(--tw-duration,var(--dur-micro))"
 	},
 	flexShrink0: {
 			flexShrink: "0"
@@ -166,31 +103,34 @@ const sx = stylex.create({
 			gap: "4px"
 	},
 	roundedFull: {
-			borderRadius: "calc(infinity * 1px)"
-	,
-		cornerShape: "round"},
+			borderRadius: "calc(infinity * 1px)",
+
+		cornerShape: "round",},
 	bgActive: {
 			backgroundColor: "var(--bg-active)"
 	},
 	px15: {
-			paddingInline: "6px"
+			paddingInline: "calc(4px * 1.5)"
 	},
 	py05: {
-			paddingBlock: "2px"
+			paddingBlock: "calc(4px * 0.5)"
 	},
-	textGreen: {
-			color: "var(--green)"
+	textDim: {
+			color: "var(--text-dim)"
 	},
 	mt05: {
-			marginTop: "2px"
+			marginTop: "calc(4px * 0.5)"
 	},
 	gap15: {
-			gap: "6px"
+			gap: "calc(4px * 1.5)"
+	},
+	textFaint: {
+			color: "var(--text-faint)"
 	},
 	rounded: {
-			borderRadius: "var(--radius-xs)"
-	,
-		cornerShape: "var(--cs)"},
+			borderRadius: "0.25rem",
+
+		cornerShape: "var(--cs)",},
 	pyPx: {
 			paddingBlock: "1px"
 	},
@@ -200,11 +140,20 @@ const sx = stylex.create({
 	textRed: {
 			color: "var(--red)"
 	},
+	leadingSnug: {
+			lineHeight: "var(--leading-snug)"
+	},
 	mt3px: {
 			marginTop: "3px"
 	},
+	shrink0: {
+			flexShrink: "0"
+	},
+	flexCol: {
+			flexDirection: "column"
+	},
 	gap4: {
-			gap: "16px"
+			gap: "calc(4px * 4)"
 	},
 	fontMono: {
 			fontFamily: "var(--mono)"
@@ -215,26 +164,33 @@ const sx = stylex.create({
 	underline: {
 			textDecorationLine: "underline"
 	},
+	gap25: {
+			gap: "calc(4px * 2.5)"
+	},
 	flexWrap: {
 			flexWrap: "wrap"
 	},
 	py35: {
-			paddingBlock: "14px"
+			paddingBlock: "calc(4px * 3.5)"
 	},
 	gapX2: {
-			columnGap: "8px"
+			columnGap: "calc(4px * 2)"
 	},
-	gapY1: {
-			rowGap: "4px"
+	mlAuto: {
+			marginLeft: "auto"
 	},
 	gapX3: {
-			columnGap: "12px"
+			columnGap: "calc(4px * 3)"
+	},
+	size30px: {
+			width: "30px",
+			height: "30px"
 	},
 	justifyCenter: {
 			justifyContent: "center"
 	},
 	ml2: {
-			marginLeft: "8px"
+			marginLeft: "calc(4px * 2)"
 	},
 	fontNormal: {
 			fontWeight: "var(--font-weight-normal)"
@@ -243,9 +199,9 @@ const sx = stylex.create({
 			alignSelf: "flex-start"
 	},
 	roundedSm: {
-			borderRadius: "calc(4px * var(--rf))"
-	,
-		cornerShape: "var(--cs)"},
+			borderRadius: "calc(4px * var(--rf))",
+
+		cornerShape: "var(--cs)",},
 	bgSurface: {
 			backgroundColor: "var(--bg)"
 	},
@@ -253,92 +209,16 @@ const sx = stylex.create({
 			paddingInline: "4px"
 	},
 	text092em: {
-			fontSize: ".92em"
+			fontSize: "0.92em"
 	},
 	inlineFlex: {
 			display: "inline-flex"
-	},
-	py25: {
-			paddingBlock: "10px"
-	},
-	borderT: {
-			borderTopStyle: "solid",
-			borderTopWidth: "1px"
-	},
-	borderLine: {
-			borderColor: "var(--border)"
-	},
-	maxW340px: {
-			maxWidth: "340px"
-	},
-	maxW720px: {
-			maxWidth: "720px"
-	},
-	mb2: {
-			marginBottom: "8px"
-	},
-	leading145: {
-			lineHeight: "1.45"
-	},
-	whitespaceNowrap: {
-			whiteSpace: "nowrap"
-	},
-	mt15: {
-			marginTop: "6px"
 	},
 	mb18px: {
 			marginBottom: "18px"
 	},
 	gap35: {
-			gap: "14px"
-	},
-	spinning: {
-		animationName: stylex.keyframes({ to: { transform: "rotate(360deg)" } }),
-		animationDuration: "1s",
-		animationTimingFunction: "linear",
-		animationIterationCount: "infinite",
-	},
-	menuReveal: {
-		opacity: 0,
-		transitionProperty: "color, opacity, background",
-		transitionDuration: "var(--dur-micro)",
-	},
-	minH20: { minHeight: "80px" },
-	resizeY: { resize: "vertical" },
-	mt2: { marginTop: "8px" },
-	lastDeliveryBad: { color: "var(--red)" },
-	lastDeliveryIdle: { color: "var(--text-faint)" },
-
-	gridColsRepeatAutoFillMinmax230px1fr: {
-		"gridTemplateColumns": "repeat(auto-fill,minmax(230px,1fr))"
-	},
-	hoverBgHover: {
-		"@media (hover: hover)": {
-			":hover": {
-				"backgroundColor": "var(--hover)"
-			}
-		}
-	},
-	hoverTextFg: {
-		"@media (hover: hover)": {
-			":hover": {
-				"color": "var(--text)"
-			}
-		}
-	},
-	hoverBorderRed: {
-		"@media (hover: hover)": {
-			":hover": {
-				"borderColor": "var(--red)"
-			}
-		}
-	},
-	hoverTextRed: {
-		"@media (hover: hover)": {
-			":hover": {
-				"color": "var(--red)"
-			}
-		}
+			gap: "calc(4px * 3.5)"
 	},
 });
 
@@ -353,15 +233,8 @@ interface McpConnection {
   allowedUsers?: string[];
 }
 
-interface AgentHealth {
-  status?: string;
-  activeSessions?: number;
-  [key: string]: unknown;
-}
-
 interface ConnectionsData {
   mcpServers: McpConnection[];
-  agents: Record<string, AgentHealth>;
 }
 
 const STATUS_META: Record<McpConnection["status"], { label: string; dot: string; bad?: boolean }> = {
@@ -390,16 +263,6 @@ const MCP_BLURBS: Record<string, string> = {
   vercel: "Projects, deployments & logs",
 };
 
-const AGENT_BLURBS: Record<string, string> = {
-  slack: "Mentions & worktree channels in Slack",
-  linear: "Delegated Linear issues become sessions",
-  plain: "Support escalations from Plain",
-  stripe: "Inbound billing events",
-  "grafana-poller": "Polls Grafana alerts into sessions",
-  github: "Inbound repository events",
-  codestorage: "Branch pushes & sync events from code.storage",
-};
-
 function LockIcon({ size = 12 }: { size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -422,23 +285,6 @@ export function SectionHeading({
 function ConnectionsSkeleton() {
   return (
     <>
-      <SectionHeading>Agents: how work reaches {AGENT_NAME}</SectionHeading>
-      <Skeleton
-        label="Checking connections" {...mergeStylexProps("", sx.gridColsRepeatAutoFillMinmax230px1fr, sx.grid, sx.gap25)}
-      >
-        {Array.from({ length: 3 }, (_, index) => (
-          <SettingsSection key={index} className={mergeStylexOverrideClassName("", sx.flex, sx.flexCol, sx.gap2, sx.p35)}>
-            <div {...stylex.props(sx.flex, sx.itemsCenter, sx.gap25)}>
-              <SkeletonBar className={mergeStylexOverrideClassName("", sx.size30px, sx.shrink0, sx.roundedControl)} />
-              <SkeletonBar className={mergeStylexOverrideClassName("", sx.w38)} />
-              <SkeletonBar className={mergeStylexOverrideClassName("", sx.mlAuto, sx.h5, sx.w16, sx.rounded999px)} />
-            </div>
-            <SkeletonBar className={mergeStylexOverrideClassName("", sx.h25, sx.w72)} />
-            <SkeletonBar className={mergeStylexOverrideClassName("", sx.h25, sx.w34)} />
-          </SettingsSection>
-        ))}
-      </Skeleton>
-
       <SectionHeading>MCP servers: tools inside every session</SectionHeading>
       <SettingCardSkeleton rows={5} icon={40} label="Checking connections" />
     </>
@@ -454,7 +300,8 @@ export function Connections() {
   // (Vercel approves only its own list of AI clients).
   const [tokenConnect, setTokenConnect] = useState<McpConnection | null>(null);
 
-  const load = async (force = false) => {
+  // Stable identity: only setters are captured.
+  const load = useCallback(async (force = false) => {
     if (force) setRefreshing(true);
     await (async () => {
 const res = await fetch(`${BASE_PATH}/api/connections${force ? "?refresh=1" : ""}`);
@@ -463,7 +310,7 @@ const res = await fetch(`${BASE_PATH}/api/connections${force ? "?refresh=1" : ""
 
 });
     setRefreshing(false);
-  };
+  }, []);
 
   useEffect(() => {
     document.title = docTitle("Connections");
@@ -485,7 +332,7 @@ const res = await fetch(`${BASE_PATH}/api/connections${force ? "?refresh=1" : ""
       }
     >
   >({});
-  const loadOauth = async (servers: McpConnection[]) => {
+  const loadOauth = useCallback(async (servers: McpConnection[]) => {
     const entries = await Promise.all(
       servers
         .map(async (s) => {
@@ -500,7 +347,7 @@ const res = await fetch(`${BASE_PATH}/api/connections${force ? "?refresh=1" : ""
         }),
     );
     setOauthByName(Object.fromEntries(entries.filter(Boolean) as any));
-  };
+  }, []);
   useEffect(() => {
     if (data?.mcpServers) void loadOauth(data.mcpServers);
   }, [data, loadOauth]);
@@ -523,7 +370,8 @@ const res = await fetch(
       window.open(body.url, "_blank", "noopener");
       let polls = 0;
       const t = setInterval(() => {
-        if (++polls > 24 || !data?.mcpServers) return clearInterval(t);
+        polls += 1;
+        if (polls > 24 || !data?.mcpServers) return clearInterval(t);
         void loadOauth(data.mcpServers);
       }, 5000);
 })().catch(async (e: any) => {
@@ -592,7 +440,7 @@ setRemoveError(e.message);
           <>
             <Button
               variant="soft"
-              icon={<IconHistory size={16} className={mergeStylexOverrideClassName("", refreshing && sx.spinning)} />}
+              icon={<IconHistory size={16} className={refreshing ? utilityClassName("animate-spin") : ""} />}
               onClick={() => load(true)}
               disabled={refreshing}
             >
@@ -627,36 +475,6 @@ setRemoveError(e.message);
         <ConnectionsSkeleton />
       ) : (
         <>
-          <SectionHeading>Agents: how work reaches {AGENT_NAME}</SectionHeading>
-          <div {...mergeStylexProps("", sx.gridColsRepeatAutoFillMinmax230px1fr, sx.grid, sx.gap25)}>
-            {Object.entries(data.agents).map(([name, health]) => {
-              const ok = health?.status === "operational";
-              const count = typeof health?.activeSessions === "number" ? health.activeSessions : null;
-              return (
-                <SettingsSection key={name} className={mergeStylexOverrideClassName("", sx.flex, sx.flexCol, sx.gap2, sx.p35)}>
-                  <div {...stylex.props(sx.flex, sx.itemsCenter, sx.gap25)}>
-                    <IconTile name={name} size={30} />
-                    <span {...stylex.props(sx.minW0, sx.flex1, sx.truncate, sx.fontMedium, sx.textFg, typography.itemTitle)}>
-                      {displayName(name)}
-                    </span>
-                    <StatusChip
-                      label={ok ? "Operational" : String(health?.status || "down")}
-                      dot={ok ? "var(--green)" : "var(--red)"}
-                    />
-                  </div>
-                  <div {...stylex.props(sx.leadingSnug, sx.textDim, typography.label)}>
-                    {AGENT_BLURBS[name] || "Inbound agent"}
-                  </div>
-                  {count !== null && (
-                    <div {...stylex.props(sx.textFaint, typography.label)}>
-                      {count.toLocaleString()} active session{count === 1 ? "" : "s"}
-                    </div>
-                  )}
-                </SettingsSection>
-              );
-            })}
-          </div>
-
           <SectionHeading>MCP servers: tools inside every session</SectionHeading>
           <SettingCard>
             {data.mcpServers.map((s) => {
@@ -664,7 +482,8 @@ setRemoveError(e.message);
               const restricted = !!s.allowedUsers?.length;
               return (
                 <div
-                  key={s.name} {...mergeStylexProps("group", sx.hoverBgHover, sx.flex, sx.itemsStart, sx.gap3, sx.px5, sx.py3, sx.transitionColors)}
+                  key={s.name}
+                  {...mergeStylexProps("group hover:bg-hover", sx.flex, sx.itemsStart, sx.gap3, sx.px5, sx.py3, sx.transitionColors)}
                 >
                   <IconTile name={s.name} />
                   <div {...stylex.props(sx.minW0, sx.flex1)}>
@@ -682,7 +501,7 @@ setRemoveError(e.message);
                       )}
                       {(oauthByName[s.name]?.shared || oauthByName[s.name]?.users.length) ? (
                         <span
-                          {...stylex.props(sx.flex, sx.flexShrink0, sx.itemsCenter, sx.gap1, sx.roundedFull, sx.bgActive, sx.px15, sx.py05, sx.fontMedium, sx.textGreen, typography.meta)}
+                          {...mergeStylexProps("text-green", sx.flex, sx.flexShrink0, sx.itemsCenter, sx.gap1, sx.roundedFull, sx.bgActive, sx.px15, sx.py05, sx.fontMedium, typography.meta)}
                           title={[
                             oauthByName[s.name]?.shared
                               ? `Workspace grant${oauthByName[s.name]!.shared!.connectedBy ? ` (by ${oauthByName[s.name]!.shared!.connectedBy})` : ""}`
@@ -720,8 +539,7 @@ setRemoveError(e.message);
                     <Menu.Trigger
                       className={cn(
                         rowMenuTriggerClasses,
-                        stylex.props(sx.menuReveal).className,
-                        "group-hover:opacity-100 data-[popup-open]:opacity-100",
+                        utilityClassName("opacity-0 transition-[color,opacity,background] group-hover:opacity-100 data-[popup-open]:opacity-100"),
                       )}
                       aria-label={`Manage ${s.name}`}
                     >
@@ -769,7 +587,8 @@ setRemoveError(e.message);
                         {restricted ? "Edit access" : "Restrict access"}
                       </Menu.Item>
                       <Menu.Item
-                        onClick={() => handleRemove(s.name)} {...mergeStylexProps("data-[highlighted]:bg-red-soft", sx.textRed)}
+                        onClick={() => handleRemove(s.name)}
+                        className={mergeStylexOverrideClassName("data-[highlighted]:bg-red-soft", sx.textRed)}
                       >
                         <IconTrash size={16} />
                         Remove server
@@ -781,13 +600,7 @@ setRemoveError(e.message);
             })}
           </SettingCard>
 
-          <GithubAccounts />
-
-          <CodeStorageCard />
-
           <ProjectsSection />
-
-          <PlainRouter />
         </>
       )}
       <ConnectTokenDialog
@@ -808,7 +621,7 @@ interface GithubAuthData {
   /** A client id resolves (shipped app, env, or config) — connect is on offer
    *  even when the sign-in gate (webAuthRequired) is off. */
   connectAvailable: boolean;
-  /** Where that App client id came from, so the blocked-PAT note can name the
+  /** Where that App client id came from, so config controls can name the
    *  exact thing to unset. null when no App is configured. */
   appConfigSource?: "env" | "config" | null;
   /** The workspace is behind GitHub sign-in (operator mode). False = simple
@@ -816,6 +629,8 @@ interface GithubAuthData {
   webAuthRequired: boolean;
   /** github.com/apps/<slug>/installations/new, or null until the app slug ships. */
   appInstallUrl: string | null;
+  /** Current public ingress origin. Empty means callbacks remain private-only. */
+  webhookBaseUrl: string;
   /** Captured install/app-setup intent: the org the App is owned by, so the
    *  wizard prefills the org owner. null for a single-user install. */
   appOrg?: string | null;
@@ -851,25 +666,26 @@ interface DeviceFlow {
  */
 // The create-app form on GitHub can be pre-filled with URL query parameters
 // (docs.github.com/apps/sharing-github-apps/registering-a-github-app-using-url-parameters).
-// `device_flow_enabled` is undocumented but pre-ticks the Enable Device Flow
-// box — so the only thing left to do by hand is generate a client secret. It
-// is treated as best-effort: the wizard still asks the user to confirm Device
-// Flow is on, in case GitHub ever drops the param. GitHub ignores unknown
-// params, so this can only under-fill, never error.
+// Device Flow is not one of the supported parameters, so the wizard asks the
+// user to enable it manually after creating the App.
 // Blank org creates the app under the signed-in personal account; an org login
 // creates it under that organization (so the org owns it and it can reach org
 // repos). Same query params either way.
-function buildGithubAppCreateUrl(name: string, org: string): string {
+function buildGithubAppCreateUrl(name: string, org: string, webhookBaseUrl: string): string {
   const params = new URLSearchParams({
     name,
     url: "http://localhost:3850",
     public: "false",
-    webhook_active: "false",
+    ...(webhookBaseUrl
+      ? {
+          webhook_url: `${webhookBaseUrl.replace(/\/$/, "")}/github/webhook`,
+          webhook_active: "true",
+        }
+      : {}),
     // The canonical grant set — the same permissions the install tokens mint
     // request, so the App is not born missing `issues` or `checks` (the drift
     // this builder used to have: no issues, no checks).
     ...GITHUB_APP_GRANT_PERMISSIONS,
-    device_flow_enabled: "true",
   }).toString();
   const base = org.trim()
     ? `https://github.com/organizations/${encodeURIComponent(org.trim())}/settings/apps/new`
@@ -900,7 +716,7 @@ function generateGithubAppName(): string {
 function WizardCheck({ children }: { children: React.ReactNode }) {
   return (
     <li {...stylex.props(sx.flex, sx.itemsStart, sx.gap2, sx.leadingSnug, sx.textDim, typography.supporting)}>
-      <span {...stylex.props(sx.mt3px, sx.shrink0, sx.textGreen)}>✓</span>
+      <span {...mergeStylexProps("text-green", sx.mt3px, sx.shrink0)} >✓</span>
       <span {...stylex.props(sx.minW0)}>{children}</span>
     </li>
   );
@@ -908,8 +724,8 @@ function WizardCheck({ children }: { children: React.ReactNode }) {
 
 /**
  * Guided setup for a bring-your-own GitHub App: create it on GitHub (form
- * pre-filled), paste its id/slug/secret, install it on the repos you pick, then
- * connect. It lives outside the card so saving the client id — which re-renders
+ * pre-filled), enter its id/slug/secret, upload its key, install it on the repos
+ * you pick, then connect. It lives outside the card so saving the client id — which re-renders
  * the card from "no app" to "app configured" — doesn't unmount it mid-flow.
  */
 function GithubAppWizard({
@@ -928,6 +744,7 @@ function GithubAppWizard({
   configured,
   connected,
   installUrl,
+  webhookBaseUrl,
   onConnect,
   error,
   flow,
@@ -950,6 +767,7 @@ function GithubAppWizard({
   configured: boolean;
   connected: boolean;
   installUrl: string | null;
+  webhookBaseUrl: string;
   onConnect: () => void;
   error: string | null;
   flow: DeviceFlow | null;
@@ -970,7 +788,7 @@ function GithubAppWizard({
   const [appOrg, setAppOrg] = useState("");
   // Opening jumps to where the user actually is (an already-configured app
   // resumes at install, a fresh start begins at create) and mints a fresh name.
-  useEffect(() => {
+  const openReset = useEffectEvent(() => {
     if (open) {
       setStep(configured ? 3 : 1);
       setAppName(generateGithubAppName());
@@ -979,6 +797,9 @@ function GithubAppWizard({
       setAppOwner(intentOrg ? "org" : "you");
       setAppOrg(intentOrg ?? "");
     }
+  });
+  useEffect(() => {
+    openReset();
   }, [open]);
   // Saving the client id flips `configured`; carry the user from paste to
   // install without a manual step.
@@ -995,7 +816,7 @@ function GithubAppWizard({
   // strict mode's double invoke) from opening a second flow; leaving the step
   // rearms it, so Back → Next or a retry can start again.
   const connectStartedRef = useRef(false);
-  useEffect(() => {
+  const maybeConnect = useEffectEvent(() => {
     if (step !== 4) {
       connectStartedRef.current = false;
       return;
@@ -1003,6 +824,9 @@ function GithubAppWizard({
     if (!open || connectStartedRef.current) return;
     connectStartedRef.current = true;
     if (!flow) onConnect();
+  });
+  useEffect(() => {
+    maybeConnect();
   }, [open, step]);
 
   // Focus each step's primary control as the user arrives on it (and on open).
@@ -1014,16 +838,20 @@ function GithubAppWizard({
     if (open) stepFocusRef.current?.focus();
   }, [open, step]);
 
-  const createUrl = buildGithubAppCreateUrl(appName, appOwner === "org" ? appOrg : "");
+  const createUrl = buildGithubAppCreateUrl(
+    appName,
+    appOwner === "org" ? appOrg : "",
+    webhookBaseUrl,
+  );
   // Creating in an org needs its login to build the URL, so block until it's given.
   const createReady = appOwner === "you" || !!appOrg.trim();
   const previewSlug = deriveGithubAppSlug(appName);
   const canSave = !!clientId.trim() && !!slug.trim() && !!secret.trim();
-  const titles = ["Create the app", "Paste the details", "Install on your repos", "Connect"];
+  const titles = ["Create the app", "Add the details", "Install on your repos", "Connect"];
 
   return (
     <Modal.Root open={open} onOpenChange={(next) => !saving && onOpenChange(next)}>
-      <Modal.Content widthClassName={mergeStylexClassName("", sharedClassStyles.maxW34rem)} initialFocus={stepFocusRef}>
+      <Modal.Content widthClassName={utilityClassName("max-w-[34rem]")} initialFocus={stepFocusRef}>
         <Modal.Header
           title="Set up a GitHub App"
           description={`Step ${step} of 4 · ${titles[step - 1]}`}
@@ -1054,7 +882,7 @@ function GithubAppWizard({
                 <>
                   <input
                     type="text"
-                    className={cn(settingsInputClass, stylex.props(sx.fontMono).className)}
+                    className={cn(settingsInputClass, utilityClassName("font-mono"))}
                     value={appOrg}
                     onChange={(e) => setAppOrg(e.target.value)}
                     placeholder="my-org"
@@ -1111,13 +939,14 @@ function GithubAppWizard({
             <div {...stylex.props(sx.leadingSnug, sx.textFaint, typography.meta)}>
               Pre-filled: name{" "}
               <span {...stylex.props(sx.fontMono, sx.textDim)}>{appName}</span>, permissions
-              (Contents + Pull requests, read &amp; write; Members, read), private,
-              no webhook.
+              (Actions, Checks, statuses, and Deployments read; Contents, Issues,
+              and Pull requests write; Members read), and private.
               Names are unique on GitHub, so tweak it if it's taken.
             </div>
             <Modal.Footer>
               <button
-                type="button" {...mergeStylexProps("", sx.hoverTextFg, sx.mrAuto, sx.textDim, sx.underline, typography.supporting)}
+                type="button"
+                {...mergeStylexProps("hover:text-fg", sx.mrAuto, sx.textDim, sx.underline, typography.supporting)}
                 onClick={() => setStep(2)}
               >
                 I already have an app
@@ -1149,7 +978,7 @@ function GithubAppWizard({
                 <input
                   ref={setStepFocus}
                   type="text"
-                  className={cn(settingsInputClass, stylex.props(sx.fontMono).className)}
+                  className={cn(settingsInputClass, utilityClassName("font-mono"))}
                   value={clientId}
                   onChange={(e) => setClientId(e.target.value)}
                   placeholder="Iv23…"
@@ -1168,7 +997,7 @@ function GithubAppWizard({
                 <label {...stylex.props(sx.textFg, typography.supporting)}>App slug</label>
                 <input
                   type="text"
-                  className={cn(settingsInputClass, stylex.props(sx.fontMono).className)}
+                  className={cn(settingsInputClass, utilityClassName("font-mono"))}
                   value={slug}
                   onChange={(e) => setSlug(e.target.value)}
                   placeholder={previewSlug}
@@ -1189,7 +1018,7 @@ function GithubAppWizard({
                 <label {...stylex.props(sx.textFg, typography.supporting)}>Client secret</label>
                 <input
                   type="password"
-                  className={cn(settingsInputClass, stylex.props(sx.fontMono).className)}
+                  className={cn(settingsInputClass, utilityClassName("font-mono"))}
                   value={secret}
                   onChange={(e) => setSecret(e.target.value)}
                   placeholder="Client secret"
@@ -1204,25 +1033,21 @@ function GithubAppWizard({
                   copy it (shown once). Required.
                 </span>
               </div>
-              <div {...stylex.props(sx.flex, sx.flexCol, sx.gap1)}>
-                <label {...stylex.props(sx.textFg, typography.supporting)}>Private key (PEM)</label>
-                <textarea
-                  className={cn(settingsInputClass, stylex.props(sx.minH20, sx.resizeY, sx.fontMono).className)}
-                  value={privateKey}
-                  onChange={(e) => setPrivateKey(e.target.value)}
-                  placeholder="-----BEGIN RSA PRIVATE KEY-----"
-                  aria-label="GitHub App private key (PEM)"
-                  autoCapitalize="none"
-                  autoComplete="off"
-                  spellCheck={false}
-                />
-                <span {...stylex.props(sx.leadingSnug, sx.textFaint, typography.meta)}>
-                  In <span {...stylex.props(sx.textDim)}>Private keys</span>, click{" "}
-                  <span {...stylex.props(sx.textDim)}>Generate a private key</span>, then paste
-                  the downloaded .pem here. Lets the bot and PR checks run on the App;
-                  leave blank for sign-in only.
-                </span>
-              </div>
+              <GithubPrivateKeyField
+                configured={false}
+                required={false}
+                saving={saving}
+                value={privateKey}
+                onChange={setPrivateKey}
+                description={
+                  <>
+                    In <span {...stylex.props(sx.textDim)}>Private keys</span>, click{" "}
+                    <span {...stylex.props(sx.textDim)}>Generate a private key</span>, then choose
+                    the downloaded .pem file. Lets the bot and PR checks run on the App;
+                    leave blank for sign-in only.
+                  </>
+                }
+              />
             </div>
             <Modal.Footer>
               <Button
@@ -1305,7 +1130,7 @@ function GithubAppWizard({
                 </div>
                 <div {...stylex.props(sx.flex, sx.itemsCenter, sx.gap2, sx.textDim, typography.supporting)}>
                   <PulseDot size={7} />
-                  <span>Waiting for GitHub…</span>
+                  <span>Waiting for GitHub. Authorize there, then close that tab.</span>
                 </div>
               </div>
             ) : error ? (
@@ -1339,7 +1164,10 @@ function GithubAppWizard({
 
 /** `personal`: only the signed-in user's own row (the Account page);
  *  default shows the whole team roster (admin overview). */
-export function GithubAccounts({ personal = false }: { personal?: boolean } = {}) {
+export function GithubAccounts({
+  personal = false,
+  showHeading = true,
+}: { personal?: boolean; showHeading?: boolean } = {}) {
   const [data, setData] = useState<GithubAuthData | null>(null);
   const [flow, setFlow] = useState<DeviceFlow | null>(null);
   const [flowState, setFlowState] = useState<"idle" | "starting" | "waiting">("idle");
@@ -1356,14 +1184,15 @@ export function GithubAccounts({ personal = false }: { personal?: boolean } = {}
   // wizard, launched from the App option below.
   const [wizardOpen, setWizardOpen] = useState(false);
 
-  const load = async () => {
+  // Stable identity: only setters are captured.
+  const load = useCallback(async () => {
     await (async () => {
 const res = await fetch(`${BASE_PATH}/api/connections/github`);
       if (res.ok) setData(await res.json());
 })().catch(async () => {
 
 });
-  };
+  }, []);
 
   useEffect(() => {
     load();
@@ -1548,14 +1377,14 @@ setError(e.message);
           Open GitHub
         </Button>
       </div>
-      <div {...stylex.props(sx.flex, sx.flexWrap, sx.itemsCenter, sx.gapX2, sx.gapY1, sx.textDim, typography.supporting)}>
+      <div {...mergeStylexProps("gap-y-1", sx.flex, sx.flexWrap, sx.itemsCenter, sx.gapX2, sx.textDim, typography.supporting)} >
         {/* Dot and status are one item: as two siblings of a wrapping row, a
             phone breaks between them and leaves the dot orphaned on its own
             line. */}
         <span {...stylex.props(sx.flex, sx.minW0, sx.flex1, sx.itemsCenter, sx.gap2)}>
           <PulseDot size={7} />
           <span {...stylex.props(sx.minW0)}>
-            Waiting for GitHub. Sign in as the account you want to connect.
+            Waiting for GitHub. Authorize there, then close that tab and return here.
           </span>
         </span>
         <Button
@@ -1584,7 +1413,7 @@ setError(e.message);
     const connected = !!account;
     return (
       <>
-        <SectionHeading>GitHub</SectionHeading>
+        {showHeading && <SectionHeading>GitHub</SectionHeading>}
         {error && <InlineAlert onDismiss={() => setError(null)}>{error}</InlineAlert>}
         <SettingCard>
           <SettingRow className={mergeStylexOverrideClassName("", sx.itemsStart, sx.gapX3)}>
@@ -1611,7 +1440,9 @@ setError(e.message);
               <SettingRowDescription className={mergeStylexOverrideClassName("", sx.leadingSnug)}>
                 {connected
                   ? `All sessions clone and open pull requests as @${account.login}.`
-                  : "Connect a GitHub App to clone your private repositories and open pull requests."}
+                  : data.connectAvailable
+                    ? "Sign in so sessions can clone private repositories and open pull requests as you."
+                    : "Set up a GitHub App to access private repositories and open pull requests."}
               </SettingRowDescription>
             </SettingRowText>
             <SettingRowControl className={mergeStylexOverrideClassName("", sx.flex, sx.itemsCenter, sx.gap3)}>
@@ -1641,7 +1472,8 @@ setError(e.message);
                       </Menu.Item>
                     )}
                     <Menu.Item
-                      onClick={() => disconnect(account.login)} {...mergeStylexProps("data-[highlighted]:bg-red-soft", sx.textRed)}
+                      onClick={() => disconnect(account.login)}
+                      className={mergeStylexOverrideClassName("data-[highlighted]:bg-red-soft", sx.textRed)}
                     >
                       <IconTrash size={16} />
                       Disconnect
@@ -1666,7 +1498,7 @@ setError(e.message);
                         onClick={startConnect}
                         disabled={flowState !== "idle"}
                       >
-                        {flowState === "starting" ? "Starting…" : "Connect GitHub App"}
+                        {flowState === "starting" ? "Starting…" : "Sign in with GitHub"}
                       </Button>
                       {data.appInstallUrl && (
                         <Button
@@ -1681,19 +1513,21 @@ setError(e.message);
                             />
                           }
                         >
-                          Install on your repositories
+                          Manage repositories
                         </Button>
                       )}
                     </div>
                     <div {...stylex.props(sx.leadingSnug, sx.textFaint, typography.meta)}>
-                      Authorize with a one-time code. No sign-in here, so every
-                      session shares the connected account.
+                      GitHub opens in a new tab. Authorize with the one-time code,
+                      then close that tab and return here. Every session shares the
+                      connected account.
                     </div>
                     {/* A config-set app can be cleared live; an env-set one only
                         gets named, since it needs a restart to change. */}
                     {data.appConfigSource === "config" ? (
                       <button
-                        type="button" {...mergeStylexProps("", sx.hoverTextFg, sx.selfStart, sx.textDim, sx.underline, typography.meta)}
+                        type="button"
+                        {...mergeStylexProps("hover:text-fg", sx.selfStart, sx.textDim, sx.underline, typography.meta)}
                         onClick={removeApp}
                       >
                         Remove app
@@ -1722,7 +1556,7 @@ setError(e.message);
                         with a one-time code.
                       </div>
                       <div {...stylex.props(sx.flex, sx.flexWrap, sx.itemsCenter, sx.gap25)}>
-                        <Button variant="primary" onClick={() => setWizardOpen(true)}>
+                        <Button variant="primary" onClick={() => void load().then(() => setWizardOpen(true))}>
                           Set up GitHub App
                         </Button>
                       </div>
@@ -1740,7 +1574,8 @@ setError(e.message);
               <a
                 href={data.appInstallUrl}
                 target="_blank"
-                rel="noreferrer" {...mergeStylexProps("", sx.hoverTextFg, sx.inlineFlex, sx.itemsCenter, sx.gap1, sx.textDim, sx.underline, typography.meta)}
+                rel="noreferrer"
+                {...mergeStylexProps("hover:text-fg", sx.inlineFlex, sx.itemsCenter, sx.gap1, sx.textDim, sx.underline, typography.meta)}
               >
                 Manage which repositories the app can access
                 <IconArrowUpRight size={14} />
@@ -1766,6 +1601,7 @@ setError(e.message);
           configured={data.connectAvailable}
           connected={connected}
           installUrl={data.appInstallUrl}
+          webhookBaseUrl={data.webhookBaseUrl}
           onConnect={startConnect}
           error={error}
           flow={flow}
@@ -1799,7 +1635,9 @@ setError(e.message);
 
   return (
     <>
-      <SectionHeading>{personal ? "GitHub" : "GitHub accounts"}</SectionHeading>
+      {showHeading && (
+        <SectionHeading>{personal ? "GitHub" : "GitHub accounts"}</SectionHeading>
+      )}
       {error && (
         <InlineAlert onDismiss={() => setError(null)}>{error}</InlineAlert>
       )}
@@ -1810,7 +1648,7 @@ setError(e.message);
             into a one-word column. The admin row is top-aligned because its
             description runs several lines; the compact personal row stays
             centered with its button. */}
-        <SettingRow className={mergeStylexOverrideClassName("", sx.gapX3, !personal && sx.itemsStart)}>
+        <SettingRow className={cn(utilityClassName("gap-x-3"), !personal && utilityClassName("items-start"))}>
           {signedIn ? (
             // Same 30px slot as the brand tile, so the row's text column does
             // not shift when the tile gives way to the avatar.
@@ -1821,7 +1659,7 @@ setError(e.message);
             <IconTile name="github" size={30} />
           )}
           <SettingRowText>
-            <SettingRowTitle className={mergeStylexOverrideClassName("", personal && sx.truncate)}>
+            <SettingRowTitle className={cn(personal && utilityClassName("truncate"))}>
               {signedIn ? own!.name : personal ? "GitHub" : "Per-user GitHub auth"}
               {signedIn && (
                 <span {...stylex.props(sx.ml2, sx.fontNormal, sx.textFaint, typography.label)}>@{own!.github}</span>
@@ -1830,8 +1668,8 @@ setError(e.message);
             {!personal && (
               <SettingRowDescription className={mergeStylexOverrideClassName("", sx.leadingSnug)}>
                 {active
-                  ? "Interactive sessions of a connected teammate open PRs as their own GitHub account. Everyone else (and all automations) keeps the bot."
-                  : "Off. Sessions open PRs as the bot account. Opt in via config: integrations.github { userPrAuth: true, oauthClientId } in ~/.opensession/config.json."}
+                  ? "Interactive sessions of a connected teammate open PRs as their own GitHub account. Trusted GitHub automations use the repository-scoped App credential."
+                  : "Off. Interactive sessions use the workspace credential. Configure the GitHub App in Settings → Integrations and the sign-in method in Settings → Authentication."}
               </SettingRowDescription>
             )}
             {personal && active && (
@@ -1886,7 +1724,7 @@ setError(e.message);
                   : needsReconnect
                     ? "Reconnect"
                     : personal
-                      ? "Connect"
+                      ? "Sign in"
                       : "Connect account"}
               </Button>
             )}
@@ -1908,7 +1746,8 @@ setError(e.message);
                     Reconnect
                   </Menu.Item>
                   <Menu.Item
-                    onClick={() => disconnect(own!.github)} {...mergeStylexProps("data-[highlighted]:bg-red-soft", sx.textRed)}
+                    onClick={() => disconnect(own!.github)}
+                    className={mergeStylexOverrideClassName("data-[highlighted]:bg-red-soft", sx.textRed)}
                   >
                     <IconTrash size={16} />
                     Disconnect
@@ -1979,7 +1818,8 @@ setError(e.message);
                       </Menu.Trigger>
                       <Menu.Popup align="end" sideOffset={4}>
                         <Menu.Item
-                          onClick={() => disconnect(m.github)} {...mergeStylexProps("data-[highlighted]:bg-red-soft", sx.textRed)}
+                          onClick={() => disconnect(m.github)}
+                          className={mergeStylexOverrideClassName("data-[highlighted]:bg-red-soft", sx.textRed)}
                         >
                           <IconTrash size={16} />
                           Disconnect
@@ -1995,376 +1835,10 @@ setError(e.message);
       {personal && (
         <SettingsHint>
           {active
-            ? "Connect GitHub to open pull requests as yourself in interactive sessions. Automations and unconnected teammates use the workspace bot."
+            ? "Sign in with GitHub to open pull requests as yourself in interactive sessions. Automations and unconnected teammates use the workspace bot."
             : "Personal GitHub sign-in is not enabled for this workspace. Pull requests use the workspace bot."}
         </SettingsHint>
       )}
-    </>
-  );
-}
-
-/**
- * code.storage (Pierre) — connect the org + signing key entirely from this
- * card, no config-file editing. Disconnected: org + pasted PKCS8 PEM →
- * POST /api/setup/codestorage/connect. Connected: repo count (or the server's
- * precise error), plus the webhook receiver info the Pierre dashboard needs
- * (path, HMAC secret) and live delivery status from GET status.
- */
-function CodeStorageCard() {
-  const [status, setStatus] = useState<CodeStorageStatus | null>(null);
-  const [org, setOrg] = useState("");
-  const [pem, setPem] = useState("");
-  const [connecting, setConnecting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [note, setNote] = useState<string | null>(null);
-  const [showSecret, setShowSecret] = useState(false);
-  const [copied, setCopied] = useState<string | null>(null);
-
-  const load = async () => {
-    await (async () => {
-setStatus(await fetchCodeStorageStatus());
-})().catch(async () => {
-
-});
-  };
-
-  useEffect(() => {
-    load();
-  }, [load]);
-
-  // Keep the delivery status live while the card shows the webhook section.
-  useEffect(() => {
-    if (!status?.configured) return;
-    const t = setInterval(load, 30_000);
-    return () => clearInterval(t);
-  }, [status?.configured, load]);
-
-  async function connect() {
-    setConnecting(true);
-    setError(null);
-    setNote(null);
-    await (async () => {
-const res = await connectCodeStorage(org.trim(), pem);
-      setPem("");
-      setNote(
-        `Connected. ${res.repoCount} repo${res.repoCount === 1 ? "" : "s"} visible. Register them under Settings → Setup → Repositories.`,
-      );
-})().catch(async (e: any) => {
-setError(e.message);
-}).finally(async () => {
-setConnecting(false);
-      await load();
-});
-  }
-
-  async function disconnect() {
-    if (
-      !confirm(
-        "Disconnect code.storage? Sessions on code.storage repos lose push/pull until you reconnect. The key file stays on disk.",
-      )
-    )
-      return;
-    setError(null);
-    await (async () => {
-const res = await disconnectCodeStorage();
-      setNote(res.note || "Disconnected.");
-      await load();
-})().catch(async (e: any) => {
-setError(e.message);
-});
-  }
-
-  function copy(value: string, which: string) {
-    navigator.clipboard?.writeText(value).then(() => {
-      setCopied(which);
-      setTimeout(() => setCopied((c) => (c === which ? null : c)), 1500);
-    });
-  }
-
-  if (!status) return null;
-  const connected = status.configured;
-  const wh = status.webhook;
-  const last = wh?.lastDelivery ?? null;
-
-  return (
-    <>
-      <SectionHeading>Code Storage: branch-based repo host</SectionHeading>
-      {error && <InlineAlert onDismiss={() => setError(null)}>{error}</InlineAlert>}
-      <SettingCard>
-        <div {...stylex.props(sx.flex, sx.itemsCenter, sx.gap3, sx.px5, sx.py3)}>
-          <IconTile name="codestorage" size={30} />
-          <div {...stylex.props(sx.minW0, sx.flex1)}>
-            <div {...stylex.props(sx.fontMedium, sx.textFg, typography.itemTitle)}>code.storage (Pierre)</div>
-            <div {...stylex.props(sx.leadingSnug, sx.textDim, typography.label)}>
-              {!connected
-                ? "Host repos on code.storage, where sessions review branch diffs instead of PRs. Paste the org's signing key to connect; nothing else to configure."
-                : status.error
-                  ? `Configured for org "${status.org}", but the last check failed.`
-                  : `Connected to org "${status.org}"${
-                      typeof status.repoCount === "number"
-                        ? ` · ${status.repoCount} repo${status.repoCount === 1 ? "" : "s"} visible`
-                        : ""
-                    }. Register repos under Settings → Setup → Repositories.`}
-            </div>
-          </div>
-          <StatusChip
-            label={connected ? (status.error ? "Error" : "Connected") : "Not connected"}
-            dot={
-              connected
-                ? status.error
-                  ? "var(--red)"
-                  : "var(--green)"
-                : "var(--line-strong, var(--text-faint))"
-            }
-          />
-          {connected && (
-            <Button
-              size="sm" {...mergeStylexProps("", sx.hoverBorderRed, sx.hoverTextRed, sx.flexShrink0)}
-              onClick={disconnect}
-            >
-              Disconnect
-            </Button>
-          )}
-        </div>
-
-        {note && <div {...stylex.props(sx.px5, sx.py25, sx.textDim, typography.label)}>{note}</div>}
-
-        {!connected ? (
-          <div {...stylex.props(sx.flex, sx.flexCol, sx.gap3, sx.borderT, sx.borderLine, sx.px5, sx.py3)}>
-            <SettingsFormRow>
-              <SettingsField>
-                Organization
-                <input
-                  className={settingsInputClass}
-                  value={org}
-                  onChange={(e) => setOrg(e.target.value)}
-                  placeholder="acme"
-                  autoCapitalize="none"
-                  spellCheck={false}
-                  aria-label="code.storage organization"
-                />
-              </SettingsField>
-            </SettingsFormRow>
-            <SettingsField>
-              Private key (PKCS8 PEM, its public half registered with the org in the
-              Pierre dashboard)
-              <textarea
-                className={cn(settingsInputClass, stylex.props(sx.resizeY, sx.fontMono).className)}
-                value={pem}
-                onChange={(e) => setPem(e.target.value)}
-                rows={5}
-                spellCheck={false}
-                placeholder={"-----BEGIN PRIVATE KEY-----\n…"}
-                aria-label="code.storage private key PEM"
-              />
-            </SettingsField>
-            <div {...stylex.props(sx.flex, sx.itemsCenter, sx.gap25)}>
-              <Button
-                variant="primary"
-                disabled={connecting || !org.trim() || !pem.trim()}
-                onClick={connect}
-              >
-                {connecting ? "Connecting…" : "Connect"}
-              </Button>
-              <span {...stylex.props(sx.textFaint, typography.supporting)}>
-                The key is stored on this server (mode 0600) and never leaves it.
-              </span>
-            </div>
-          </div>
-        ) : (
-          <>
-            {status.error && (
-              <div {...stylex.props(sx.borderT, sx.borderLine, sx.px5, sx.py25, sx.leadingSnug, sx.textRed, typography.label)}>
-                {status.error}
-              </div>
-            )}
-            {wh && (
-              <div {...stylex.props(sx.flex, sx.flexCol, sx.gap2, sx.borderT, sx.borderLine, sx.px5, sx.py3)}>
-                <div {...stylex.props(sx.fontMedium, sx.textFg, typography.label)}>Webhook receiver</div>
-                <div {...stylex.props(sx.flex, sx.flexWrap, sx.itemsCenter, sx.gap2, sx.textDim, typography.label)}>
-                  <code {...stylex.props(sx.roundedSm, sx.bgActive, sx.px15, sx.py05, sx.fontMono, sx.textFg)}>
-                    POST {wh.path}
-                  </code>
-                  <span>
-                    on the webhook server (127.0.0.1:{wh.port}, behind your TLS proxy)
-                  </span>
-                  <Button size="sm" variant="ghost" onClick={() => copy(wh.path, "path")}>
-                    {copied === "path" ? "Copied" : "Copy path"}
-                  </Button>
-                </div>
-                <div {...stylex.props(sx.flex, sx.flexWrap, sx.itemsCenter, sx.gap2, sx.textDim, typography.label)}>
-                  <span>Secret</span>
-                  <code {...stylex.props(sx.maxW340px, sx.truncate, sx.roundedSm, sx.bgActive, sx.px15, sx.py05, sx.fontMono, sx.textFg)}>
-                    {showSecret ? wh.secret : "••••••••••••••••"}
-                  </code>
-                  <Button size="sm" variant="ghost" onClick={() => setShowSecret((s) => !s)}>
-                    {showSecret ? "Hide" : "Reveal"}
-                  </Button>
-                  <Button size="sm" variant="ghost" onClick={() => copy(wh.secret, "secret")}>
-                    {copied === "secret" ? "Copied" : "Copy"}
-                  </Button>
-                </div>
-                <div {...stylex.props(sx.leadingSnug, sx.textFaint, typography.supporting)}>
-                  Paste your public URL for this path plus the secret into the Pierre
-                  dashboard → Webhooks, subscribed to push and repo.sync events.
-                </div>
-                <div
-                  {...stylex.props(
-                    typography.meta,
-                    last && !last.ok ? sx.lastDeliveryBad : sx.lastDeliveryIdle,
-                  )}
-                >
-                  {!last
-                    ? "No verified deliveries received yet."
-                    : last.ok
-                      ? `Last event: ${last.event}${last.ref ? ` ${last.ref}` : ""}${last.repo ? ` (${last.repo})` : ""}, ${relativeTime(last.at)}`
-                      : `Last delivery failed (${last.error}), ${relativeTime(last.at)}`}
-                </div>
-                {wh.lastRejected && (
-                  <div {...stylex.props(sx.leadingSnug, sx.textRed, typography.supporting)}>
-                    {wh.rejectedCount} unauthenticated request
-                    {wh.rejectedCount === 1 ? "" : "s"} rejected ({wh.lastRejected.error}
-                    ), last {relativeTime(wh.lastRejected.at)}. If these are your Pierre
-                    deliveries, check that the secret in the dashboard matches; otherwise
-                    it's internet noise and verified deliveries above are unaffected.
-                  </div>
-                )}
-                {wh.syncFailures.map((f) => (
-                  <div key={f.repo} {...stylex.props(sx.textRed, typography.meta)}>
-                    Sync failing for {f.repo}: {f.error} ({relativeTime(f.at)})
-                  </div>
-                ))}
-              </div>
-            )}
-          </>
-        )}
-      </SettingCard>
-    </>
-  );
-}
-
-interface ModelInfo {
-  id: string;
-  provider: "claude" | "codex";
-  label: string;
-  aliases: string[];
-}
-
-/**
- * Plain triage router — the pre-triage classifier that spam-gates new tickets
- * and routes very basic asks (simple refunds, how-do-I) to a cheaper model,
- * keeping Fable for tickets that benefit from real investigation. The prompt
- * is editable here; the JSON output contract is enforced in code.
- */
-function PlainRouter() {
-  const [cfg, setCfg] = useState<{
-    prompt: string;
-    isCustom: boolean;
-    basicModel: string;
-    defaultPrompt: string;
-    defaultBasicModel: string;
-  } | null>(null);
-  const [models, setModels] = useState<ModelInfo[]>([]);
-  const [draft, setDraft] = useState("");
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [savedAt, setSavedAt] = useState(0);
-
-  useEffect(() => {
-    fetch(`${BASE_PATH}/api/connections/plain-router`)
-      .then((r) => r.json())
-      .then((b) => {
-        setCfg(b);
-        setDraft(b.prompt);
-      })
-      .catch(() => {});
-    fetch(`${BASE_PATH}/api/models`)
-      .then((r) => r.json())
-      .then((b) => setModels((b.models || []).filter((m: ModelInfo) => m.provider === "claude")))
-      .catch(() => {});
-  }, []);
-
-  async function save(patch: { prompt?: string; basicModel?: string }) {
-    setSaving(true);
-    setError(null);
-    await (async () => {
-const res = await fetch(`${BASE_PATH}/api/connections/plain-router`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(patch),
-      });
-      const body = await res.json();
-      if (!res.ok) throw new Error(body.error || `Failed: ${res.status}`);
-      setCfg((c) => (c ? { ...c, ...body } : c));
-      if ("prompt" in patch) setDraft(body.prompt);
-      setSavedAt(Date.now());
-})().catch(async (e: any) => {
-setError(e.message);
-});
-    setSaving(false);
-  }
-
-  if (!cfg) return null;
-  const dirty = draft !== cfg.prompt;
-
-  return (
-    <>
-      <SectionHeading>Plain triage router: spam gate and model routing</SectionHeading>
-      {error && (
-        <InlineAlert onDismiss={() => setError(null)}>{error}</InlineAlert>
-      )}
-      <SettingsSection className={mergeStylexOverrideClassName("", sx.minW0, sx.maxW720px)}>
-        <div {...stylex.props(sx.mb2, sx.leading145, sx.textDim, typography.supporting)}>
-          Every new Plain ticket goes through one cheap Haiku call before triage: spam is skipped
-          entirely, a very basic ask (simple refund, how-do-I) runs triage on the model below, and
-          everything else runs on the triage automation's own model. Router errors fail open to
-          full triage. Applies to the next ticket, with no restart.
-        </div>
-        <div {...stylex.props(sx.flex, sx.minW0, sx.itemsCenter, sx.gap25, sx.textFaint, typography.meta)}>
-          <span {...stylex.props(sx.whitespaceNowrap)}>Model for basic tickets:</span>
-          <OptionSelect
-            className={mergeStylexOverrideClassName("", sx.minW0, sx.flex1)}
-            label="Model for basic tickets"
-            value={cfg.basicModel}
-            disabled={saving}
-            options={models.map((m) => ({ value: m.id, label: m.label }))}
-            onChange={(basicModel) => save({ basicModel })}
-          />
-        </div>
-        <textarea
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          rows={12}
-          spellCheck={false}
-          aria-label="Routing prompt"
-          className={cn(settingsInputClass, stylex.props(sx.mt2, sx.resizeY, typography.body).className)}
-        />
-        <div {...stylex.props(sx.mt15, sx.flex, sx.minW0, sx.itemsCenter, sx.gap25, sx.textFaint, typography.meta)}>
-          <Button
-            variant="primary"
-            disabled={saving || !dirty}
-            onClick={() => save({ prompt: draft })}
-          >
-            {saving ? "Saving…" : "Save prompt"}
-          </Button>
-          <Button
-            variant="soft"
-            disabled={saving || (!cfg.isCustom && !dirty)}
-            onClick={() => save({ prompt: "" })}
-          >
-            Reset to default
-          </Button>
-          <span {...stylex.props(sx.minW0, sx.truncate, sx.whitespaceNowrap)}>
-            {dirty
-              ? "Unsaved changes"
-              : savedAt
-                ? "Saved."
-                : cfg.isCustom
-                  ? "Custom prompt active"
-                  : "Using the built-in default"}
-          </span>
-        </div>
-      </SettingsSection>
     </>
   );
 }
@@ -2436,7 +1910,7 @@ setSaving(false);
         if (!next && !saving) onClose();
       }}
     >
-      <Modal.Content widthClassName={mergeStylexClassName("", sharedClassStyles.maxW30rem)}>
+      <Modal.Content widthClassName={utilityClassName("max-w-[30rem]")}>
         <Modal.Header
           title={`Connect ${displayName(server.name)} with an API token`}
           description="The token is checked with the provider, then stored for agent runs."
@@ -2445,7 +1919,8 @@ setSaving(false);
           {tokenPage ? (
             <div {...stylex.props(sx.leadingSnug, sx.textDim, typography.supporting)}>
               Create a token at{" "}
-              <a {...mergeStylexProps("", sx.hoverTextFg, sx.underline)}
+              <a
+                {...mergeStylexProps("hover:text-fg", sx.underline)}
                 href={tokenPage.url}
                 target="_blank"
                 rel="noreferrer"
@@ -2469,7 +1944,7 @@ setSaving(false);
           </div>
           <input
             type="password"
-            className={cn(settingsInputClass, stylex.props(sx.fontMono).className)}
+            className={cn(settingsInputClass, utilityClassName("font-mono"))}
             value={token}
             onChange={(e) => setToken(e.target.value)}
             placeholder="Paste API token"
@@ -2605,7 +2080,7 @@ setError(e.message);
           <SettingsField>
             Env (KEY=VALUE, one per line, stored in mcp-config.json)
             <textarea
-              className={cn(settingsInputClass, stylex.props(sx.resizeY, sx.fontMono).className)}
+              className={cn(settingsInputClass, utilityClassName("resize-y font-mono"))}
               value={env}
               onChange={(e) => setEnv(e.target.value)}
               rows={2}

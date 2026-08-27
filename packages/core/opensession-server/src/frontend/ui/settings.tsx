@@ -1,6 +1,8 @@
+import { mergeStylexProps } from "./cn";
+import { utilityClassName } from "./cn";
 import * as React from "react";
 import { Card } from "./card";
-import { cn, mergeStylexProps, mergeStylexClassName, mergeStylexOverrideClassName } from "./cn";
+import { cn } from "./cn";
 import { fieldClasses } from "./input";
 import { markTileClass } from "../lib/mark-tile";
 import { Skeleton, SkeletonBar } from "./state";
@@ -12,21 +14,17 @@ const sx = stylex.create({
 	minW0: {
 			minWidth: "0"
 	},
-	m0: {
-			margin: "0"
-	},
 	fontTitle: {
-			fontWeight: "var(--title-weight)",
-		"--settings-leading": "1.1"
+			fontWeight: "var(--title-weight)"
 	},
 	tracking002em: {
-			letterSpacing: "-.02em"
+			letterSpacing: "-0.02em"
 	},
 	textFg: {
 			color: "var(--text)"
 	},
 	mt15: {
-			marginTop: "6px"
+			marginTop: "calc(4px * 1.5)"
 	},
 	leadingRelaxed: {
 			lineHeight: "var(--leading-relaxed)"
@@ -44,159 +42,31 @@ const sx = stylex.create({
 			alignItems: "center"
 	},
 	gap2: {
-			gap: "8px"
+			gap: "calc(4px * 2)"
 	},
 	gap15: {
-			gap: "6px"
+			gap: "calc(4px * 1.5)"
 	},
 	flexShrink0: {
 			flexShrink: "0"
 	},
 	h15: {
-			height: "6px"
+			height: "calc(4px * 1.5)"
 	},
 	w15: {
-			width: "6px"
+			width: "calc(4px * 1.5)"
 	},
 	roundedFull: {
-			borderRadius: "calc(infinity * 1px)"
-	,
-		cornerShape: "round"},
-	wFull: {
-			width: "100%"
-	},
-	maxW720px: {
-			maxWidth: "720px"
-	},
-	mb5: {
-			marginBottom: "20px"
-	},
-	itemsStart: {
-			alignItems: "flex-start"
-	},
-	justifyBetween: {
-			justifyContent: "space-between"
-	},
-	gap4: {
-			gap: "16px"
-	},
-	px5: {
-			paddingInline: "20px"
-	},
-	mb2: {
-			marginBottom: "8px"
-	},
-	mt9: {
-			marginTop: "36px"
-	},
-	minH6: {
-			minHeight: "24px"
-	},
-	flexWrap: {
-			flexWrap: "wrap"
-	},
-	gapX2: {
-			columnGap: "8px"
-	},
-	gapY15: {
-			rowGap: "6px"
-	},
-	fontSemibold: {
-			fontWeight: "var(--font-weight-semibold)"
-	},
-	textFaint: {
-			color: "var(--text-faint)"
-	},
-	overflowHidden: {
-			overflow: "hidden"
-	},
-	flexCol: {
-			flexDirection: "column"
-	},
-	gap3: {
-			gap: "12px"
-	},
-	mt2: {
-			marginTop: "8px"
-	},
-	h25: {
-			height: "10px"
-	},
-	p5: {
-			padding: "20px"
-	},
-	gapX4: {
-			columnGap: "16px"
-	},
-	gapY25: {
-			rowGap: "10px"
-	},
-	py4: {
-			paddingBlock: "16px"
-	},
-	flex1: {
-			flex: "1"
-	},
-	fontMedium: {
-			fontWeight: "var(--font-weight-medium)"
-	},
-	mt1: {
-			marginTop: "4px"
-	},
-	mlAuto: {
-			marginLeft: "auto"
-	},
-	mb3: {
-			marginBottom: "12px"
-	},
-	gap35: {
-			gap: "14px"
-	},
-	mb4: {
-			marginBottom: "16px"
-	},
-	grid: {
-			display: "grid"
-	},
-	gridCols2: {
-			gridTemplateColumns: "repeat(2,minmax(0,1fr))"
-	},
-	justifyEnd: {
-			justifyContent: "flex-end"
-	},
+			borderRadius: "calc(infinity * 1px)",
 
-	maxSmMinW55: {
-		"@media not all and (min-width: 40rem)": {
-			"minWidth": "55%"
-		}
-	},
-	maxSmGridCols1: {
-		"@media not all and (min-width: 40rem)": {
-			"gridTemplateColumns": "repeat(1,minmax(0,1fr))"
-		}
-	},
-
-	rounded2xl: {
-		"borderRadius": "calc(22px * var(--rf))"
-	,
-		cornerShape: "var(--cs)"},
-	border: {
-		"borderStyle": "var(--tw-border-style)",
-		"borderWidth": "1px"
-	},
-	borderDividerSoft: {
-		"borderColor": "var(--divider-soft)"
-	},
-	bgSettingsPlate: {
-		"backgroundColor": "var(--settings-plate)"
-	},
+		cornerShape: "round",},
 });
 
 export function SettingsPanel({
 	className,
 	...props
 }: React.ComponentPropsWithoutRef<"div">) {
-	return <div {...mergeStylexProps(cn(className), sx.wFull, sx.maxW720px)} {...props} />;
+	return <div className={cn(utilityClassName("w-full max-w-[720px]"), className)} {...props} />;
 }
 
 /**
@@ -217,15 +87,16 @@ export function SettingsHeader({
 	actions?: React.ReactNode;
 }) {
 	return (
-		<header {...mergeStylexProps(cn(className), sx.mb5, sx.flex, sx.itemsStart, sx.justifyBetween, sx.gap4, sx.px5)}
+		<header
+			className={cn(utilityClassName("mb-5 flex items-start justify-between gap-4 px-5"), className)}
 			{...props}
 		>
 			<div {...stylex.props(sx.minW0)}>
-				<h1 {...mergeStylexProps("[.settings-sheet_&]:hidden", sx.m0, sx.fontTitle, sx.tracking002em, sx.textFg, typography.pageTitle)}>
+				<h1 {...mergeStylexProps("m-0 [.settings-sheet_&]:hidden", sx.fontTitle, sx.tracking002em, sx.textFg, typography.pageTitle)} >
 					{title}
 				</h1>
 				{description && (
-					<p {...mergeStylexProps("[.settings-sheet_&]:mt-0", sx.m0, sx.mt15, sx.leadingRelaxed, sx.textDim, typography.supporting)}>
+					<p {...mergeStylexProps("m-0 [.settings-sheet_&]:mt-0", sx.mt15, sx.leadingRelaxed, sx.textDim, typography.supporting)} >
 						{description}
 					</p>
 				)}
@@ -248,7 +119,14 @@ export function SettingsGroupLabel({
 	...props
 }: React.ComponentPropsWithoutRef<"div"> & { actions?: React.ReactNode }) {
 	return (
-		<div {...mergeStylexProps(cn(className), sx.mb2, sx.mt9, sx.flex, sx.minH6, sx.flexWrap, sx.itemsCenter, sx.justifyBetween, sx.gapX2, sx.gapY15, sx.px5, typography.label, sx.fontSemibold, sx.textFaint)}
+		<div
+			data-settings-group-label=""
+			className={cn(
+				// mt-9: a group's card and the hint under it read as one block, so
+				// the space above the next label is what separates the groups.
+				utilityClassName("mb-2 mt-9 flex min-h-6 flex-wrap items-center justify-between gap-x-2 gap-y-1.5 px-5 text-label font-semibold text-faint"),
+				className,
+			)}
 			{...props}
 		>
 			<span {...stylex.props(sx.minW0)}>{children}</span>
@@ -286,7 +164,7 @@ export function SettingsGroupLabel({
  * `divider-soft` is `line` at a third, so it lands well under the rules it
  * contains and the block reads as one object rather than a frame. */
 const settingsSurface =
-	mergeStylexClassName("", sx.rounded2xl, sx.border, sx.borderDividerSoft, sx.bgSettingsPlate);
+	utilityClassName("rounded-2xl border border-divider-soft bg-settings-plate");
 
 /**
  * The rule between two groups of rows: inset from the card's edges, so it
@@ -318,7 +196,13 @@ export function SettingCard({
 	...props
 }: React.ComponentPropsWithoutRef<"div">) {
 	return (
-		<Card {...mergeStylexProps(cn(settingsSurface, settingGroupRule, className), sx.overflowHidden)}
+		<Card
+			className={cn(
+				settingsSurface,
+				utilityClassName("overflow-hidden"),
+				settingGroupRule,
+				className,
+			)}
 			{...props}
 		/>
 	);
@@ -333,7 +217,7 @@ export function SettingGroup({
 	className,
 	...props
 }: React.ComponentPropsWithoutRef<"div">) {
-	return <div {...mergeStylexProps(cn(className), sx.flex, sx.flexCol)} {...props} />;
+	return <div className={cn(utilityClassName("flex flex-col"), className)} {...props} />;
 }
 
 /**
@@ -381,7 +265,7 @@ export function SettingCardSkeleton({
 		<Skeleton label={label} className={className} {...props}>
 			<SettingCard>
 				{GHOST_ROWS.slice(0, rows).map((row) => (
-					<SettingRow key={row.title} className={mergeStylexOverrideClassName("", icon !== undefined && sx.gap3)}>
+					<SettingRow key={row.title} className={cn(icon !== undefined && utilityClassName("gap-3"))}>
 						{icon !== undefined && (
 							// Inline size, like IconTile's own: the tile scale is a
 							// number a caller passes, not a step in the class scale.
@@ -392,7 +276,7 @@ export function SettingCardSkeleton({
 						)}
 						<SettingRowText>
 							<SkeletonBar className={row.title} />
-							<SkeletonBar {...mergeStylexProps(cn(row.description), sx.mt2, sx.h25)} />
+							<SkeletonBar className={cn(utilityClassName("mt-2 h-2.5"), row.description)} />
 						</SettingRowText>
 					</SettingRow>
 				))}
@@ -424,7 +308,7 @@ export function SettingsSection({
 	className,
 	...props
 }: React.ComponentPropsWithoutRef<"div">) {
-	return <Card {...mergeStylexProps(cn(settingsSurface, className), sx.p5)} {...props} />;
+	return <Card className={cn(settingsSurface, utilityClassName("p-5"), className)} {...props} />;
 }
 
 /**
@@ -445,7 +329,8 @@ export function SettingRow({
 	...props
 }: React.ComponentPropsWithoutRef<"div">) {
 	return (
-		<div {...mergeStylexProps(cn(className), sx.flex, sx.flexWrap, sx.itemsCenter, sx.gapX4, sx.gapY25, sx.px5, sx.py4)}
+		<div
+			className={cn(utilityClassName("flex flex-wrap items-center gap-x-4 gap-y-2.5 px-5 py-4"), className)}
 			{...props}
 		/>
 	);
@@ -455,14 +340,19 @@ export function SettingRowText({
 	className,
 	...props
 }: React.ComponentPropsWithoutRef<"div">) {
-	return <div {...mergeStylexProps(cn(mergeStylexClassName("", sx.maxSmMinW55), className), sx.minW0, sx.flex1)} {...props} />;
+	return <div className={cn(utilityClassName("min-w-0 flex-1 max-sm:min-w-[55%]"), className)} {...props} />;
 }
 
 export function SettingRowTitle({
 	className,
 	...props
 }: React.ComponentPropsWithoutRef<"div">) {
-	return <div {...mergeStylexProps(cn(className), typography.itemTitle, sx.fontMedium, sx.textFg)} {...props} />;
+	// data-setting-title mirrors data-setting-description below: a hook a
+	// surface can scale from outside (FirstMile promotes these one heading
+	// step) without the primitive knowing who is hosting it.
+	return (
+		<div data-setting-title="" className={cn(utilityClassName("text-item-title font-medium text-fg"), className)} {...props} />
+	);
 }
 
 export function SettingRowDescription({
@@ -471,7 +361,8 @@ export function SettingRowDescription({
 }: React.ComponentPropsWithoutRef<"div">) {
 	return (
 		<div
-			data-setting-description="" {...mergeStylexProps(cn(className), sx.mt1, typography.supporting, sx.textDim)}
+			data-setting-description=""
+			className={cn(utilityClassName("mt-1 text-supporting text-dim"), className)}
 			{...props}
 		/>
 	);
@@ -481,7 +372,7 @@ export function SettingRowControl({
 	className,
 	...props
 }: React.ComponentPropsWithoutRef<"div">) {
-	return <div {...mergeStylexProps(cn(className), sx.mlAuto, sx.shrink0)} {...props} />;
+	return <div className={cn(utilityClassName("ml-auto shrink-0"), className)} {...props} />;
 }
 
 /**
@@ -515,7 +406,8 @@ export function SettingsHint({
 }: React.ComponentPropsWithoutRef<"div">) {
 	return (
 		<div
-			data-settings-hint="" {...mergeStylexProps(cn(className), sx.mt2, sx.px5, typography.supporting, sx.textFaint)}
+			data-settings-hint=""
+			className={cn(utilityClassName("mt-2 px-5 text-supporting text-faint"), className)}
 			{...props}
 		/>
 	);
@@ -541,7 +433,8 @@ export function SettingsForm({
 	...props
 }: React.ComponentPropsWithoutRef<"div">) {
 	return (
-		<div {...mergeStylexProps(cn(settingsSurface, className), sx.mb3, sx.flex, sx.flexCol, sx.gap35, sx.p5)}
+		<div
+			className={cn(settingsSurface, utilityClassName("mb-3 flex flex-col gap-3.5 p-5"), className)}
 			{...props}
 		/>
 	);
@@ -551,14 +444,16 @@ export function SettingsFormTitle({
 	className,
 	...props
 }: React.ComponentPropsWithoutRef<"div">) {
-	return <div {...mergeStylexProps(cn(className), sx.mb4, typography.itemTitle, sx.fontSemibold, sx.textFg)} {...props} />;
+	return (
+		<div data-setting-title="" className={cn(utilityClassName("mb-4 text-item-title font-semibold text-fg"), className)} {...props} />
+	);
 }
 
 export function SettingsFormRow({
 	className,
 	...props
 }: React.ComponentPropsWithoutRef<"div">) {
-	return <div {...mergeStylexProps(cn(mergeStylexClassName("", sx.maxSmGridCols1), className), sx.grid, sx.gridCols2, sx.gap3)} {...props} />;
+	return <div className={cn(utilityClassName("grid grid-cols-2 gap-3 max-sm:grid-cols-1"), className)} {...props} />;
 }
 
 export function SettingsField({
@@ -566,7 +461,8 @@ export function SettingsField({
 	...props
 }: React.ComponentPropsWithoutRef<"label">) {
 	return (
-		<label {...mergeStylexProps(cn(className), sx.mb3, sx.flex, sx.minW0, sx.flexCol, sx.gap15, typography.label, sx.fontMedium, sx.textDim)}
+		<label
+			className={cn(utilityClassName("mb-3 flex min-w-0 flex-col gap-1.5 text-label font-medium text-dim"), className)}
 			{...props}
 		/>
 	);
@@ -582,5 +478,5 @@ export function SettingsFormActions({
 	className,
 	...props
 }: React.ComponentPropsWithoutRef<"div">) {
-	return <div {...mergeStylexProps(cn(className), sx.mt1, sx.flex, sx.justifyEnd, sx.gap2)} {...props} />;
+	return <div className={cn(utilityClassName("mt-1 flex justify-end gap-2"), className)} {...props} />;
 }

@@ -19,8 +19,9 @@ import { existsSync } from "fs";
 import { writeFileAtomic, writeJsonAtomic } from "../../server/shared/atomic-write";
 import { join } from "path";
 import { unlinkSync } from "fs";
+import { stateDir } from "../../server/paths";
 
-export const MEMORY_DIR = `${process.env.HOME}/.opensession-memory`;
+export const MEMORY_DIR = stateDir("memory");
 
 // Test seam: the snapshot harness (src/server/testing/) redirects the store so
 // a recorded fixture can never embed the team's real memories, and so a run's
@@ -35,10 +36,7 @@ let memoryDirOverride: string | null = null;
  */
 export function memoryDir(): string {
   if (memoryDirOverride) return memoryDirOverride;
-  if (process.env.OPENSESSION_STATE_DIR) {
-    return `${process.env.OPENSESSION_STATE_DIR}/.opensession-memory`;
-  }
-  return MEMORY_DIR;
+  return process.env.OPENSESSION_STATE_DIR ? stateDir("memory") : MEMORY_DIR;
 }
 
 /** JSON roots eligible for a v2 import. */

@@ -111,14 +111,16 @@ export function useGitTaskRunner({
     if (pushing) return;
     setPushing(true);
     setError(null);
-    try {
+    await (async () => {
       await gitPushApi(sessionId, repo);
       await onRefresh();
-    } catch (e: any) {
-      setError(e.message || "Push failed");
-    } finally {
-      setPushing(false);
-    }
+    })()
+      .catch((e: any) => {
+        setError(e.message || "Push failed");
+      })
+      .finally(() => {
+        setPushing(false);
+      });
   }
 
   function run(task: GitTask) {

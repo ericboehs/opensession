@@ -200,11 +200,10 @@ function BusyElapsed({ since }: { since: number }) {
 const STEER_SLOW_MS = 5000;
 
 /**
- * A steer the run has accepted but not yet read. pi's agent loop drains its
- * steering queue only between turns, after the current assistant message AND
- * its whole tool batch finish, so this wait is the remainder of whatever the
- * agent is doing right now: usually seconds, but a `bun test` or a subagent
- * holds it for minutes (measured p90 85s, max 385s over two days).
+ * A steer the run has accepted but not yet read. Pi injects it after the
+ * current tool or assistant message reaches its boundary, so this wait is the
+ * remainder of whatever the agent is doing right now: usually seconds, but a
+ * `bun test` or a subagent can hold it for minutes.
  *
  * The counter appears only once the wait is long enough to worry about, and it
  * counts up rather than predicting a landing time, because nothing here knows

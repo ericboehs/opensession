@@ -34,7 +34,8 @@ const sx = stylex.create({
     height: "8px",
     flex: "none",
     borderRadius: "50%",
-  },
+
+		cornerShape: "var(--cs)",},
   bgGreen: { backgroundColor: "var(--green)" },
   bgYellow: { backgroundColor: "var(--yellow)" },
   live: { animation: "composer-agents-pulse 1.4s ease-in-out infinite" },

@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   fetchScheduledPrompts,
   createScheduledPromptApi,
@@ -471,16 +471,20 @@ export function SchedulePromptButton({
   const hasText = text.trim().length > 0;
   const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
-  const load = () =>
-    fetchScheduledPrompts(sessionId)
-      .then(setPending)
-      .catch(() => {});
+  // Stable per session: setters + module fns otherwise.
+  const load = useCallback(
+    () =>
+      fetchScheduledPrompts(sessionId)
+        .then(setPending)
+        .catch(() => {}),
+    [sessionId],
+  );
 
   useEffect(() => {
     load();
     const id = setInterval(load, 60_000);
     return () => clearInterval(id);
-  }, [sessionId]);
+  }, [load]);
 
   // Close menu on outside click; Escape closes menu or dialog.
   useEffect(() => {

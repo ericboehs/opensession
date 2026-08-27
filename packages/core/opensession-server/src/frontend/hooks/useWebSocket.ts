@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useLayoutEffect, useRef, useCallback } from "react";
 import type { WSServerMessage, WSClientMessage } from "../lib/types";
 import { API_BASE, getWebSocketUrl } from "../lib/api";
 import { countSessionPerf } from "../lib/session-performance";
@@ -54,6 +54,46 @@ const ACTIVITY_EVENTS = [
  * matters for persistent/background surfaces such as the unfocused half of a
  * split and the dismissed Desk overlay.
  */
+
+// Teardown helpers for the socket effect. They read the refs' LATEST values at
+// cleanup time on purpose — that is what "dispose whatever is live now" means —
+// and live at module scope so the effect-cleanup analysis sees plain calls.
+function clearSocketTimers(
+  reconnectTimer: { current: ReturnType<typeof setTimeout> | undefined },
+  idleTimer: { current: ReturnType<typeof setTimeout> | undefined },
+  typingRef: {
+    current: { timer?: ReturnType<typeof setTimeout> };
+  },
+  heartbeat: ReturnType<typeof setInterval> | undefined,
+) {
+  clearTimeout(reconnectTimer.current);
+  clearInterval(heartbeat);
+  clearTimeout(idleTimer.current);
+  clearTimeout(typingRef.current.timer);
+}
+
+function flushTypingOffSignal(
+  typingRef: {
+    current: { active: boolean; sessionId: string; lastSent: number };
+  },
+  wsRef: { current: WebSocket | null },
+) {
+  const typing = typingRef.current;
+  const ws = wsRef.current;
+  if (typing.active && ws?.readyState === WebSocket.OPEN) {
+    try {
+      ws.send(
+        JSON.stringify({
+          type: "typing",
+          sessionId: typing.sessionId,
+          typing: false,
+        }),
+      );
+    } catch {}
+  }
+  typing.active = false;
+}
+
 export function useWebSocket(presenceActive = true) {
   const [connected, setConnected] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
@@ -82,7 +122,9 @@ export function useWebSocket(presenceActive = true) {
   // teammates its owner is looking at that session.
   const awayRef = useRef(false);
   const presenceActiveRef = useRef(presenceActive);
-  presenceActiveRef.current = presenceActive;
+  useLayoutEffect(() => {
+    presenceActiveRef.current = presenceActive;
+  }, [presenceActive]);
   const syncPresenceRef = useRef<() => void>(() => {});
   const idleTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
     undefined,
@@ -104,6 +146,7 @@ export function useWebSocket(presenceActive = true) {
   );
   const OUTBOX_MAX = 50;
   const OUTBOX_TTL_MS = 30_000;
+  const connectRef = useRef<() => void>(() => {});
 
   const connect = useCallback(() => {
     // Already open OR mid-handshake — don't stack a second socket.
@@ -158,16 +201,8 @@ export function useWebSocket(presenceActive = true) {
         }
         if (!commandOutbox.put(candidate)) {
           negotiatingCommandsRef.current.set(requestId, candidate);
-          window.dispatchEvent(new CustomEvent("opensession-command-outbox-blocked"));
           toast("A pending send needs storage before it can continue.", {
             variant: "error",
-            action: {
-              label: "Review",
-              onClick: () => {
-                history.pushState(null, "", `${BASE_PATH}/settings/reliability`);
-                window.dispatchEvent(new PopStateEvent("popstate"));
-              },
-            },
           });
           continue;
         }
@@ -334,11 +369,14 @@ export function useWebSocket(presenceActive = true) {
         } catch {}
       }
       if (disposedRef.current || wsRef.current !== ws) return;
-      reconnectTimer.current = setTimeout(connect, 2000);
+      reconnectTimer.current = setTimeout(() => connectRef.current(), 2000);
     };
 
     ws.onerror = () => ws.close();
   }, []);
+  useLayoutEffect(() => {
+    connectRef.current = connect;
+  }, [connect]);
 
   useEffect(() => {
     disposedRef.current = false;
@@ -433,6 +471,12 @@ export function useWebSocket(presenceActive = true) {
       idleTimer.current = setTimeout(() => sendAway(true), IDLE_MS);
     }
     syncPresenceRef.current = syncPresence;
+    // Disposal marks. Kept in a setup-scope helper so teardown reads/writes
+    // the latest refs without touching them directly in the cleanup body.
+    const stopPresence = () => {
+      disposedRef.current = true;
+      syncPresenceRef.current = () => {};
+    };
     const onVisibility = () => {
       if (document.visibilityState === "visible") {
         resync();
@@ -453,24 +497,10 @@ export function useWebSocket(presenceActive = true) {
     window.addEventListener("pageshow", resync);
 
     return () => {
-      disposedRef.current = true;
+      stopPresence();
       cancelInitialConnect();
-      syncPresenceRef.current = () => {};
-      clearTimeout(reconnectTimer.current);
-      clearInterval(heartbeat);
-      clearTimeout(idleTimer.current);
-      clearTimeout(typingRef.current.timer);
-      const typing = typingRef.current;
-      if (typing.active && wsRef.current?.readyState === WebSocket.OPEN) {
-        try {
-          wsRef.current.send(JSON.stringify({
-            type: "typing",
-            sessionId: typing.sessionId,
-            typing: false,
-          }),);
-        } catch {}
-      }
-      typing.active = false;
+      clearSocketTimers(reconnectTimer, idleTimer, typingRef, heartbeat);
+      flushTypingOffSignal(typingRef, wsRef);
       for (const type of ACTIVITY_EVENTS)
         window.removeEventListener(type, onActivity);
       document.removeEventListener("visibilitychange", onVisibility);
@@ -478,7 +508,8 @@ export function useWebSocket(presenceActive = true) {
       window.removeEventListener("blur", syncPresence);
       window.removeEventListener("online", resync);
       window.removeEventListener("pageshow", resync);
-      wsRef.current?.close();
+      const closeTarget = () => wsRef.current;
+      closeTarget()?.close();
     };
   }, [connect]);
 

@@ -36,28 +36,35 @@ self.addEventListener("install", (event) => {
   );
 });
 self.addEventListener("activate", (event) =>
-  event.waitUntil(
-    Promise.all([
-      self.clients.claim(),
-      // Drop caches left by older worker versions (names carry a -v suffix).
-      caches
-        .keys()
-        .then((keys) =>
-          Promise.all(
-            keys
-              .filter(
-                (k) =>
-                  k.startsWith("os1-shell-") &&
-                  k !== HTML_CACHE &&
-                  k !== ASSET_CACHE &&
-                  k !== GATE_CACHE,
-              )
-              .map((k) => caches.delete(k)),
-          ),
-        ),
-    ]),
-  ),
+  event.waitUntil(activateWorker()),
 );
+
+async function activateWorker() {
+  const keys = await caches.keys();
+  const retired = keys.filter(
+    (key) =>
+      key.startsWith("os1-shell-") &&
+      key !== HTML_CACHE &&
+      key !== ASSET_CACHE &&
+      key !== GATE_CACHE,
+  );
+  await Promise.all([
+    self.clients.claim(),
+    ...retired.map((key) => caches.delete(key)),
+  ]);
+
+  // A page that installed this migration is still running the bundle from the
+  // v1 shell we just removed. Reload only those clients, once, so the user does
+  // not need a second close/open cycle for v2 to become visible.
+  if (!retired.includes("os1-shell-html-v1")) return;
+  const windows = await self.clients.matchAll({
+    type: "window",
+    includeUncontrolled: true,
+  });
+  await Promise.all(
+    windows.map((client) => client.navigate(client.url).catch(() => {})),
+  );
+}
 
 /* ── App-shell caching ────────────────────────────────────────────────────
  * Navigations are NETWORK-FIRST: freshness stays authoritative — an in-process
@@ -69,7 +76,10 @@ self.addEventListener("activate", (event) =>
  * and served immutable, so those are CACHE-FIRST: a cached entry can never be
  * stale, a new build simply asks for new names.
  */
-const HTML_CACHE = "os1-shell-html-v1";
+// v2 deliberately retires the pre-no-store shell. Keeping that v1 entry let
+// an updated worker's stall fallback resurrect an app bundle from before live
+// sessions were split from archived ones.
+const HTML_CACHE = "os1-shell-html-v2";
 const ASSET_CACHE = "os1-shell-assets-v1";
 // One shell entry per prefix (both registrations share the origin's caches).
 const SHELL_KEY = PREFIX + "/__app-shell__";
@@ -78,6 +88,13 @@ const NAV_STALL_MS = 5000;
 // matches sw.js itself (no dash) or icons/splash (not js/css).
 const ASSET_RE = /^\/(?:opensession\/|backstage\/)?[\w.]+-\w+\.(?:js|css)$/;
 const API_RE = /^\/(?:opensession\/|backstage\/)?api\//;
+// Server routes that answer a navigation with a REDIRECT rather than the app
+// shell. The stall guard below must never fire on these: they can legitimately
+// take longer than NAV_STALL_MS (a Plain triage boot runs 15-120s), and
+// painting the shell over one strands the document at a URL the router has no
+// route for — which the app then treats as "landed on home" and replaces with
+// the viewer's last session. Let them go straight to the network and redirect.
+const REDIRECT_RE = /^\/(?:opensession\/|backstage\/)?plain-triage\//;
 // A build ships ~a dozen chunks; 80 keeps a few builds' worth before pruning.
 const MAX_ASSETS = 80;
 
@@ -93,26 +110,29 @@ const MAX_ASSETS = 80;
  * Their own cache rather than ASSET_CACHE: that one is pruned oldest-first,
  * and precached entries are by definition the oldest ones there.
  *
- * Posters, not the mp4 cuts. Each webp is its video's first frame and is
- * already the still fallback an offline visitor gets (UserPicker.tsx,
- * AuthBackdrop), so ~7KB buys the whole picture where 750KB would buy the
- * motion.
+ * The same fixed light/dark artwork used by onboarding is small enough to
+ * cache in full, so offline and reduced-motion visitors see the real surface.
+ * v2 retires the old Silver Silk posters from the cache.
  */
-const GATE_CACHE = "os1-shell-gate-v1";
+const GATE_CACHE = "os1-shell-gate-v2";
 const GATE_PATHS = [
   "/mac-app-icon.png",
-  "/signin-bg.webp",
-  "/signin-bg-dark.webp",
+  "/onboarding-bg.webp",
+  "/onboarding-bg-dark.webp",
 ];
 const GATE_RE =
-  /^\/(?:opensession\/|backstage\/)?(?:mac-app-icon\.png|signin-bg(?:-dark)?\.webp)$/;
+  /^\/(?:opensession\/|backstage\/)?(?:mac-app-icon\.png|onboarding-bg(?:-dark)?\.webp)$/;
 
 self.addEventListener("fetch", (event) => {
   const req = event.request;
   if (req.method !== "GET") return;
   const url = new URL(req.url);
   if (url.origin !== self.location.origin) return;
-  if (req.mode === "navigate" && !API_RE.test(url.pathname)) {
+  if (
+    req.mode === "navigate" &&
+    !API_RE.test(url.pathname) &&
+    !REDIRECT_RE.test(url.pathname)
+  ) {
     event.respondWith(shellNavigate(req));
   } else if (ASSET_RE.test(url.pathname)) {
     event.respondWith(hashedAsset(req));
@@ -149,7 +169,10 @@ async function gateAsset(req, event) {
 async function shellNavigate(req) {
   const cache = await caches.open(HTML_CACHE);
   const cached = await cache.match(SHELL_KEY);
-  const network = fetch(req).then((res) => {
+  // Bypass WebKit's HTTP cache. The worker's own shell cache is the only
+  // intentional fallback; accepting a browser-cached 200 here can keep an
+  // installed PWA on an old App-<hash>.js after a successful reload.
+  const network = fetch(req, { cache: "no-store" }).then((res) => {
     // Tee only genuine SPA-shell responses into the cache; API/media
     // navigations (non-HTML) pass through untouched.
     const type = res.headers.get("content-type") || "";

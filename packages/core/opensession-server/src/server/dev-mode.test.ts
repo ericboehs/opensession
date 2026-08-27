@@ -92,19 +92,30 @@ describe("devInstanceBootError", () => {
 });
 
 describe("statePath with OPENSESSION_STATE_DIR", () => {
-	test("resolves strictly under the state root", () => {
+	test("uses the compact home layout and isolates explicit state roots", () => {
 		const home = process.env.HOME!;
 		const stateRoot = join(scratch, "state");
 		mkdirSync(stateRoot, { recursive: true });
-		// Without the knob, names resolve under HOME.
 		expect(statePath(".opensession-foo")).toBe(
-			join(home, ".opensession-foo"),
+			join(home, ".opensession", "foo"),
 		);
-		// With the knob set, the same name resolves under the root (fresh
-		// namespace — a second instance never touches the live one's state).
+
 		process.env.OPENSESSION_STATE_DIR = stateRoot;
 		expect(statePath(".opensession-foo")).toBe(
 			join(stateRoot, ".opensession-foo"),
+		);
+	});
+
+	test("keeps using a legacy home entry until it is migrated", () => {
+		const legacy = join(process.env.HOME!, ".opensession-baz");
+		mkdirSync(legacy, { recursive: true });
+		expect(stateDir("baz")).toBe(legacy);
+
+		mkdirSync(join(process.env.HOME!, ".opensession", "baz"), {
+			recursive: true,
+		});
+		expect(stateDir("baz")).toBe(
+			join(process.env.HOME!, ".opensession", "baz"),
 		);
 	});
 
@@ -113,7 +124,9 @@ describe("statePath with OPENSESSION_STATE_DIR", () => {
 		process.env.OPENSESSION_STATE_DIR = stateRoot;
 		expect(stateDir("baz")).toBe(join(stateRoot, ".opensession-baz"));
 		delete process.env.OPENSESSION_STATE_DIR;
-		expect(stateDir("baz")).toBe(join(process.env.HOME!, ".opensession-baz"));
+		expect(stateDir("baz")).toBe(
+			join(process.env.HOME!, ".opensession", "baz"),
+		);
 	});
 });
 
@@ -140,9 +153,9 @@ describe("sessions-dir resolution with OPENSESSION_STATE_DIR", () => {
 		expect(await freshSessionsDir()).toBe(join(scratch, "sessions-override"));
 	});
 
-	test("default resolution is unchanged without the knob", async () => {
+	test("defaults to the compact home layout without the knob", async () => {
 		expect(await freshSessionsDir()).toBe(
-			join(process.env.HOME!, ".opensession-sessions"),
+			join(process.env.HOME!, ".opensession", "sessions"),
 		);
 	});
 });

@@ -1,5 +1,5 @@
 import { repoLabel } from "../lib/repo-label";
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import type { PrDetails } from "../lib/types";
 import {
 	deriveHeadline,
@@ -909,6 +909,13 @@ export function PrStatusBar({
 	});
 	const pr = prResource.data ?? null;
 	const git = gitResource.data ?? null;
+	// A failed PR read and a branch with no PR both land here as a null `pr`.
+	// Keep them apart: only the second one may claim "No PR open" and offer to
+	// create one. SWR keeps the last good value, so this is only true when there
+	// is nothing to show at all.
+	const prUnavailable = Boolean(prResource.error) && !prResource.data;
+	const { mutate: reloadPr } = prResource;
+	const { mutate: reloadGit } = gitResource;
 	const mergeKey = deferredMergeKey(pr?.url);
 	const mergePhase = useDeferredMergePhase(mergeKey);
 	const loaded =
@@ -920,12 +927,15 @@ export function PrStatusBar({
 
 	useEffect(() => setIsArchived(!!archived), [archived]);
 
-	const load = async () => {
+	// SWR's mutate is stable, so the refetch effects below can list `load`
+	// without re-arming on every render.
+	const hasPromoted = promoted != null;
+	const load = useCallback(async () => {
 		await Promise.all([
-			prResource.mutate(),
-			promoted ? Promise.resolve() : gitResource.mutate(),
+			reloadPr(),
+			hasPromoted ? Promise.resolve() : reloadGit(),
 		]);
-	};
+	}, [reloadPr, reloadGit, hasPromoted]);
 
 	// Refetch the instant a turn ends (running→idle) or an auto-push lands
 	// (refreshTick bump), so "Ahead by N commits" clears without waiting on a
@@ -942,7 +952,7 @@ export function PrStatusBar({
 		if (refreshTick) load();
 	}, [refreshTick, load]);
 
-	const headline = (deriveHeadline(pr, git));
+	const headline = deriveHeadline(pr, git, prUnavailable);
 
 	// Everything except the primary branch's PR (which the headline covers):
 	// attached repos, manual links, and PRs discovered through their body
@@ -1320,6 +1330,18 @@ setBusy(null);
 						Address feedback
 					</PrBarButton>
 				) : null;
+			// The PR read failed, so the one thing not to offer is Create PR — the
+			// branch may well have a PR already. Retry is the only honest action.
+			case "unavailable":
+				return (
+					<PrBarButton
+						className={actionBtn}
+						tone="status-yellow"
+						onClick={() => void reloadPr()}
+					>
+						Retry
+					</PrBarButton>
+				);
 			case "no-pr":
 				return send ? (
 					<PrBarButton

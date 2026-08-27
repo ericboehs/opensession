@@ -7,6 +7,8 @@ import {
   gitIdentityEnv,
   labelIdentity,
   githubLoginToPersonKeyFromTeam,
+  isTrustedGithubLogin,
+  isTrustedUser,
   personKeyToDisplayName,
 } from "./user-mappings";
 
@@ -95,6 +97,16 @@ describe("commit attribution", () => {
     restore = __setIdentitiesForTest(TEAM);
   });
   afterAll(() => restore?.());
+
+  test("only configured identities are trusted", () => {
+    expect(isTrustedGithubLogin("@Alice")).toBe(true);
+    expect(isTrustedGithubLogin("mallory")).toBe(false);
+    expect(isTrustedGithubLogin("")).toBe(false);
+    expect(isTrustedUser("U_BOB")).toBe(true);
+    expect(isTrustedUser("alice@work.example")).toBe(true);
+    expect(isTrustedUser("ali")).toBe(false); // aliases are not authentication evidence
+    expect(isTrustedUser("mallory")).toBe(false);
+  });
 
   test("the prompt's sender wins", () => {
     expect(commitAuthorFor("alice", "Bob Builder")).toEqual({

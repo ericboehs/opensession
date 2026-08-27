@@ -3,18 +3,21 @@
  * Two paths: the Plain webhook (status transition events) and a periodic
  * sweep as a safety net in case the webhook subscription misses them.
  */
+import { executeSessionProjection } from "./session-projection-executor";
 import { readdirSync, readFileSync, existsSync } from "fs";
 import { writeJsonAtomic } from "./shared/atomic-write";
 import { plainApiUrl } from "./config";
 import { homeDir, OPENSESSION_SESSIONS_DIR } from "./paths";
 import { invalidateSessionsCache } from "./session-cache";
 import type { NativeSessionFile } from "./types";
-import { sessionKernel } from "./session-kernel";
 
 const HOME = homeDir();
 const SESSIONS_DIR = OPENSESSION_SESSIONS_DIR;
 
-function activePlainSessions(): Array<{ path: string; data: NativeSessionFile }> {
+type PlainSessionCandidate = { path: string; data: NativeSessionFile };
+type SessionProjector = typeof executeSessionProjection;
+
+function activePlainSessions(): PlainSessionCandidate[] {
   if (!existsSync(SESSIONS_DIR)) return [];
   const out: Array<{ path: string; data: NativeSessionFile }> = [];
   for (const file of readdirSync(SESSIONS_DIR)) {
@@ -35,11 +38,11 @@ function activePlainSessions(): Array<{ path: string; data: NativeSessionFile }>
  * "My sessions". No-op for non-opensession sessions (no session file). Returns true
  * if a flag was cleared.
  */
-export function clearSessionFileArchive(id: string): boolean {
+export async function clearSessionFileArchive(id: string): Promise<boolean> {
   const path = `${SESSIONS_DIR}/${id}.json`;
   if (!existsSync(path)) return false;
   try {
-    return sessionKernel(id).applySync("plain_archive_clear", () => {
+    return await executeSessionProjection(id, "plain_archive_clear", () => {
       const data = JSON.parse(readFileSync(path, "utf-8")) as NativeSessionFile;
       if (!data.archived && !data.archivedAt) return false;
       const { archived, archivedAt, archivedReason, ...rest } = data;
@@ -52,19 +55,39 @@ export function clearSessionFileArchive(id: string): boolean {
 }
 
 /** Mark every session tied to this thread as archived. Returns count. */
-export function archiveSessionsForThread(threadId: string): number {
+export async function archiveSessionsForThread(threadId: string): Promise<number> {
+  return archivePlainSessionCandidates(
+    threadId,
+    activePlainSessions(),
+    executeSessionProjection,
+  );
+}
+
+/** Archive matching files independently so one quarantined session cannot
+ * abort the Plain sweep before the remaining sessions are processed. */
+export async function archivePlainSessionCandidates(
+  threadId: string,
+  sessions: PlainSessionCandidate[],
+  project: SessionProjector = executeSessionProjection,
+  reportFailure: (sessionId: string, error: unknown) => void = (sessionId, error) =>
+    console.warn(`[plain-archive] Could not archive session ${sessionId}:`, error),
+): Promise<number> {
   let archived = 0;
-  for (const { path, data } of activePlainSessions()) {
+  for (const { path, data } of sessions) {
     if (data.plainThreadId !== threadId) continue;
-    sessionKernel(data.id).applySync("plain_archive_set", () =>
-      writeJsonAtomic(path, {
-        ...data,
-        archived: true,
-        archivedAt: new Date().toISOString(),
-        archivedReason: "plain",
-      }),
-    );
-    archived++;
+    try {
+      await project(data.id, "plain_archive_set", () =>
+        writeJsonAtomic(path, {
+          ...data,
+          archived: true,
+          archivedAt: new Date().toISOString(),
+          archivedReason: "plain",
+        }),
+      );
+      archived++;
+    } catch (error) {
+      reportFailure(data.id, error);
+    }
   }
   if (archived > 0) invalidateSessionsCache();
   return archived;
@@ -104,7 +127,7 @@ export function startPlainArchiveSweep(onChange?: () => void): void {
     let archived = 0;
     for (const threadId of threadIds) {
       const status = await fetchThreadStatus(threadId);
-      if (status === "DONE") archived += archiveSessionsForThread(threadId);
+      if (status === "DONE") archived += await archiveSessionsForThread(threadId);
     }
     if (archived > 0) {
       console.log(`[plain-archive] Archived ${archived} session(s) for done tickets`);
@@ -112,7 +135,13 @@ export function startPlainArchiveSweep(onChange?: () => void): void {
     }
   };
 
-  sweepInterval = setInterval(() => void sweep(), 15 * 60 * 1000);
-  setTimeout(() => void sweep(), 60 * 1000); // first pass shortly after boot
+  const runSweep = () => {
+    void sweep().catch((error) =>
+      console.error("[plain-archive] Sweep failed:", error),
+    );
+  };
+
+  sweepInterval = setInterval(runSweep, 15 * 60 * 1000);
+  setTimeout(runSweep, 60 * 1000); // first pass shortly after boot
   console.log("[plain-archive] Sweep started (15m interval)");
 }

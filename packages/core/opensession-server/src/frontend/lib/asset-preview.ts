@@ -85,7 +85,7 @@ export function resolvedAssetPath(
  *
  * An inline player streams through /media?path=<abs>, which says nothing about
  * the file being an artifact — so read the assets root out of the absolute
- * path (~/.opensession-assets/<sessionId>/…, see src/server/session-assets.ts)
+ * path (~/.opensession/assets/<sessionId>/…, see src/server/session-assets.ts)
  * and confirm the remainder against the folder listing. That second check is
  * what makes this safe and alias-proof: a path that merely looks like an asset
  * never opens one, and a file under a historical session id still matches
@@ -104,7 +104,9 @@ export function assetPathForMediaSrc(
 		return null;
 	}
 	const rel = mediaPath
-		? /\/\.opensession-assets\/[^/]+\/(.+)$/.exec(mediaPath)?.[1]
+		? /\/(?:\.opensession\/assets|\.opensession-assets)\/[^/]+\/(.+)$/.exec(
+				mediaPath,
+			)?.[1]
 		: null;
 	return rel && assetPaths.includes(rel) ? rel : null;
 }

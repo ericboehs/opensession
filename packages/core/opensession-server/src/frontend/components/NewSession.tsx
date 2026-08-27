@@ -1,4 +1,11 @@
-import React, { useState, useEffect, useRef, } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useEffectEvent,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { fetchWorktrees, fetchModels, fetchToolAccounts, fetchSandboxStatus, requestSandboxPrewarm, suggestBranch, suggestRepos, type RepoSuggestion, configuredNewSessionRepo, fetchProviderAccounts, fetchRepos, cachedRepos, type RepoInfo, createWorkspaceApi, updateWorkspaceApi, deleteWorkspaceApi, ApiError, type ProviderAccountOption, type ModelOption, type SandboxStatusInfo } from "../lib/api";
 import { getCurrentUser } from "./UserPicker";
@@ -35,6 +42,7 @@ import { AUTO_REPO, NO_REPO } from "../lib/session-repo";
 import { getDefaultRepoPref, setDefaultRepoPref } from "../lib/default-repo-pref";
 import { repoSelectionHint, toggleRepoSelection } from "../lib/repo-selection";
 import { fallbackBranchName } from "../lib/workspace-draft";
+import { newSessionDefaultRepo } from "../lib/new-session-repo";
 import {
   NewSessionPrompt,
   type NewSessionPromptHandle,
@@ -58,6 +66,7 @@ import {
 } from "./icons";
 import type { WSClientMessage, WSServerMessage } from "../lib/types";
 import { newClientSessionId } from "../lib/session-id";
+import { errorMatchesPendingCreate } from "../lib/new-session-navigation";
 import { VoiceInput } from "./VoiceInput";
 import { useIsPhone } from "../hooks/useIsPhone";
 import { handOffSoftKeyboard } from "../lib/soft-keyboard";
@@ -1172,6 +1181,9 @@ type PendingDraftPark = {
   text: string;
   workspaceId?: string;
   consumed: boolean;
+  /** The existing workspace the create adopted. When absent, the create made
+   *  another workspace and a late unscoped park can be deleted outright. */
+  consumedIntoWorkspaceId?: string;
 };
 
 // A dismissed palette can be reopened while its workspace request is still in
@@ -1186,10 +1198,15 @@ const pendingDraftParks = new Set<PendingDraftPark>();
 // unmounts between the two closes.
 let parkedWorkspaceId: string | null = null;
 
-function consumePendingDraftParks(text: string, workspaceId?: string) {
+function consumePendingDraftParks(
+  text: string,
+  workspaceId: string | undefined,
+  consumedIntoWorkspaceId?: string,
+) {
   for (const operation of pendingDraftParks) {
     if (operation.text === text && operation.workspaceId === workspaceId) {
       operation.consumed = true;
+      operation.consumedIntoWorkspaceId = consumedIntoWorkspaceId;
     }
   }
 }
@@ -1266,17 +1283,10 @@ export function NewSession({ onBack, inline, focusSeq, send, addHandler, connect
     }));
   // The workspace's configured choice (which may itself be Auto) is what a
   // user with no preference of their own starts on; the repo flagged
-  // `default` is only the last resort behind it.
-  const resolveDefaultRepo = (options: RepoOption[]): string => {
-    const workspaceChoice = configuredNewSessionRepo();
-    return (
-      (workspaceChoice === AUTO_REPO || options.some((i) => i.id === workspaceChoice)
-        ? workspaceChoice
-        : "") ||
-      options.find((item) => item.default)?.id ||
-      AUTO_REPO
-    );
-  };
+  // `default` is only the last resort behind it. With no registered repos,
+  // start in Scratch instead.
+  const resolveDefaultRepo = (options: RepoOption[]): string =>
+    newSessionDefaultRepo(options, configuredNewSessionRepo());
   // Seeded from the repos this browser saw last (lib/repo-cache) so the picker
   // opens on the real list, and the palette settles on the right default,
   // without waiting for /repos. The fetch below still runs and corrects both.
@@ -1389,11 +1399,12 @@ export function NewSession({ onBack, inline, focusSeq, send, addHandler, connect
   const [staging, setStaging] = useState<StagingCount>(NOTHING_STAGING);
   const [fileDragActive, setFileDragActive] = useState(false);
   const fileDragWatchdogRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const adoptDraftAttachments = () => {
+  // Stable identity: module loader + setters only.
+  const adoptDraftAttachments = useCallback(() => {
     const stored = loadDraft(DRAFT_KEY);
     setImages((prev) => (sameImages(prev, stored.images) ? prev : stored.images));
     setFiles((prev) => (sameFiles(prev, stored.files) ? prev : stored.files));
-  };
+  }, []);
   // An upload that lands while this palette is open belongs on screen even
   // though it was staged by the instance that closed: the store fires on an
   // attachment change for exactly this.
@@ -1691,12 +1702,15 @@ export function NewSession({ onBack, inline, focusSeq, send, addHandler, connect
   // this is the one thing here that reads what the draft SAYS, so it is handed
   // the text once it has held still rather than on every character.
   const branchEditedRef = useRef(branchEdited);
-  branchEditedRef.current = branchEdited;
+  useLayoutEffect(() => {
+    branchEditedRef.current = branchEdited;
+  }, [branchEdited]);
   const suggestSeqRef = useRef(0);
   useEffect(() => {
     if (mode !== "code" || selectedWorktree !== "__new__" || branchEdited) return;
     if (settledPrompt.trim().length < 10) return;
-    const seq = ++suggestSeqRef.current;
+    suggestSeqRef.current += 1;
+    const seq = suggestSeqRef.current;
     void (async () => {
       const branch = await suggestBranch(settledPrompt.trim());
       // Drop if superseded by a newer prompt or the user grabbed the field.
@@ -1733,53 +1747,66 @@ export function NewSession({ onBack, inline, focusSeq, send, addHandler, connect
   const creatingRef = useRef(false);
   const createSessionIdRef = useRef<string | null>(null);
   const createMessageRef = useRef<WSClientMessage | null>(null);
+  const createWorkspaceIdRef = useRef<string | null>(null);
   const replayCreateRef = useRef(false);
   // A successful create replaces the surface behind this dialog. Returning
   // focus to the now-removed opener makes Base UI advance to the new session's
   // "+" button, so Enter immediately creates another session. Cancelling still
   // restores focus normally.
   const createdRef = useRef(false);
-  useEffect(() => {
-    return addHandler((msg) => {
-      if (!creatingRef.current) return;
-      if (msg.type === "error") {
-        creatingRef.current = false;
-        createSessionIdRef.current = null;
-        createMessageRef.current = null;
-        replayCreateRef.current = false;
-        setStatus({ kind: "failed", message: msg.message });
-      } else if (
-        msg.type === "session_created" &&
-        msg.id === createSessionIdRef.current
-      ) {
-        creatingRef.current = false;
-        createSessionIdRef.current = null;
-        createMessageRef.current = null;
-        replayCreateRef.current = false;
-        // The prompt was consumed. Drop the stored draft and its pending write,
-        // which might otherwise land after this and restore the sent prompt.
-        promptHandle.current?.dropPendingDraftWrite();
-        dropStagingAttachments(DRAFT_KEY);
-        clearDraft(DRAFT_KEY);
-        // The next draft is a new one, so it gets its own workspace.
-        parkedWorkspaceId = null;
-        // "Create more" stays in the palette and resets for the next task. The
-        // other actions close it after App handles the same announcement.
-        if (createAction === "more" || inline) {
-          setStatus({ kind: "idle" });
-          promptHandle.current?.setText("");
-          setImages([]);
-          setFiles([]);
-          setNewBranch("");
-          setBranchEdited(false);
-          promptRef.current?.focus();
-        } else {
-          createdRef.current = createAction === "open";
-          onBack();
-        }
+  const handleCreationMessage = useEffectEvent((msg: WSServerMessage) => {
+    if (!creatingRef.current) return;
+    if (
+      msg.type === "error" &&
+      errorMatchesPendingCreate(msg.sessionId, createSessionIdRef.current)
+    ) {
+      creatingRef.current = false;
+      createSessionIdRef.current = null;
+      createMessageRef.current = null;
+      createWorkspaceIdRef.current = null;
+      replayCreateRef.current = false;
+      setStatus({ kind: "failed", message: msg.message });
+    } else if (
+      msg.type === "session_created" &&
+      msg.id === createSessionIdRef.current
+    ) {
+      creatingRef.current = false;
+      createSessionIdRef.current = null;
+      createMessageRef.current = null;
+      const consumedWorkspaceId = createWorkspaceIdRef.current;
+      createWorkspaceIdRef.current = null;
+      replayCreateRef.current = false;
+      // The prompt was consumed. Drop both copies and their pending writes: the
+      // global composer copy, plus the workspace copy made when it was closed.
+      promptHandle.current?.dropPendingDraftWrite();
+      dropStagingAttachments(DRAFT_KEY);
+      clearDraft(DRAFT_KEY);
+      if (consumedWorkspaceId) {
+        const consumedDraftKey = workspaceDraftKey(consumedWorkspaceId);
+        dropStagingAttachments(consumedDraftKey);
+        clearDraft(consumedDraftKey);
       }
-    });
-  }, [addHandler, createAction, inline]);
+      // The next draft is a new one, so it gets its own workspace.
+      parkedWorkspaceId = null;
+      // "Create more" stays in the palette and resets for the next task. The
+      // other actions close it after App handles the same announcement.
+      if (createAction === "more" || inline) {
+        setStatus({ kind: "idle" });
+        promptHandle.current?.setText("");
+        setImages([]);
+        setFiles([]);
+        setNewBranch("");
+        setBranchEdited(false);
+        promptRef.current?.focus();
+      } else {
+        createdRef.current = createAction === "open";
+        onBack();
+      }
+    }
+  });
+  useEffect(() => {
+    return addHandler((msg) => handleCreationMessage(msg));
+  }, [addHandler]);
 
   // Re-send the same client-minted id after a drop. The server deduplicates an
   // in-flight request and returns the existing session if it already persisted.
@@ -1811,6 +1838,10 @@ export function NewSession({ onBack, inline, focusSeq, send, addHandler, connect
 setStaging((current) => subtractStaging(current, staging));
 });
   }
+
+  const addDroppedAttachments = useEffectEvent((picked: FileList | File[]) => {
+    void addAttachments(picked);
+  });
 
   // Leaving the palette with an unsent prompt saves it, rather than asking you
   // to say so in advance. The text is parked on a workspace (a fresh one, or
@@ -1861,10 +1892,12 @@ const createWorkspace = () =>
             })
           : await createWorkspace();
       if (operation.consumed) {
-        // The same prompt started while this request was in flight. Remove the
-        // late draft instead of leaving a duplicate beside the live session.
-        if (workspaceId) await updateWorkspaceApi(workspaceId, { draft: null });
-        else {
+        // The same prompt started while this request was in flight. A create
+        // that adopted this workspace only needs its late draft cleared. When
+        // it created elsewhere, remove the now-empty duplicate workspace.
+        if (workspaceId || operation.consumedIntoWorkspaceId === workspace.id) {
+          await updateWorkspaceApi(workspace.id, { draft: null });
+        } else {
           if (parkedWorkspaceId === workspace.id) parkedWorkspaceId = null;
           await deleteWorkspaceApi(workspace.id);
         }
@@ -1893,13 +1926,6 @@ pendingDraftParks.delete(operation);
       parkingDraftRef.current = false;
 });
   }
-
-  /** The latest `handleCreate`, for a caller that has to wait a render before
-   *  it can create. The dictation bar's ↑ is the one: it writes the transcript
-   *  through the prompt's own state, so a closure captured at the moment of
-   *  the press would still be looking at the draft as it was. */
-  const createRef = useRef<() => void>(() => {});
-  createRef.current = handleCreate;
 
   function handleCreate() {
     if (!canCreate) return;
@@ -1937,9 +1963,10 @@ pendingDraftParks.delete(operation);
     setStatus({ kind: "creating" });
     creatingRef.current = true;
     // Workspace linkage: scoped to an existing workspace (the tab/sidebar +),
-    // the session joins it — sharing its worktree when reusing the sibling branch,
-    // stacking a fresh worktree off it for a new branch. Unscoped, the default
-    // is a brand-new Workspace + first Session created together.
+    // the session joins it. An unscoped composer that was closed already made
+    // a draft workspace, so reopening and creating adopts that same workspace
+    // instead of leaving the draft beside a second, live workspace.
+    const createWorkspaceId = workspaceId || parkedWorkspaceId || undefined;
     const worktreeMode =
       createMode === "ask"
         ? "ask"
@@ -1963,7 +1990,7 @@ pendingDraftParks.delete(operation);
           ? resolvedAuto?.repo || registeredDefaultRepo
           : createRepo,
       branch: createMode === "code" ? branch : null,
-      ...(workspaceId ? { workspaceId } : {}),
+      ...(createWorkspaceId ? { workspaceId: createWorkspaceId } : {}),
       ...(optimisticModel ? { model: optimisticModel } : {}),
       ...(images.length ? { images } : {}),
       ...(files.length ? { files } : {}),
@@ -1983,8 +2010,8 @@ pendingDraftParks.delete(operation);
       ...(attachRepos.length && (canAddRepos || repo === AUTO_REPO)
         ? { attachRepos }
         : {}),
-      ...(workspaceId
-        ? { workspaceId: workspaceId, worktreeMode }
+      ...(createWorkspaceId
+        ? { workspaceId: createWorkspaceId, worktreeMode }
         : { createWorkspace: {} }),
       ...(modelWorkspaceId ? { modelWorkspaceId } : {}),
       branch: createMode === "code" ? branch : "",
@@ -2010,9 +2037,10 @@ pendingDraftParks.delete(operation);
     } as WSClientMessage;
     createSessionIdRef.current = clientSessionId;
     createMessageRef.current = createMessage;
+    createWorkspaceIdRef.current = createWorkspaceId ?? null;
     try {
       send(createMessage);
-      consumePendingDraftParks(prompt, workspaceId);
+      consumePendingDraftParks(prompt, workspaceId, createWorkspaceId);
       if (createAction === "open") {
         // The send was accepted. Consume the global composer now, before App
         // opens the optimistic session, so reopening it during workspace setup
@@ -2028,6 +2056,7 @@ pendingDraftParks.delete(operation);
       creatingRef.current = false;
       createSessionIdRef.current = null;
       createMessageRef.current = null;
+      createWorkspaceIdRef.current = null;
       setStatus({
         kind: "failed",
         message: error instanceof Error ? error.message : String(error),
@@ -2051,6 +2080,16 @@ pendingDraftParks.delete(operation);
     !sandboxModelWarning &&
     (hasPromptText || images.length > 0 || files.length > 0) &&
     (mode === "ask" || mode === "scratch" || selectedWorktree !== "");
+
+  /** The latest `handleCreate`, for a caller that has to wait a render before
+   *  it can create. The dictation bar's ↑ is the one: it writes the transcript
+   *  through the prompt's own state, so a closure captured at the moment of
+   *  the press would still be looking at the draft as it was. */
+  const createRef = useRef<() => void>(() => {});
+  // Deliberate latest-value mirror: runs after every commit by design.
+  useLayoutEffect(() => {
+    createRef.current = handleCreate;
+  });
 
   // The base a code session branches off. It sits in the footer's overflow
   // menu rather than the header: a fresh branch is what almost every session
@@ -2148,7 +2187,7 @@ pendingDraftParks.delete(operation);
       event.stopPropagation();
       const dropped = event.dataTransfer?.files;
       resetFileDrag();
-      if (dropped?.length) void addAttachments(dropped);
+      if (dropped?.length) addDroppedAttachments(dropped);
     }
     window.addEventListener("dragenter", handleDragEnter, true);
     window.addEventListener("dragleave", handleDragLeave, true);

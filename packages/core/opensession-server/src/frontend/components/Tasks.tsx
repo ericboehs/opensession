@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { BASE_PATH } from "../lib/base";
 import { DEFAULT_DOC_TITLE, docTitle } from "../lib/brand";
 import type { TodoItem, WSServerMessage } from "../lib/types";
@@ -140,7 +140,8 @@ const sx = stylex.create({
     borderWidth: "1px",
     transitionProperty: "color, background-color, border-color",
     ":active": { scale: 0.96 },
-	},
+
+		cornerShape: "var(--cs)",},
   checkDone: {
     borderColor: "var(--green)",
     backgroundColor: "var(--green)",
@@ -299,7 +300,7 @@ export function Tasks({ addHandler, onOpenSession }: TasksProps) {
 	const [adding, setAdding] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 
-	const load = async () => {
+	const load = useCallback(async () => {
 		await (async () => {
 const response = await fetch(
 				`${BASE_PATH}/api/todos?status=all&user=${encodeURIComponent(user)}`,
@@ -312,7 +313,7 @@ const response = await fetch(
 setTasks((current) => current ?? []);
 			setError("Tasks could not be loaded.");
 });
-	};
+	}, [user]);
 
 	useEffect(() => {
 		document.title = docTitle("Tasks");

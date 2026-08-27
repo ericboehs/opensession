@@ -1,7 +1,7 @@
 // A GitHub App installation-token mint is all-or-nothing: it succeeds only if
 // every requested scope is a subset of what the App was granted. So each mint
 // set MUST be a subset of the grant set the create-app URL requests. When they
-// drifted apart, real Apps 422'd on every mint and fell back to the bot PAT —
+// drifted apart, real Apps 422'd on every mint and fell through to unrelated host credentials —
 // which is exactly the bug this pins shut.
 
 import { describe, test, expect } from "bun:test";
@@ -38,7 +38,7 @@ describe("github app permission sets", () => {
 	});
 
 	test("the grant includes the scopes the two capabilities depend on", () => {
-		// checks:read is the App-only capability (no PAT can read check runs);
+		// checks:read is required for check runs;
 		// issues+pull_requests+contents:write are the agent's write path.
 		expect(GITHUB_APP_GRANT_PERMISSIONS.checks).toBe("read");
 		expect(GITHUB_APP_GRANT_PERMISSIONS.issues).toBe("write");
@@ -46,6 +46,15 @@ describe("github app permission sets", () => {
 		expect(GITHUB_APP_GRANT_PERMISSIONS.contents).toBe("write");
 		expect(GITHUB_APP_READ_PERMISSIONS.members).toBe("read");
 		expect(GITHUB_APP_READ_PERMISSIONS.deployments).toBe("read");
+	});
+
+	test("the read mint keeps actions:read for the status check rollup", () => {
+		// gh's `pr view --json statusCheckRollup` selects checkSuite.workflowRun,
+		// which is gated on Actions. Dropping this scope does not degrade the
+		// rollup — GitHub fails the entire GraphQL response, so every PR panel,
+		// review and auto-fix run reports "missing a permission for this API".
+		expect(GITHUB_APP_READ_PERMISSIONS.actions).toBe("read");
+		expect(GITHUB_APP_GRANT_PERMISSIONS.actions).toBe("read");
 	});
 
 	test("the write mint carries no read-only scope whose absence would 422 it", () => {

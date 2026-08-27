@@ -44,6 +44,7 @@ import { newSessionId } from "./paths";
 import { wrapContext } from "./prompt-context";
 import {
 	acknowledgePromptDispatch,
+	acknowledgeSteerDelivery,
 	beginPromptDispatch,
 	promptDispatches,
 	promptQueues,
@@ -78,6 +79,7 @@ import {
 import { ownedWorktree } from "./session-workspace";
 import { engineSessionPatch } from "./sessions";
 import { commitAuthorFor, userMatchesAny } from "./shared/user-mappings";
+import { envCapacity } from "./shared/env-capacity";
 import { sanitizeBranchSlug } from "./suggest-branch";
 import { type NativeSessionFile, type SessionUsage, type UnifiedSession, } from "./types";
 import { storeAppendUserLineEarly, transcriptLineUser } from "./transcript-persistence";
@@ -90,11 +92,11 @@ import {
 	type CreationSetupPlan,
 	SESSION_KERNEL_MAX_OPENING_PLAN_BYTES,
 	ensureCreationPlanned,
+	isCreationEffectPendingError,
 	requestCreationAttachment,
 	requestCreationBranch,
 	requestCreationCredential,
 	requestCreationOpening,
-	requestCreationSandbox,
 	patchCreationSetupPlan,
 	requestCreationWorkspace,
 	settleCreationCancelled,
@@ -102,9 +104,14 @@ import {
 	settleCreationSucceeded,
 	sessionKernel,
 	sessionTurn,
+	sessionTurnSnapshot,
 } from "./session-kernel";
 import { AUTO_REPO, ensureAskCheckout, ensureScratchDir, getRepo, isRegisteredWorktree, listWorktrees, NO_REPO, repoForPath, repoForPathOrNull, resolveUniqueBranch, sharedCheckoutForNewSessions, worktreeHeadBranch, worktreePathFor, } from "./worktree";
 import { type WSClientData, broadcastToSession, preparingWorkspaces, } from "./ws-hub";
+import {
+	markReplayedCommandResult,
+	replayedSessionCreatedResult,
+} from "./command-replay";
 import { sessionIdForRequest } from "./session-request-id";
 import { isClientSessionId } from "./paths";
 import {
@@ -409,7 +416,15 @@ const activeOpeningCreates = new Map<
 	}
 >();
 
-const OPENING_TURN_CONCURRENCY = 8;
+// Bounds concurrent opening turns (worktree materialization, deps install,
+// repo attach and the opening engine turn). Gateway process: configurable via
+// ~/.opensession.env or a systemd drop-in.
+const OPENING_TURN_CONCURRENCY = envCapacity(
+	"OPENSESSION_OPENING_TURN_CONCURRENCY",
+	8,
+	1,
+	64,
+);
 type OpeningTurnGate = {
 	active: number;
 	waiters: Array<(release: () => void) => void>;
@@ -448,7 +463,7 @@ export async function waitForCreatedSessionProjection(
 ): Promise<UnifiedSession> {
 	const deadline = Date.now() + timeoutMs;
 	while (true) {
-		const state = sessionKernel(sessionId).creationState();
+		const state = await sessionKernel(sessionId).creationState();
 		if (!state || state.identity !== identity)
 			throw new Error("Create request identity crossed durable session ownership");
 		const projected = findSession(sessionId);
@@ -463,16 +478,16 @@ export async function waitForCreatedSessionProjection(
 	}
 }
 
-export function actorCreationSetupPlan(
+export async function actorCreationSetupPlan(
 	sessionId: string,
 	identity: string,
-): CreationSetupPlan {
-	const state = ensureCreationPlanned(sessionId, identity);
+): Promise<CreationSetupPlan> {
+	const state = await ensureCreationPlanned(sessionId, identity);
 	if (state.setupPlan || !["planned", "preparing"].includes(state.state))
 		return (state.setupPlan ?? {}) as CreationSetupPlan;
 	const legacy = readCreatePlan(sessionId, identity);
 	if (!legacy) return {};
-	return patchCreationSetupPlan(sessionId, identity, {
+	return await patchCreationSetupPlan(sessionId, identity, {
 		...(legacy.branch ? { branch: legacy.branch } : {}),
 		...(legacy.workspaceId ? { workspaceId: legacy.workspaceId } : {}),
 		...(legacy.attachments ? { attachments: legacy.attachments } : {}),
@@ -504,28 +519,28 @@ export function runOpeningCreateOnce(
 	}
 	// Validate and bound actor recovery input before accepting the prompt dispatch.
 	const openingPlan = snapshotOpeningPlan(spec);
-	const openingPromptEntryId = beginPromptDispatch(
-		spec.id,
-		[
-			{
-				content: spec.openingPrompt,
-				user: spec.user,
-				...(spec.images?.length
-					? {
-							images: spec.images.map(
-								(image) => `data:${image.mediaType};base64,${image.data}`,
-							),
-						}
-					: {}),
-			},
-		],
+	const done = (async () => {
+		const openingPromptEntryId = await beginPromptDispatch(
+			spec.id,
+			[
+				{
+					content: spec.openingPrompt,
+					user: spec.user,
+					...(spec.images?.length
+						? {
+								images: spec.images.map(
+									(image) => `data:${image.mediaType};base64,${image.data}`,
+								),
+							}
+						: {}),
+				},
+			],
 		spec.openingPromptEntryId,
 		true,
 		"create",
-	);
-	if (openingPromptEntryId !== spec.openingPromptEntryId)
-		throw new Error("Opening prompt identity changed before actor dispatch");
-	const done = (async () => {
+		);
+		if (openingPromptEntryId !== spec.openingPromptEntryId)
+			throw new Error("Opening prompt identity changed before actor dispatch");
 		// The creation actor owns one physical effect at a time. Materialize the
 		// primary worktree before dispatching the long-running opening effect;
 		// otherwise openCreatedSession would try to emit a branch effect while the
@@ -600,16 +615,50 @@ async function restorePlannedOpening(sessionId: string): Promise<{
 	io: CreateSessionIO;
 	identity: string;
 } | null> {
-	const creation = sessionKernel(sessionId).creationState();
+	const creation = await sessionKernel(sessionId).creationState();
 	const actorPlan =
 		creation?.openingPlan ??
 		(creation?.setupPlan?.resolved as Record<string, unknown> | undefined);
 	const legacyPlan = actorPlan ? undefined : readCreatePlanForRecovery(sessionId);
 	const openingPlan = actorPlan ?? legacyPlan?.resolved;
 	const identity = actorPlan ? creation!.identity : legacyPlan?.identity;
-	const dispatch = promptDispatches.get(sessionId);
-	if (!openingPlan || !identity || dispatch?.kind !== "create") return null;
+	if (!openingPlan || !identity) return null;
 	const restored = restoreResolvedCreate<ResolvedCreate>(openingPlan);
+	let dispatch = promptDispatches.get(sessionId);
+	if (
+		!dispatch &&
+		actorPlan &&
+		creation?.state === "opening_dispatched" &&
+		typeof restored.openingPromptEntryId === "string" &&
+		restored.openingPromptEntryId &&
+		typeof restored.openingPrompt === "string"
+	) {
+		// A pre-schema-22 recovery pass could remove the create dispatch before
+		// the session file existed. The opening plan is write-once and carries the
+		// exact prompt identity, so restore that same actor receipt before launch.
+		const promptEntryId = restored.openingPromptEntryId;
+		const openingPrompt = restored.openingPrompt;
+		const recoveredDispatch = {
+			promptEntryId,
+			items: [
+				{
+					content: openingPrompt,
+					user: restored.user,
+					...(restored.images?.length
+						? {
+								images: restored.images.map(
+									(image) => `data:${image.mediaType};base64,${image.data}`,
+								),
+							}
+						: {}),
+				},
+			],
+			kind: "create" as const,
+		};
+		await promptDispatches.set(sessionId, recoveredDispatch);
+		dispatch = recoveredDispatch;
+	}
+	if (dispatch?.kind !== "create") return null;
 	const restoredGitEnv = githubCredentialForPrincipal(restored.gitPrincipal)?.env;
 	if (
 		typeof restored.wtPath !== "string" ||
@@ -671,9 +720,9 @@ async function restorePlannedOpening(sessionId: string): Promise<{
 	};
 }
 
-export function settleStoppedCreationOpening(item: CreationOpeningEffectItem): boolean {
+export async function settleStoppedCreationOpening(item: CreationOpeningEffectItem): Promise<boolean> {
 	const kernel = sessionKernel(item.sessionId);
-	const turn = sessionTurn({ op: "snapshot", sessionId: item.sessionId });
+	const turn = await sessionTurnSnapshot(item.sessionId);
 	// Exact cancel identity, matching openingTurnWasCancelled(): a retained
 	// receipt fences only the exact run it cancelled. The receipt records the
 	// admitted physical token derived from the effect payload, so recompute it
@@ -686,14 +735,14 @@ export function settleStoppedCreationOpening(item: CreationOpeningEffectItem): b
 		cancel.runId ===
 			runnerOpeningHostId(item.payload.runId, item.payload.runGeneration) &&
 		cancel.runGeneration === item.payload.runGeneration;
-	if (kernel.runState().state !== "stopped" && !exactCancel) return false;
-	settleCreationCancelled(
+	if (kernel.runStateProjection().state !== "stopped" && !exactCancel) return false;
+	await settleCreationCancelled(
 		item.sessionId,
 		item.payload.creationIdentity,
 		kernel,
 		item.effectKey,
 	);
-	acknowledgePromptDispatch(
+	await acknowledgePromptDispatch(
 		item.sessionId,
 		item.payload.openingPromptEntryId,
 	);
@@ -704,7 +753,7 @@ export function settleStoppedCreationOpening(item: CreationOpeningEffectItem): b
 export async function executeCreationOpeningEffect(
 	item: CreationOpeningEffectItem,
 ): Promise<void> {
-	const state = sessionKernel(item.sessionId).creationState();
+	const state = await sessionKernel(item.sessionId).creationState();
 	if (!state || state.identity !== item.payload.creationIdentity)
 		throw new Error("Opening effect crossed durable creation ownership");
 	if (state.generation !== item.payload.creationGeneration)
@@ -715,7 +764,7 @@ export async function executeCreationOpeningEffect(
 			state.state === "cancelled") &&
 		state.completedEffectIds.includes(item.effectKey)
 	) {
-		acknowledgePromptDispatch(
+		await acknowledgePromptDispatch(
 			item.sessionId,
 			item.payload.openingPromptEntryId,
 		);
@@ -723,7 +772,7 @@ export async function executeCreationOpeningEffect(
 			clearCreatePlan(item.sessionId);
 		return;
 	}
-	if (settleStoppedCreationOpening(item)) return;
+	if (await settleStoppedCreationOpening(item)) return;
 	if (
 		state.state !== "opening_dispatched" ||
 		state.currentEffectId !== item.effectKey
@@ -735,14 +784,14 @@ export async function executeCreationOpeningEffect(
 			run.promptEntryId === item.payload.openingPromptEntryId,
 	);
 	if (openingJournal?.terminalFailure) {
-		settleCreationFailed(
+		await settleCreationFailed(
 			item.sessionId,
 			item.payload.creationIdentity,
 			new Error(openingJournal.terminalFailure.content),
 			sessionKernel(item.sessionId),
 			item.effectKey,
 		);
-		acknowledgePromptDispatch(
+		await acknowledgePromptDispatch(
 			item.sessionId,
 			item.payload.openingPromptEntryId,
 		);
@@ -756,14 +805,14 @@ export async function executeCreationOpeningEffect(
 		// actor from its terminal callback; waiting here keeps the durable effect
 		// pending without launching a second engine turn.
 		while (true) {
-			const recovered = sessionKernel(item.sessionId).creationState();
+			const recovered = await sessionKernel(item.sessionId).creationState();
 			if (
 				(recovered?.state === "ready" ||
 					recovered?.state === "failed" ||
 					recovered?.state === "cancelled") &&
 				recovered.completedEffectIds.includes(item.effectKey)
 			) {
-				acknowledgePromptDispatch(
+				await acknowledgePromptDispatch(
 					item.sessionId,
 					item.payload.openingPromptEntryId,
 				);
@@ -771,7 +820,7 @@ export async function executeCreationOpeningEffect(
 					clearCreatePlan(item.sessionId);
 				return;
 			}
-			if (settleStoppedCreationOpening(item)) return;
+			if (await settleStoppedCreationOpening(item)) return;
 			if (
 				!recovered ||
 				recovered.identity !== item.payload.creationIdentity ||
@@ -794,7 +843,7 @@ export async function executeCreationOpeningEffect(
 		throw new Error("Opening effect actor-plan identity changed during recovery");
 	if (restored.spec.openingPromptEntryId !== item.payload.openingPromptEntryId)
 		throw new Error("Opening effect prompt identity changed during recovery");
-	if (settleStoppedCreationOpening(item)) return;
+	if (await settleStoppedCreationOpening(item)) return;
 	await openCreatedSession(
 		restored.spec,
 		restored.io,
@@ -805,7 +854,7 @@ export async function executeCreationOpeningEffect(
 			generation: item.payload.runGeneration,
 		},
 	);
-	const settled = sessionKernel(item.sessionId).creationState();
+	const settled = await sessionKernel(item.sessionId).creationState();
 	if (settled?.state === "ready" || settled?.state === "cancelled")
 		clearCreatePlan(item.sessionId);
 	else if (settled?.state !== "failed")
@@ -813,7 +862,7 @@ export async function executeCreationOpeningEffect(
 }
 
 export async function resumePlannedCreate(sessionId: string): Promise<boolean> {
-	const state = sessionKernel(sessionId).creationState();
+	const state = await sessionKernel(sessionId).creationState();
 	if (state?.state === "ready" || state?.state === "cancelled") {
 		clearCreatePlan(sessionId);
 		return true;
@@ -875,9 +924,9 @@ export async function openCreatedSession(
 	let releaseOpeningTurn: (() => void) | undefined;
 	let startToken = "";
 	let startGeneration = 0;
-	const openingTurnWasCancelled = (): boolean => {
+	const openingTurnWasCancelled = async (): Promise<boolean> => {
 		if (!startToken || startGeneration < 1) return false;
-		const cancel = sessionTurn({ op: "snapshot", sessionId: bksId }).cancel;
+		const cancel = (await sessionTurnSnapshot(bksId)).cancel;
 		return (
 			cancel?.runId === startToken &&
 			cancel.runGeneration === startGeneration
@@ -1002,7 +1051,7 @@ export async function openCreatedSession(
 		// engine is up. The starting mark keeps a prompt typed in that
 		// window from double-starting a run (same race as
 		// runSessionPrompt).
-		startToken = markSessionStarting(
+		startToken = await markSessionStarting(
 			bksId,
 			openingRun
 				? runnerOpeningHostId(openingRun.runId, openingRun.generation)
@@ -1012,7 +1061,7 @@ export async function openCreatedSession(
       unmarkSessionStarting(bksId, startToken);
       throw new Error("Opening turn is already owned by another preparation");
     }
-		const admittedRun = sessionKernel(bksId).runState();
+		const admittedRun = sessionKernel(bksId).runStateProjection();
 		if (admittedRun.currentRunId !== startToken) {
 			// Release the process reservation before failing: this throw lands
 			// outside the inner try/finally that would otherwise unmark it.
@@ -1026,7 +1075,7 @@ export async function openCreatedSession(
 		const preparingEnvironment = spec.needsWorktree || Boolean(pendingAttach) || Boolean(spec.sandboxProvider) || Boolean(spec.runnerTarget);
 		if (preparingEnvironment) preparingWorkspaces.add(bksId);
 		try {
-			openingPromptEntryId = beginPromptDispatch(bksId, [
+			openingPromptEntryId = await beginPromptDispatch(bksId, [
 				{
 					content: spec.openingPrompt,
 					user: spec.user,
@@ -1045,7 +1094,7 @@ export async function openCreatedSession(
 			// a titled but empty session. The runner later upserts this stable id.
 			const displayPrompt = spec.displayPrompt ?? spec.titlePrompt;
 			if (displayPrompt.trim() || spec.images?.length) {
-				storeAppendUserLineEarly(
+				await storeAppendUserLineEarly(
 					bksId,
 					transcriptLineUser(
 						displayPrompt,
@@ -1053,6 +1102,7 @@ export async function openCreatedSession(
 						spec.createdAt,
 						spec.images,
 					),
+					{ required: true },
 				);
 			}
 			// A session starting in a workspace consumes its draft. The
@@ -1142,22 +1192,12 @@ export async function openCreatedSession(
 			let sandboxOpeningRun: AsyncGenerator<StreamEvent> | null = null;
 			let runnerOpeningRun: AsyncGenerator<StreamEvent> | null = null;
 			if (spec.sandboxProvider) {
-				// Creation owns the first physical sandbox preparation. The opening
-				// launcher still calls provider.ensure as an idempotent adoption step
-				// until launch itself becomes a later actor-issued effect.
+				// The opening effect holds the creation actor's single-effect
+				// fence, so a second durable prepare intent cannot run here.
+				// Provisioning rides maybeLaunchSandboxedRun's idempotent,
+				// per-session-locked provider.ensure instead: a crash replays the
+				// opening effect and adopts the same canonical session sandbox.
 				const created = findSession(bksId);
-				await requestCreationSandbox({
-					sessionId: bksId,
-					identity: creationIdentity,
-					provider: spec.sandboxProvider,
-					repo: spec.repoId,
-					branch: spec.branch || undefined,
-					sessionMode: spec.mode,
-					cwd: spec.wtPath,
-					attachedDirs: created?.attachedRepos
-						?.map((repo) => repo.dir)
-						.filter(Boolean),
-				}, { timeoutMs: 15 * 60_000 });
 				sandboxOpeningRun = created
 					? await maybeLaunchSandboxedRun(created, {
 							prompt: openingPromptForRun,
@@ -1241,7 +1281,7 @@ export async function openCreatedSession(
 					);
 				if (latestUsage)
 					await touchNativeSession(bksId, { usage: latestUsage });
-				recordRunOutcome(bksId, runFailure, {
+				await recordRunOutcome(bksId, runFailure, {
 					engineSessionId,
 					noticePersisted: failureNoticePersisted,
 					runId: startToken,
@@ -1251,22 +1291,22 @@ export async function openCreatedSession(
 				// This runs in the terminal event's consumer body, before requesting
 				// the generator's next item. Backend generator finally blocks may now
 				// retire their journal/host only after the actor has the receipt.
-				if (openingTurnWasCancelled())
-					settleCreationCancelled(
+				if (await openingTurnWasCancelled())
+					await settleCreationCancelled(
 						bksId,
 						creationIdentity,
 						undefined,
 						creationEffectId,
 					);
 				else
-					settleCreationSucceeded(
+					await settleCreationSucceeded(
 						bksId,
 						creationIdentity,
 						undefined,
 						creationEffectId,
 					);
 				creationSettled = true;
-				acknowledgePromptDispatch(bksId, openingPromptEntryId);
+				await acknowledgePromptDispatch(bksId, openingPromptEntryId);
 			};
 			for await (const event of sandboxOpeningRun ?? runnerOpeningRun ?? runAgent({
 				prompt: openingPromptForRun,
@@ -1331,6 +1371,12 @@ export async function openCreatedSession(
 				startToken,
 				onAskUser: makeAskHandler(bksId),
 			})) {
+				// Opening turns use this event ladder instead of run-session's
+				// follow-up ladder. Consume Pi's exact boundary acknowledgement here
+				// too, including context-only steers that transcript parsing hides.
+				if (event.type === "steer_delivered" && event.steerId) {
+					await acknowledgeSteerDelivery(bksId, event.steerId);
+				}
 				if (event.type === "init") {
 					engineSessionId = event.sessionId || "";
 					if (event.provider) effectiveProvider = event.provider;
@@ -1479,7 +1525,7 @@ export async function openCreatedSession(
 						record.promptEntryId === openingPromptEntryId &&
 						!record.terminalFailure
 					)
-						journalRecordAbnormalCompletion(record);
+						await journalRecordAbnormalCompletion(record);
 				}
 				throw new Error("Opening run ended without a terminal event");
 			}
@@ -1504,7 +1550,7 @@ export async function openCreatedSession(
 			// here too. Nothing wraps this run in runSessionPromptAndDrain, so a
 			// queued nudge needs the drain watcher to deliver it.
 			if (
-				maybeQueueAutoContinue({
+				await maybeQueueAutoContinue({
 					sessionId: bksId,
 					assistantText,
 					toolUseCount,
@@ -1528,14 +1574,14 @@ export async function openCreatedSession(
 			console.error(`[create] Post-opening follow-up failed for ${bksId}:`, e);
 			return;
 		}
-		if (openingTurnWasCancelled()) {
-			settleCreationCancelled(
+		if (await openingTurnWasCancelled()) {
+			await settleCreationCancelled(
 				bksId,
 				creationIdentity,
 				undefined,
 				creationEffectId,
 			);
-			acknowledgePromptDispatch(bksId, openingPromptEntryId);
+			await acknowledgePromptDispatch(bksId, openingPromptEntryId);
 			if (announced) {
 				io.emit({ type: "stream_done" });
 				io.emit({ type: "session_status", isRunning: false });
@@ -1558,6 +1604,12 @@ export async function openCreatedSession(
 					},
 				});
 			}
+			// Persist before terminal delivery or creation settlement. A failed
+			// outcome projection leaves recovery evidence intact for retry.
+			await recordRunOutcome(
+				bksId,
+				`Session setup failed: ${e.message || String(e)}`,
+			);
 			io.emit({ type: "error", message: e.message || String(e) });
 			io.emit({ type: "stream_done" });
 			io.emit({
@@ -1565,26 +1617,17 @@ export async function openCreatedSession(
 				message: `Session setup failed: ${e.message || String(e)}`,
 			});
 			io.emit({ type: "session_status", isRunning: false });
-			// Persist the failure on the session file too — the live
-			// events above are gone on reload, and a setup-failed session
-			// (e.g. `git worktree add` refusing a branch name that
-			// collides with an existing `name/...` ref) otherwise shows
-			// as an inexplicably empty session (bks-019f472f, 2026-07-09).
-			recordRunOutcome(
-				bksId,
-				`Session setup failed: ${e.message || String(e)}`,
-			);
 		} else {
 			io.fail(e.message || String(e));
 		}
-		settleCreationFailed(
+		await settleCreationFailed(
 			bksId,
 			creationIdentity,
 			e,
 			undefined,
 			creationEffectId,
 		);
-		acknowledgePromptDispatch(bksId, openingPromptEntryId);
+		await acknowledgePromptDispatch(bksId, openingPromptEntryId);
 		for (const record of activeRunRecords()) {
 			if (
 				record.osSessionId === bksId &&
@@ -1599,6 +1642,8 @@ export async function openCreatedSession(
 type WebCreateSocket = ServerWebSocket<WSClientData>;
 interface PendingWebCreate {
 	sockets: Set<WebCreateSocket>;
+	/** Sockets that joined by replaying an already-admitted create command. */
+	replayedSockets?: Set<WebCreateSocket>;
 }
 
 const pendingWebCreates: Map<string, PendingWebCreate> =
@@ -1608,10 +1653,12 @@ function sendCreateFrame(
 	attempt: PendingWebCreate,
 	frame: Record<string, unknown>,
 ): void {
-	const payload = JSON.stringify(frame);
 	for (const socket of attempt.sockets) {
 		try {
-			socket.send(payload);
+			const payload = attempt.replayedSockets?.has(socket)
+				? markReplayedCommandResult(frame)
+				: frame;
+			socket.send(JSON.stringify(payload));
 		} catch {}
 	}
 }
@@ -1630,7 +1677,13 @@ export async function handleCreateSessionMessage(
 	if (rawClientSessionId !== undefined && !isClientSessionId(rawClientSessionId)) {
 		sendCreateFrame(
 			{ sockets: new Set([ws]) },
-			{ type: "error", message: "Invalid session create id" },
+			{
+				type: "error",
+				...(typeof rawClientSessionId === "string"
+					? { sessionId: rawClientSessionId }
+					: {}),
+				message: "Invalid session create id",
+			},
 		);
 		return;
 	}
@@ -1639,6 +1692,7 @@ export async function handleCreateSessionMessage(
 		const pending = pendingWebCreates.get(clientSessionId);
 		if (pending) {
 			pending.sockets.add(ws);
+			(pending.replayedSockets ??= new Set()).add(ws);
 			return;
 		}
 	}
@@ -1651,7 +1705,11 @@ export async function handleCreateSessionMessage(
 		) pendingWebCreates.delete(clientSessionId);
 	};
 	const failCreate = (message: string) => {
-		sendCreateFrame(attempt, { type: "error", message });
+		sendCreateFrame(attempt, {
+			type: "error",
+			...(clientSessionId ? { sessionId: clientSessionId } : {}),
+			message,
+		});
 		finishCreate();
 	};
 
@@ -1668,7 +1726,7 @@ export async function handleCreateSessionMessage(
 			? sessionIdForRequest(ws.data?.authLogin || user || "anonymous", requestId)
 			: newSessionId());
 	const createIdentity = requestId || clientSessionId || bksId;
-	const durableCreation = sessionKernel(bksId).creationState();
+	const durableCreation = await sessionKernel(bksId).creationState();
 	if (durableCreation && durableCreation.identity !== createIdentity) {
 		failCreate("Create request identity crossed durable session ownership");
 		return;
@@ -1694,30 +1752,24 @@ export async function handleCreateSessionMessage(
 			durableCreation.state === "cancelled"
 		)
 			clearCreatePlan(bksId);
-		const response = {
-			type: "session_created",
-			id: bksId,
-			...(recoveringSession.workspaceId
-				? { workspaceId: recoveringSession.workspaceId }
-				: {}),
-		};
+		const response = replayedSessionCreatedResult(
+			bksId,
+			recoveringSession.workspaceId,
+		);
 		sendCreateFrame(attempt, response);
 		finishCreate();
 		return response;
 	}
-	let createPlan = actorCreationSetupPlan(bksId, createIdentity);
+	let createPlan = await actorCreationSetupPlan(bksId, createIdentity);
 	if (
 		recoveringSession?.claudeSessionId ||
 		recoveringSession?.codexThreadId
 	) {
 		clearCreatePlan(bksId);
-		const response = {
-			type: "session_created",
-			id: recoveringSession.id,
-			...(recoveringSession.workspaceId
-				? { workspaceId: recoveringSession.workspaceId }
-				: {}),
-		};
+		const response = replayedSessionCreatedResult(
+			recoveringSession.id,
+			recoveringSession.workspaceId,
+		);
 		sendCreateFrame(attempt, response);
 		finishCreate();
 		return response;
@@ -1909,7 +1961,7 @@ export async function handleCreateSessionMessage(
 		const plannedWorkspaceId =
 			createPlan.workspaceId || createPlanWorkspaceId(bksId);
 		if (!createPlan.workspaceId)
-			createPlan = patchCreationSetupPlan(bksId, createIdentity, {
+			createPlan = await patchCreationSetupPlan(bksId, createIdentity, {
 				workspaceId: plannedWorkspaceId,
 			});
 		// A code create landing on a branch whose worktree an existing
@@ -2163,7 +2215,7 @@ export async function handleCreateSessionMessage(
 			const plannedWorkspaceId =
 				createPlan.workspaceId || createPlanWorkspaceId(bksId);
 			if (!createPlan.workspaceId)
-				createPlan = patchCreationSetupPlan(bksId, createIdentity, {
+				createPlan = await patchCreationSetupPlan(bksId, createIdentity, {
 					workspaceId: plannedWorkspaceId,
 				});
 			await requestCreationWorkspace({
@@ -2205,7 +2257,7 @@ export async function handleCreateSessionMessage(
 		const attachmentSources =
 			createPlan.attachments ?? prepareCreationAttachmentSources(bksId, msg.files);
 		if (!createPlan.attachments && attachmentSources.length)
-			createPlan = patchCreationSetupPlan(bksId, createIdentity, {
+			createPlan = await patchCreationSetupPlan(bksId, createIdentity, {
 				attachments: attachmentSources,
 			});
 		for (const attachment of attachmentSources)
@@ -2298,7 +2350,7 @@ export async function handleCreateSessionMessage(
 		}
 
 		if (branch && branch !== createPlan.branch)
-			createPlan = patchCreationSetupPlan(bksId, createIdentity, { branch });
+			createPlan = await patchCreationSetupPlan(bksId, createIdentity, { branch });
 		const computedSpec: ResolvedCreate = {
 			id: bksId,
 			title,
@@ -2442,11 +2494,18 @@ export async function handleCreateSessionMessage(
 				}
 			: computedSpec;
 		if (!createPlan.resolved) {
-			createPlan = patchCreationSetupPlan(bksId, createIdentity, {
+			createPlan = await patchCreationSetupPlan(bksId, createIdentity, {
 				resolved: snapshotOpeningCreate(computedSpec),
 			});
 		}
 	} catch (e: any) {
+		if (isCreationEffectPendingError(e)) {
+			// The actor owns this effect durably. Free the in-process join entry and
+			// let the WebSocket reconnect replay the same deterministic session id;
+			// reporting failure here can race the effect's later success.
+			finishCreate();
+			throw e;
+		}
 		// Setup failed before anything was persisted or announced. Every socket
 		// that replayed this create receives the same terminal response.
 		clearCreatePlan(bksId);

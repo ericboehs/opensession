@@ -1,11 +1,10 @@
 /** Connectivity proof for the remote-sandbox dial-back boundary. */
 
 import { registerRunWsHost, unregisterRunWsHost } from "../run-ws";
-import { sandboxConfig } from "./config";
+import { configuredIngress } from "../config";
 
 function publicBaseUrl(): string {
-  const cfg = sandboxConfig();
-  const value = cfg.publicIngress?.publicBaseUrl || cfg.callbackBaseUrl;
+  const value = configuredIngress().publicBaseUrl;
   if (!value) {
     throw Object.assign(
       new Error("A public sandbox callback URL is required before remote provider testing"),

@@ -121,19 +121,22 @@ const sx = stylex.create({
 		borderRadius: "calc(16px * var(--rf))", backgroundColor: "var(--popup-glass)",
 		backdropFilter: "var(--popup-blur)", padding: "8px",
 		animationName: filterPopoverIn, animationDuration: "var(--dur-micro)", animationTimingFunction: "var(--ease)",
-	},
+
+		cornerShape: "var(--cs)",},
 	mt1: { marginTop: "4px" },
 	chipBody: {
 		display: "inline-flex", minWidth: 0, alignItems: "center", gap: "7px",
 		borderRadius: "calc(infinity * 1px)", paddingInline: "3px", paddingBlock: "2px",
 		lineHeight: "1.15", ":hover": { "@media (hover: hover)": { backgroundColor: "var(--hover)" } },
-	},
+
+		cornerShape: "var(--cs)",},
 	filterChip: {
 		display: "inline-flex", minWidth: 0, maxWidth: "100%", alignItems: "center", gap: "1px",
 		borderRadius: "calc(infinity * 1px)", borderStyle: "solid", borderWidth: "1px",
 		borderColor: "var(--border)", backgroundColor: "var(--bg-panel)", paddingInline: "4px", paddingBlock: "3px",
 		lineHeight: "1.15",
-	},
+
+		cornerShape: "var(--cs)",},
 	filterChipInline: { flexShrink: 0, maxWidth: "none" },
 	filterChipProbe: { pointerEvents: "none", position: "absolute", left: "-9999px", top: 0, maxWidth: "none", visibility: "hidden" },
 

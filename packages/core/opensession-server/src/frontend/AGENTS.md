@@ -210,9 +210,11 @@ layout from regressing once it exists.
   renders, which is what those hooks were doing by hand. The one measured
   exception is callback refs passed to DOM elements (`ref={...}`): keep those
   stable yourself if both calls update state — see `useSessionScroll.ts`.
-  A function carrying `"use no memo"` opts out of compilation.
-  `bun run lint` gates rules-of-hooks as errors in CI (oxlint);
-  exhaustive-deps reports as warnings. Note the compiler only runs on the
+  Do not use `"use no memo"`: `bun run lint` compiles every frontend source and
+  fails on any bailout, and production builds enforce the same invariant.
+  Rules-of-hooks and exhaustive-deps are errors in CI (oxlint). Use
+  `useEffectEvent` for non-reactive logic that must read the latest props or
+  state without restarting an effect. Note the compiler only runs on the
   prod/release bundle; Bun's dev HMR server has no plugin hook, so dev serves
   uncompiled sources.
 

@@ -3,7 +3,7 @@
  * instance. One action tool (deploy_self) plus a read tool (deploy_status).
  *
  * The tool itself only pre-validates and LAUNCHES: the actual
- * fetch → ff-only merge → restart → health-gate → (opt-in) rollback sequence
+ * fetch → immutable release worktree → pointer swap → health-gated rollback
  * lives in deploy/self-deploy.sh, spawned as a transient SYSTEM unit via the
  * root-owned validating runtime helper so it
  * survives the service restart it triggers — any of that logic living in this
@@ -24,14 +24,13 @@ import { resolve as resolvePath } from "path";
 import { z } from "zod";
 import { createSdkMcpServer, tool } from "./inprocess-mcp";
 import { RUN_HOST_HELPER } from "../executor/host-unit";
-import { homeDir } from "./paths";
+import { homeDir, stateDir } from "./paths";
 import { isDevInstance } from "./dev-mode";
 
 const REPO_ROOT = resolvePath(import.meta.dir, "../../../../..");
 
-/** The checkout self-deploy operates on. Defaults to this running checkout;
- *  OPENSESSION_DEPLOY_CHECKOUT points it at a dedicated deploy-only checkout
- *  under the future split model (same env the script reads). */
+/** The shared WIP checkout used only as a git object source. Self-deploy never
+ *  checks out, merges, resets, or installs dependencies in this tree. */
 export function deployCheckout(): string {
 	return process.env.OPENSESSION_DEPLOY_CHECKOUT || REPO_ROOT;
 }
@@ -39,7 +38,7 @@ export function deployCheckout(): string {
 /** Where the script keeps its pin/marker/result/log files. Must match the
  *  script's OPENSESSION_DEPLOY_STATE default. */
 export function deployStateDir(): string {
-	return process.env.OPENSESSION_DEPLOY_STATE || `${homeDir()}/.opensession-deploy`;
+	return process.env.OPENSESSION_DEPLOY_STATE || stateDir("deploy");
 }
 
 /** Shape written by deploy/self-deploy.sh's write_result — keep in sync. */
@@ -114,7 +113,7 @@ export function formatDeployStatus(state: DeployState, stateDir: string = deploy
 		if (r.message) lines.push(`  ${r.message}`);
 		if (r.finishedAt) lines.push(`  finished ${r.finishedAt} (took ${r.durationSecs ?? "?"}s, target ${r.target ?? "?"})`);
 		if (!r.ok && r.action === "rollback-needed" && r.previousSha)
-			lines.push(`  ACTION NEEDED: roll back to pin ${r.previousSha.slice(0, 10)} manually.`);
+			lines.push(`  ACTION NEEDED: restore release ${r.previousSha.slice(0, 10)} manually.`);
 	}
 	lines.push(
 		state.pin
@@ -154,6 +153,7 @@ async function git(cwd: string, args: string[]): Promise<{ code: number; out: st
 async function launchDeployUnit(unit: string, targetSha: string): Promise<void> {
 	const checkout = deployCheckout();
 	const stateDir = deployStateDir();
+	const controller = `${REPO_ROOT}/deploy/self-deploy.sh`;
 	mkdirSync(stateDir, { recursive: true });
 	if (!existsSync(RUN_HOST_HELPER) && userInfo().uid === 0) {
 		throw new Error("legacy self-deploy refuses to launch from a root service");
@@ -172,17 +172,21 @@ async function launchDeployUnit(unit: string, targetSha: string): Promise<void> 
 				"-p", `WorkingDirectory=${checkout}`,
 				"-p", `Environment=HOME=${homeDir()}`,
 				"-p", `Environment=PATH=${process.env.PATH || "/usr/local/bin:/usr/bin:/bin"}`,
+				"-p", `Environment=OPENSESSION_BUN_BIN=${process.execPath}`,
 				"-p", `Environment=OPENSESSION_DEPLOY_CHECKOUT=${checkout}`,
 				"-p", `Environment=OPENSESSION_DEPLOY_STATE=${stateDir}`,
-				...(process.env.OPENSESSION_DEPLOY_ALLOW_RESET === "1"
-					? ["-p", "Environment=OPENSESSION_DEPLOY_ALLOW_RESET=1"]
+				...(process.env.OPENSESSION_STATE_DIR
+					? ["-p", `Environment=OPENSESSION_STATE_DIR=${process.env.OPENSESSION_STATE_DIR}`]
+					: []),
+				...(process.env.OPENSESSION_SESSIONS_DIR
+					? ["-p", `Environment=OPENSESSION_SESSIONS_DIR=${process.env.OPENSESSION_SESSIONS_DIR}`]
 					: []),
 				...(process.env.OPENSESSION_HEALTH_URL
 					? ["-p", `Environment=OPENSESSION_HEALTH_URL=${process.env.OPENSESSION_HEALTH_URL}`]
 					: []),
 				"-p", "StandardOutput=journal",
 				"-p", "StandardError=journal",
-				"/bin/bash", `${checkout}/deploy/self-deploy.sh`, "--sha", targetSha,
+				"/bin/bash", controller, "--sha", targetSha,
 			];
 	const proc = Bun.spawn(args, { stdout: "pipe", stderr: "pipe" });
 	const [err, code] = await Promise.all([new Response(proc.stderr).text(), proc.exited]);
@@ -200,7 +204,7 @@ export function createSelfDeployMcpServer(ctx: SelfDeployToolContext) {
 	const tools = [
 		tool(
 			"deploy_self",
-			"Deploy THIS Open Session instance to a git sha and RESTART THE LIVE SERVER. Fetches origin, fast-forwards the deploy checkout (ff-only — aborts on a dirty/diverged tree), restarts opensession.service, health-gates the restart, and auto-records a last-known-good pin for rollback. The restart is graceful: detached engine turns survive and sessions reattach, but the UI blips. Requires confirm: true.",
+			"Standard (light) deploy of THIS Open Session instance to an immutable git release. Use for ordinary frontend, backend, protocol, and dependency changes only. It DOES NOT install changed root-owned artifacts. If the target changes the live deploy controllers, opensession*.service, credential installers, the fixed run-host helper/installer, or root-deploy-managed systemd units/drop-ins, do not use this tool: run the documented full root deploy instead. The target must advance from the running release; stale or parallel targets are refused. The shared WIP checkout is only an object source and is never changed. Prepares locked dependencies, atomically switches the runtime pointer, restarts and health-gates the gateway/kernel/executor release, and switches back to last-known-good on failure. Detached engine turns survive and sessions reattach, but the UI blips. Requires confirm: true.",
 			{
 				sha: z
 					.string()
@@ -229,9 +233,10 @@ export function createSelfDeployMcpServer(ctx: SelfDeployToolContext) {
 					);
 				}
 				const checkout = deployCheckout();
-				const script = `${checkout}/deploy/self-deploy.sh`;
+				const stateDir = deployStateDir();
+				const script = `${REPO_ROOT}/deploy/self-deploy.sh`;
 				if (!existsSync(script)) {
-					return text(`Refusing: ${script} not found — is the deploy checkout at ${checkout}?`);
+					return text(`Refusing: pinned deploy controller not found at ${script}.`);
 				}
 				try {
 					const fetch = await git(checkout, ["fetch", "--prune", "origin"]);
@@ -244,24 +249,29 @@ export function createSelfDeployMcpServer(ctx: SelfDeployToolContext) {
 						return text(`Refusing: cannot resolve '${targetRef}': ${rev.err.slice(0, 300)}`);
 					}
 					const targetSha = rev.out;
-					const head = (await git(checkout, ["rev-parse", "HEAD"])).out;
-					// Cheap pre-validation only — the script re-checks with the
-					// authoritative ff-only merge (which also catches dirty trees).
-					if (targetSha !== head) {
-						const anc = await git(checkout, ["merge-base", "--is-ancestor", head, targetSha]);
-						if (anc.code !== 0) {
-							return text(
-								`Refusing: ${targetRef} (${targetSha.slice(0, 10)}) is not fast-forwardable from HEAD (${head.slice(0, 10)}) — the checkout has local commits or the target is on another line of history. The deploy script would abort; reconcile the checkout first.`,
-							);
+					const runtime = `${stateDir}/current`;
+					if (existsSync(runtime)) {
+						const current = await git(runtime, ["rev-parse", "HEAD"]);
+						if (current.code === 0 && current.out !== targetSha) {
+							const advance = await git(checkout, [
+								"merge-base",
+								"--is-ancestor",
+								current.out,
+								targetSha,
+							]);
+							if (advance.code !== 0) {
+								return text(
+									`Refusing stale or parallel release ${targetSha.slice(0, 10)}: it does not advance current ${current.out.slice(0, 10)}. Use the explicit rollback path for rollback, or the root deploy for an operator-selected history line.`,
+								);
+							}
 						}
 					}
 					const unit = `opensession-self-deploy-${Date.now()}`;
 					await launchDeployUnit(unit, targetSha);
-					const stateDir = deployStateDir();
 					return text(
-						`Deploy launched${ctx.user ? ` by ${ctx.user}` : ""}: unit ${unit} → ${targetSha.slice(0, 10)}${targetSha === head ? " (same sha as HEAD — restart only)" : ""}.\n` +
+						`Deploy launched${ctx.user ? ` by ${ctx.user}` : ""}: unit ${unit} → immutable release ${targetSha.slice(0, 10)}.\n` +
 							`Result will land in ${stateDir}/last-result.json (log: ${stateDir}/self-deploy.log).\n` +
-							`This instance will RESTART shortly — your session survives via the detached engine + reattach. Check deploy_status in a couple of minutes; if the deploy is unhealthy the unit rolls back per its clean-tree + OPENSESSION_DEPLOY_ALLOW_RESET rules, and the watchdog covers wedges for 15 min.`,
+							`This instance will RESTART shortly — your session survives via the detached engine + reattach. Check deploy_status in a couple of minutes; an unhealthy release switches back automatically, and the watchdog covers wedges for 15 min.`,
 					);
 				} catch (e: any) {
 					return text(`deploy_self failed to launch: ${e?.message || String(e)}`);

@@ -23,7 +23,7 @@ export function statusMenuIcon(status: MineStatus, color: string) {
 // sink quietly into the Backlog. A live run means a retry is underway, so the
 // stale flag doesn't override "In progress".
 export function runNeedsAttention(s: UnifiedSession): boolean {
-	return !!s.lastRunError && !s.isRunning;
+	return !!s.safety || (!!s.lastRunError && !s.isRunning);
 }
 
 // A workspace reflects its top-level sessions, not implementation-detail

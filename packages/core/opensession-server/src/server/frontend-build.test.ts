@@ -1,5 +1,12 @@
 import { describe, expect, it, afterEach } from "bun:test";
-import { bundleVersion, editorName, frontendInputsHash, isPrebuiltFrontend, renderIndexHtml } from "./frontend-build";
+import {
+	bundleVersion,
+	editorName,
+	frontendInputsHash,
+	isPrebuiltFrontend,
+	renderIndexHtml,
+	SPA_HEADERS,
+} from "./frontend-build";
 import { __setIdentitiesForTest } from "./shared/user-mappings";
 
 let restore: (() => void) | null = null;
@@ -52,6 +59,12 @@ describe("frontendInputsHash", () => {
 		const a = frontendInputsHash();
 		expect(a).toBe(frontendInputsHash());
 		expect(a).toMatch(/^[0-9a-z]+$/);
+	});
+});
+
+describe("SPA_HEADERS", () => {
+	it("leaves offline shell caching to the service worker", () => {
+		expect(SPA_HEADERS["Cache-Control"]).toBe("no-store");
 	});
 });
 

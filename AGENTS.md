@@ -30,21 +30,40 @@ and phone together. For protocol, preference, or transcript changes, check the
 native app and Chrome extension for matching wire models or behavior. Read the
 nearest nested `AGENTS.md` before editing a client.
 
-## Shared checkout workflow
+## Shared checkout and deployment workflow
 
-This repository runs its live server from the shared `main` checkout. Other
-sessions may edit and stage files at the same time.
+Sessions edit the shared `main` checkout, but the live services run from an
+immutable release worktree selected by `~/.opensession/deploy/current`. Other
+sessions may edit and stage files in the shared checkout at the same time.
+Uncommitted checkout edits never become live, including frontend edits.
 
 - Never reset, revert, switch branches, or discard unrelated work.
 - Stage only your files. Use `git add -p` for shared high-traffic files.
 - Inspect `git diff --cached --name-only` and `git diff --cached` before every
   commit. Commit with a pathspec when the index contains other work.
 - Commit and push promptly. Never use `git add -A`.
-- Backend changes require a deliberate `systemctl restart opensession` after
-  commit and push. Frontend changes rebuild without a restart.
+- Do not use an ad-hoc `systemctl restart`. It only restarts the already pinned
+  release and can violate the gateway/kernel rollout order.
+- After an approved live rollout, commit and push first, then deploy that exact
+  commit. Use the standard (light) `deploy_self` flow for ordinary frontend,
+  backend, protocol, and dependency changes. Despite its name, it restarts and
+  health-checks the executor, session kernel, and gateway; “light” means it
+  reuses installed root-owned artifacts.
+- Use the full root deploy, `sudo deploy/deploy.sh <sha>`, instead when a change
+  affects live deployment machinery or an artifact that script installs:
+  `deploy/{deploy,self-deploy,release-checkout}.sh`, the three
+  `opensession*.service` templates, credential installers, the fixed run-host
+  helper/installer, or root-deploy-managed systemd units and drop-ins. The full
+  deploy refreshes those privileged artifacts before switching the same
+  immutable release. Other operator-managed artifacts, such as watchdog units
+  and sandbox images, follow their own documented rollout. When unsure, inspect
+  `deploy/deploy.sh` rather than assuming a restart applies the change.
+- A docs-only change needs no live deploy. A frontend-only change does: its
+  source watcher watches the pinned release, not the shared WIP checkout.
 
 For risky isolated work, use `OPENSESSION_DEV=1` with a dedicated
-`OPENSESSION_STATE_DIR`. See `docs/self-development.md`.
+`OPENSESSION_STATE_DIR`. See `docs/self-development.md` for the deployment
+sequence and rollback behavior.
 
 ## Server invariants
 

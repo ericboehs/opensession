@@ -1,13 +1,13 @@
-# Open Session for iOS
+# Open Session native app
 
-A native SwiftUI client for an Open Session server, on your phone. The
-deployment default is the `OS1DefaultServerURL` Info.plist value generated from
-`project.yml`; users can override it in Settings. Not feature complete; this is
-the v0.1 base: sign in with a token, see your sessions live, open one, watch
-the agent stream, send prompts, and answer blocking questions.
+A shared native SwiftUI client for an Open Session server on iOS 26+ and macOS
+26+. The deployment default is the `OS1DefaultServerURL` Info.plist value
+generated from `project.yml`; users can override it in Settings. The v0.1
+client can sign in with a token, show live sessions, stream an agent's work,
+send prompts, and answer blocking questions.
 
-Pure SwiftUI with SwiftStreamingMarkdown for CommonMark/GFM rendering, iOS 26+
-(see `project.yml` for the authoritative deployment targets).
+Pure SwiftUI with SwiftStreamingMarkdown for CommonMark/GFM rendering. See
+`project.yml` for the authoritative deployment targets.
 
 ## Features (v0.1)
 
@@ -40,6 +40,10 @@ Pure SwiftUI with SwiftStreamingMarkdown for CommonMark/GFM rendering, iOS 26+
   cross-owner work to My sessions, lift its workspace into Needs action in Inbox
   mode, and show the sender's face with an @ badge. Opening the session clears
   the mention across the native and web clients.
+- **Feed** (iOS) — recent merged pull requests and commits in one page, with
+  person and project filters.
+- **Tasks** (iOS) — the shared `/api/todos` list, with actions to add, complete,
+  reopen, and drop tasks.
 - **Catch up** (`CatchUpView`, `CatchUpDeckView`, `CatchUpCardView`,
   `CatchUpQueue`, `CatchUpViewModel`) — a card deck over everything unread,
   opened from the bottom toolbar beside the Desk; an unread queue uses the
@@ -59,14 +63,15 @@ Pure SwiftUI with SwiftStreamingMarkdown for CommonMark/GFM rendering, iOS 26+
   spring. Every decision is undoable for six seconds from the top bar. The queue is frozen
   once built, and `settle` waits for both the sessions list and the read marks
   before it is willing to say "All caught up".
-- **Reports** (`ReportsView.swift`, `Report.swift`) — the recurring documents
-  automations publish, as a row above Archived when there are any. One row per
-  automation, opening its newest document with the older ones in that
-  document's own bar.
-- **Tool visibility** (`SidebarTools.swift`, `SupportLocation.swift`) — Catch
-  up, Reports and Support use the account's `sidebar-hidden-tools` ui-pref,
-  which the web sidebar writes as well. Support jointly reads and writes its
-  tool entry and the Plain feed entry as one sidebar / page / off choice, with
+- **Reports** (`ReportsView.swift`, `Report.swift`) — an optional row in the
+  iOS tools band. It starts hidden when the account has no explicit tools
+  preference. When enabled and at least one automation has published, it opens
+  one row per automation, selecting its newest document first and keeping older
+  documents in that document's own bar.
+- **Tool visibility** (`SidebarTools.swift`, `SupportLocation.swift`) — Feed,
+  Tasks, Catch up, and Reports use the account's `sidebar-hidden-tools` ui-pref,
+  which the web sidebar writes as well. Support combines that tool preference
+  with `sidebar-hidden-feeds` as one sidebar / page / off choice, with
   the sidebar winning any older state where both are visible. A missing tools
   value means the shared defaults. Ids this app has no screen for ride the
   value untouched so a change here never disturbs the browser. Long-press a
@@ -112,9 +117,10 @@ Pure SwiftUI with SwiftStreamingMarkdown for CommonMark/GFM rendering, iOS 26+
    message as a block quote. When the server offers `reply_suggestions`, the
    idle composer shows optional quick-reply chips; choosing one adds its full
    text to the draft for editing rather than sending it. The Personal setting
-   shares the web client's `reply-suggestions` account preference. Token-level
-   streaming via `stream_text`, plus a horizontally scrollable session tab
-   strip when a workspace/worktree contains multiple sessions. Its history menu
+   shares the web client's `reply-suggestions` account preference. `stream_text`
+   provides token-level streaming when Settings → Personal → Preferences → Live
+   typing is on; it defaults off. A horizontally scrollable session tab strip
+   appears when a workspace/worktree contains multiple sessions. Its history menu
    queries only that workspace's closed siblings and restores one directly into
    the strip. A workspace down to one session draws no strip, so that history
    moves to the Closed sessions submenu of the session's overflow menu, which
@@ -141,15 +147,17 @@ Pure SwiftUI with SwiftStreamingMarkdown for CommonMark/GFM rendering, iOS 26+
   confirmed recreate controls without embedding the web client. Its Effective
   config section resolves the next turn's model, engine, account, MCP access,
   instructions, and permissions, with the source under every displayed value.
-- **Session panels** — details of a session (its assets, one of those files,
-  its pull request) open ONE LEVEL DEEPER on the stack that is already there,
+- **Session panels** — on iOS, Assets, individual assets, PR, Changes, Portals,
+  Terminal, and Agents open ONE LEVEL DEEPER on the stack that is already there,
   not as tabs and not as sheets: the chevron and the edge swipe are the way
-  back, and nothing is left open to close later. A `SessionPanel` names the
-  kind; `SessionPanelView` draws it, so a new kind lands in both hosts (the
-  session's stack and the workspace sheet's) at once. Pushed through the
-  `openPanel` environment action from the transcript and the overflow menu,
-  and directly by the workspace sheet's own rows — which push within the
-  sheet, so that page stays where it was.
+  back, and nothing is left open to close later. Portals opens and controls
+  exposed services. Terminal creates a new shell in the session's worktree and
+  closes it when the panel disconnects. A `SessionPanel` names the kind;
+  `SessionPanelView` draws it, so a new kind lands in both hosts (the session's
+  stack and the workspace sheet's) at once. Pushed through the `openPanel`
+  environment action from the transcript and the overflow menu, and directly
+  by the workspace sheet's own rows — which push within the sheet, so that page
+  stays where it was.
 - **Agent runs**: the Agents panel reads every workflow a session started and
   updates each run immediately from `workflow_update` socket frames. A 3-second
   poll remains while a run is live for compatibility with older servers.
@@ -203,7 +211,9 @@ Pure SwiftUI with SwiftStreamingMarkdown for CommonMark/GFM rendering, iOS 26+
   dictation wraps the composer to its two-row layout, which swaps the branch
   the button renders in and would otherwise destroy its state mid-sentence.
 - **Session creation** — a full-height prompt editor with attachments and a
-  compact single-row iOS toolbar for repository, mode, and model settings.
+  compact single-row iOS toolbar for repository, mode, and model settings. The
+  same controls move into the keyboard accessory while the prompt is focused,
+  so attachments, options, model, and dictation remain reachable while typing.
   Opening a file with OS from Files or another app starts a fresh composer with
   that file attached. Images use the vision channel; other files upload to the
   session's staged file channel before Start becomes available.
@@ -222,7 +232,8 @@ Pure SwiftUI with SwiftStreamingMarkdown for CommonMark/GFM rendering, iOS 26+
   **Close pull request** (`POST …/pr-close`). The session overflow menu also
   exposes squash, merge-commit and rebase merge actions directly, with the same
   warnings and confirmation. PR surfaces can copy the GitHub link or open an
-  editable Slack post that appends the link, defaults to `#engineering`, and
+  editable Slack post that appends the link and defaults to the server-selected
+  channel (`#os`, then `#engineering`, then the first configured channel), and
   sends through the signed-in person's Slack account. After merge, that sheet
   becomes the shipped-change composer: it suggests copy from the walkthrough,
   preloads its after image, accepts up to 10 images, and reconnects Slack when
@@ -248,6 +259,9 @@ Pure SwiftUI with SwiftStreamingMarkdown for CommonMark/GFM rendering, iOS 26+
   is sent as an explicit `local` so the menu and session always agree. The Mac
   keeps its mode and Sandbox chips where the wider footer has room. Choosing a
   Runner is not offered because the web palette also dropped runner-at-create.
+  On macOS, when the prompt is empty, **Start from a recipe** loads
+  `/api/library` and prefills the editable prompt, mode, and any still-available
+  model.
 - **Action Button / Siri / Spotlight — "Start an Agent"** — one App Intent
   (`Intents/StartAgentIntent.swift`), and it deliberately OPENS the app
   (`openAppWhenRun = true`) rather than collecting the idea in the system's
@@ -288,9 +302,10 @@ Pure SwiftUI with SwiftStreamingMarkdown for CommonMark/GFM rendering, iOS 26+
   `/api/live-activities/*`. A separate device-local switch can put that same
   unread session count on the iPhone Home Screen and Dock icon without enabling
   alert banners or sounds.
-- **Connection care** — client-initiated pings every 20s (the server never
-  pings; required against half-open iOS sockets), auto-reconnect with a banner,
-  optimistic local echo of your prompts until the server's copy arrives.
+- **Connection care** — client-initiated pings every 10s and reconnects when
+  no inbound frame arrives for 30s. The server never initiates pings. The UI
+  shows a reconnect banner and keeps an optimistic local echo of prompts until
+  the server's copy arrives.
 - **Settings** — native SwiftUI Tools, Personal, and Workspace administration,
   plus multi-organization server/GitHub/token configuration and a connection
   test. The top-bar logo on iOS and the row above Feed on macOS switch servers
@@ -311,12 +326,12 @@ Pure SwiftUI with SwiftStreamingMarkdown for CommonMark/GFM rendering, iOS 26+
   sessions list (iOS: `lamp.desk` toolbar item; macOS: the same button in the
   sidebar header). It's an ordinary `SessionView` under a compact header, so
   everything the session view already does — streaming, tool folds, questions
-  — works there too. Voice mode is opt-in per device via the "Desk voice"
-  toggle in Appearance settings (cross-device `desk-voice` ui-pref); when on,
-  the mic in the sheet header starts a live call brokered by the
-  server over a raw WebSocket to OpenAI's Realtime API (`DeskVoiceEngine`) —
-  the app never holds an OpenAI key, and the call is torn down whenever the
-  app leaves the foreground.
+  — works there too. Voice mode is opt-in under Settings → Personal →
+  Preferences and syncs through the account's `desk-voice` ui-pref.
+  `DeskVoiceEngine` asks the server for a short-lived Realtime client secret,
+  then connects directly to OpenAI over a raw WebSocket. The long-lived OpenAI
+  key never reaches the app, and the call is torn down whenever the app leaves
+  the foreground.
 - **Support** (`SupportView.swift`, `SupportViewModel.swift`) — the Plain
   queue lives in exactly one chosen location. `In the sidebar` draws a `Plain`
   source row on iOS and macOS; `Its own page` draws the iOS `Support` tool row
@@ -393,7 +408,7 @@ organization's token is kept in a separately keyed keychain item and rides as
 `Authorization: Bearer <token>` everywhere, including its WebSocket upgrade.
 Pasting a token manually still
 works as a fallback: tokens are the `opensession_auth` cookie values minted
-at web sign-in, stored server-side in `~/.opensession-web-sessions.json`.
+at web sign-in, stored server-side in `~/.opensession/web-sessions.json`.
 
 ## Build
 
@@ -406,7 +421,8 @@ xcodegen generate
 open OS1.xcodeproj
 ```
 
-Then run the `OS1` scheme on iOS 26+.
+Run the `OS1` scheme on iOS 26+ or `OS1Mac` on macOS 26+. Validate changes
+against both schemes.
 
 ## Architecture
 
@@ -454,21 +470,23 @@ OS1/
     OS1VisualStyle.swift      Shared web palette, session width, and repo tile
                               (`accent`/`onAccent` come from `AccentTheme`)
     SessionsListView.swift   List + status rows + settings sheet
+    FeedView.swift           Recent merged pull requests and commits
+    TasksView.swift          Shared task list
+    ReportsView.swift        Automation reports and document history
     SessionView.swift        Transcript, streaming bubble, ask card, input bar
     NewSessionView.swift     Full-height create-session editor
+    LibraryView.swift        Startable recipes and templates
     TranscriptRow.swift      Per-block rendering: bubbles, notices, clamping
     TurnBlockView.swift      Work fold header + turn footer + file chips
     ToolCallRow.swift        Tool rows, bespoke bodies, unified-diff rendering
     SubagentView.swift       A Task call's sub-agent transcript, in a sheet
     SessionPanel.swift       Pushed session details + the openPanel action
     AssetsView.swift         Assets list + one asset, per-kind preview
+    ChangesView.swift        Changed files and diffs
+    PortalsView.swift        Exposed services and controls
+    TerminalView.swift       Session-scoped shell
     WalkthroughCard.swift    Published walkthrough: demo video, writeup, stills
     MarkdownBody.swift       Streaming/durable markdown rendering
-  Mermaid/
-    MermaidSegmenter.swift   Splits ```mermaid fences out of message markdown
-    MermaidHostPage.swift    Locates the bundled renderer page
-    MermaidRenderer.swift    Offscreen WebKit render + snapshot + cache
-    MermaidDiagramView.swift The diagram row: code fence, then the picture
     AskQuestionCard.swift    Options + free text answer
     PrPanel.swift            Pull-request overview, actions, and review entry
     PrReviewCanvas.swift     Committed diff, inline pending comments, viewed files
@@ -480,6 +498,11 @@ OS1/
     Native*SettingsViews.swift  Native Tools, Personal, Workspace panels
     MacSettings.swift        macOS settings window
     Glass · ImageAttachments · UserAvatar · WebIcon  smaller shared views
+  Mermaid/
+    MermaidSegmenter.swift   Splits ```mermaid fences out of message markdown
+    MermaidHostPage.swift    Locates the bundled renderer page
+    MermaidRenderer.swift    Offscreen WebKit render + snapshot + cache
+    MermaidDiagramView.swift The diagram row: code fence, then the picture
 ```
 
 ## Protocol notes (from the server source)
@@ -492,14 +515,15 @@ OS1/
   The app advertises seq and change-seq support, retains each frame's resume
   watermark, and includes it on every re-watch. Reconnects therefore replay
   only the missed gap instead of replacing history pages already on screen.
-- `stream_text` deltas render immediately; the durable assistant entry arrives
-  via `transcript_append` after `stream_done`, at which point the live bubble
-  is dropped.
+- When Settings → Personal → Preferences → Live typing is on, `stream_text`
+  deltas render immediately. It defaults off; otherwise each durable part
+  appears through `transcript_append`.
 - `reply_suggestions` carries a session id and optional `{label,text}` choices.
   A JSON `null` suggestion payload clears the current row; a new stream or send
   clears it locally so stale replies cannot follow the next turn.
 - Entries can arrive clamped (`contentClamped`); full content is at
-  `GET /api/sessions/:id/entry/:entryId` (not wired into the UI yet).
+  `GET /api/sessions/:id/entry/:entryId`. The assistant's **Show full message**
+  action and expanded clamped tool results fetch it on demand.
 - `presence` lists everyone watching the session, one name per socket. The
   header facepile drops our own name and dedupes devices; names resolve to
   GitHub pictures through `GET /api/people` (`TeamDirectory`).
@@ -513,6 +537,5 @@ OS1/
 
 ## Next milestones
 
-- Resume cursors (`sinceOffset`/`sinceRev`) for cheap reconnects
 - Image attachments in assistant markdown
 - Push-style updates for the sessions list (it polls today)

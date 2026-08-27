@@ -24,15 +24,15 @@ import {
 	statSync,
 	writeFileSync,
 } from "node:fs";
-import { homedir } from "node:os";
 import { join, normalize, resolve } from "node:path";
 import {
 	configuredAssetStorage,
 	type ResolvedAssetStorage,
 } from "./config";
+import { stateDir } from "./paths";
 import { broadcastToSession } from "./ws-hub";
 
-export const ASSETS_ROOT = join(homedir(), ".opensession-assets");
+export const ASSETS_ROOT = stateDir("assets");
 
 const ASSET_METADATA_FILE = ".opensession-assets.json";
 const ASSET_METADATA_TEMP = `${ASSET_METADATA_FILE}.tmp`;

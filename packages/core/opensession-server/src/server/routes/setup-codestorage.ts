@@ -32,7 +32,7 @@ import { audit } from "../audit";
 import { importPkcs8Pem } from "../codestorage/auth";
 import { listRepos as listCsRepos } from "../codestorage/client";
 import { csWebhookState, handleCsWebhook } from "../codestorage/webhook";
-import { codeStorageConfig, configPath, configuredServer } from "../config";
+import { codeStorageConfig, configPath } from "../config";
 import {
   persistRawConfig,
   rawConfig,
@@ -257,7 +257,7 @@ export async function handleSetupCodestorageRoutes(
       ...(probe.error ? { error: probe.error } : {}),
       webhook: {
         path: CS_WEBHOOK_PATH,
-        port: configuredServer().webhookPort,
+        port: 3860,
         secret: cfg.webhookSecret ?? "",
         lastDelivery: wh.lastDelivery,
         lastRejected: wh.lastRejected,

@@ -11,7 +11,7 @@
  */
 
 import { existsSync } from "fs";
-import { dirname } from "path";
+import { dirname, join } from "path";
 import { homedir } from "os";
 import { randomUUIDv7 } from "bun";
 
@@ -20,22 +20,45 @@ export function homeDir(): string {
   return process.env.HOME || homedir();
 }
 
-/**
- * Resolve a state path relative to the state root. A non-empty
- * OPENSESSION_STATE_DIR is an isolated namespace (dev/demo instances,
- * src/server/dev-mode.ts) — every state name resolves strictly under it, so
- * a second instance can never read or write the live instance's home-dir
- * state. Unset ⇒ $HOME. Read at call time so tests can repoint either env.
- */
-export function statePath(rel: string): string {
-  const root = process.env.OPENSESSION_STATE_DIR || process.env.HOME || homedir();
-  return `${root}/${rel}`;
+/** The historical top-level name for a state entry. */
+function legacyStateName(base: string): string {
+  return `.opensession-${base}`;
 }
 
-/** Sugar for the standard state-dir naming: `stateDir("audit")` →
- *  `~/.opensession-audit`. Works for files too (`stateDir("pins.json")`). */
+/**
+ * Resolve a state path relative to the state root.
+ *
+ * Standard `.opensession-<name>` entries now live together as
+ * `~/.opensession/<name>`. Existing installations continue using a legacy
+ * top-level entry when it exists and the new path does not, which avoids
+ * silently splitting a store during an upgrade. A fresh installation has no
+ * legacy entries, so every new store starts under `~/.opensession/`.
+ *
+ * A non-empty OPENSESSION_STATE_DIR is an isolated namespace (dev/demo
+ * instances, src/server/dev-mode.ts). It retains the literal relative names
+ * for compatibility and never falls back to live home-directory state. Other
+ * relative paths, notably `.opensession/config.json` and `.opensession.env`,
+ * also retain their literal layout.
+ */
+export function statePath(rel: string): string {
+  const stateRoot = process.env.OPENSESSION_STATE_DIR;
+  const standardBase = rel.startsWith(".opensession-")
+    ? rel.slice(".opensession-".length)
+    : null;
+  if (stateRoot) return join(stateRoot, rel);
+
+  const home = homeDir();
+  if (!standardBase) return join(home, rel);
+
+  const current = join(home, ".opensession", standardBase);
+  const legacy = join(home, rel);
+  return existsSync(current) || !existsSync(legacy) ? current : legacy;
+}
+
+/** Sugar for standard state: `stateDir("audit")` → `~/.opensession/audit`.
+ * Works for files too (`stateDir("pins.json")`). */
 export function stateDir(base: string): string {
-  return statePath(`.opensession-${base}`);
+  return statePath(legacyStateName(base));
 }
 
 function resolveSessionsDir(): string {
@@ -48,8 +71,6 @@ function resolveSessionsDir(): string {
   // everything lives under OPENSESSION_STATE_DIR. The run-rpc unix socket
   // derives from this dir, so the isolation also keeps a second instance off
   // the live instance's socket.
-  const stateRoot = process.env.OPENSESSION_STATE_DIR;
-  if (stateRoot) return `${stateRoot}/.opensession-sessions`;
   return stateDir("sessions");
 }
 
@@ -68,7 +89,7 @@ export function sessionsDir(): string {
   return (
     process.env.OPENSESSION_SESSIONS_DIR ||
     (process.env.OPENSESSION_STATE_DIR
-      ? `${process.env.OPENSESSION_STATE_DIR}/.opensession-sessions`
+      ? stateDir("sessions")
       : OPENSESSION_SESSIONS_DIR)
   );
 }
@@ -96,7 +117,11 @@ export function __setSessionsDirForTest(dir: string): string {
  * media links spliced into PR descriptions — so each rename orphaned every one
  * of them: the path is still in the record, the directory it names is gone.
  */
-const LEGACY_SESSIONS_DIR_NAMES = [".opensession-chats", ".backstage-chats"];
+const LEGACY_SESSIONS_DIR_NAMES = [
+  ".opensession-sessions",
+  ".opensession-chats",
+  ".backstage-chats",
+];
 
 /**
  * Map a stored absolute path under a former session-store dir onto the active

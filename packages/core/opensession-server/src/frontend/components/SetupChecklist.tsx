@@ -5,7 +5,6 @@ import { toast } from "../ui/toast";
 import {
 	StateChip,
 	integrationState,
-	publicUrlState,
 	repoLifecycleState,
 	setupRequest,
 	type ChipTone,
@@ -123,7 +122,6 @@ export function SetupChecklist({
 	const github = status.integrations.find((integration) => integration.id === "github");
 	const githubState = github ? integrationState(github) : { tone: "warn" as const, label: "Missing" };
 	const githubTone: ChipTone = githubState.tone === "on" ? "on" : "warn";
-	const publicUrl = publicUrlState(status.publicBaseUrl);
 	const reposTone: ChipTone = status.repos.length > 0 ? "on" : "warn";
 	const membersTone: ChipTone = status.team.count > 0 ? "on" : "warn";
 	const memberNames = status.team.names.slice(0, 3).join(", ");
@@ -139,18 +137,11 @@ export function SetupChecklist({
 	return (
 		<SettingCard>
 			<ChecklistRow
-				title="Server access"
-				description={publicUrl.description}
-				tone={publicUrl.tone}
-				label={publicUrl.label}
-				action={fix("server", publicUrl.tone)}
-			/>
-			<ChecklistRow
 				title="GitHub"
 				description={
 					githubState.tone === "on"
 						? "Sessions can access repositories and open pull requests with the workspace account."
-						: "Add the workspace GitHub token used for repositories and pull requests."
+						: "Configure the GitHub App used for repositories and pull requests."
 				}
 				tone={githubTone}
 				label={githubState.label}

@@ -1,11 +1,16 @@
-import React, { useEffect, useId, useRef, useState } from "react";
+import { mergeStylexProps, mergeStylexOverrideClassName } from "../ui/cn";
+import { utilityClassName } from "../ui/cn";
+import React, { useCallback, useEffect, useId, useRef, useState } from "react";
 import { Button } from "../ui/button";
 import { Field, Input } from "../ui/input";
 import { Modal } from "../ui/modal";
 import { Popover } from "../ui/popover";
+import { Segmented, SegmentedOption } from "../ui/segmented";
 import { Switch } from "../ui/switch";
-import { cn, mergeStylexProps, mergeStylexClassName, mergeStylexOverrideClassName } from "../ui/cn";
+import { Menu } from "../ui/menu";
+import { cn } from "../ui/cn";
 import { EmptyState, InlineAlert, LoadingState } from "../ui/state";
+import { Spinner } from "../ui/spinner";
 import {
 	SettingCard,
 	SettingRow,
@@ -14,10 +19,16 @@ import {
 	SettingRowTitle,
 	SettingsGroupLabel,
 	SettingsHint,
+	rowMenuTriggerClasses,
 	settingsInputClass,
 } from "../ui/settings";
 import { toast } from "../ui/toast";
-import { IconArrowUpToLine, IconPlus } from "./icons";
+import {
+	IconArrowUpToLine,
+	IconBranches,
+	IconDotsHorizontal,
+	IconPlus,
+} from "./icons";
 import { RepoTile } from "./RepoTile";
 import { REPO_TILE_COLORS, REPO_TILE_INK, repoColor, repoIconFill } from "../lib/repo-colors";
 import { repoLetter } from "../lib/repo-label";
@@ -42,88 +53,66 @@ import {
 import { Badge } from "../ui/badge";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
-import { sharedClassStyles } from "../styles/shared-class-styles.stylex";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
+	mb3: {
+			marginBottom: "calc(4px * 3)"
+	},
 	itemsStart: {
 			alignItems: "flex-start"
-	},
-	truncate: {
-			textOverflow: "ellipsis",
-			whiteSpace: "nowrap",
-			overflow: "hidden"
-	},
-	fontMono: {
-			fontFamily: "var(--mono)"
-	},
-	mt2: {
-			marginTop: "8px"
 	},
 	flex: {
 			display: "flex"
 	},
-	flexWrap: {
-			flexWrap: "wrap"
-	},
-	itemsEnd: {
-			alignItems: "flex-end"
-	},
-	gap2: {
-			gap: "8px"
-	},
-	w44: {
-			width: "176px"
-	},
-	mt15: {
-			marginTop: "6px"
-	},
-	mt3: {
-			marginTop: "12px"
-	},
-	grid: {
-			display: "grid"
-	},
-	minH11: {
-			minHeight: "44px"
-	},
-	maxW36rem: {
-			maxWidth: "36rem"
-	},
 	itemsCenter: {
 			alignItems: "center"
 	},
-	gapX3: {
-			columnGap: "12px"
+	justifyBetween: {
+			justifyContent: "space-between"
 	},
-	gapY1: {
-			rowGap: "4px"
-	},
-	py1: {
-			paddingBlock: "4px"
+	gap2: {
+			gap: "calc(4px * 2)"
 	},
 	minW0: {
 			minWidth: "0"
 	},
-	fontMedium: {
-			fontWeight: "var(--font-weight-medium)"
+	truncate: {
+			overflow: "hidden",
+			textOverflow: "ellipsis",
+			whiteSpace: "nowrap"
 	},
-	textFg: {
-			color: "var(--text)"
-	},
-	colSpan2: {
-			gridColumn: "span 2/span 2"
-	},
-	textDim: {
-			color: "var(--text-dim)"
+	hidden: {
+			display: "none"
 	},
 	shrink0: {
 			flexShrink: "0"
 	},
+	fontMono: {
+			fontFamily: "var(--mono)"
+	},
+	textDim: {
+			color: "var(--text-dim)"
+	},
+	flex1: {
+			flex: "1"
+	},
+	maxW28: {
+			maxWidth: "calc(4px * 28)"
+	},
+	flexCol: {
+			flexDirection: "column"
+	},
+	gap4: {
+			gap: "calc(4px * 4)"
+	},
+	gap25: {
+			gap: "calc(4px * 2.5)"
+	},
 	roundedMd: {
-			borderRadius: "calc(7px * var(--rf))"
-	,
-		cornerShape: "var(--cs)"},
+			borderRadius: "calc(7px * var(--rf))",
+
+		cornerShape: "var(--cs)",},
 	outlineNone: {
 			outlineStyle: "none"
 	},
@@ -131,13 +120,13 @@ const sx = stylex.create({
 			width: "248px"
 	},
 	p3: {
-			padding: "12px"
+			padding: "calc(4px * 3)"
 	},
 	mb2: {
-			marginBottom: "8px"
+			marginBottom: "calc(4px * 2)"
 	},
-	hidden: {
-			display: "none"
+	fontMedium: {
+			fontWeight: "var(--font-weight-medium)"
 	},
 	hFull: {
 			height: "100%"
@@ -146,9 +135,9 @@ const sx = stylex.create({
 			width: "100%"
 	},
 	roundedControl: {
-			borderRadius: "calc(12px * var(--rf))"
-	,
-		cornerShape: "var(--cs)"},
+			borderRadius: "calc(12px * var(--rf))",
+
+		cornerShape: "var(--cs)",},
 	objectCover: {
 			objectFit: "cover"
 	},
@@ -165,6 +154,9 @@ const sx = stylex.create({
 	borderLine: {
 			borderColor: "var(--border)"
 	},
+	mt3: {
+			marginTop: "calc(4px * 3)"
+	},
 	cursorPointer: {
 			cursor: "pointer"
 	},
@@ -172,19 +164,25 @@ const sx = stylex.create({
 			paddingTop: "4px"
 	},
 	h5: {
-			height: "20px"
+			height: "calc(4px * 5)"
 	},
 	w5: {
-			width: "20px"
+			width: "calc(4px * 5)"
 	},
-	flex1: {
-			flex: "1"
+	textFg: {
+			color: "var(--text)"
+	},
+	mt15: {
+			marginTop: "calc(4px * 1.5)"
 	},
 	leadingRelaxed: {
 			lineHeight: "var(--leading-relaxed)"
 	},
 	textFaint: {
 			color: "var(--text-faint)"
+	},
+	mt2: {
+			marginTop: "calc(4px * 2)"
 	},
 	text15px: {
 			fontSize: "15px"
@@ -193,7 +191,7 @@ const sx = stylex.create({
 			fontWeight: "var(--font-weight-bold)"
 	},
 	gap3: {
-			gap: "12px"
+			gap: "calc(4px * 3)"
 	},
 	borderB: {
 			borderBottomStyle: "solid",
@@ -203,13 +201,31 @@ const sx = stylex.create({
 			paddingInline: "4px"
 	},
 	py2: {
-			paddingBlock: "8px"
+			paddingBlock: "calc(4px * 2)"
 	},
 	itemsBaseline: {
 			alignItems: "baseline"
 	},
 	mt05: {
-			marginTop: "2px"
+			marginTop: "calc(4px * 0.5)"
+	},
+	minH240px: {
+			minHeight: "240px"
+	},
+	textCenter: {
+			textAlign: "center"
+	},
+	maxWFull: {
+			maxWidth: "100%"
+	},
+	breakAll: {
+			wordBreak: "break-all"
+	},
+	maxW38ch: {
+			maxWidth: "38ch"
+	},
+	mt25: {
+			marginTop: "calc(4px * 2.5)"
 	},
 	maxH320px: {
 			maxHeight: "320px"
@@ -217,86 +233,18 @@ const sx = stylex.create({
 	overflowYAuto: {
 			overflowY: "auto"
 	},
-	roundedSm: {
-			borderRadius: "calc(4px * var(--rf))"
-	,
-		cornerShape: "var(--cs)"},
-	bgSurface: {
-			backgroundColor: "var(--bg)"
-	},
-	px15: {
-			paddingInline: "6px"
-	},
-	py05: {
-			paddingBlock: "2px"
-	},
-	text092em: {
-			fontSize: ".92em"
-	},
-	mt25: {
-			marginTop: "10px"
-	},
 	borderT: {
 			borderTopStyle: "solid",
 			borderTopWidth: "1px"
 	},
 	pt3: {
-			paddingTop: "12px"
+			paddingTop: "calc(4px * 3)"
 	},
 	mt1: {
 			marginTop: "4px"
 	},
 	maxH240px: {
 			maxHeight: "240px"
-	},
-	colorGrid: {
-		display: "grid",
-		gridTemplateColumns: "repeat(6,minmax(0,1fr))",
-		gap: "8px",
-		transitionProperty: "opacity",
-		transitionDuration: "150ms",
-	},
-	opacity40: { opacity: 0.4 },
-	tileChoice: {
-		width: "28px",
-		height: "28px",
-		borderRadius: "calc(12px * var(--rf))",
-		outlineStyle: "none",
-		transitionProperty: "transform",
-		transitionDuration: "var(--dur-micro)",
-		":hover": { "@media (hover: hover)": { transform: "scale(1.1)" } },
-		":focus-visible": {
-			outline: "2px solid var(--accent-ink)",
-			outlineOffset: "2px",
-		},
-	},
-	tileChoiceActive: {
-		boxShadow: "0 0 0 2px var(--bg-panel), 0 0 0 4px var(--text)",
-	},
-
-	gridColsMinmax01frAuto: {
-		"gridTemplateColumns": "minmax(0,1fr) auto"
-	},
-	phoneMl11: {
-		"@media (max-width: 720px)": {
-			"marginLeft": "-44px"
-		}
-	},
-	phoneMaxWCalc100275rem: {
-		"@media (max-width: 720px)": {
-			"maxWidth": "calc(100% + 2.75rem)"
-		}
-	},
-	focusVisibleRing2: {
-		":focusVisible": {
-			"--tw-ring-shadow": "var(--tw-ring-inset,) 0 0 0 calc(2px + var(--tw-ring-offset-width)) var(--tw-ring-color,currentcolor)",
-			"boxShadow": "var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow)"
-		}
-	},
-	focusVisibleRingVarAccent6b8afd: {
-		":focusVisible": {
-			"--tw-ring-color": "var(--accent)"
-		}
 	},
 });
 
@@ -305,15 +253,16 @@ const sx = stylex.create({
 // token) the add flow browses the reachable repos; without one it falls back
 // to a manual owner/name entry. When the code.storage integration is
 // configured, its org's repos are offered in their own section alongside
-// GitHub. Registering clones the repo server-side, so an add can take tens of
-// seconds — the row keeps a working state the whole way and nothing here
-// times out early.
+// GitHub. Remote registration clones server-side, so an add can take tens of
+// seconds. Pending state stays owned by the settings panel so it remains
+// visible if the dialog closes. Existing local checkouts register in place.
 
 export function ReposSection({
 	repos,
 	onChanged,
 	onRepoUpdated,
 	compact = false,
+	showLifecycleStatus = true,
 }: {
 	repos: SetupStatus["repos"];
 	onChanged: () => void | Promise<void>;
@@ -322,8 +271,11 @@ export function ReposSection({
 			Partial<Pick<SetupRepo, "defaultBranch" | "isolatedWorktrees">>,
 	) => void;
 	compact?: boolean;
+	showLifecycleStatus?: boolean;
 }) {
 	const [pickerOpen, setPickerOpen] = useState(false);
+	const [pendingRepo, setPendingRepo] = useState<PendingRepo | null>(null);
+	const [pickerError, setPickerError] = useState<string | null>(null);
 	// Focused when the picker opens, so a long list is one keystroke from
 	// being filtered. Only one of the picker's two inputs renders at a time.
 	const pickerInput = useRef<HTMLInputElement>(null);
@@ -332,10 +284,12 @@ export function ReposSection({
 	// what the sidebar paints can't drift apart.
 	const [appearance, setAppearance] = useState<Map<string, RepoInfo>>(new Map());
 	const repoIds = repos.map((repo) => repo.id).join("\0");
-	const loadAppearance = async () => {
+	// Stable identity: only setters and module functions are captured, so the
+	// effect can list it and still refire only when repoIds changes.
+	const loadAppearance = useCallback(async () => {
 		const list = await fetchRepos().catch(() => []);
 		setAppearance(new Map(list.map((r) => [r.id, r])));
-	};
+	}, []);
 	useEffect(() => {
 		loadAppearance();
 	}, [loadAppearance, repoIds]);
@@ -349,14 +303,19 @@ export function ReposSection({
 				// step, where the label needs no space above it. On the settings
 				// page it follows the default-repository card and keeps the
 				// group's own mt-9, which is what separates the two.
-				className="first:mt-0"
+				className={cn("first:mt-0", compact && utilityClassName("text-body text-fg/65"))}
 				actions={
 					<Button
 						size="sm"
-						icon={<IconPlus size={16} />}
+						icon={pendingRepo ? <Spinner /> : <IconPlus size={16} />}
+						disabled={pendingRepo !== null}
 						onClick={() => setPickerOpen(true)}
 					>
-						Add repository
+						{pendingRepo
+							? pendingRepo.action === "clone"
+								? "Cloning…"
+								: "Registering…"
+							: "Add repository"}
 					</Button>
 				}
 			>
@@ -369,13 +328,23 @@ export function ReposSection({
 			{/* On top rather than inline: the picker is a list of its own, and
 			    pushing the registered repos down the page to browse a second
 			    list made the two read as one. Adding stays a detour. */}
+			{pickerError && !pickerOpen && (
+				<InlineAlert className={mergeStylexOverrideClassName("", sx.mb3)}>{pickerError}</InlineAlert>
+			)}
 			<Modal.Root open={pickerOpen} onOpenChange={setPickerOpen}>
-				<Modal.Content widthClassName={mergeStylexClassName("", sharedClassStyles.maxW34rem)} initialFocus={pickerInput}>
+				<Modal.Content widthClassName={utilityClassName("max-w-[34rem]")} initialFocus={pickerInput}>
 					<Modal.Header
 						title="Add repository"
-						description="Clone a repository onto the server so sessions can work in it."
+						description="Clone a remote repository or register a Git checkout already on the server."
 					/>
-					<AddRepoPicker inputRef={pickerInput} onAdded={onChanged} />
+					<AddRepoPicker
+						inputRef={pickerInput}
+						onAdded={onChanged}
+						pendingRepo={pendingRepo}
+						onPendingChange={setPendingRepo}
+						error={pickerError}
+						setError={setPickerError}
+					/>
 				</Modal.Content>
 			</Modal.Root>
 			<SettingCard>
@@ -405,20 +374,32 @@ export function ReposSection({
 									repo={appearance.get(repo.id)}
 									id={repo.id}
 									onChanged={loadAppearance}
+									glow
 								/>
 								<SettingRowText>
 									<SettingRowTitle>{repo.label}</SettingRowTitle>
 								</SettingRowText>
-								<StateChip tone={lifecycle.tone} label={lifecycle.label} />
+								{showLifecycleStatus && (
+									<StateChip tone={lifecycle.tone} label={lifecycle.label} />
+								)}
+								{/* Same ⋯ menu as the settings page: a compact row is still a
+								    repo someone may need to repoint or re-mode. */}
+								<RepoActionsMenu
+									repo={repo}
+									appearance={appearance.get(repo.id)}
+									onChanged={onChanged}
+									onRepoUpdated={onRepoUpdated}
+								/>
 							</SettingRow>
 						);
 					})
 				)}
 			</SettingCard>
-			<SettingsHint>
-				Registering clones the repo onto the server. Code sessions use isolated
-				worktrees by default. Commit <code>.agents/</code> scripts to provision those
-				worktrees and boot previews. See docs/repo-lifecycle.md.
+			<SettingsHint className={compact ? "text-fg/55" : undefined}>
+				Remote repositories are cloned onto the server. Local folders stay where
+				they are. Code sessions use isolated worktrees by default. New repos are
+				usable right away with no restart. Commit <code>.agents/</code> scripts to
+				provision those worktrees and boot previews. See docs/repo-lifecycle.md.
 			</SettingsHint>
 		</>
 	);
@@ -441,6 +422,57 @@ function RepositoryRow({
 	) => void;
 }) {
 	const lifecycle = repoLifecycleState(repo);
+
+	return (
+		<SettingRow className={mergeStylexOverrideClassName("", sx.itemsStart)}>
+			<RepoTileButton
+				repo={appearance}
+				id={repo.id}
+				onChanged={onAppearanceChanged}
+			/>
+			<SettingRowText>
+				<div {...stylex.props(sx.flex, sx.itemsCenter, sx.justifyBetween, sx.gap2)}>
+					<SettingRowTitle className={mergeStylexOverrideClassName("", sx.minW0, sx.truncate)}>{repo.label}</SettingRowTitle>
+					<span {...mergeStylexProps("phone:inline-flex", sx.hidden, sx.shrink0)} >
+						<StateChip tone={lifecycle.tone} label={lifecycle.label} />
+					</span>
+				</div>
+				<SettingRowDescription className={mergeStylexOverrideClassName("", sx.truncate, sx.fontMono, typography.meta)}>
+					{repo.path}
+				</SettingRowDescription>
+			</SettingRowText>
+			<div {...stylex.props(sx.flex, sx.shrink0, sx.itemsCenter, sx.gap2)}>
+				<span className={utilityClassName("phone:hidden")}>
+					<StateChip tone={lifecycle.tone} label={lifecycle.label} />
+				</span>
+				<RepoActionsMenu
+					repo={repo}
+					appearance={appearance}
+					onChanged={onChanged}
+					onRepoUpdated={onRepoUpdated}
+				/>
+			</div>
+		</SettingRow>
+	);
+}
+
+/** A repo row's ⋯ menu and its consequences: the default-branch dialog and
+ *  the isolated-worktrees toggle. Shared by the settings page's full row and
+ *  the wizard's compact rows, so both surfaces manage a repo identically. */
+function RepoActionsMenu({
+	repo,
+	appearance,
+	onChanged,
+	onRepoUpdated,
+}: {
+	repo: SetupStatus["repos"][number];
+	appearance: RepoInfo | undefined;
+	onChanged: () => void | Promise<void>;
+	onRepoUpdated?: (
+		updated: Pick<SetupRepo, "id"> &
+			Partial<Pick<SetupRepo, "defaultBranch" | "isolatedWorktrees">>,
+	) => void;
+}) {
 	// A hot frontend rebuild can briefly run against the prior setup-status
 	// payload, which omitted defaultBranch. The repository payload already had
 	// it, so use that as the compatibility fallback instead of crashing while
@@ -450,12 +482,11 @@ function RepositoryRow({
 	const [isolatedWorktrees, setIsolatedWorktrees] = useState(
 		repo.isolatedWorktrees,
 	);
+	const [branchDialogOpen, setBranchDialogOpen] = useState(false);
 	const [saving, setSaving] = useState<"branch" | "worktrees" | null>(null);
 	const [branchError, setBranchError] = useState<string | null>(null);
-	const [worktreeError, setWorktreeError] = useState<string | null>(null);
 	const branchErrorId = useId();
-	const worktreeErrorId = useId();
-	const worktreeDescriptionId = useId();
+	const branchInputRef = useRef<HTMLInputElement>(null);
 
 	useEffect(() => {
 		setBranch(defaultBranch);
@@ -483,6 +514,7 @@ const updated = await setupRequest<{
 			setBranch(updated.defaultBranch);
 			if (onRepoUpdated) onRepoUpdated(updated);
 			else await onChanged();
+			setBranchDialogOpen(false);
 			toast(`${repo.label} default branch updated`);
 })().catch(async (e: any) => {
 setBranchError(e.message);
@@ -496,7 +528,6 @@ setSaving(null);
 		const previous = isolatedWorktrees;
 		setIsolatedWorktrees(next);
 		setSaving("worktrees");
-		setWorktreeError(null);
 		await (async () => {
 const updated = await setupRequest<{
 				id: string;
@@ -512,80 +543,114 @@ const updated = await setupRequest<{
 			toast(`${repo.label} worktree setting updated`);
 })().catch(async (e: any) => {
 setIsolatedWorktrees(previous);
-			setWorktreeError(e.message);
+			// No row of its own to paint an inline alert on anymore: this menu
+			// serves both the settings row and the wizard's compact rows, so
+			// failures surface app-wide instead.
+			toast(e.message, { variant: "error" });
 }).finally(async () => {
 setSaving(null);
 });
 	}
 
+	function openBranchDialog() {
+		setBranch(defaultBranch);
+		setBranchError(null);
+		setBranchDialogOpen(true);
+	}
+
 	return (
-		<SettingRow className={mergeStylexOverrideClassName("", sx.itemsStart)}>
-			<RepoTileButton
-				repo={appearance}
-				id={repo.id}
-				onChanged={onAppearanceChanged}
-			/>
-			<SettingRowText>
-				<SettingRowTitle>{repo.label}</SettingRowTitle>
-				<SettingRowDescription className={mergeStylexOverrideClassName("", sx.truncate, sx.fontMono, typography.meta)}>
-					{repo.path}
-				</SettingRowDescription>
-				<form {...stylex.props(sx.mt2, sx.flex, sx.flexWrap, sx.itemsEnd, sx.gap2)} onSubmit={saveBranch}>
-					<Field label="Default branch" className={mergeStylexOverrideClassName("", sx.w44)}>
-						<Input
-							className={mergeStylexOverrideClassName("", sx.fontMono)}
-							value={branch}
-							onChange={(event) => {
-								setBranch(event.target.value);
-								setBranchError(null);
-							}}
-							disabled={!!saving}
-							aria-invalid={!!branchError}
-							aria-describedby={branchError ? branchErrorId : undefined}
-							autoCapitalize="none"
-							autoCorrect="off"
-							spellCheck={false}
-						/>
-					</Field>
-					<Button
-						type="submit"
-						size="sm"
-						disabled={!normalized || !changed || !!saving}
-					>
-						{saving === "branch" ? "Saving…" : "Save"}
-					</Button>
-				</form>
-				{branchError && (
-					<InlineAlert id={branchErrorId} className={mergeStylexOverrideClassName("", sx.mt15)}>
-						{branchError}
-					</InlineAlert>
-				)}
-				<div {...mergeStylexProps("", sx.gridColsMinmax01frAuto, sx.phoneMl11, sx.phoneMaxWCalc100275rem, sx.mt3, sx.grid, sx.minH11, sx.maxW36rem, sx.itemsCenter, sx.gapX3, sx.gapY1, sx.py1)}>
-					<span {...stylex.props(sx.minW0, sx.fontMedium, sx.textFg, typography.label)}>
-						Use isolated worktrees
-					</span>
-					<Switch
-						aria-label={`Use isolated worktrees for ${repo.label}`}
-						aria-describedby={`${worktreeDescriptionId}${worktreeError ? ` ${worktreeErrorId}` : ""}`}
+		<>
+			<Menu.Root>
+				<Menu.Trigger
+					className={rowMenuTriggerClasses}
+					aria-label={`Manage ${repo.label}`}
+				>
+					<IconDotsHorizontal size={18} />
+				</Menu.Trigger>
+				<Menu.Popup align="end" sideOffset={4}>
+					<Menu.Item onClick={openBranchDialog}>
+						<IconBranches size={17} className={mergeStylexOverrideClassName("", sx.textDim)} />
+						<span {...stylex.props(sx.minW0, sx.flex1, sx.truncate)}>Default branch</span>
+						<Menu.Shortcut className={mergeStylexOverrideClassName("", sx.maxW28, sx.truncate, sx.fontMono)}>
+							{defaultBranch}
+						</Menu.Shortcut>
+					</Menu.Item>
+					<Menu.Separator />
+					<Menu.CheckboxItem
 						checked={isolatedWorktrees}
 						disabled={!!saving}
 						onCheckedChange={(next) => void saveWorktreeMode(next)}
-					/>
-					<span
-						id={worktreeDescriptionId}
-						{...stylex.props(sx.colSpan2, sx.textDim, typography.meta)}
+						closeOnClick
 					>
-						Give new code sessions a separate worktree. Existing sessions stay put.
-					</span>
-				</div>
-				{worktreeError && (
-					<InlineAlert id={worktreeErrorId} className={mergeStylexOverrideClassName("", sx.mt15)}>
-						{worktreeError}
-					</InlineAlert>
-				)}
-			</SettingRowText>
-			<StateChip tone={lifecycle.tone} label={lifecycle.label} />
-		</SettingRow>
+						<span {...stylex.props(sx.minW0, sx.flex1, sx.truncate)}>Use isolated worktrees</span>
+						<Menu.Check on={isolatedWorktrees} />
+					</Menu.CheckboxItem>
+				</Menu.Popup>
+			</Menu.Root>
+			<Modal.Root
+				open={branchDialogOpen}
+				onOpenChange={(open) => {
+					if (saving === "branch") return;
+					setBranchDialogOpen(open);
+					if (!open) {
+						setBranch(defaultBranch);
+						setBranchError(null);
+					}
+				}}
+				disablePointerDismissal={saving === "branch"}
+			>
+				<Modal.Content initialFocus={branchInputRef}>
+					<form {...stylex.props(sx.flex, sx.flexCol, sx.gap4)} onSubmit={saveBranch}>
+						<Modal.Header
+							title={
+								<span {...stylex.props(sx.flex, sx.itemsCenter, sx.gap25)}>
+									<RepoTile name={repo.id} size={28} />
+									<span {...stylex.props(sx.minW0, sx.truncate)}>Default branch</span>
+								</span>
+							}
+							description={`Choose the branch new sessions use for ${repo.label}.`}
+						/>
+						<Field label="Branch">
+							<Input
+								ref={branchInputRef}
+								className={mergeStylexOverrideClassName("phone:min-h-11 phone:text-input-phone", sx.fontMono)}
+								value={branch}
+								onChange={(event) => {
+									setBranch(event.target.value);
+									setBranchError(null);
+								}}
+								disabled={saving === "branch"}
+								aria-invalid={!!branchError}
+								aria-describedby={branchError ? branchErrorId : undefined}
+								autoCapitalize="none"
+								autoCorrect="off"
+								spellCheck={false}
+							/>
+						</Field>
+						{branchError && <InlineAlert id={branchErrorId}>{branchError}</InlineAlert>}
+						<Modal.Footer>
+							<Button
+								type="button"
+								variant="ghost"
+								className={utilityClassName("phone:min-h-11")}
+								disabled={saving === "branch"}
+								onClick={() => setBranchDialogOpen(false)}
+							>
+								Cancel
+							</Button>
+							<Button
+								type="submit"
+								variant="primary"
+								className={utilityClassName("phone:min-h-11")}
+								disabled={!normalized || !changed || !!saving}
+							>
+								{saving === "branch" ? "Saving…" : "Save"}
+							</Button>
+						</Modal.Footer>
+					</form>
+				</Modal.Content>
+			</Modal.Root>
+		</>
 	);
 }
 
@@ -610,10 +675,12 @@ function RepoTileButton({
 	id,
 	repo,
 	onChanged,
+	glow = false,
 }: {
 	id: string;
 	repo: RepoInfo | undefined;
 	onChanged: () => Promise<void>;
+	glow?: boolean;
 }) {
 	const [busy, setBusy] = useState(false);
 	const [error, setError] = useState<string | null>(null);
@@ -651,17 +718,23 @@ setBusy(false);
 
 	return (
 		<Popover.Root>
-			<Popover.Trigger {...mergeStylexProps("", sx.focusVisibleRing2, sx.focusVisibleRingVarAccent6b8afd, sx.shrink0, sx.roundedMd, sx.outlineNone)}
+			<Popover.Trigger
+				className={mergeStylexOverrideClassName("focus-visible:ring-2 focus-visible:ring-[var(--accent,#6b8afd)]", sx.shrink0, sx.roundedMd, sx.outlineNone)}
 				aria-label={`Change ${id}'s icon`}
 			>
-				<RepoTile name={id} size={28} />
+				<RepoTile name={id} size={28} glow={glow} />
 			</Popover.Trigger>
 			<Popover.Popup className={mergeStylexOverrideClassName("", sx.w248px, sx.p3)} initialFocus>
 				<div {...stylex.props(sx.mb2, sx.fontMedium, sx.textDim, typography.meta)}>Icon</div>
 				{/* Faded while automatic is on: these choices aren't in effect.
 				    Still live, though — picking one is how you leave automatic,
 				    so the fade never becomes a mode you have to escape first. */}
-				<div {...stylex.props(sx.colorGrid, autoActive && sx.opacity40)}>
+				<div
+					className={cn(
+						utilityClassName("grid grid-cols-6 gap-2 transition-opacity duration-150"),
+						autoActive && utilityClassName("opacity-40"),
+					)}
+				>
 					{REPO_TILE_COLORS.map((color) => (
 						<TileChoice
 							key={color}
@@ -782,7 +855,11 @@ function TileChoice({
 			aria-pressed={!!active}
 			disabled={disabled}
 			onClick={onClick}
-			{...stylex.props(sx.tileChoice, active && sx.tileChoiceActive)}
+			className={cn(
+				utilityClassName("h-7 w-7 rounded-control outline-none transition-transform"),
+				utilityClassName("hover:scale-110 focus-visible:ring-2 focus-visible:ring-[var(--accent,#6b8afd)]"),
+				active && utilityClassName("ring-2 ring-fg ring-offset-2 ring-offset-panel"),
+			)}
 		>
 			{children}
 		</button>
@@ -803,8 +880,10 @@ function LetterTile({ id, color }: { id: string; color?: string }) {
 }
 
 interface BrowseResult {
-	source: "user" | "bot" | null;
+	source: "user" | "app" | null;
 	repos: BrowseRepo[];
+	appConfigured?: boolean;
+	appInstallUrl?: string | null;
 }
 
 /** GET /api/setup/codestorage/repos — `source: null` when the code.storage
@@ -815,6 +894,19 @@ interface CsBrowseResult {
 }
 
 type RepoSource = "github" | "codestorage";
+type AddRepoMode = "remote" | "local";
+
+interface PendingRepo {
+	label: string;
+	action: "clone" | "register";
+}
+
+interface RepoRegistration {
+	pending: PendingRepo;
+	json: Record<string, string>;
+	successMessage: string;
+	onRegistered?: () => void;
+}
 
 function filterRepos(repos: BrowseRepo[], filter: string): BrowseRepo[] {
 	const q = filter.trim().toLowerCase();
@@ -829,18 +921,14 @@ function filterRepos(repos: BrowseRepo[], filter: string): BrowseRepo[] {
 function RepoPickRow({
 	repo,
 	registered,
-	working,
-	disabled,
 	onAdd,
 }: {
 	repo: BrowseRepo;
 	registered: boolean;
-	working: boolean;
-	disabled: boolean;
 	onAdd: () => void;
 }) {
 	return (
-		<div {...mergeStylexProps("last:border-b-0", sx.flex, sx.itemsCenter, sx.gap3, sx.borderB, sx.borderLine, sx.px1, sx.py2)}>
+		<div {...mergeStylexProps("last:border-b-0", sx.flex, sx.itemsCenter, sx.gap3, sx.borderB, sx.borderLine, sx.px1, sx.py2)} >
 			<div {...stylex.props(sx.minW0, sx.flex1)}>
 				<div {...stylex.props(sx.flex, sx.minW0, sx.itemsBaseline, sx.gap2)}>
 					<span {...stylex.props(sx.truncate, sx.fontMedium, sx.textFg, typography.controlLabel)}>
@@ -861,10 +949,10 @@ function RepoPickRow({
 			<Button
 				size="sm"
 				variant={registered ? "ghost" : "default"}
-				disabled={registered || disabled}
+				disabled={registered}
 				onClick={onAdd}
 			>
-				{registered ? "Added" : working ? "Cloning…" : "Add"}
+				{registered ? "Added" : "Add"}
 			</Button>
 		</div>
 	);
@@ -873,11 +961,144 @@ function RepoPickRow({
 function AddRepoPicker({
 	inputRef,
 	onAdded,
+	pendingRepo,
+	onPendingChange,
+	error,
+	setError,
 }: {
 	/** Focused once the list resolves. Which input exists depends on whether
 	 *  there's a credential to browse with, so both branches take it. */
 	inputRef?: React.RefObject<HTMLInputElement | null>;
 	onAdded: () => void | Promise<void>;
+	pendingRepo: PendingRepo | null;
+	onPendingChange: (pending: PendingRepo | null) => void;
+	error: string | null;
+	setError: (error: string | null) => void;
+}) {
+	const [mode, setMode] = useState<AddRepoMode>("remote");
+	const [localPath, setLocalPath] = useState("");
+
+	useEffect(() => {
+		if (!pendingRepo && mode === "local") inputRef?.current?.focus();
+	}, [mode, pendingRepo, inputRef]);
+
+	async function registerRepo(input: RepoRegistration): Promise<void> {
+		if (pendingRepo) return;
+		onPendingChange(input.pending);
+		setError(null);
+		try {
+			// Remote clones can take tens of seconds. Keep the request unbounded and
+			// the panel-level pending state visible until registration and refresh end.
+			await setupRequest("/api/setup/repos", {
+				method: "POST",
+				json: input.json,
+			});
+			input.onRegistered?.();
+			toast(input.successMessage);
+			notifyReposChanged();
+			await onAdded();
+		} catch (cause) {
+			setError(cause instanceof Error ? cause.message : String(cause));
+		}
+		onPendingChange(null);
+	}
+
+	async function addLocalRepo() {
+		const path = localPath.trim();
+		if (!path) return;
+		await registerRepo({
+			pending: { label: path, action: "register" },
+			json: { source: "local", path },
+			successMessage: "Repository registered",
+			onRegistered: () => setLocalPath(""),
+		});
+	}
+
+	return (
+		// No surface of its own: the dialog is already the card this sits on.
+		<div>
+			{pendingRepo && (
+				<div {...stylex.props(sx.flex, sx.minH240px, sx.flexCol, sx.itemsCenter, sx.justifyCenter, sx.textCenter)}>
+					<LoadingState className={mergeStylexOverrideClassName("[&>div]:max-w-full", sx.maxWFull)} >
+						<span {...stylex.props(sx.maxWFull, sx.breakAll)}>
+							{pendingRepo.action === "clone" ? "Cloning " : "Registering "}
+							{pendingRepo.label}…
+						</span>
+					</LoadingState>
+					<p {...mergeStylexProps("m-0", sx.mt2, sx.maxW38ch, sx.leadingRelaxed, sx.textDim, typography.supporting)} >
+						You can close this window. The repository will appear here when it is
+						ready.
+					</p>
+				</div>
+			)}
+			<div className={pendingRepo ? utilityClassName("hidden") : undefined}>
+				<Segmented
+					className={mergeStylexOverrideClassName("", sx.mb3, sx.wFull)}
+					label="Repository source"
+					value={mode}
+					onValueChange={(value) => {
+						setMode(value as AddRepoMode);
+						setError(null);
+					}}
+				>
+					<SegmentedOption value="remote" className={mergeStylexOverrideClassName("", sx.flex1, sx.justifyCenter)}>
+						Remote
+					</SegmentedOption>
+					<SegmentedOption value="local" className={mergeStylexOverrideClassName("", sx.flex1, sx.justifyCenter)}>
+						Local folder
+					</SegmentedOption>
+				</Segmented>
+				{mode === "local" && (
+					<>
+						<div {...stylex.props(sx.leadingRelaxed, sx.textDim, typography.supporting)}>
+							Use a Git checkout on the server with a working origin remote.
+						</div>
+						<div {...mergeStylexProps("phone:flex-col phone:items-stretch", sx.mt25, sx.flex, sx.itemsCenter, sx.gap2)} >
+							<input
+								ref={inputRef}
+								className={cn(settingsInputClass, utilityClassName("min-w-0 flex-1 font-mono"))}
+								value={localPath}
+								onChange={(e) => setLocalPath(e.target.value)}
+								placeholder="/srv/repos/repository"
+								aria-label="Absolute repository path"
+								autoCapitalize="none"
+								autoCorrect="off"
+								spellCheck={false}
+								onKeyDown={(e) => {
+									if (e.key === "Enter" && localPath.trim()) addLocalRepo();
+								}}
+							/>
+							<Button
+								variant="primary"
+								disabled={!localPath.trim()}
+								onClick={addLocalRepo}
+							>
+								Add
+							</Button>
+						</div>
+					</>
+				)}
+				<div className={mode === "remote" ? undefined : utilityClassName("hidden")}>
+					<RemoteRepoPicker
+						active={mode === "remote" && !pendingRepo}
+						inputRef={inputRef}
+						registerRepo={registerRepo}
+					/>
+				</div>
+			</div>
+			{error && <InlineAlert className={mergeStylexOverrideClassName("", sx.mt25)}>{error}</InlineAlert>}
+		</div>
+	);
+}
+
+function RemoteRepoPicker({
+	active,
+	inputRef,
+	registerRepo,
+}: {
+	active: boolean;
+	inputRef?: React.RefObject<HTMLInputElement | null>;
+	registerRepo: (input: RepoRegistration) => Promise<void>;
 }) {
 	const [browse, setBrowse] = useState<BrowseResult | null>(null);
 	const [browseFailed, setBrowseFailed] = useState(false);
@@ -885,79 +1106,62 @@ function AddRepoPicker({
 	// answers; an unconfigured integration answers `source: null` (no section).
 	const [csBrowse, setCsBrowse] = useState<CsBrowseResult | null>(null);
 	// Configured-but-failing (bad key path, API outage): the route answers 502
-	// with the server's error — distinct from "not configured", which hides the
-	// section entirely.
+	// with the server's error, unlike the unconfigured 200 response.
 	const [csError, setCsError] = useState<string | null>(null);
 	const [filter, setFilter] = useState("");
-	const [addingRepo, setAddingRepo] = useState<string | null>(null);
 	const [added, setAdded] = useState<ReadonlySet<string>>(new Set());
-	const [error, setError] = useState<string | null>(null);
 	const [manual, setManual] = useState("");
 
 	useEffect(() => {
 		let cancelled = false;
 		(async () => {
 			await (async () => {
-const body = await setupRequest<BrowseResult>("/api/setup/github/repos");
+				const body = await setupRequest<BrowseResult>("/api/setup/github/repos");
 				if (!cancelled) setBrowse(body);
-})().catch(async () => {
-if (!cancelled) setBrowseFailed(true);
-});
+			})().catch(async () => {
+				if (!cancelled) setBrowseFailed(true);
+			});
 		})();
 		(async () => {
 			await (async () => {
-const body = await setupRequest<CsBrowseResult>(
+				const body = await setupRequest<CsBrowseResult>(
 					"/api/setup/codestorage/repos",
 				);
 				if (!cancelled) setCsBrowse(body);
-})().catch(async (e: any) => {
-// A throw means configured-but-failing (the route answers 200 with
+			})().catch(async (e: any) => {
+				// A throw means configured-but-failing (the route answers 200 with
 				// source: null when unconfigured) — surface the server's error
 				// instead of silently hiding the section. GitHub is unaffected.
 				if (!cancelled)
 					setCsError(e?.message || "Couldn’t reach code.storage right now.");
-});
+			});
 		})();
 		return () => {
 			cancelled = true;
 		};
 	}, []);
 
-	// The list arrives after the dialog has opened, so the dialog's initial
-	// focus finds no field to land on. Focus it the moment it exists.
+	// The list arrives after the dialog opens, so initialFocus has no field yet.
 	useEffect(() => {
-		if (browse || browseFailed) inputRef?.current?.focus();
-	}, [browse, browseFailed, inputRef]);
+		if (active && (browse || browseFailed)) inputRef?.current?.focus();
+	}, [active, browse, browseFailed, inputRef]);
+
+	async function addRepo(fullName: string, source: RepoSource = "github") {
+		const key = `${source}:${fullName}`;
+		await registerRepo({
+			pending: { label: fullName, action: "clone" },
+			json: source === "codestorage" ? { source, fullName } : { fullName },
+			successMessage: `${fullName} registered`,
+			onRegistered: () => {
+				setAdded((previous) => new Set(previous).add(key));
+				setManual("");
+			},
+		});
+	}
 
 	const filtered = (filterRepos(browse?.repos ?? [], filter));
 	const csFiltered = (filterRepos(csBrowse?.repos ?? [], filter));
 	const csConfigured = csBrowse?.source === "org";
-
-	async function addRepo(fullName: string, source: RepoSource = "github") {
-		if (addingRepo) return;
-		const key = `${source}:${fullName}`;
-		setAddingRepo(key);
-		setError(null);
-		await (async () => {
-// Registering clones server-side — can take tens of seconds. No client
-			// timeout; the button holds its working state until the server answers.
-			// code.storage repos reuse the same submit shape with a source marker.
-			await setupRequest("/api/setup/repos", {
-				method: "POST",
-				json:
-					source === "codestorage" ? { source, fullName } : { fullName },
-			});
-			setAdded((prev) => new Set(prev).add(key));
-			setManual("");
-			toast(`${fullName} registered`);
-			notifyReposChanged();
-			await onAdded();
-})().catch(async (e: any) => {
-setError(e.message);
-}).finally(async () => {
-setAddingRepo(null);
-});
-	}
 
 	const manualValid = /^[^/\s]+\/[^/\s]+$/.test(manual.trim());
 	const totalListed =
@@ -965,8 +1169,7 @@ setAddingRepo(null);
 		(csConfigured ? (csBrowse?.repos.length ?? 0) : 0);
 
 	return (
-		// No surface of its own: the dialog is already the card this sits on.
-		<div>
+		<>
 			{!browse && !browseFailed ? (
 				<LoadingState placement="row">Looking up your GitHub repositories…</LoadingState>
 			) : browse && browse.source !== null ? (
@@ -995,17 +1198,18 @@ setAddingRepo(null);
 								<RepoPickRow
 									key={r.fullName}
 									repo={r}
-									registered={r.registered || added.has(`github:${r.fullName}`)}
-									working={addingRepo === `github:${r.fullName}`}
-									disabled={addingRepo !== null}
+									registered={
+										r.registered || added.has(`github:${r.fullName}`)
+									}
 									onAdd={() => addRepo(r.fullName)}
 								/>
 							))
 						)}
 					</div>
 					<div {...stylex.props(sx.mt2, sx.textFaint, typography.meta)}>
-						Browsing as the {browse.source === "user" ? "connected account" : "bot"}.
-						Only repos that credential can reach are listed.
+						Browsing the{
+							browse.source === "user" ? " connected account" : " GitHub App installation"
+						}. Only repos that credential can reach are listed.
 					</div>
 				</>
 			) : (
@@ -1013,23 +1217,37 @@ setAddingRepo(null);
 					<div {...stylex.props(sx.leadingRelaxed, sx.textDim, typography.supporting)}>
 						{browseFailed ? (
 							<>Couldn&rsquo;t load the GitHub repo list right now.</>
+						) : browse?.appConfigured ? (
+							<>
+								The GitHub App installation isn&rsquo;t available yet. Check that
+								Installation owner matches the account where the App is installed,
+								then reopen this window.
+							</>
 						) : (
 							<>
 								No GitHub credential yet, so the repo list can&rsquo;t be browsed.
-								Connect your GitHub account under Settings → Connections to list
-								your private repos here. (Operators can instead set{" "}
-								<code {...stylex.props(sx.roundedSm, sx.bgSurface, sx.px15, sx.py05, sx.fontMono, sx.text092em, sx.textFg)}>
-									GITHUB_API_TOKEN
-								</code>{" "}
-								via the GitHub integration card below.)
+								Connect your GitHub account under Settings → Connections, or
+								configure the GitHub App client id, slug, installation owner, and
+								private key in the GitHub sign-in card below.
 							</>
 						)}{" "}
 						You can still register a repo by name:
 					</div>
+					{browse?.appConfigured && browse.appInstallUrl && (
+						<Button
+							className={mergeStylexOverrideClassName("", sx.mt25)}
+							variant="primary"
+							render={
+								<a href={browse.appInstallUrl} target="_blank" rel="noreferrer" />
+							}
+						>
+							Install GitHub App
+						</Button>
+					)}
 					<div {...stylex.props(sx.mt25, sx.flex, sx.itemsCenter, sx.gap2)}>
 						<input
 							ref={inputRef}
-							className={cn(settingsInputClass, stylex.props(sx.flex1, sx.fontMono).className)}
+							className={cn(settingsInputClass, utilityClassName("flex-1 font-mono"))}
 							value={manual}
 							onChange={(e) => setManual(e.target.value)}
 							placeholder="owner/name"
@@ -1037,16 +1255,16 @@ setAddingRepo(null);
 							autoCapitalize="none"
 							spellCheck={false}
 							onKeyDown={(e) => {
-								if (e.key === "Enter" && manualValid && !addingRepo)
+								if (e.key === "Enter" && manualValid)
 									addRepo(manual.trim());
 							}}
 						/>
 						<Button
 							variant="primary"
-							disabled={!manualValid || addingRepo !== null}
+							disabled={!manualValid}
 							onClick={() => addRepo(manual.trim())}
 						>
-							{addingRepo ? "Cloning…" : "Add"}
+							Add
 						</Button>
 					</div>
 				</>
@@ -1076,8 +1294,6 @@ setAddingRepo(null);
 										registered={
 											r.registered || added.has(`codestorage:${r.fullName}`)
 										}
-										working={addingRepo === `codestorage:${r.fullName}`}
-										disabled={addingRepo !== null}
 										onAdd={() => addRepo(r.fullName, "codestorage")}
 									/>
 								))
@@ -1086,7 +1302,6 @@ setAddingRepo(null);
 					)}
 				</>
 			)}
-			{error && <InlineAlert className={mergeStylexOverrideClassName("", sx.mt25)}>{error}</InlineAlert>}
-		</div>
+		</>
 	);
 }

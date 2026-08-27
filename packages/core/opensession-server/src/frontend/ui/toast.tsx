@@ -1,3 +1,5 @@
+import { utilityClassName } from "./cn";
+import { mergeStylexProps, mergeStylexOverrideClassName } from "./cn";
 import { Toast as BaseToast } from "@base-ui/react/toast";
 import { useEffect, useLayoutEffect, useRef } from "react";
 import {
@@ -33,7 +35,6 @@ import {
 } from "../lib/undo";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
-import { mergeStylexProps, mergeStylexClassName, mergeStylexOverrideClassName } from "./cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -43,17 +44,11 @@ const sx = stylex.create({
 	minW0: {
 			minWidth: "0"
 	},
-	focusRing: {
-			":focus-visible": {
-					outline: "2px solid var(--accent-ink)",
-					outlineOffset: "2px"
-			}
-	},
 	relative: {
 			position: "relative"
 	},
 	My1: {
-			marginBlock: "-4px"
+			marginBlock: "calc(4px * -1)"
 	},
 	ml1: {
 			marginLeft: "4px"
@@ -65,11 +60,11 @@ const sx = stylex.create({
 			cursor: "pointer"
 	},
 	roundedMd: {
-			borderRadius: "calc(7px * var(--rf))"
-	,
-		cornerShape: "var(--cs)"},
+			borderRadius: "calc(7px * var(--rf))",
+
+		cornerShape: "var(--cs)",},
 	px2: {
-			paddingInline: "8px"
+			paddingInline: "calc(4px * 2)"
 	},
 	py1: {
 			paddingBlock: "4px"
@@ -77,11 +72,8 @@ const sx = stylex.create({
 	fontSemibold: {
 			fontWeight: "var(--font-weight-semibold)"
 	},
-	textAccent: {
-			color: "var(--accent-ink)"
-	},
 	duration150: {
-			transitionDuration: ".15s"
+			transitionDuration: "150ms"
 	},
 	textDim: {
 			color: "var(--text-dim)"
@@ -90,16 +82,16 @@ const sx = stylex.create({
 			display: "grid"
 	},
 	size35: {
-			width: "14px",
-			height: "14px"
+			width: "calc(4px * 3.5)",
+			height: "calc(4px * 3.5)"
 	},
 	placeItemsCenter: {
 			placeItems: "center"
 	},
 	roundedFull: {
-			borderRadius: "calc(infinity * 1px)"
-	,
-		cornerShape: "round"},
+			borderRadius: "calc(infinity * 1px)",
+
+		cornerShape: "round",},
 	pointerEventsNone: {
 			pointerEvents: "none"
 	},
@@ -113,246 +105,10 @@ const sx = stylex.create({
 			bottom: "0"
 	},
 	h05: {
-			height: "2px"
+			height: "calc(4px * 0.5)"
 	},
 	originLeft: {
 			transformOrigin: "0"
-	},
-	bgDim35: {
-			backgroundColor: "var(--text-dim)"
-	},
-	fixed: {
-			position: "fixed"
-	},
-	mxAuto: {
-			marginInline: "auto"
-	},
-	hVarToastFrontmostHeight: {
-			height: "var(--toast-frontmost-height)"
-	},
-	outlineNone: {
-			outlineStyle: "none"
-	},
-	pointerEventsAuto: {
-			pointerEvents: "auto"
-	},
-	left12: {
-			left: "50%"
-	},
-	wMax: {
-			width: "max-content"
-	},
-	maxWFull: {
-			maxWidth: "100%"
-	},
-	duration200: {
-			transitionDuration: ".2s"
-	},
-	flex: {
-			display: "flex"
-	},
-	itemsCenter: {
-			alignItems: "center"
-	},
-	gap2: {
-			gap: "8px"
-	},
-	overflowHidden: {
-			overflow: "hidden"
-	},
-	whitespaceNormal: {
-			whiteSpace: "normal"
-	},
-	rounded999px: {
-			borderRadius: "999px"
-	,
-		cornerShape: "var(--cs)"},
-	border: {
-			borderStyle: "solid",
-			borderWidth: "1px"
-	},
-	borderDividerSoft: {
-			borderColor: "var(--divider-soft)"
-	},
-	bgPopup: {
-			backgroundColor: "var(--popup-surface)"
-	},
-	py15: {
-			paddingBlock: "6px"
-	},
-	fontMedium: {
-			fontWeight: "var(--font-weight-medium)"
-	},
-	leadingTight: {
-			lineHeight: "var(--leading-tight)"
-	},
-	textFg: {
-			color: "var(--text)"
-	},
-	pl25: {
-			paddingLeft: "10px"
-	},
-	pl3: {
-			paddingLeft: "12px"
-	},
-	pr15: {
-			paddingRight: "6px"
-	},
-	pr3: {
-			paddingRight: "12px"
-	},
-
-	phoneWFull: {
-		"@media (max-width: 720px)": {
-			"width": "100%"
-		}
-	},
-	phonePx3: {
-		"@media (max-width: 720px)": {
-			"paddingInline": "12px"
-		}
-	},
-	phoneMaxWCalc100vw24px: {
-		"@media (max-width: 720px)": {
-			"maxWidth": "calc(100vw - 24px)"
-		}
-	},
-	ZIndexCalc100VarToastIndex: {
-		"zIndex": "calc(100 - var(--toast-index))"
-	},
-	TransformOriginCenterBottom: {
-		"transformOrigin": "bottom"
-	},
-	TransformTranslateXCalc50VarToastSwipeMovementXTranslateYCalcVarToastSwipeMovementYVarToastIndex8pxScaleCalc1VarToastIndex004: {
-		"transform": "translateX(calc(-50% + var(--toast-swipe-movement-x))) translateY(calc(var(--toast-swipe-movement-y) - var(--toast-index) * 8px)) scale(calc(1 - (var(--toast-index) * .04)))"
-	},
-	motionReduceTransitionOpacity: {
-		"@media (prefers-reduced-motion: reduce)": {
-			"transitionProperty": "opacity",
-			"transitionTimingFunction": "var(--tw-ease,var(--ease))",
-			"transitionDuration": "var(--tw-duration,var(--dur-micro))"
-		}
-	},
-
-	wMin480pxCalc100vw32px: {
-		"width": "min(480px,100vw - 32px)"
-	},
-	transitionTransformTranslateScaleOpacity: {
-		"transitionProperty": "transform,translate,scale,opacity",
-		"transitionTimingFunction": "var(--tw-ease,var(--ease))",
-		"transitionDuration": "var(--tw-duration,var(--dur-micro))"
-	},
-	easeCubicBezier02310321: {
-		"--tw-ease": "cubic-bezier(.23,1,.32,1)",
-		"transitionTimingFunction": "cubic-bezier(.23,1,.32,1)"
-	},
-
-	lineClamp2: {
-		"WebkitLineClamp": "2",
-		"WebkitBoxOrient": "vertical",
-		"display": "-webkit-box",
-		"overflow": "hidden"
-	},
-	transitionBackgroundColorTransform: {
-		"transitionProperty": "background-color,transform",
-		"transitionTimingFunction": "var(--tw-ease,var(--ease))",
-		"transitionDuration": "var(--tw-duration,var(--dur-micro))"
-	},
-	hoverBgHover: {
-		"@media (hover: hover)": {
-			":hover": {
-				"backgroundColor": "var(--hover)"
-			}
-		}
-	},
-	activeScale096: {
-		":active": {
-			"scale": ".96"
-		}
-	},
-	phoneMy15: {
-		"@media (max-width: 720px)": {
-			"marginBlock": "-6px"
-		}
-	},
-	phoneMl05: {
-		"@media (max-width: 720px)": {
-			"marginLeft": "2px"
-		}
-	},
-	phoneGrid: {
-		"@media (max-width: 720px)": {
-			"display": "grid"
-		}
-	},
-	phoneMinH7: {
-		"@media (max-width: 720px)": {
-			"minHeight": "28px"
-		}
-	},
-	phonePlaceItemsCenter: {
-		"@media (max-width: 720px)": {
-			"placeItems": "center"
-		}
-	},
-	phoneRounded999px: {
-		"@media (max-width: 720px)": {
-			"borderRadius": "999px"
-		}
-	},
-	phonePx25: {
-		"@media (max-width: 720px)": {
-			"paddingInline": "10px"
-		}
-	},
-	phoneAfterAbsolute: {
-		"@media (max-width: 720px)": {
-			"::after": {
-				"content": "var(--tw-content)",
-				"position": "absolute"
-			}
-		}
-	},
-	phoneAfterInsetX0: {
-		"@media (max-width: 720px)": {
-			"::after": {
-				"content": "var(--tw-content)",
-				"insetInline": "0"
-			}
-		}
-	},
-	phoneAfterTop12: {
-		"@media (max-width: 720px)": {
-			"::after": {
-				"content": "var(--tw-content)",
-				"top": "50%"
-			}
-		}
-	},
-	phoneAfterH11: {
-		"@media (max-width: 720px)": {
-			"::after": {
-				"content": "var(--tw-content)",
-				"height": "44px"
-			}
-		}
-	},
-	phoneAfterTranslateY12: {
-		"@media (max-width: 720px)": {
-			"::after": {
-				"content": "var(--tw-content)",
-				"--tw-translate-y": "calc(calc(1 / 2 * 100%) * -1)",
-				"translate": "var(--tw-translate-x) var(--tw-translate-y)"
-			}
-		}
-	},
-	phoneAfterContent: {
-		"@media (max-width: 720px)": {
-			"::after": {
-				"--tw-content": "\"\"",
-				"content": "var(--tw-content)"
-			}
-		}
 	},
 });
 
@@ -581,7 +337,7 @@ function ToastViewport({ container }: { container?: HTMLElement | null }) {
 		<BaseToast.Portal container={container ?? undefined}>
 			<BaseToast.Viewport
 				ref={viewportRef}
-				className={[TOAST_NOTICE_LANE, container ? mergeStylexClassName("", sx.absolute) : mergeStylexClassName("", sx.fixed), mergeStylexClassName("toast-viewport", sx.wMin480pxCalc100vw32px, sx.mxAuto, sx.hVarToastFrontmostHeight, sx.outlineNone, sx.phoneWFull, sx.phonePx3)].filter(Boolean).join(" ")}
+				className={utilityClassName(`${TOAST_NOTICE_LANE} ${container ? "absolute" : "fixed"} toast-viewport mx-auto h-[var(--toast-frontmost-height)] w-[min(480px,calc(100vw-32px))] outline-none phone:w-full phone:px-3`)}
 			>
 				{items.map((item) => (
 					<ToastCard key={item.id} toast={item} />
@@ -605,27 +361,28 @@ function ToastCard({ toast: item }: { toast: BaseToast.Root.ToastObject<ToastDat
 			swipeDirection={data.ongoing ? [] : ["down", "right"]}
 			onClick={data.ongoing ? undefined : () => dismissToast(data.id)}
 			className={[
-				[data.ongoing ? mergeStylexClassName("", sx.pointerEventsNone) : mergeStylexClassName("", sx.pointerEventsAuto), mergeStylexClassName("", sx.absolute, sx.bottom0, sx.left12, sx.wMax, sx.maxWFull, sx.outlineNone, sx.phoneMaxWCalc100vw24px)].filter(Boolean).join(" "),
-				data.ongoing ? ONGOING_TOAST_POSITION : "",
-				mergeStylexClassName("", sx.ZIndexCalc100VarToastIndex, sx.TransformOriginCenterBottom),
-				mergeStylexClassName("", sx.TransformTranslateXCalc50VarToastSwipeMovementXTranslateYCalcVarToastSwipeMovementYVarToastIndex8pxScaleCalc1VarToastIndex004),
+				`${data.ongoing ? "pointer-events-none" : "pointer-events-auto"} left-1/2 w-max max-w-full outline-none phone:max-w-[calc(100vw-24px)]`,
+				data.ongoing ? ONGOING_TOAST_POSITION : "absolute bottom-0",
+				"[z-index:calc(100-var(--toast-index))] [transform-origin:center_bottom]",
+				"[transform:translateX(calc(-50%+var(--toast-swipe-movement-x)))_translateY(calc(var(--toast-swipe-movement-y)-var(--toast-index)*8px))_scale(calc(1-(var(--toast-index)*0.04)))]",
 				"data-[expanded]:[transform:translateX(calc(-50%+var(--toast-swipe-movement-x)))_translateY(calc(var(--toast-swipe-movement-y)-var(--toast-offset-y)-var(--toast-index)*8px))_scale(1)]",
-				mergeStylexClassName("", sx.transitionTransformTranslateScaleOpacity, sx.easeCubicBezier02310321, sx.duration200, sx.motionReduceTransitionOpacity),
+				"transition-[transform,translate,scale,opacity] duration-200 ease-[cubic-bezier(0.23,1,0.32,1)] motion-reduce:transition-opacity",
 				"data-[starting-style]:opacity-0 data-[starting-style]:[translate:0_8px] data-[starting-style]:[scale:0.96] data-[ending-style]:opacity-0 data-[ending-style]:[translate:0_8px] data-[ending-style]:[scale:0.96] data-[limited]:opacity-0 motion-reduce:data-[starting-style]:[translate:0_0] motion-reduce:data-[starting-style]:[scale:1] motion-reduce:data-[ending-style]:[translate:0_0] motion-reduce:data-[ending-style]:[scale:1]",
 			].join(" ")}
 		>
 			<BaseToast.Content
 				className={[
-					mergeStylexClassName("", sx.relative, sx.flex, sx.maxWFull, sx.itemsCenter, sx.gap2, sx.overflowHidden, sx.whitespaceNormal, sx.rounded999px, sx.border, sx.borderDividerSoft, sx.bgPopup),
-					mergeStylexClassName("smooth-shadow-md", sx.py15, typography.supporting, sx.fontMedium, sx.leadingTight, sx.textFg),
-					iconName ? mergeStylexClassName("", sx.pl25) : mergeStylexClassName("", sx.pl3),
-					data.action ? mergeStylexClassName("", sx.pr15) : mergeStylexClassName("", sx.pr3),
+					"relative flex max-w-full items-center gap-2 overflow-hidden whitespace-normal rounded-[999px] border border-divider-soft bg-popup",
+					"py-1.5 text-supporting font-medium leading-tight text-fg smooth-shadow-md",
+					iconName ? "pl-2.5" : "pl-3",
+					data.action ? "pr-1.5" : "pr-3",
 				].join(" ")}
 			>
 				<ToastStatusIcon name={iconName} ongoing={data.ongoing} />
 				{/* Description renders a <p>; remove its browser margins so the
 				    visible height comes from the pill padding alone. */}
-				<BaseToast.Description {...mergeStylexProps("", sx.lineClamp2, sx.my0, sx.minW0)}
+				<BaseToast.Description
+					className={mergeStylexOverrideClassName("line-clamp-2", sx.my0, sx.minW0)}
 					title={data.message}
 				>
 					{data.message}
@@ -636,7 +393,10 @@ function ToastCard({ toast: item }: { toast: BaseToast.Root.ToastObject<ToastDat
 							onClick={(event) => {
 								event.stopPropagation();
 								runToastAction(data.id);
-							}} {...mergeStylexProps("", sx.transitionBackgroundColorTransform, sx.hoverBgHover, sx.activeScale096, sx.phoneMy15, sx.phoneMl05, sx.phoneGrid, sx.phoneMinH7, sx.phonePlaceItemsCenter, sx.phoneRounded999px, sx.phonePx25, sx.phoneAfterAbsolute, sx.phoneAfterInsetX0, sx.phoneAfterTop12, sx.phoneAfterH11, sx.phoneAfterTranslateY12, sx.phoneAfterContent, sx.focusRing, sx.relative, sx.My1, sx.ml1, sx.shrink0, sx.cursorPointer, sx.roundedMd, sx.px2, sx.py1, sx.fontSemibold, sx.textAccent, sx.duration150, typography.supporting)}
+							}}
+							// The pill stays tight, so the action carries the finger
+							// target on its own: 28px of box inside a 44px tap area.
+							className={mergeStylexOverrideClassName("focus-ring text-accent transition-[background-color,transform] hover:bg-hover active:scale-[0.96] phone:-my-1.5 phone:ml-0.5 phone:grid phone:min-h-7 phone:place-items-center phone:rounded-[999px] phone:px-2.5 phone:after:absolute phone:after:inset-x-0 phone:after:top-1/2 phone:after:h-11 phone:after:-translate-y-1/2 phone:after:content-['']", sx.relative, sx.My1, sx.ml1, sx.shrink0, sx.cursorPointer, sx.roundedMd, sx.px2, sx.py1, sx.fontSemibold, sx.duration150, typography.supporting)}
 						>
 							{data.action.label}
 						</BaseToast.Action>
@@ -657,7 +417,7 @@ function ToastStatusIcon({
 	name: ToastIconName | null;
 	ongoing?: boolean;
 }) {
-	const className = mergeStylexClassName("", sx.shrink0, sx.textDim);
+	const className = utilityClassName("shrink-0 text-dim");
 	if (ongoing) return <Spinner className={mergeStylexOverrideClassName("", sx.textDim)} />;
 
 	switch (name) {
@@ -740,7 +500,7 @@ function ToastProgress({ duration }: { duration: number }) {
 		<span
 			ref={lineRef}
 			aria-hidden
-			{...stylex.props(sx.pointerEventsNone, sx.absolute, sx.insetX0, sx.bottom0, sx.h05, sx.originLeft, sx.bgDim35)}
+			{...mergeStylexProps("bg-dim/35", sx.pointerEventsNone, sx.absolute, sx.insetX0, sx.bottom0, sx.h05, sx.originLeft)}
 		/>
 	);
 }

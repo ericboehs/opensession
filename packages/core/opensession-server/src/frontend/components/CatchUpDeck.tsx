@@ -1,4 +1,11 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, {
+	useCallback,
+	useEffect,
+	useEffectEvent,
+	useMemo,
+	useRef,
+	useState,
+} from "react";
 import { AnimatePresence } from "motion/react";
 import type {
 	UnifiedSession,
@@ -325,6 +332,7 @@ export function CatchUpDeck({
 	onNewWorkspace,
 	onExit,
 }: Props) {
+
 	const currentUser = useCurrentUser();
 
 	// Model / subscription options for the reply composer (fetched once, shared
@@ -350,9 +358,8 @@ export function CatchUpDeck({
 	// session list has actually loaded, NOT on the very first mount: a deep-link
 	// to <base>/catchup mounts before `sessions` arrives, and freezing []
 	// there would strand the deck on "All caught up" forever.
-	const frozen = useRef<CatchupCard[] | null>(null);
-	const cards = (() => {
-		if (frozen.current) return frozen.current;
+	const [frozen, setFrozen] = useState<CatchupCard[] | null>(null);
+	const live = useMemo(() => {
 		const reads = getReads();
 		const me = currentUser.toLowerCase();
 		const unread = sessions.filter(
@@ -407,11 +414,14 @@ export function CatchUpDeck({
 			};
 		});
 		out.sort((a, b) => (b.lastActivity || "").localeCompare(a.lastActivity || ""));
-		// Freeze once the list has loaded (even to an empty queue — that's a
-		// genuine "all caught up"). While it's still empty we keep recomputing.
-		if (sessions.length > 0) frozen.current = out;
 		return out;
-	})();
+	}, [sessions, currentUser, workspaces]);
+	const cards = frozen ?? live;
+	// Freeze once the list has loaded (even to an empty queue — that's a
+	// genuine "all caught up"). While it's still empty we keep recomputing.
+	useEffect(() => {
+		if (frozen === null && sessions.length > 0) setFrozen(live);
+	}, [frozen, sessions.length, live]);
 
 	const [index, setIndex] = useState(0);
 	const [dir, setDir] = useState<Action | null>(null);
@@ -437,27 +447,30 @@ export function CatchUpDeck({
 	}
 
 	// Keyboard: ←/→ act, ↑ skip, esc leaves. (Space is left for the composer.)
-	useEffect(() => {
-		function onKey(e: KeyboardEvent) {
-			if (e.key === "Escape") return onExit();
-			if (!card) return;
-			// Don't hijack arrows while typing a reply.
-			const el = e.target as HTMLElement | null;
-			if (el && (el.tagName === "TEXTAREA" || el.tagName === "INPUT")) return;
-			if (e.key === "ArrowLeft") {
-				e.preventDefault();
-				act("archive");
-			} else if (e.key === "ArrowRight") {
-				e.preventDefault();
-				act("read");
-			} else if (e.key === "ArrowUp") {
-				e.preventDefault();
-				act("keep");
-			}
+	// The subscription is stable; the Effect Event reads the current card and
+	// callbacks without tearing down the window listener on every swipe.
+	const handleDeckKey = useEffectEvent((e: KeyboardEvent) => {
+		if (e.key === "Escape") return onExit();
+		if (!card) return;
+		// Don't hijack arrows while typing a reply.
+		const el = e.target as HTMLElement | null;
+		if (el && (el.tagName === "TEXTAREA" || el.tagName === "INPUT")) return;
+		if (e.key === "ArrowLeft") {
+			e.preventDefault();
+			act("archive");
+		} else if (e.key === "ArrowRight") {
+			e.preventDefault();
+			act("read");
+		} else if (e.key === "ArrowUp") {
+			e.preventDefault();
+			act("keep");
 		}
+	});
+	useEffect(() => {
+		const onKey = (e: KeyboardEvent) => handleDeckKey(e);
 		window.addEventListener("keydown", onKey);
 		return () => window.removeEventListener("keydown", onKey);
-	}, [card, index]);
+	}, []);
 
 	const done = index >= total;
 	const next = cards[index + 1];
@@ -620,10 +633,21 @@ function CardBody({
 }) {
 	const target = replyTarget(card);
 	const [entries, setEntries] = useState<TranscriptEntry[] | null>(null);
-	// Held in state, not a ref, so the pinning effect below runs once the nodes
-	// actually exist rather than on a null ref.
-	const [scrollEl, setScrollEl] = useState<HTMLDivElement | null>(null);
-	const [contentEl, setContentEl] = useState<HTMLDivElement | null>(null);
+	const scrollElRef = useRef<HTMLDivElement | null>(null);
+	const contentElRef = useRef<HTMLDivElement | null>(null);
+	const [nodesVersion, setNodesVersion] = useState(0);
+	// These callback refs update state, so their identities must remain stable:
+	// React detaches an old callback ref with null before attaching a new one.
+	const setScrollEl = useCallback((node: HTMLDivElement | null) => {
+		if (scrollElRef.current === node) return;
+		scrollElRef.current = node;
+		setNodesVersion((version) => version + 1);
+	}, []);
+	const setContentEl = useCallback((node: HTMLDivElement | null) => {
+		if (contentElRef.current === node) return;
+		contentElRef.current = node;
+		setNodesVersion((version) => version + 1);
+	}, []);
 	const pinned = useRef(true);
 
 	useEffect(() => {
@@ -650,11 +674,15 @@ function CardBody({
 	// leaving the last message below the fold. Follow the content until the
 	// reader scrolls away from the bottom themselves.
 	useEffect(() => {
+		const scrollEl = scrollElRef.current;
+		const contentEl = contentElRef.current;
 		if (!scrollEl || !contentEl) return;
-		let last = scrollEl.scrollTop;
+		// Wrapped in an object so the closures below mutate a property, not a
+		// captured binding (which the compiler rejects).
+		const pos = { last: scrollEl.scrollTop };
 		const toBottom = () => {
 			scrollEl.scrollTop = scrollEl.scrollHeight;
-			last = scrollEl.scrollTop;
+			pos.last = scrollEl.scrollTop;
 		};
 		toBottom();
 		// Unpin on the reader moving UP, never on distance alone. A running
@@ -663,10 +691,10 @@ function CardBody({
 		// reader walking away, and the card stops following after one tick.
 		const onScroll = () => {
 			const top = scrollEl.scrollTop;
-			if (top < last - 1) pinned.current = false;
+			if (top < pos.last - 1) pinned.current = false;
 			else if (scrollEl.scrollHeight - scrollEl.clientHeight - top <= 24)
 				pinned.current = true;
-			last = top;
+			pos.last = top;
 		};
 		scrollEl.addEventListener("scroll", onScroll, { passive: true });
 		const observer = new ResizeObserver(() => {
@@ -678,7 +706,7 @@ function CardBody({
 			observer.disconnect();
 			scrollEl.removeEventListener("scroll", onScroll);
 		};
-	}, [scrollEl, contentEl]);
+	}, [nodesVersion]);
 
 	const meta = [
 		card.repo,

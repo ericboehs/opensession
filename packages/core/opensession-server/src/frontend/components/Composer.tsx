@@ -1,4 +1,12 @@
-import React, { useEffect, useRef, useState } from "react";
+import { mergeStylexProps, mergeStylexOverrideClassName } from "../ui/cn";
+import { utilityClassName } from "../ui/cn";
+import React, {
+	useEffect,
+	useEffectEvent,
+	useLayoutEffect,
+	useRef,
+	useState,
+} from "react";
 import {
   useShortcutKeys,
   useShortcutLabel,
@@ -75,6 +83,7 @@ import {
   composerTextareaPadding,
   composerTextareaPaddingMinimized,
   composerToolbar,
+  composerToolbarMinimized,
   composerToolbarPill,
   composerToolbarScrollDivider,
   composerToolbarSelect,
@@ -86,7 +95,7 @@ import {
   palettePill,
 } from "../lib/palette-classes";
 import { askSurface, noteSurface } from "../lib/tinted-surface";
-import { cn, mergeStylexProps, mergeStylexClassName, mergeStylexOverrideClassName } from "../ui/cn";
+import { cn } from "../ui/cn";
 import { Tooltip } from "../ui/tooltip";
 import { ContextMenu, Menu, MenuShortcut, MENU_ICON } from "../ui/menu";
 import { Button } from "../ui/button";
@@ -117,7 +126,6 @@ import { ModelEffortSelect, shortModelLabel } from "./ModelEffortSelect";
 import type { SessionUsage } from "../lib/types";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
-import { sharedClassStyles } from "../styles/shared-class-styles.stylex";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -131,9 +139,9 @@ const sx = stylex.create({
 			resize: "vertical"
 	},
 	roundedLg: {
-			borderRadius: "calc(14px * var(--rf))"
-	,
-		cornerShape: "var(--cs)"},
+			borderRadius: "calc(14px * var(--rf))",
+
+		cornerShape: "var(--cs)",},
 	border: {
 			borderStyle: "solid",
 			borderWidth: "1px"
@@ -145,10 +153,10 @@ const sx = stylex.create({
 			backgroundColor: "var(--bg)"
 	},
 	px4: {
-			paddingInline: "16px"
+			paddingInline: "calc(4px * 4)"
 	},
 	py35: {
-			paddingBlock: "14px"
+			paddingBlock: "calc(4px * 3.5)"
 	},
 	leadingRelaxed: {
 			lineHeight: "var(--leading-relaxed)"
@@ -163,22 +171,19 @@ const sx = stylex.create({
 			flex: "1"
 	},
 	px5: {
-			paddingInline: "20px"
+			paddingInline: "calc(4px * 5)"
 	},
 	gap5: {
-			gap: "20px"
+			gap: "calc(4px * 5)"
 	},
 	p7: {
-			padding: "28px"
+			padding: "calc(4px * 7)"
 	},
 	flex: {
 			display: "flex"
 	},
 	flexCol: {
 			flexDirection: "column"
-	},
-	m0: {
-			margin: "0"
 	},
 	textBalance: {
 			textWrap: "balance"
@@ -190,17 +195,17 @@ const sx = stylex.create({
 			lineHeight: "var(--leading-tight)"
 	},
 	tracking001em: {
-			letterSpacing: "-.01em"
+			letterSpacing: "-0.01em"
 	},
 	mt2: {
-			marginTop: "8px"
+			marginTop: "calc(4px * 2)"
 	},
 	textPretty: {
 			textWrap: "pretty"
 	},
 	textBase: {
 			fontSize: "var(--type-body)",
-			lineHeight: "var(--tw-leading,var(--text-base--line-height))"
+			lineHeight: "var(--tw-leading, var(--text-base--line-height))"
 	},
 	fontNormal: {
 			fontWeight: "var(--font-weight-normal)"
@@ -209,10 +214,10 @@ const sx = stylex.create({
 			color: "var(--text-dim)"
 	},
 	mt3: {
-			marginTop: "12px"
+			marginTop: "calc(4px * 3)"
 	},
 	gap3: {
-			gap: "12px"
+			gap: "calc(4px * 3)"
 	},
 	mxAuto: {
 			marginInline: "auto"
@@ -224,38 +229,38 @@ const sx = stylex.create({
 			pointerEvents: "none"
 	},
 	Absolute: {
-			position: "absolute!important"
+			position: "absolute !important"
 	},
 	inset0: {
 			inset: "0"
 	},
 	Z6: {
-			zIndex: "6!important"
+			zIndex: "6 !important"
 	},
 	absolute: {
 			position: "absolute"
 	},
 	right3: {
-			right: "12px"
+			right: "calc(4px * 3)"
 	},
 	top2: {
-			top: "8px"
+			top: "calc(4px * 2)"
 	},
 	z2: {
 			zIndex: "2"
 	},
 	roundedSm: {
-			borderRadius: "calc(4px * var(--rf))"
-	,
-		cornerShape: "var(--cs)"},
+			borderRadius: "calc(4px * var(--rf))",
+
+		cornerShape: "var(--cs)",},
 	borderLine: {
 			borderColor: "var(--border)"
 	},
 	px15: {
-			paddingInline: "6px"
+			paddingInline: "calc(4px * 1.5)"
 	},
 	py05: {
-			paddingBlock: "2px"
+			paddingBlock: "calc(4px * 0.5)"
 	},
 	trackingWider: {
 			letterSpacing: "var(--tracking-wider)"
@@ -266,19 +271,16 @@ const sx = stylex.create({
 	itemsStart: {
 			alignItems: "flex-start"
 	},
-	gapX1: {
-			columnGap: "4px"
-	},
 	srOnly: {
-			clipPath: "inset(50%)",
-			whiteSpace: "nowrap",
-			borderWidth: "0",
+			position: "absolute",
 			width: "1px",
 			height: "1px",
-			margin: "-1px",
 			padding: "0",
-			position: "absolute",
-			overflow: "hidden"
+			margin: "-1px",
+			overflow: "hidden",
+			clipPath: "inset(50%)",
+			whiteSpace: "nowrap",
+			borderWidth: "0"
 	},
 	grow: {
 			flexGrow: "1"
@@ -296,17 +298,17 @@ const sx = stylex.create({
 			minWidth: "230px"
 	},
 	mt15: {
-			marginTop: "6px"
+			marginTop: "calc(4px * 1.5)"
 	},
 	gap15: {
-			gap: "6px"
+			gap: "calc(4px * 1.5)"
 	},
 	borderT: {
 			borderTopStyle: "solid",
 			borderTopWidth: "1px"
 	},
 	pt15: {
-			paddingTop: "6px"
+			paddingTop: "calc(4px * 1.5)"
 	},
 	mt7px: {
 			marginTop: "7px"
@@ -317,215 +319,33 @@ const sx = stylex.create({
 	textFaint: {
 			color: "var(--text-faint)"
 	},
+});
 
-	ml0: {
-		"marginLeft": "0"
-	},
-	Ml15: {
-		"marginLeft": "-6px"
-	},
-	isolate: {
-		"isolation": "isolate"
-	},
-	beforePointerEventsNone: {
-		"::before": {
-			"content": "var(--tw-content)",
-			"pointerEvents": "none"
-		}
-	},
-	beforeAbsolute: {
-		"::before": {
-			"content": "var(--tw-content)",
-			"position": "absolute"
-		}
-	},
-	beforeInset0: {
-		"::before": {
-			"content": "var(--tw-content)",
-			"inset": "0"
-		}
-	},
-	beforeZ0: {
-		"::before": {
-			"content": "var(--tw-content)",
-			"zIndex": "0"
-		}
-	},
-	beforeRoundedInherit: {
-		"::before": {
-			"content": "var(--tw-content)",
-			"borderRadius": "inherit"
-		}
-	},
-	beforeCornerShapeInherit: {
-		"::before": {
-			"content": "var(--tw-content)",
-			"cornerShape": "inherit"
-		}
-	},
-	beforeBgVarComposerNoteBg: {
-		"::before": {
-			"content": "var(--tw-content)",
-			"backgroundColor": "var(--composer-note-bg)"
-		}
-	},
-	beforeOpacity0: {
-		"::before": {
-			"content": "var(--tw-content)",
-			"opacity": "0"
-		}
-	},
-	beforeTransitionOpacity: {
-		"::before": {
-			"content": "var(--tw-content)",
-			"transitionProperty": "opacity",
-			"transitionTimingFunction": "var(--tw-ease,var(--ease))",
-			"transitionDuration": "var(--tw-duration,var(--dur-micro))"
-		}
-	},
-	beforeDuration150: {
-		"::before": {
-			"content": "var(--tw-content)",
-			"--tw-duration": ".15s",
-			"transitionDuration": ".15s"
-		}
-	},
-	beforeOpacity100: {
-		"::before": {
-			"content": "var(--tw-content)",
-			"opacity": "1"
-		}
-	},
-	overflowHidden: {
-		"overflow": "hidden"
-	},
-	opacity60: {
-		"opacity": ".6"
-	},
-	relative: {
-		"position": "relative"
-	},
-	order2: {
-		"order": "2"
-	},
-	minW0: {
-		"minWidth": "0"
-	},
-	flexAuto: {
-		"flex": "auto"
-	},
-	z0: {
-		"zIndex": "0"
-	},
-	breakWords: {
-		"overflowWrap": "break-word"
-	},
-	whitespacePreWrap: {
-		"whiteSpace": "pre-wrap"
-	},
-	selectNone: {
-		"WebkitUserSelect": "none",
-		"userSelect": "none"
-	},
-	Mx6px: {
-		"marginInline": "-6px"
-	},
-	wCalc10012px: {
-		"width": "calc(100% + 12px)"
-	},
-	px6px: {
-		"paddingInline": "6px"
-	},
-	placeholderTextFaint: {
-		"::placeholder": {
-			"color": "var(--text-faint)"
-		}
-	},
-	z1: {
-		"zIndex": "1"
-	},
-	textTransparent: {
-		"color": "transparent"
-	},
-	caretVarText: {
-		"caretColor": "var(--text)"
-	},
-	inlineFlex: {
-		"display": "inline-flex"
-	},
-	order1: {
-		"order": "1"
-	},
-	phoneOrder2: {
-		"@media (max-width: 720px)": {
-			"order": "-2"
-		}
-	},
-	itemsCenter: {
-		"alignItems": "center"
-	},
-	order3: {
-		"order": "3"
-	},
-	order4: {
-		"order": "4"
-	},
-	itemsStretch: {
-		"alignItems": "stretch"
-	},
-	order5: {
-		"order": "5"
-	},
-	h8: {
-		"height": "32px"
-	},
-	roundedMd: {
-		"borderRadius": "calc(7px * var(--rf))"
-	,
-		cornerShape: "var(--cs)"},
-	activeBgPanel: {
-		":active": {
-			"backgroundColor": "var(--bg-panel)"
-		}
-	},
+type ComposerPressButtonProps = Omit<
+  React.ComponentPropsWithoutRef<"button">,
+  "onClick" | "onTouchEnd"
+> & { onPress: () => void };
 
-	borderAccent: {
-		"borderColor": "var(--accent)"
-	},
-
-	beforeEaseCubicBezier03207201: {
-		"::before": {
-			"content": "var(--tw-content)",
-			"--tw-ease": "cubic-bezier(.32,.72,0,1)",
-			"transitionTimingFunction": "cubic-bezier(.32,.72,0,1)"
-		}
-	},
-	placeholderTextColorMixInSrgbVarTextFaint84VarYellow: {
-		"::placeholder": {
-			"color": "var(--text-faint)"
-		},
-		"@supports (color: color-mix(in lab, red, red))": {
-			"::placeholder": {
-				"color": "color-mix(in srgb,var(--text-faint) 84%,var(--yellow))"
-			}
-		}
-	},
-
-	phoneWCalc100vw15rem: {
-		"@media (max-width: 720px)": {
-			"width": "calc(100vw - 1.5rem)"
-		}
-	},
-	phoneP6: {
-		"@media (max-width: 720px)": {
-			"padding": "24px"
-		}
-	},
-	phoneHidden: {
-		"@media (max-width: 720px)": {
-			"display": "none"
-		}
-	},
+const ComposerPressButton = React.forwardRef<
+  HTMLButtonElement,
+  ComposerPressButtonProps
+>(function ComposerPressButton({ onPress, ...props }, ref) {
+  const touchFiredAt = useRef(0);
+  return (
+    <button
+      {...props}
+      ref={ref}
+      onTouchEnd={(event) => {
+        event.preventDefault();
+        touchFiredAt.current = Date.now();
+        onPress();
+      }}
+      onClick={() => {
+        if (Date.now() - touchFiredAt.current < 700) return;
+        onPress();
+      }}
+    />
+  );
 });
 
 interface Props {
@@ -814,13 +634,14 @@ function StopConfirmModal({
     <Modal.Root open={open} onOpenChange={onOpenChange}>
       <Modal.Content
         initialFocus={stopRef}
-        widthClassName={mergeStylexClassName("", sharedClassStyles.maxW32rem)} {...mergeStylexProps("", sx.phoneWCalc100vw15rem, sx.phoneP6, sx.gap5, sx.p7)}
+        widthClassName={utilityClassName("max-w-[32rem]")}
+        className={mergeStylexOverrideClassName("phone:w-[calc(100vw-1.5rem)] phone:p-6", sx.gap5, sx.p7)}
       >
         <div {...stylex.props(sx.flex, sx.flexCol)}>
-          <Modal.Title className={mergeStylexOverrideClassName("", sx.m0, sx.textBalance, sx.fontSemibold, sx.leadingTight, sx.tracking001em, sx.textFg, typography.sectionTitle)}>
+          <Modal.Title className={mergeStylexOverrideClassName("m-0", sx.textBalance, sx.fontSemibold, sx.leadingTight, sx.tracking001em, sx.textFg, typography.sectionTitle)} >
             Stop this response?
           </Modal.Title>
-          <Modal.Description className={mergeStylexOverrideClassName("", sx.m0, sx.mt2, sx.textPretty, sx.textBase, sx.fontNormal, sx.leadingRelaxed, sx.textDim)}>
+          <Modal.Description className={mergeStylexOverrideClassName("m-0", sx.mt2, sx.textPretty, sx.textBase, sx.fontNormal, sx.leadingRelaxed, sx.textDim)} >
             You can ask again or send a follow-up anytime.
           </Modal.Description>
         </div>
@@ -994,9 +815,11 @@ export function Composer({
     });
   }, [isControlled, draftKey, textareaRef]);
   // One-shot prefill (see the prop doc): each new seq folds the given text
-  // into the draft and focuses the field for immediate editing.
+  // into the draft and focuses the field for immediate editing. The fold
+  // itself reads the latest draft through an effect event, so the trigger
+  // stays just the prefill sequence.
   const prefillSeqRef = useRef(0);
-  useEffect(() => {
+  const applyPrefill = useEffectEvent(() => {
     if (!prefill || prefill.seq === prefillSeqRef.current) return;
     prefillSeqRef.current = prefill.seq;
     const next = !prefill.replace && text.trim()
@@ -1017,6 +840,9 @@ export function Composer({
         el.selectionStart = el.selectionEnd = at;
       }
     });
+  });
+  useEffect(() => {
+    applyPrefill();
   }, [prefill]);
   // Fire a send handler with the current draft; in uncontrolled mode a `true`
   // return means "consumed" — clear the draft (falsy keeps it, e.g. offline).
@@ -1120,7 +946,7 @@ export function Composer({
   );
   const addButtonClass = cn(
     composerIconButtonClass,
-    minimized ? mergeStylexClassName("", sx.ml0) : mergeStylexClassName("", sx.Ml15),
+    minimized ? utilityClassName("ml-0") : utilityClassName("-ml-1.5"),
   );
   const showSend = !busy || hasContent;
   function handleDictationActive(active: boolean) {
@@ -1173,7 +999,9 @@ export function Composer({
   // the dialog goes away with it rather than stopping the NEXT turn.
   const [stopConfirm, setStopConfirm] = useState(false);
   const busyRef = useRef(busy);
-  busyRef.current = busy;
+  useLayoutEffect(() => {
+    busyRef.current = busy;
+  });
   useEffect(() => {
     if (!busy) setStopConfirm(false);
   }, [busy]);
@@ -1195,7 +1023,7 @@ export function Composer({
     if (asked === lastStopRequest.current) return;
     lastStopRequest.current = asked;
     if (busy && onStop && !disabled) requestStop();
-  }, [stopRequest]);
+  }, [stopRequest, busy, onStop, disabled]);
 
   // Which toolbar popover is open ("add" menu or "goal" editor). Closed on an
   // outside click or after an action.
@@ -1224,22 +1052,15 @@ export function Composer({
   // synthesized mousedown → textarea blur → keyboard dismiss → click) makes
   // toolbar taps close the keyboard and, on an empty draft, collapse the
   // composer mid-tap. Cancelling pointerdown does NOT stop that on iOS — the
-  // only reliable point is touchend itself. tapProps(action) fires the action
-  // on touchend and cancels the mouse synthesis; onClick stays for mouse/pen,
-  // guarded by the shared timestamp against browsers that still send both.
-  const touchFiredAt = useRef(0);
-  function tapProps(action: () => void) {
-    return {
-      onTouchEnd: (e: React.TouchEvent) => {
-        e.preventDefault();
-        touchFiredAt.current = Date.now();
-        action();
-      },
-      onClick: () => {
-        if (Date.now() - touchFiredAt.current < 700) return;
-        action();
-      },
-    };
+  // only reliable point is touchend itself. ComposerPressButton fires the
+  // action there and cancels mouse synthesis; mouse and pen still use click.
+  function attachFilesFromMenu() {
+    setMenu(null);
+    fileInputRef.current?.click();
+  }
+  function mentionFileFromMenu() {
+    setMenu(null);
+    startMention();
   }
 
   // Modal editing on the draft (Settings → Preferences → Vim mode). The engine
@@ -1252,7 +1073,14 @@ export function Composer({
   });
 
   // "@"-mention file autocomplete (shared with the New-session prompt field).
-  const mentions = useFileMentions({
+  const {
+    inputWrapRef: mentionInputWrapRef,
+    popup: mentionPopup,
+    inputProps: mentionInputProps,
+    sync: syncMentions,
+    handleKeyDown: handleMentionKeyDown,
+    close: closeMentions,
+  } = useFileMentions({
     value: displayText,
     onChange: setDisplayText,
     textareaRef,
@@ -1374,7 +1202,7 @@ setLocalStaging((current) => subtractStaging(current, batch));
         t.focus();
         t.selectionStart = t.selectionEnd = at + 1;
       }
-      mentions.sync();
+      syncMentions();
     });
   }
 
@@ -1423,7 +1251,7 @@ setLocalStaging((current) => subtractStaging(current, batch));
     const top = scrollTop > 1;
     const under = scrollTop + el.clientHeight < el.scrollHeight - 1;
     const mask = top
-      ? `linear-gradient(to bottom, transparent 0, var(--color-black) ${FADE_PX}px, var(--color-black) 100%)`
+      ? `linear-gradient(to bottom, transparent 0, #000 ${FADE_PX}px, #000 100%)`
       : "";
     const applied =
       appliedEdges.current?.wrap === wrap ? appliedEdges.current : null;
@@ -1465,7 +1293,7 @@ setLocalStaging((current) => subtractStaging(current, batch));
     appliedHeight.current = height;
     // Height (and thus clip state) just changed — re-evaluate both edges.
     updateScrollEdges(el);
-  }, [displayText, isPhone, minimized]);
+  }, [displayText, isPhone, minimized, textareaRef]);
 
   // The draft can also start or stop clipping without a keystroke: the pane is
   // resized, a split opens, the phone keyboard takes the field's cap down. The
@@ -1476,7 +1304,7 @@ setLocalStaging((current) => subtractStaging(current, batch));
     const observer = new ResizeObserver(() => updateScrollEdges(el));
     observer.observe(el);
     return () => observer.disconnect();
-  }, []);
+  }, [textareaRef]);
 
   // Live code styling: when the draft contains a backtick, a metrics-identical
   // mirror div paints `inline` / ```fence``` tints behind a transparent-text
@@ -1589,7 +1417,7 @@ setLocalStaging((current) => subtractStaging(current, batch));
       // typing searches for the person to put there instead. Selecting the
       // `@` too would end the mention the moment the first letter replaced it.
       el.setSelectionRange(start + 1, end);
-      mentions.sync();
+      syncMentions();
     } else {
       // A session has no picker to re-open: the whole token stays selected,
       // and typing or pasting another link over it replaces the reference
@@ -1732,7 +1560,7 @@ setLocalStaging((current) => subtractStaging(current, batch));
     // An undo that has to cross a session token replays canonical state; every
     // other ⌘Z is left to the field's own history.
     if (sessionNames.handleUndoRedoKey(e)) return;
-    if (mentions.handleKeyDown(e)) return;
+    if (handleMentionKeyDown(e)) return;
     if ((e.nativeEvent as any).isComposing) return;
     if (
       (e.key === "Backspace" || e.key === "Delete") &&
@@ -1877,10 +1705,10 @@ setLocalStaging((current) => subtractStaging(current, batch));
           minimized && "composer-min",
           composerBox,
           minimized ? composerBoxMinimized : composerBoxExpanded,
-          mergeStylexClassName("[&>*]:relative [&>*]:z-[1]", sx.beforeEaseCubicBezier03207201, sx.isolate, sx.beforePointerEventsNone, sx.beforeAbsolute, sx.beforeInset0, sx.beforeZ0, sx.beforeRoundedInherit, sx.beforeCornerShapeInherit, sx.beforeBgVarComposerNoteBg, sx.beforeOpacity0, sx.beforeTransitionOpacity, sx.beforeDuration150),
-          noteMode && mergeStylexClassName("", sx.beforeOpacity100),
-          dictationClipping && mergeStylexClassName("", sx.overflowHidden),
-          disabled && mergeStylexClassName("", sx.opacity60),
+          utilityClassName("isolate before:pointer-events-none before:absolute before:inset-0 before:z-0 before:rounded-[inherit] before:[corner-shape:inherit] before:bg-[var(--composer-note-bg)] before:opacity-0 before:transition-opacity before:duration-150 before:ease-[cubic-bezier(0.32,0.72,0,1)] [&>*]:relative [&>*]:z-[1]"),
+          noteMode && utilityClassName("before:opacity-100"),
+          dictationClipping && utilityClassName("overflow-hidden"),
+          disabled && utilityClassName("opacity-60"),
         )}
         style={surfaceStyle}
       >
@@ -1895,7 +1723,7 @@ setLocalStaging((current) => subtractStaging(current, batch));
             typing looks identical with the pref on. Sits above the input wrap's
             scroll-fade mask. */}
         {vimEnabled && vim.mode !== "insert" && (
-          <div {...mergeStylexProps("", sx.selectNone, sx.pointerEventsNone, sx.absolute, sx.right3, sx.top2, sx.z2, sx.roundedSm, sx.border, sx.borderLine, sx.bgSurface, sx.px15, sx.py05, sx.fontSemibold, sx.trackingWider, sx.textDim, typography.meta)}>
+          <div {...mergeStylexProps("select-none", sx.pointerEventsNone, sx.absolute, sx.right3, sx.top2, sx.z2, sx.roundedSm, sx.border, sx.borderLine, sx.bgSurface, sx.px15, sx.py05, sx.fontSemibold, sx.trackingWider, sx.textDim, typography.meta)} >
             {vim.mode === "normal"
               ? "NORMAL"
               : vim.mode === "visual"
@@ -1903,7 +1731,7 @@ setLocalStaging((current) => subtractStaging(current, batch));
                 : "V-LINE"}
           </div>
         )}
-        <div {...stylex.props(sx.flex, sx.flexWrap, sx.itemsStart, sx.gapX1)}>
+        <div {...mergeStylexProps("gap-x-1", sx.flex, sx.flexWrap, sx.itemsStart)} >
           <AnimatePresence initial={false}>
             {/* Ask mode first: it encloses everything else in the row, being
                 the session's own state rather than something attached to the
@@ -2002,12 +1830,12 @@ setLocalStaging((current) => subtractStaging(current, batch));
           // Positioned for the code mirror below (and the scroll-fade mask the
           // auto-grow effect writes onto it).
           className={cn(
-            mergeStylexClassName("", sx.relative),
-            minimized && mergeStylexClassName("", sx.order2, sx.minW0, sx.flexAuto),
+            utilityClassName("relative"),
+            minimized && utilityClassName("order-2 min-w-0 flex-auto"),
           )}
-          ref={mentions.inputWrapRef}
+          ref={mentionInputWrapRef}
         >
-          {mentions.popup}
+          {mentionPopup}
           {hlActive && (
             // `composer-hl` stays as a hook: the tint spans inside this mirror
             // are written as innerHTML by lib/composer-highlight.ts, so their
@@ -2018,7 +1846,7 @@ setLocalStaging((current) => subtractStaging(current, batch));
                 "composer-hl",
                 composerTextarea,
                 composerTextareaPadding,
-                mergeStylexClassName("", sx.pointerEventsNone, sx.absolute, sx.inset0, sx.z0, sx.overflowHidden, sx.textFg, sx.breakWords, sx.whitespacePreWrap, sx.selectNone),
+                utilityClassName("pointer-events-none absolute inset-0 z-0 overflow-hidden text-fg break-words whitespace-pre-wrap select-none"),
                 hasMention && composerMentionSpacing,
                 // A pill's wash reaches past its own box (base.css), so one at
                 // either end of a line would be cut off by this box. The
@@ -2035,7 +1863,7 @@ setLocalStaging((current) => subtractStaging(current, batch));
                 // different line from the caret and the selection under it on
                 // any draft long enough to wrap. Asking for the 12px back
                 // makes the two agree glyph for glyph again.
-                mergeStylexClassName("", sx.Mx6px, sx.wCalc10012px, sx.px6px),
+                utilityClassName("-mx-[6px] w-[calc(100%+12px)] px-[6px]"),
               )}
               aria-hidden="true"
               dangerouslySetInnerHTML={{ __html: hlHtml }}
@@ -2043,7 +1871,7 @@ setLocalStaging((current) => subtractStaging(current, batch));
           )}
           <textarea
             ref={textareaRef}
-            {...mentions.inputProps}
+            {...mentionInputProps}
             // `composer-textarea` stays as a class NAME hook: the sidebar swipe
             // guard (lib/sidebar-swipe.ts) and SessionViewer's global keys both
             // ask whether the caret is in a composer by looking for it.
@@ -2061,13 +1889,13 @@ setLocalStaging((current) => subtractStaging(current, batch));
               // LIGHTENING it, the intuitive move, would have taken it to
               // 1.82:1 and made it dimmer as well as still cool.
               noteMode
-                ? mergeStylexClassName("", sx.placeholderTextColorMixInSrgbVarTextFaint84VarYellow)
-                : mergeStylexClassName("", sx.placeholderTextFaint),
+                ? utilityClassName("placeholder:text-[color-mix(in_srgb,var(--text-faint)_84%,var(--yellow))]")
+                : utilityClassName("placeholder:text-faint"),
               // With the mirror painting the styled draft, the field's own
               // glyphs go transparent and only the caret stays visible.
               hlActive
-                ? mergeStylexClassName("", sx.relative, sx.z1, sx.breakWords, sx.textTransparent, sx.caretVarText)
-                : mergeStylexClassName("", sx.textFg),
+                ? utilityClassName("relative z-[1] break-words text-transparent caret-[var(--text)]")
+                : utilityClassName("text-fg"),
             )}
             // In the resting pill the full prompt would clip, so show a short
             // "Ask <model>" (ChatGPT-style) that fits the single row; the
@@ -2095,10 +1923,10 @@ setLocalStaging((current) => subtractStaging(current, batch));
               onTyping?.(e.currentTarget.value.length > 0);
             }}
             onKeyDown={handleKeyDown}
-            onKeyUp={mentions.sync}
+            onKeyUp={syncMentions}
             onClick={(e) => {
               if (openPillMenu(e.currentTarget, e.clientX, e.clientY)) return;
-              mentions.sync();
+              syncMentions();
             }}
             onMouseMove={(e) => updatePillHover(e.clientX, e.clientY)}
             onMouseLeave={() => updatePillHover(-1, -1)}
@@ -2119,7 +1947,7 @@ setLocalStaging((current) => subtractStaging(current, batch));
                 setInnerValue((current) => (current === remote ? current : remote));
               }
               // Let a click on a suggestion (mousedown) win the race first.
-              setTimeout(mentions.close, 120);
+              setTimeout(closeMentions, 120);
             }}
             onCopy={sessionNames.handleCopy}
             onCut={sessionNames.handleCut}
@@ -2165,8 +1993,8 @@ setLocalStaging((current) => subtractStaging(current, batch));
           className={cn(
             composerToolbar,
             composerToolbarScrollDivider,
+            minimized && composerToolbarMinimized,
           )}
-          style={minimized ? { display: "contents" } : undefined}
           ref={toolbarRef}
           // Phones: a toolbar tap must not blur the textarea — the blur would
           // collapse the empty composer mid-tap (unmounting the model pill and
@@ -2174,7 +2002,7 @@ setLocalStaging((current) => subtractStaging(current, batch));
           // keyboard. Cancelling pointerdown covers pointer-event browsers,
           // but NOT iOS Safari — there the blur rides the touchend→mousedown
           // synthesis, which only touchend's own preventDefault stops. That's
-          // what tapProps() on the individual buttons is for; this handler is
+          // what ComposerPressButton does for each button; this handler is
           // the non-iOS half.
           onPointerDown={(e) => {
             if (isPhone) e.preventDefault();
@@ -2195,14 +2023,14 @@ setLocalStaging((current) => subtractStaging(current, batch));
               // `composer-pop-wrap` stays as a hook: the outside-click handler
               // above dismisses the menu for any mousedown that isn't inside one.
               className={cn(
-                mergeStylexClassName("composer-pop-wrap", sx.relative, sx.inlineFlex, sx.shrink0),
+                utilityClassName("composer-pop-wrap relative inline-flex shrink-0"),
                 // Phones pull the model pill to the front of the toolbar, so the
                 // "+" has to lead it; in the resting pill it opens the row.
-                minimized ? mergeStylexClassName("", sx.order1) : mergeStylexClassName("", sx.phoneOrder2),
+                minimized ? utilityClassName("order-1") : utilityClassName("phone:order-[-2]"),
               )}
             >
               <Tooltip label="Attach files and session options">
-                <button
+                <ComposerPressButton
                   type="button"
                   // The "+" is a 40px target around a 22px glyph, so aligning
                   // its BOX with the composer's padding parks the visible ink
@@ -2211,13 +2039,13 @@ setLocalStaging((current) => subtractStaging(current, batch));
                   // sits about where the send circle does. The resting pill
                   // insets everything by 4px already, so it stays put there.
                   className={addButtonClass}
-                  {...tapProps(() => setMenu(menu === "add" ? null : "add"))}
+                  onPress={() => setMenu(menu === "add" ? null : "add")}
                   disabled={disabled}
                   aria-label="Attach files and session options"
                   aria-expanded={menu === "add"}
                 >
                   <IconPlus size={22} />
-                </button>
+                </ComposerPressButton>
               </Tooltip>
               {menu === "add" && (
                 <div
@@ -2228,13 +2056,10 @@ setLocalStaging((current) => subtractStaging(current, batch));
                   )}
                 >
                   {canAttach && (
-                    <button
+                    <ComposerPressButton
                       type="button"
                       className={composerMenuItem}
-                      {...tapProps(() => {
-                        setMenu(null);
-                        fileInputRef.current?.click();
-                      })}
+                      onPress={attachFilesFromMenu}
                     >
                       <span className={composerMenuIcon}>
                         <IconPaperclip size={22} />
@@ -2245,16 +2070,13 @@ setLocalStaging((current) => subtractStaging(current, batch));
                       {!isPhone && attachChord && (
                         <MenuShortcut>{attachChord}</MenuShortcut>
                       )}
-                    </button>
+                    </ComposerPressButton>
                   )}
                   {canAttach && mentionFetch && (
-                    <button
+                    <ComposerPressButton
                       type="button"
                       className={composerMenuItem}
-                      {...tapProps(() => {
-                        setMenu(null);
-                        startMention();
-                      })}
+                      onPress={mentionFileFromMenu}
                     >
                       <span className={composerMenuIcon}>
                         <IconAtSign size={22} />
@@ -2265,15 +2087,15 @@ setLocalStaging((current) => subtractStaging(current, batch));
                           Hidden on phones, where there are no keys to press —
                           the same call the Enter hint under the field makes. */}
                       {!isPhone && <MenuShortcut>@</MenuShortcut>}
-                    </button>
+                    </ComposerPressButton>
                   )}
                   {onSetGoal && (
-                    <button
+                    <ComposerPressButton
                       type="button"
                       className={composerMenuItem}
                       // Opens the goal editor: `menu` is single-valued, so this
                       // closes the add menu and opens the modal in one step.
-                      {...tapProps(() => setMenu("goal"))}
+                      onPress={() => setMenu("goal")}
                       title={goal ? `Goal: ${goal}` : undefined}
                     >
                       <span className={composerMenuIcon}>
@@ -2282,16 +2104,16 @@ setLocalStaging((current) => subtractStaging(current, batch));
                       <span {...stylex.props(sx.grow, sx.whitespaceNowrap)}>
                         {goal ? "Edit goal" : "Set a goal"}
                       </span>
-                    </button>
+                    </ComposerPressButton>
                   )}
                   {onNoteModeChange && (
-                    <button
+                    <ComposerPressButton
                       type="button"
                       className={composerMenuItem}
-                      {...tapProps(() => {
+                      onPress={() => {
                         setMenu(null);
                         onNoteModeChange(!noteMode);
-                      })}
+                      }}
                       title={
                         noteMode
                           ? "Prompt the agent again (⌘N)"
@@ -2307,7 +2129,7 @@ setLocalStaging((current) => subtractStaging(current, batch));
                       {!isPhone && (
                         <MenuShortcut>{isApple ? "⌘N" : "Ctrl N"}</MenuShortcut>
                       )}
-                    </button>
+                    </ComposerPressButton>
                   )}
                   {menuExtra?.({ close: () => setMenu(null) })}
                   {sendMenu?.({
@@ -2362,14 +2184,16 @@ setLocalStaging((current) => subtractStaging(current, batch));
           {/* Model + effort live together on the right edge (ChatGPT-style):
               one pill, effort levels up top, the model behind a submenu.
               Phones reorder it next to the + button via flex order (see
-              composerToolbarSelect). */}
+              composerToolbarSelect). It stays out of the resting phone pill
+              because that state is minimized, but returns when the installed
+              PWA composer expands. */}
           <AnimatePresence initial={false}>
             {!minimized && (
               <motion.div
                 key="model-effort"
                 layout="position"
                 {...composerChipMotion}
-                className={cn("pwa-composer-auxiliary", composerToolbarSelect)}
+                className={composerToolbarSelect}
               >
                 <ModelEffortSelect
                   className={cn(palettePill, composerToolbarPill)}
@@ -2415,8 +2239,8 @@ setLocalStaging((current) => subtractStaging(current, batch));
             transition={composerMorph}
             layoutDependency={minimized}
             className={cn(
-              mergeStylexClassName("pwa-composer-auxiliary", sx.inlineFlex, sx.shrink0, sx.itemsCenter),
-              minimized && mergeStylexClassName("", sx.order3),
+              utilityClassName("pwa-composer-dictation inline-flex shrink-0 items-center"),
+              minimized && utilityClassName("order-3"),
             )}
           >
             {/* The mic is one of the resting pill's circles, so it takes the
@@ -2438,17 +2262,8 @@ setLocalStaging((current) => subtractStaging(current, batch));
               // capsule rather than the expanded box's radius.
               overlayClassName={
                 minimized
-                  ? mergeStylexClassName(
-                      "",
-                      sharedClassStyles.rounded999px,
-                      sharedClassStyles.phonePl2,
-                      sharedClassStyles.phonePr05,
-                      sharedClassStyles.phonePb1,
-                    )
-                  : mergeStylexClassName(
-                      "",
-                      sharedClassStyles.roundedVarComposerRadius,
-                    )
+                  ? utilityClassName("rounded-[999px] phone:pl-2 phone:pr-0.5 phone:pb-1")
+                  : utilityClassName("rounded-[var(--composer-radius)]")
               }
               disabled={disabled}
             />
@@ -2466,25 +2281,25 @@ setLocalStaging((current) => subtractStaging(current, batch));
               // side by side in one badge row would read as a single one.
               shortcut={stopKeys ?? undefined}
             >
-              <button
+              <ComposerPressButton
                 type="button"
                 className={cn(
                   composerSend,
                   composerSendStop,
                   // Without an order the stop button defaults to 0 and jumps to
                   // the far left of the resting row; seat it just before send.
-                  minimized && mergeStylexClassName("", sx.order4),
+                  minimized && utilityClassName("order-4"),
                   minimized && composerSendMinimizedFill,
                   // Acknowledged: the press registered, the engine is winding
                   // down. Not `disabled` — pressing again re-sends the cancel.
-                  stopping && mergeStylexClassName("", sx.opacity60),
+                  stopping && utilityClassName("opacity-60"),
                 )}
-                {...tapProps(() => onStop())}
+                onPress={onStop}
                 disabled={disabled}
                 aria-label={stopping ? "Stopping current turn" : "Stop current turn"}
               >
                 <IconStopSquare size={24} />
-              </button>
+              </ComposerPressButton>
             </Tooltip>
           )}
           {/* One busy-send button: the Enter follow-up preference (Settings →
@@ -2497,8 +2312,8 @@ setLocalStaging((current) => subtractStaging(current, batch));
               transition={composerMorph}
               layoutDependency={minimized}
               className={cn(
-                mergeStylexClassName("", sx.relative, sx.inlineFlex, sx.shrink0, sx.itemsStretch),
-                minimized && mergeStylexClassName("", sx.order5),
+                utilityClassName("relative inline-flex shrink-0 items-stretch"),
+                minimized && utilityClassName("order-5"),
               )}
             >
               <ContextMenu.Root>
@@ -2526,7 +2341,7 @@ setLocalStaging((current) => subtractStaging(current, batch));
                 >
                   <ContextMenu.Trigger
                     render={
-                      <button
+                      <ComposerPressButton
                         className={cn(
                           composerSend,
                           // A note posts straight away, so it keeps the plain
@@ -2540,12 +2355,12 @@ setLocalStaging((current) => subtractStaging(current, batch));
                                 : composerSendDefault,
                           minimized && composerSendMinimizedFill,
                         )}
-                        {...tapProps(() =>
+                        onPress={() =>
                           fireSend(
                             onSend,
                             steerSend ? { steer: true } : undefined,
-                          ),
-                        )}
+                          )
+                        }
                         disabled={disabled || isSendDisabled}
                         aria-label={
                           noteMode
@@ -2631,17 +2446,19 @@ setLocalStaging((current) => subtractStaging(current, batch));
                 ["→", "ArrowRight"],
               ] as const
             ).map(([label, key]) => (
-              <button
+              <ComposerPressButton
                 key={key}
                 type="button"
-                className={[mergeStylexClassName("", sx.h8, sx.flex1, sx.selectNone, sx.roundedMd, sx.border, sx.borderLine, sx.bgSurface, typography.label, sx.fontSemibold, sx.textDim, sx.activeBgPanel), key === "Escape" && vim.mode !== "insert"
-                    ? mergeStylexClassName("", sx.borderAccent, sx.textFg)
-                    : ""].filter(Boolean).join(" ")}
-                {...tapProps(() => vim.injectKey(key))}
+                className={utilityClassName(`h-8 flex-1 select-none rounded-md border border-line bg-surface text-label font-semibold text-dim active:bg-panel ${
+                  key === "Escape" && vim.mode !== "insert"
+                    ? "border-accent text-fg"
+                    : ""
+                }`)}
+                onPress={() => vim.injectKey(key)}
                 aria-label={key}
               >
                 {label}
-              </button>
+              </ComposerPressButton>
             ))}
           </div>
         )}
@@ -2649,7 +2466,7 @@ setLocalStaging((current) => subtractStaging(current, batch));
       {/* The keyboard-shortcut hint is irrelevant on touch and eats vertical
           space right where the keyboard appears. */}
       {hint && (
-        <div {...mergeStylexProps("", sx.phoneHidden, sx.mt7px, sx.textCenter, sx.textFaint, typography.meta)}>
+        <div {...mergeStylexProps("phone:hidden", sx.mt7px, sx.textCenter, sx.textFaint, typography.meta)} >
           {hint}
         </div>
       )}

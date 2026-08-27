@@ -14,8 +14,7 @@ import type { UnifiedSession } from "./types";
 import type { PortalRecord } from "./portal-supervisor";
 import { ensureAuthenticatedPortalRoute, dropAuthenticatedPortalRoute } from "./preview";
 import { releaseSandboxPreviewPorts, sandboxHttpsPortFor } from "./sandbox/preview-ports";
-import { findSession } from "./session-cache";
-import { getAllSessions } from "./sessions";
+import { findSession, getSessionListSnapshotAsync } from "./session-cache";
 
 export type RunnerPortalRecord = PortalRecord & {
 	runnerId: string;
@@ -267,7 +266,11 @@ export function orphanedRunnerPortalRecords(
 
 /** Retry teardown for remote Portals that outlived a crashed session delete. */
 export async function reapOrphanedRunnerPortals(): Promise<number> {
-	const records = orphanedRunnerPortalRecords(load().portals, new Set(getAllSessions().map((session) => session.id)));
+	const sessions = await getSessionListSnapshotAsync();
+	const records = orphanedRunnerPortalRecords(
+		load().portals,
+		new Set(sessions.map((session) => session.id)),
+	);
 	if (!records.length) return 0;
 	const stopped: RunnerPortalRecord[] = [];
 	for (const record of records) {

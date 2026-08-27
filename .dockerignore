@@ -9,12 +9,42 @@ node_modules
 mcp-config.json
 mcp-config.json.bak
 *.env
-.env*
+*.env.*
+!*.env.example
+!*.env.*.example
+.envrc
+.envrc.*
 *.key
+*.pem
+*.p12
+*.pfx
+*.pkcs12
+*.ppk
+*.cer
 *.crt
+*.csr
+*.der
+*.jks
+*.keystore
+AGENTS.local.md
+CLAUDE.local.md
 
-# Caches / logs / scratch
+# Caches / logs / session-generated scratch
 .users_cache.json
 .channels_cache.json
 .channels_cache_v2.json
 *.log
+.artifacts
+.capture
+.captures
+.hero-check
+.opensession-review
+.review-fix
+.session-preview
+.shots
+.shots-tmp
+.tmp*
+.worktrees
+output/*
+!output/os1-icons/
+!output/os1-icons/**

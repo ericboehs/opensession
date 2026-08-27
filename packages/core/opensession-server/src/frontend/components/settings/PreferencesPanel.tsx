@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
 	fetchModels,
 	fetchPersonalOutputStyle,
@@ -103,6 +103,7 @@ import {
 } from "./AppearancePanel";
 import { PersonalSandboxDefaultRow } from "./SandboxDefaults";
 import { RepoTile } from "../RepoTile";
+import { ModelMark } from "../ModelMark";
 import { IconRepo, IconSparkle } from "../icons";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../../styles/typography.stylex";
@@ -388,9 +389,13 @@ function PersonalPromptPanel() {
 	// latest values live in a ref because the unmount effect must run once (a
 	// dependency on `prompt` would re-fire the cleanup on every keystroke).
 	const latest = useRef({ prompt, savedPrompt, user });
-	latest.current = { prompt, savedPrompt, user };
+	useLayoutEffect(() => {
+		latest.current = { prompt, savedPrompt, user };
+	});
 
-	const commit = async () => {
+	// Stable identity: reads the latest-values ref, so the unmount effect can
+	// list it and still only run its cleanup once.
+	const commit = useCallback(async () => {
 		const { prompt: draft, savedPrompt: saved, user: who } = latest.current;
 		if (draft === null || draft === saved) return;
 		setStatus("saving");
@@ -404,7 +409,7 @@ setStatus("idle");
 				variant: "error",
 			});
 });
-	};
+	}, []);
 
 	useEffect(() => {
 		// Fire-and-forget on the way out — nothing is left to render a result to.
@@ -602,6 +607,13 @@ export function PreferencesPanel() {
 									...modelOptions.map((m) => ({
 										value: m.id,
 										label: m.label,
+										icon: (
+											<ModelMark
+												id={m.id}
+												provider={m.provider}
+												composition={m.composition}
+											/>
+										),
 									})),
 								]}
 								onChange={setDefaultModelPref}

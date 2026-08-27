@@ -23,8 +23,11 @@
  * interval — same shape as goal-runner's ticker.
  */
 
-import { homeDir } from "./paths";
-import { getCachedSessions, getCachedSessionsAsync } from "./session-cache";
+import { stateDir } from "./paths";
+import {
+	getCachedSessions,
+	getSessionListSnapshotAsync,
+} from "./session-cache";
 import { mergedSessionTranscriptAsync } from "./sessions";
 import { oneShot } from "./one-shot";
 import { audit } from "./audit";
@@ -39,9 +42,8 @@ import type { TranscriptEntry, UnifiedSession } from "./types";
 
 const g = globalThis as any;
 
-const HOME = homeDir();
 const DB_PATH =
-	process.env.OPENSESSION_SEARCH_DB || `${HOME}/.opensession-search.db`;
+	process.env.OPENSESSION_SEARCH_DB || stateDir("search.db");
 
 const SWEEP_MS = 10 * 60_000;
 const FIRST_SWEEP_DELAY_MS = 90_000;
@@ -267,7 +269,7 @@ export async function sweepSessionIndex(): Promise<{
 	try {
 		const store = searchIndex();
 		const state = store.indexState();
-		const sessions = [...(await getCachedSessionsAsync())].sort(
+		const sessions = [...(await getSessionListSnapshotAsync())].sort(
 			(a, b) => (b.lastActivity || "").localeCompare(a.lastActivity || ""),
 		);
 		const now = Date.now();

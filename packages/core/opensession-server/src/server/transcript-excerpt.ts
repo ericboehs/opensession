@@ -21,7 +21,8 @@
 
 import { isContextInjection } from "@tellahq/opensession-protocol/notices";
 import type { TranscriptEntry } from "./types";
-import { transcriptStore } from "./transcript-store";
+import { transcript } from "./actor-transcript";
+import { TRANSCRIPT_ACTOR_MAX_READ_LIMIT } from "./session-kernel/transcript-protocol";
 
 /** A transcript entry with the display order it holds in its session. */
 export type ExcerptEntry = TranscriptEntry & { seq: number };
@@ -52,13 +53,13 @@ export interface TranscriptExcerpt {
 
 /** The slice of TranscriptStore this module needs (injectable for tests). */
 export interface ExcerptStore {
-	getLastSeq(sessionId: string): number;
+	getLastSeq(sessionId: string): number | Promise<number>;
 	readSince(
 		sessionId: string,
 		sinceSeq: number,
 		limit?: number,
-	): { entries: (TranscriptEntry & { seq?: number })[] };
-	getFullEntry(sessionId: string, uuid: string): TranscriptEntry | null;
+	): { entries: (TranscriptEntry & { seq?: number })[] } | Promise<{ entries: (TranscriptEntry & { seq?: number })[] }>;
+	getFullEntry(sessionId: string, uuid: string): TranscriptEntry | null | Promise<TranscriptEntry | null>;
 }
 
 export interface ExcerptDeps {
@@ -83,7 +84,7 @@ export interface ExcerptOpts {
  *  interesting region of a searched session is nearly always in the recent
  *  part of it. */
 const MAX_SCAN = 4000;
-const PAGE = 1000;
+const PAGE = TRANSCRIPT_ACTOR_MAX_READ_LIMIT;
 
 export function excerptTerms(query: string): string[] {
 	return (query || "")
@@ -139,13 +140,7 @@ function pickMatches(
  *  actually needs the legacy path, keeping this module cheap to import. */
 function defaultDeps(): ExcerptDeps {
 	return {
-		store: (() => {
-			try {
-				return transcriptStore() as unknown as ExcerptStore;
-			} catch {
-				return null;
-			}
-		})(),
+		store: transcript as ExcerptStore,
 		legacy: async (sessionId: string) => {
 			try {
 				const [{ findSession }, { mergedSessionTranscriptAsync }] = await Promise.all([
@@ -172,13 +167,13 @@ async function loadEntries(
 	const store = deps.store;
 	if (store) {
 		try {
-			const lastSeq = store.getLastSeq(sessionId);
+			const lastSeq = await store.getLastSeq(sessionId);
 			if (lastSeq > 0) {
 				const from = Math.max(0, lastSeq - MAX_SCAN);
 				const out: ExcerptEntry[] = [];
 				let cursor = from;
 				while (cursor < lastSeq) {
-					const page = store.readSince(sessionId, cursor, PAGE);
+					const page = await store.readSince(sessionId, cursor, PAGE);
 					if (!page.entries.length) break;
 					for (const e of page.entries) {
 						const seq = e.seq ?? out.length + from + 1;
@@ -193,7 +188,12 @@ async function loadEntries(
 				if (out.length)
 					return { entries: out, source: "store", lastSeq, truncated: from > 0 };
 			}
-		} catch {}
+		} catch {
+			// An authoritative actor read failure is not evidence that the session
+			// is legacy. Falling through would hydrate its entire transcript through
+			// mergedSessionTranscriptAsync and defeat this scan's hard row budget.
+			return { entries: [], source: "none", lastSeq: 0, truncated: true };
+		}
 	}
 	const legacy = deps.legacy ? await deps.legacy(sessionId) : [];
 	if (!legacy.length)
@@ -213,21 +213,21 @@ async function loadEntries(
 	};
 }
 
-function hydrate(
+async function hydrate(
 	sessionId: string,
 	entries: ExcerptEntry[],
 	deps: ExcerptDeps,
-): ExcerptEntry[] {
+): Promise<ExcerptEntry[]> {
 	const store = deps.store;
 	if (!store) return entries;
-	return entries.map((e) => {
+	return Promise.all(entries.map(async (e) => {
 		try {
-			const full = store.getFullEntry(sessionId, e.id);
+			const full = await store.getFullEntry(sessionId, e.id);
 			return full ? ({ ...full, seq: e.seq } as ExcerptEntry) : e;
 		} catch {
 			return e;
 		}
-	});
+	}));
 }
 
 /**
@@ -253,9 +253,9 @@ export async function transcriptExcerpt(
 	};
 	if (!loaded.entries.length) return base;
 
-	const cut = (from: number, to: number, extra: Partial<ExcerptWindow> = {}): ExcerptWindow => {
+	const cut = async (from: number, to: number, extra: Partial<ExcerptWindow> = {}): Promise<ExcerptWindow> => {
 		const slice = loaded.entries.slice(Math.max(0, from), to);
-		const hydrated = hydrate(sessionId, slice, deps);
+		const hydrated = await hydrate(sessionId, slice, deps);
 		return {
 			firstSeq: hydrated[0]?.seq ?? 0,
 			lastSeq: hydrated[hydrated.length - 1]?.seq ?? 0,
@@ -269,13 +269,13 @@ export async function transcriptExcerpt(
 		let idx = loaded.entries.findIndex((e) => e.seq >= opts.aroundSeq!);
 		if (idx < 0) idx = loaded.entries.length - 1;
 		const half = Math.floor(limit / 2);
-		base.windows = [cut(idx - half, idx - half + limit, { matchSeq: loaded.entries[idx]?.seq })];
+		base.windows = [await cut(idx - half, idx - half + limit, { matchSeq: loaded.entries[idx]?.seq })];
 		return base;
 	}
 
 	const terms = excerptTerms(opts.query || "");
 	if (!terms.length) {
-		base.windows = [cut(loaded.entries.length - limit, loaded.entries.length)];
+		base.windows = [await cut(loaded.entries.length - limit, loaded.entries.length)];
 		return base;
 	}
 
@@ -288,15 +288,15 @@ export async function transcriptExcerpt(
 		// Honest miss: the record matched but the words aren't in the transcript
 		// (the distilled record is the LLM's paraphrase). Show the tail so the
 		// call still returns something real rather than nothing.
-		base.windows = [cut(loaded.entries.length - limit, loaded.entries.length)];
+		base.windows = [await cut(loaded.entries.length - limit, loaded.entries.length)];
 		return base;
 	}
 
 	const picked = pickMatches(scored, wantWindows, limit).sort((a, b) => a.idx - b.idx);
 	const lead = Math.max(1, Math.floor(limit / 3));
-	base.windows = picked.map((p) =>
+	base.windows = await Promise.all(picked.map((p) =>
 		cut(p.idx - lead, p.idx - lead + limit, { matchSeq: p.seq, score: p.score }),
-	);
+	));
 	return base;
 }
 

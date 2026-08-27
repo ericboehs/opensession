@@ -1,12 +1,15 @@
+import { mergeStylexProps, mergeStylexOverrideClassName } from "../ui/cn";
+import { utilityClassName } from "../ui/cn";
 import { useEffect, useRef, useState } from "react";
-import { AnimatePresence, motion, useReducedMotion } from "motion/react";
+import { motion, useReducedMotion } from "motion/react";
 import { BASE_PATH } from "../lib/base";
 import { DEFAULT_DOC_TITLE, PRODUCT_NAME } from "../lib/brand";
 import { useSetupStatus } from "../hooks/useSetupStatus";
+import { effectiveTheme, onThemeChanged } from "../lib/theme";
 import { Button } from "../ui/button";
+import { cn } from "../ui/cn";
 import { duration, ease } from "../ui/motion";
 import { LoadingState } from "../ui/state";
-import { TopBar } from "../ui/top-bar";
 import { BrandMark } from "./BrandTile";
 import { GithubAuthCard } from "./SetupIntegrations";
 import { ReposSection } from "./SetupRepos";
@@ -15,11 +18,10 @@ import { TeamSection } from "./SetupTeam";
 import { UserAvatar } from "./UserAvatar";
 import { OrganizationProfileSection } from "./settings/GeneralPanel";
 import { ProviderAccountsSection } from "./settings/ModelAccounts";
-import { IconCheck, IconChevronLeft, IconGlobe, IconRepo } from "./icons";
+import { IconCheck, IconGlobe, IconRepo } from "./icons";
 import { githubAuthState, type SetupStatus } from "./setup-shared";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
-import { mergeStylexProps, mergeStylexClassName, mergeStylexOverrideClassName } from "../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -33,20 +35,17 @@ const sx = stylex.create({
 			alignItems: "center"
 	},
 	gap15: {
-			gap: "6px"
+			gap: "calc(4px * 1.5)"
 	},
 	roundedFull: {
-			borderRadius: "calc(infinity * 1px)"
-	,
-		cornerShape: "round"},
-	bgBg65: {
-			backgroundColor: "var(--bg)"
-	},
+			borderRadius: "calc(infinity * 1px)",
+
+		cornerShape: "round",},
 	py1: {
 			paddingBlock: "4px"
 	},
 	pr2: {
-			paddingRight: "8px"
+			paddingRight: "calc(4px * 2)"
 	},
 	pl1: {
 			paddingLeft: "4px"
@@ -58,8 +57,8 @@ const sx = stylex.create({
 			color: "var(--text)"
 	},
 	size6: {
-			width: "24px",
-			height: "24px"
+			width: "calc(4px * 6)",
+			height: "calc(4px * 6)"
 	},
 	shrink0: {
 			flexShrink: "0"
@@ -67,16 +66,13 @@ const sx = stylex.create({
 	justifyCenter: {
 			justifyContent: "center"
 	},
-	bgBg85: {
-			backgroundColor: "var(--bg)"
-	},
 	textDim: {
 			color: "var(--text-dim)"
 	},
 	truncate: {
+			overflow: "hidden",
 			textOverflow: "ellipsis",
-			whiteSpace: "nowrap",
-			overflow: "hidden"
+			whiteSpace: "nowrap"
 	},
 	relative: {
 			position: "relative"
@@ -85,25 +81,21 @@ const sx = stylex.create({
 			position: "absolute"
 	},
 	Right05: {
-			right: "-2px"
+			right: "calc(4px * -0.5)"
 	},
 	Bottom05: {
-			bottom: "-2px"
+			bottom: "calc(4px * -0.5)"
 	},
 	size25: {
-			width: "10px",
-			height: "10px"
-	},
-	bgFg: {
-			backgroundColor: "var(--text)"
+			width: "calc(4px * 2.5)",
+			height: "calc(4px * 2.5)"
 	},
 	textBg: {
 			color: "var(--bg)"
 	},
-	ringBg: { "--tw-ring-color": "var(--bg)" },
 	size7: {
-			width: "28px",
-			height: "28px"
+			width: "calc(4px * 7)",
+			height: "calc(4px * 7)"
 	},
 	border: {
 			borderStyle: "solid",
@@ -115,11 +107,8 @@ const sx = stylex.create({
 	grid: {
 			display: "grid"
 	},
-	gridCols5: {
-			gridTemplateColumns: "repeat(5,minmax(0,1fr))"
-	},
-	gap3: {
-			gap: "12px"
+	gap4: {
+			gap: "calc(4px * 4)"
 	},
 	minW0: {
 			minWidth: "0"
@@ -131,14 +120,14 @@ const sx = stylex.create({
 			justifyContent: "space-between"
 	},
 	gap2: {
-			gap: "8px"
+			gap: "calc(4px * 2)"
 	},
 	size2: {
-			width: "8px",
-			height: "8px"
+			width: "calc(4px * 2)",
+			height: "calc(4px * 2)"
 	},
 	bgCurrent: {
-			backgroundColor: "currentColor"
+			backgroundColor: "currentcolor"
 	},
 	fontSemibold: {
 			fontWeight: "var(--font-weight-semibold)"
@@ -155,316 +144,104 @@ const sx = stylex.create({
 	wFull: {
 			width: "100%"
 	},
+	gapY3: {
+			rowGap: "calc(4px * 3)"
+	},
 	overflowHidden: {
 			overflow: "hidden"
 	},
-	bgBg: {
+	bgSurface: {
 			backgroundColor: "var(--bg)"
 	},
-	pointerEventsNone: {
-			pointerEvents: "none"
+	bgCover: {
+			backgroundSize: "cover"
 	},
-	inset0: {
-			inset: "0"
+	bgCenter: {
+			backgroundPosition: "center"
 	},
-	opacity70: {
-			opacity: ".7"
+	p6: {
+			padding: "calc(4px * 6)"
 	},
-	z10: {
-			zIndex: "10"
+	z20: {
+			zIndex: "20"
 	},
-	gridCols1frAuto1fr: {
-			gridTemplateColumns: "1fr auto 1fr"
+	h11: {
+			height: "calc(4px * 11)"
 	},
-	px8: {
-			paddingInline: "32px"
+	h10: {
+			height: "calc(4px * 10)"
 	},
-	focusRing: {
-			":focus-visible": {
-					outline: "2px solid var(--accent-ink)",
-					outlineOffset: "2px"
-			}
-	},
-	colStart3: {
-			gridColumnStart: "3"
-	},
-	minH9: {
-			minHeight: "36px"
-	},
-	justifySelfEnd: {
-			justifySelf: "flex-end"
+	w8: {
+			width: "calc(4px * 8)"
 	},
 	roundedControl: {
-			borderRadius: "calc(12px * var(--rf))"
-	,
-		cornerShape: "var(--cs)"},
-	px3: {
-			paddingInline: "12px"
-	},
-	minH0: {
-			minHeight: "0"
-	},
-	overflowYAuto: {
-			overflowY: "auto"
-	},
-	px6: {
-			paddingInline: "24px"
-	},
-	ScrollbarWidthThin: {
-			scrollbarWidth: "thin"
-	},
-	hFull: {
-			height: "100%"
+			borderRadius: "calc(12px * var(--rf))",
+
+		cornerShape: "var(--cs)",},
+	minH40: {
+			minHeight: "calc(4px * 40)"
 	},
 	maxW560px: {
 			maxWidth: "560px"
 	},
-	flexCol: {
-			flexDirection: "column"
+	justifySelfCenter: {
+			justifySelf: "center"
+	},
+	rounded2xl: {
+			borderRadius: "calc(22px * var(--rf))",
+
+		cornerShape: "var(--cs)",},
+	bgPaletteGlass: {
+			backgroundColor: "var(--palette-glass)"
+	},
+	px8: {
+			paddingInline: "calc(4px * 8)"
+	},
+	py12: {
+			paddingBlock: "calc(4px * 12)"
+	},
+	BackdropFilterVarPopupBlur: {
+			backdropFilter: "var(--popup-blur)"
+	},
+	px10: {
+			paddingInline: "calc(4px * 10)"
+	},
+	pb2: {
+			paddingBottom: "calc(4px * 2)"
+	},
+	pt9: {
+			paddingTop: "calc(4px * 9)"
 	},
 	textCenter: {
 			textAlign: "center"
 	},
+	mxAuto: {
+			marginInline: "auto"
+	},
 	mb7: {
-			marginBottom: "28px"
+			marginBottom: "calc(4px * 7)"
 	},
-	size20: {
-			width: "80px",
-			height: "80px"
-	},
-	scale113: {
-			scale: "1.13"
-	},
-	m0: {
-			margin: "0"
-	},
-	fontTitle: {
-			fontWeight: "var(--title-weight)",
-		"--settings-leading": "1.1"
-	},
-	leading108: {
-			lineHeight: "1.08"
-	},
-	tracking003em: {
-			letterSpacing: "-.03em"
-	},
-	outlineNone: {
-			outlineStyle: "none"
-	},
-	mt3: {
-			marginTop: "12px"
-	},
-	maxW440px: {
-			maxWidth: "440px"
-	},
-	textPretty: {
-			textWrap: "pretty"
-	},
-	leadingRelaxed: {
-			lineHeight: "var(--leading-relaxed)"
-	},
-	mt7: {
-			marginTop: "28px"
-	},
-	maxW300px: {
-			maxWidth: "300px"
-	},
-	minH11: {
-			minHeight: "44px"
-	},
-	mb8: {
-			marginBottom: "32px"
-	},
-	maxW700px: {
-			maxWidth: "700px"
+	size16: {
+			width: "calc(4px * 16)",
+			height: "calc(4px * 16)"
 	},
 	textBalance: {
 			textWrap: "balance"
 	},
-	tracking0035em: {
-			letterSpacing: "-.035em"
+	fontTitle: {
+			fontWeight: "var(--title-weight)"
 	},
-	maxW820px: {
-			maxWidth: "820px"
+	leading11: {
+			lineHeight: "1.1"
 	},
-	pb8: {
-			paddingBottom: "32px"
+	tracking0012em: {
+			letterSpacing: "-0.012em"
 	},
-	mxAuto: {
-			marginInline: "auto"
+	outlineNone: {
+			outlineStyle: "none"
 	},
-	previewOverflow: {
-		display: "flex", width: "28px", height: "28px", alignItems: "center", justifyContent: "center",
-		borderRadius: "calc(infinity * 1px)", borderStyle: "solid", borderWidth: "1px",
-		fontWeight: "var(--font-weight-semibold)", color: "var(--text-dim)",
-	},
-	previewOverflowOpaque: { borderColor: "var(--bg)", backgroundColor: "color-mix(in oklab, var(--bg) 85%, transparent)" },
-	previewOverflowTransparent: { borderColor: "transparent", backgroundColor: "transparent" },
-	summaryTile: {
-		display: "flex", aspectRatio: "1 / 1", minWidth: 0, flexDirection: "column",
-		justifyContent: "space-between", borderRadius: "calc(22px * var(--rf))",
-		borderStyle: "solid", borderWidth: "1px", padding: "16px", textAlign: "left",
-		backdropFilter: "blur(var(--blur-xl))",
-		"@media (max-width: 720px)": { borderRadius: "calc(18px * var(--rf))", padding: "14px" },
-	},
-	summaryTileInteractive: {
-		cursor: "pointer", transitionProperty: "transform, filter", transitionDuration: "150ms",
-		transitionTimingFunction: "var(--ease)",
-		":focusVisible": { outline: "2px solid var(--accent-ink)", outlineOffset: "2px" },
-		"@media (forced-colors: active)": { ":focusVisible": { outlineColor: "Highlight" } },
-		":hover": { "@media (hover: hover)": { filter: "brightness(0.98)" } },
-		":active": { transform: "scale(0.96)" },
-		"@media (prefers-reduced-motion: reduce)": { transform: "none" },
-	},
-	summaryTileReady: {
-		borderColor: "transparent", backgroundColor: "var(--green-soft)",
-		boxShadow: "inset 0 1px 0 color-mix(in srgb, white 45%, transparent), 0 12px 28px -24px color-mix(in srgb, var(--green) 45%, transparent)",
-	},
-	summaryTilePending: { borderColor: "var(--divider-soft)", backgroundColor: "color-mix(in oklab, var(--settings-plate) 65%, transparent)" },
-	tileStatus: {
-		display: "flex", width: "32px", height: "32px", flexShrink: 0,
-		alignItems: "center", justifyContent: "center", borderRadius: "calc(infinity * 1px)",
-	},
-	tileStatusReady: { backgroundColor: "color-mix(in oklab, var(--bg) 60%, transparent)", color: "var(--green)" },
-	tileStatusPending: { backgroundColor: "color-mix(in oklab, var(--text-faint) 10%, transparent)", color: "var(--text-faint)" },
-	phoneBackButton: {
-		display: "none", justifySelf: "start",
-		"@media (max-width: 720px)": { display: "flex", width: "40px", height: "40px", justifyContent: "center", padding: 0 },
-	},
-	phoneInvisible: { "@media (max-width: 720px)": { visibility: "hidden" } },
-	progressNav: { position: "absolute", left: "50%", display: "flex", transform: "translateX(-50%)", alignItems: "center", gap: "8px" },
-	invisible: { visibility: "hidden" },
-	progressStep: {
-		height: "8px", cursor: "pointer", borderRadius: "calc(infinity * 1px)",
-		transitionProperty: "width, background-color", transitionDuration: "200ms",
-		transitionTimingFunction: "var(--ease)",
-		":focusVisible": { outline: "2px solid var(--accent-ink)", outlineOffset: "2px" },
-		"@media (forced-colors: active)": { ":focusVisible": { outlineColor: "Highlight" } },
-	},
-	progressCurrent: { width: "32px", backgroundColor: "var(--text)" },
-	progressComplete: { width: "8px", backgroundColor: "color-mix(in oklab, var(--text) 45%, transparent)" },
-	progressUpcoming: {
-		width: "8px", backgroundColor: "color-mix(in oklab, var(--text-faint) 35%, transparent)",
-		":hover": { "@media (hover: hover)": { backgroundColor: "color-mix(in oklab, var(--text-faint) 60%, transparent)" } },
-	},
-	stepSection: {
-		marginInline: "auto", display: "flex", minHeight: "100%", width: "100%", maxWidth: "960px",
-		flexDirection: "column", alignItems: "center", paddingBlock: "32px",
-		"@media (max-width: 720px)": { paddingBlock: "20px" },
-	},
-	welcomeStep: { justifyContent: "center", paddingBottom: "64px", "@media (max-width: 720px)": { paddingBottom: "40px" } },
-	footer: {
-		position: "relative", zIndex: 10, borderTopStyle: "solid", borderTopWidth: "1px",
-		paddingInline: "32px", paddingTop: "4px", transitionProperty: "border-color, background-color",
-		transitionDuration: "var(--dur-micro)", transitionTimingFunction: "var(--ease)",
-		"@media (max-width: 720px)": { paddingInline: "20px", paddingTop: "12px" },
-	},
-	footerSeparated: {
-		borderTopColor: "var(--border)", backgroundColor: "color-mix(in oklab, var(--bg) 95%, transparent)",
-		backdropFilter: "blur(var(--blur-xl))",
-	},
-	footerAttached: { borderTopColor: "transparent", backgroundImage: "linear-gradient(to bottom, transparent, var(--bg) 30%)" },
-	desktopBackButton: { justifySelf: "start", "@media (max-width: 720px)": { display: "none" } },
-
-	phoneHidden: {
-		"@media (max-width: 720px)": {
-			"display": "none"
-		}
-	},
-
-	ring1: {
-		"--tw-ring-shadow": "var(--tw-ring-inset,) 0 0 0 calc(1px + var(--tw-ring-offset-width)) var(--tw-ring-color,currentcolor)",
-		"boxShadow": "var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow)"
-	},
-	phoneGridCols2: {
-		"@media (max-width: 720px)": {
-			"gridTemplateColumns": "repeat(2,minmax(0,1fr))"
-		}
-	},
-	gridRows76pxMinmax01fr84px: {
-		"gridTemplateRows": "76px minmax(0,1fr) 84px"
-	},
-	phoneGridRows68pxMinmax01fr90px: {
-		"@media (max-width: 720px)": {
-			"gridTemplateRows": "68px minmax(0,1fr) 90px"
-		}
-	},
-	phonePbEnvSafeAreaInsetBottom: {
-		"@media (max-width: 720px)": {
-			"paddingBottom": "env(safe-area-inset-bottom)"
-		}
-	},
-	BackgroundRadialGradientCircleAt188VarAccentSoftTransparent34RadialGradientCircleAt8292VarBlueSoftTransparent36: {
-		"background": "radial-gradient(circle at 18% 8%,var(--accent-soft),transparent 34%),radial-gradient(circle at 82% 92%,var(--blue-soft),transparent 36%)"
-	},
-	phonePx4: {
-		"@media (max-width: 720px)": {
-			"paddingInline": "16px"
-		}
-	},
-	hoverBgHover: {
-		"@media (hover: hover)": {
-			":hover": {
-				"backgroundColor": "var(--hover)"
-			}
-		}
-	},
-	hoverTextFg: {
-		"@media (hover: hover)": {
-			":hover": {
-				"color": "var(--text)"
-			}
-		}
-	},
-	FilterDropShadow018px28pxRgba000016: {
-		"filter": "drop-shadow(0 18px 28px color-mix(in srgb, var(--color-black) 16%, transparent))"
-	},
-	phoneMb6: {
-		"@media (max-width: 720px)": {
-			"marginBottom": "24px"
-		}
-	},
-	phoneSize16: {
-		"@media (max-width: 720px)": {
-			"width": "64px",
-			"height": "64px"
-		}
-	},
-	textClamp16rem2vw215rem: {
-		"fontSize": "clamp(1.6rem,2vw,2.15rem)"
-	},
-	textClamp16rem25vw225rem: {
-		"fontSize": "clamp(1.6rem,2.5vw,2.25rem)"
-	},
-	phoneGridCols1: {
-		"@media (max-width: 720px)": {
-			"gridTemplateColumns": "repeat(1,minmax(0,1fr))"
-		}
-	},
-	phoneItemsStart: {
-		"@media (max-width: 720px)": {
-			"alignItems": "flex-start"
-		}
-	},
-	phoneMinH12: {
-		"@media (max-width: 720px)": {
-			"minHeight": "48px"
-		}
-	},
-	phoneWFull: {
-		"@media (max-width: 720px)": {
-			"width": "100%"
-		}
-	},
-	phoneJustifyCenter: {
-		"@media (max-width: 720px)": {
-			"justifyContent": "center"
-		}
-	},
-	phoneRoundedLg: {
-		"@media (max-width: 720px)": {
-			"borderRadius": "calc(14px * var(--rf))"
-		}
+	px4: {
+			paddingInline: "calc(4px * 4)"
 	},
 });
 
@@ -475,22 +252,17 @@ interface FirstMileStep {
 	description: string;
 }
 
-// GitHub comes first because it supplies the next step's answers: the
-// organization is named, marked and domained from the org you just connected,
-// rather than asked for cold. Members sit after repositories, since an invite
-// is worth more once there is something to join.
+// Organization and model setup come first. GitHub App creation no longer
+// depends on a public callback origin: the manifest returns its credentials to
+// the private app, while Domains and public callbacks stay in Settings. Members
+// sit after repositories, since an identity is worth more once there is something
+// to act on. Members remain independent from the optional GitHub sign-in gate.
 const STEPS: FirstMileStep[] = [
 	{
 		id: "welcome",
 		label: "Welcome",
 		title: `Welcome to ${PRODUCT_NAME}`,
-		description: "Create a new organization or join one your team has already set up.",
-	},
-	{
-		id: "github",
-		label: "GitHub",
-		title: "Connect GitHub",
-		description: "Give sessions access to your repositories and pull requests.",
+		description: "Set up this server before you start using Open Session.",
 	},
 	{
 		id: "organization",
@@ -505,6 +277,12 @@ const STEPS: FirstMileStep[] = [
 		description: "Connect the AI subscriptions your team will use to run sessions.",
 	},
 	{
+		id: "github",
+		label: "GitHub",
+		title: "Connect GitHub",
+		description: "Connect a GitHub App so sessions can access repositories, push changes, and create and review pull requests.",
+	},
+	{
 		id: "repos",
 		label: "Repositories",
 		title: "Repositories",
@@ -513,8 +291,8 @@ const STEPS: FirstMileStep[] = [
 	{
 		id: "team",
 		label: "Members",
-		title: "Invite your team",
-		description: "Invite teammates from your GitHub organization to work with you.",
+		title: "Team members",
+		description: "Add yourself and anyone else sessions can act as. GitHub usernames are optional.",
 	},
 	{
 		id: "ready",
@@ -523,6 +301,25 @@ const STEPS: FirstMileStep[] = [
 		description: "Review your setup before entering Open Session.",
 	},
 ];
+
+function githubOrganizationImportEnabled(status: SetupStatus | null): boolean {
+	return Boolean(
+		status?.github.userPrAuth &&
+			status.github.clientIdConfigured &&
+			status.github.appOrg,
+	);
+}
+
+function initialFirstMileIndex(): number {
+	if (typeof window === "undefined") return 0;
+	const stored = window.sessionStorage.getItem("opensession:first-mile-step");
+	window.sessionStorage.removeItem("opensession:first-mile-step");
+	const requested =
+		new URLSearchParams(window.location.search).get("step") || stored;
+	if (!requested) return 0;
+	const index = STEPS.findIndex((item) => item.id === requested);
+	return index < 0 ? 0 : index;
+}
 
 /** The GitHub organization this instance is wired to, for the organization
  *  step's defaults. Reads the App's own owner first, then falls back to the
@@ -549,10 +346,9 @@ function PreviewOverflow({
 	if (count <= 0) return null;
 	return (
 		<span
-			{...stylex.props(
-				sx.previewOverflow,
-				typography.meta,
-				transparent ? sx.previewOverflowTransparent : sx.previewOverflowOpaque,
+			className={cn(
+				utilityClassName("flex size-7 items-center justify-center rounded-full border text-meta font-semibold text-dim"),
+				transparent ? utilityClassName("border-transparent bg-transparent") : utilityClassName("border-bg bg-bg/85"),
 			)}
 		>
 			+{count}
@@ -597,8 +393,8 @@ function FirstMileSummary({
 			ready: true,
 			label: "Online",
 			preview: (
-				<div {...stylex.props(sx.flex, sx.maxWFull, sx.itemsCenter, sx.gap15, sx.roundedFull, sx.bgBg65, sx.py1, sx.pr2, sx.pl1, sx.fontMedium, sx.textFg, typography.meta)}>
-					<span {...stylex.props(sx.flex, sx.size6, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.roundedFull, sx.bgBg85, sx.textDim)}>
+				<div {...mergeStylexProps("bg-bg/65", sx.flex, sx.maxWFull, sx.itemsCenter, sx.gap15, sx.roundedFull, sx.py1, sx.pr2, sx.pl1, sx.fontMedium, sx.textFg, typography.meta)} >
+					<span {...mergeStylexProps("bg-bg/85", sx.flex, sx.size6, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.roundedFull, sx.textDim)} >
 						<IconGlobe size={15} />
 					</span>
 					<span {...stylex.props(sx.truncate)}>{serverHost}</span>
@@ -611,7 +407,7 @@ function FirstMileSummary({
 			ready: github.tone === "on",
 			label: github.label,
 			preview: (
-				<div {...stylex.props(sx.flex, sx.maxWFull, sx.itemsCenter, sx.gap15, sx.roundedFull, sx.bgBg65, sx.py1, sx.pr2, sx.pl1, sx.fontMedium, sx.textFg, typography.meta)}>
+				<div {...mergeStylexProps("bg-bg/65", sx.flex, sx.maxWFull, sx.itemsCenter, sx.gap15, sx.roundedFull, sx.py1, sx.pr2, sx.pl1, sx.fontMedium, sx.textFg, typography.meta)} >
 					{githubOrganization ? (
 						<span {...stylex.props(sx.relative, sx.flex, sx.size6, sx.shrink0)}>
 							<UserAvatar
@@ -620,12 +416,12 @@ function FirstMileSummary({
 								size={24}
 								className={mergeStylexOverrideClassName("", sx.roundedFull)}
 							/>
-							<span {...mergeStylexProps("", sx.ring1, sx.absolute, sx.Right05, sx.Bottom05, sx.flex, sx.size25, sx.itemsCenter, sx.justifyCenter, sx.roundedFull, sx.bgFg, sx.textBg, sx.ringBg)}>
+							<span {...mergeStylexProps("bg-fg ring-1 ring-bg", sx.absolute, sx.Right05, sx.Bottom05, sx.flex, sx.size25, sx.itemsCenter, sx.justifyCenter, sx.roundedFull, sx.textBg)} >
 								<BrandMark name="github" size={7} />
 							</span>
 						</span>
 					) : (
-						<span {...stylex.props(sx.flex, sx.size6, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.roundedFull, sx.bgFg, sx.textBg)}>
+						<span {...mergeStylexProps("bg-fg", sx.flex, sx.size6, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.roundedFull, sx.textBg)} >
 							<BrandMark name="github" size={15} />
 						</span>
 					)}
@@ -639,12 +435,12 @@ function FirstMileSummary({
 			ready: status.engine.ready,
 			label: `${accountCount} ${accountCount === 1 ? "account" : "accounts"} connected`,
 			preview: (
-				<div {...mergeStylexProps("-space-x-2", sx.flex)}>
+				<div {...mergeStylexProps("-space-x-2", sx.flex)} >
 					{accounts.slice(0, 4).map((account, index) => (
 						<span
 							key={`${account.provider}-${index}`}
 							title={account.label}
-							{...stylex.props(sx.flex, sx.size7, sx.itemsCenter, sx.justifyCenter, sx.roundedFull, sx.border, sx.borderBg, sx.bgBg85, sx.textFg)}
+							{...mergeStylexProps("bg-bg/85", sx.flex, sx.size7, sx.itemsCenter, sx.justifyCenter, sx.roundedFull, sx.border, sx.borderBg, sx.textFg)}
 						>
 							<BrandMark name={account.provider} size={15} />
 						</span>
@@ -659,12 +455,12 @@ function FirstMileSummary({
 			ready: status.repos.length > 0,
 			label: status.repos.length > 0 ? `${status.repos.length} added` : "None added",
 			preview: (
-				<div {...mergeStylexProps("-space-x-2", sx.flex)}>
+				<div {...mergeStylexProps("-space-x-2", sx.flex)} >
 					{status.repos.slice(0, 4).map((repo) => (
 						<span
 							key={repo.id}
 							title={repo.label}
-							{...stylex.props(sx.flex, sx.size7, sx.itemsCenter, sx.justifyCenter, sx.roundedFull, sx.border, sx.borderBg, sx.bgBg85, sx.textDim)}
+							{...mergeStylexProps("bg-bg/85", sx.flex, sx.size7, sx.itemsCenter, sx.justifyCenter, sx.roundedFull, sx.border, sx.borderBg, sx.textDim)}
 						>
 							<IconRepo size={14} />
 						</span>
@@ -682,7 +478,7 @@ function FirstMileSummary({
 					? `${status.team.count} ${status.team.count === 1 ? "member" : "members"}`
 					: "No members",
 			preview: (
-				<div {...mergeStylexProps("-space-x-2", sx.flex)}>
+				<div {...mergeStylexProps("-space-x-2", sx.flex)} >
 					{status.team.names.slice(0, 4).map((name) => (
 						<UserAvatar key={name} name={name} size={28} className={mergeStylexOverrideClassName("", sx.border, sx.borderBg)} />
 					))}
@@ -693,21 +489,21 @@ function FirstMileSummary({
 	];
 
 	return (
-		<div {...mergeStylexProps("", sx.phoneGridCols2, sx.grid, sx.gridCols5, sx.gap3)}>
+		<div {...mergeStylexProps("desktop:grid-cols-[repeat(auto-fit,200px)] phone:grid-cols-2 phone:gap-3", sx.grid, sx.justifyCenter, sx.gap4)} >
 			{tiles.map((tile) => {
-				const tileProps = stylex.props(
-					sx.summaryTile,
-					tile.step && sx.summaryTileInteractive,
-					tile.ready ? sx.summaryTileReady : sx.summaryTilePending,
+				const className = cn(
+					utilityClassName("flex aspect-square min-w-0 flex-col justify-between rounded-2xl bg-palette-glass p-5 text-left [backdrop-filter:var(--popup-blur)] smooth-shadow-sm desktop:size-[200px] phone:p-3.5"),
+					tile.step &&
+						utilityClassName("focus-ring cursor-pointer transition-[transform,filter] duration-150 hover:brightness-[0.98] active:scale-[0.96] motion-reduce:transform-none"),
 				);
 				const content = (
 					<>
 						<div {...stylex.props(sx.flex, sx.minW0, sx.itemsStart, sx.justifyBetween, sx.gap2)}>
 							<div {...stylex.props(sx.minW0)}>{tile.preview}</div>
 							<div
-								{...stylex.props(
-									sx.tileStatus,
-									tile.ready ? sx.tileStatusReady : sx.tileStatusPending,
+								className={cn(
+									utilityClassName("flex size-8 shrink-0 items-center justify-center rounded-full"),
+									tile.ready ? utilityClassName("bg-green text-white") : utilityClassName("bg-faint/10 text-faint"),
 								)}
 							>
 								{tile.ready ? (
@@ -729,12 +525,12 @@ function FirstMileSummary({
 						key={tile.title}
 						onClick={() => onSelect(tile.step)}
 						aria-label={`Edit ${tile.title}`}
-						{...tileProps}
+						className={className}
 					>
 						{content}
 					</button>
 				) : (
-					<div key={tile.title} {...tileProps}>
+					<div key={tile.title} className={className}>
 						{content}
 					</div>
 				);
@@ -743,16 +539,18 @@ function FirstMileSummary({
 	);
 }
 
-export function FirstMile({ onDone }: { onDone: () => void }) {
+export function FirstMile({ onDone }: { onDone: () => Promise<void> }) {
 	const setup = useSetupStatus();
 	const { status, failed, refetch } = setup;
-	const [index, setIndex] = useState(0);
-	const [direction, setDirection] = useState(1);
-	const [footerSeparated, setFooterSeparated] = useState(false);
+	const [index, setIndex] = useState(initialFirstMileIndex);
+	const [contentVisible, setContentVisible] = useState(true);
+	const [navigationVisible, setNavigationVisible] = useState(true);
+	const [finishing, setFinishing] = useState(false);
+	const [theme, setTheme] = useState(effectiveTheme);
 	const headingRef = useRef<HTMLHeadingElement>(null);
-	const mainRef = useRef<HTMLElement>(null);
 	const reducedMotion = useReducedMotion();
-	const step = STEPS[index]!;
+	const steps = STEPS;
+	const step = steps[index]!;
 
 	useEffect(() => {
 		document.title = `Welcome to ${PRODUCT_NAME}`;
@@ -761,264 +559,262 @@ export function FirstMile({ onDone }: { onDone: () => void }) {
 		};
 	}, []);
 
+	useEffect(() => onThemeChanged(() => setTheme(effectiveTheme())), []);
+
 	useEffect(() => {
 		if (index > 0) headingRef.current?.focus({ preventScroll: true });
 	}, [index]);
 
+	// `onLayoutAnimationComplete` is the exact reveal signal. This timeout is a
+	// fallback for steps whose measured modal geometry happens to be identical,
+	// in which case Motion has no layout animation to complete.
 	useEffect(() => {
-		const main = mainRef.current;
-		if (!main) return;
-		const update = () => {
-			const remaining = main.scrollHeight - main.scrollTop - main.clientHeight;
-			setFooterSeparated(remaining > 1);
-		};
-		update();
-		main.addEventListener("scroll", update, { passive: true });
-		const resize = new ResizeObserver(update);
-		resize.observe(main);
-		const mutation = new MutationObserver(update);
-		mutation.observe(main, { childList: true, subtree: true });
-		return () => {
-			main.removeEventListener("scroll", update);
-			resize.disconnect();
-			mutation.disconnect();
-		};
-	}, [index, status]);
+		if (contentVisible) return;
+		const reveal = window.setTimeout(() => {
+			setContentVisible(true);
+			setNavigationVisible(true);
+		}, (reducedMotion ? duration.micro : duration.large) * 1000);
+		return () => window.clearTimeout(reveal);
+	}, [contentVisible, index, reducedMotion]);
 
-	function goTo(next: number) {
-		const nextIndex = Math.min(Math.max(next, 0), STEPS.length - 1);
+	async function goTo(next: number) {
+		const nextIndex = Math.min(Math.max(next, 0), steps.length - 1);
 		if (nextIndex === index) return;
-		setDirection(nextIndex > index ? 1 : -1);
+		setContentVisible(false);
+		setNavigationVisible(false);
 		setIndex(nextIndex);
 		void refetch();
 	}
 
-	const variants = {
-		initial: (travel: number) => ({
-			opacity: 0,
-			x: reducedMotion ? 0 : travel * 34,
-		}),
-		animate: { opacity: 1, x: 0 },
-		exit: (travel: number) => ({
-			opacity: 0,
-			x: reducedMotion ? 0 : travel * -22,
-		}),
-	};
+	async function finish() {
+		if (finishing) return;
+		setNavigationVisible(false);
+		setFinishing(true);
+		await onDone();
+		setFinishing(false);
+		setNavigationVisible(true);
+	}
+
+	const backdropName =
+		theme === "dark" ? "onboarding-bg-dark" : "onboarding-bg";
+	const nextLabel =
+		index === 0
+			? "Setup server"
+			: index === steps.length - 1
+				? finishing
+					? "Finishing…"
+					: null
+				: index === steps.length - 2
+					? "Review"
+					: "Next";
 
 	return (
 		<div
-			data-first-mile {...mergeStylexProps("", sx.gridRows76pxMinmax01fr84px, sx.phoneGridRows68pxMinmax01fr90px, sx.phonePbEnvSafeAreaInsetBottom, sx.relative, sx.grid, sx.h100dvh, sx.wFull, sx.overflowHidden, sx.bgBg, sx.textFg)}
+			data-first-mile
+			{...mergeStylexProps("grid-rows-[44px_minmax(0,1fr)] phone:gap-y-0 phone:px-0 phone:pb-0 phone:pt-[max(12px,env(safe-area-inset-top))]", sx.relative, sx.grid, sx.h100dvh, sx.wFull, sx.gapY3, sx.overflowHidden, sx.bgSurface, sx.bgCover, sx.bgCenter, sx.p6, sx.textFg)}
+			// The vendored marketing artwork keeps first run independent of a CDN.
+			style={{ backgroundImage: `url(${BASE_PATH}/${backdropName}.webp)` }}
 		>
-			<div {...mergeStylexProps("", sx.BackgroundRadialGradientCircleAt188VarAccentSoftTransparent34RadialGradientCircleAt8292VarBlueSoftTransparent36, sx.pointerEventsNone, sx.absolute, sx.inset0, sx.opacity70)}
-				aria-hidden="true"
-			/>
-
-			<TopBar
-				as="header" {...mergeStylexProps("", sx.phonePx4, sx.relative, sx.z10, sx.grid, sx.gridCols1frAuto1fr, sx.px8)}
+			<nav
+				aria-label="Onboarding progress"
+				{...stylex.props(sx.relative, sx.z20, sx.flex, sx.h11, sx.shrink0, sx.itemsStart, sx.justifyCenter)}
 			>
-				<Button
-					variant="ghost"
-					size="lg"
-					icon={<IconChevronLeft size={18} />}
-					onClick={() => goTo(index - 1)}
-					aria-label="Back"
-					className={mergeStylexOverrideClassName("", sx.phoneBackButton, index === 0 && sx.phoneInvisible)}
-				/>
-
-				<nav
-					{...stylex.props(sx.progressNav, index === 0 && sx.invisible)}
-					aria-label="Onboarding progress"
-				>
-					{STEPS.slice(1).map((item, itemIndex) => {
-						const stepIndex = itemIndex + 1;
-						return (
-							<button
-								key={item.id}
-								type="button"
-								aria-label={item.label}
-								aria-current={stepIndex === index ? "step" : undefined}
-								onClick={() => goTo(stepIndex)}
-								{...stylex.props(
-									sx.progressStep,
-									stepIndex === index
-										? sx.progressCurrent
-										: stepIndex < index
-											? sx.progressComplete
-											: sx.progressUpcoming,
-								)}
-							/>
-						);
-					})}
-				</nav>
-
-				{index > 0 && index < STEPS.length - 1 ? (
+				{steps.map((item, stepIndex) => (
 					<button
+						key={item.id}
 						type="button"
-						onClick={() => goTo(index + 1)} {...mergeStylexProps("", sx.hoverBgHover, sx.hoverTextFg, sx.focusRing, sx.colStart3, sx.minH9, sx.justifySelfEnd, sx.roundedControl, sx.px3, sx.fontMedium, sx.textDim, typography.label)}
+						onClick={() => goTo(stepIndex)}
+						aria-label={`${item.label}, step ${stepIndex + 1} of ${steps.length}`}
+						aria-current={stepIndex === index ? "step" : undefined}
+						{...mergeStylexProps("group focus-ring phone:h-11 phone:w-9", sx.flex, sx.h10, sx.w8, sx.itemsCenter, sx.justifyCenter, sx.roundedControl)}
 					>
-						Skip
-					</button>
-				) : (
-					<div {...stylex.props(sx.colStart3)} />
-				)}
-			</TopBar>
-
-			<main
-				ref={mainRef} {...mergeStylexProps("", sx.phonePx4, sx.relative, sx.z10, sx.minH0, sx.overflowYAuto, sx.px6, sx.ScrollbarWidthThin)}
-			>
-				{!status ? (
-					<div {...stylex.props(sx.flex, sx.hFull, sx.itemsCenter, sx.justifyCenter)}>
-						<LoadingState>
-							{failed ? "Couldn't load setup." : "Preparing your workspace…"}
-						</LoadingState>
-					</div>
-				) : (
-					<AnimatePresence initial={false} mode="wait" custom={direction}>
-						<motion.section
-							key={step.id}
-							custom={direction}
-							variants={variants}
-							initial="initial"
-							animate="animate"
-							exit="exit"
-							transition={{
-								type: "tween",
-								duration: reducedMotion ? duration.micro : duration.large,
-								ease,
-							}}
-							{...stylex.props(sx.stepSection, step.id === "welcome" && sx.welcomeStep)}
-						>
-							{step.id === "welcome" ? (
-								<div {...stylex.props(sx.flex, sx.maxW560px, sx.flexCol, sx.itemsCenter, sx.textCenter)}>
-									<img
-										src={`${BASE_PATH}/mac-app-icon.png`}
-										alt="" {...mergeStylexProps("", sx.FilterDropShadow018px28pxRgba000016, sx.phoneMb6, sx.phoneSize16, sx.mb7, sx.size20, sx.scale113)}
-									/>
-									<h1
-										ref={headingRef} {...mergeStylexProps("", sx.textClamp16rem2vw215rem, sx.m0, sx.textCenter, sx.fontTitle, sx.leading108, sx.tracking003em, sx.textFg, sx.outlineNone)}
-									>
-										{step.title}
-									</h1>
-									<p {...stylex.props(sx.mt3, sx.maxW440px, sx.textPretty, sx.leadingRelaxed, sx.textDim, typography.body)}>
-										{step.description}
-									</p>
-									<div {...stylex.props(sx.mt7, sx.flex, sx.wFull, sx.maxW300px, sx.flexCol, sx.gap3)}>
-										<Button
-											variant="primary"
-											size="lg"
-											onClick={() => goTo(1)}
-											className={mergeStylexOverrideClassName("", sx.minH11, sx.wFull, sx.justifyCenter)}
-										>
-											Create organization
-										</Button>
-										<Button
-											variant="soft"
-											size="lg"
-											onClick={onDone}
-											className={mergeStylexOverrideClassName("", sx.minH11, sx.wFull, sx.justifyCenter)}
-										>
-											Join organization
-										</Button>
-									</div>
-								</div>
-							) : (
-								<>
-									<div {...mergeStylexProps("", sx.phoneMb6, sx.mb8, sx.maxW700px, sx.textCenter)}>
-										<h1
-											ref={headingRef}
-											tabIndex={-1} {...mergeStylexProps("", sx.textClamp16rem25vw225rem, sx.m0, sx.textBalance, sx.fontTitle, sx.leading108, sx.tracking0035em, sx.textFg, sx.outlineNone)}
-										>
-											{step.title}
-										</h1>
-										<p {...stylex.props(sx.mt3, sx.textPretty, sx.leadingRelaxed, sx.textDim, typography.body)}>
-											{step.description}
-										</p>
-									</div>
-
-									<div {...mergeStylexProps("[&_.bg-settings-plate]:rounded-2xl [&_.bg-settings-plate]:border-transparent [&_.bg-settings-plate]:bg-blue-soft/65 [&_.bg-settings-plate]:shadow-[inset_0_1px_0_color-mix(in_srgb,white_45%,transparent),0_18px_46px_-36px_color-mix(in_srgb,var(--blue)_48%,transparent)] [&_[data-setting-description]]:hidden [&_[data-settings-hint]]:hidden", sx.wFull, sx.maxW820px, sx.pb8)}>
-										{step.id === "github" && (
-											<GithubAuthCard
-												github={status.github}
-												onSaved={setup.applyGithub}
-												onboarding
-											/>
-										)}
-										{step.id === "organization" && (
-											<OrganizationProfileSection
-												githubOrganization={connectedGithubOrganization(status)}
-												showDomain={false}
-											/>
-										)}
-										{step.id === "team" && (
-											<TeamSection
-												onChanged={refetch}
-												title="Members"
-												showCount
-												githubOnly
-												compact
-											/>
-										)}
-										{step.id === "ai" && (
-											<ProviderAccountsSection onboarding onChanged={refetch} />
-										)}
-										{step.id === "repos" && (
-											<ReposSection repos={status.repos} onChanged={refetch} compact />
-										)}
-										{step.id === "ready" && (
-											<FirstMileSummary
-												status={status}
-												onSelect={(stepId) =>
-													goTo(STEPS.findIndex((item) => item.id === stepId))
-												}
-											/>
-										)}
-									</div>
-								</>
+						<span
+							aria-hidden="true"
+							className={cn(
+								utilityClassName("h-2 rounded-full transition-[width,background-color,opacity] duration-[var(--dur)] ease-[var(--ease)] motion-reduce:transition-none"),
+								stepIndex === index
+									? utilityClassName("w-6 bg-fg")
+									: stepIndex < index
+										? utilityClassName("w-2 bg-fg/45 group-hover:bg-fg/65")
+										: utilityClassName("w-2 bg-faint/35 group-hover:bg-faint/60"),
 							)}
-						</motion.section>
-					</AnimatePresence>
-				)}
-			</main>
+						/>
+					</button>
+				))}
+			</nav>
 
-			<footer
-				{...stylex.props(
-					sx.footer,
-					footerSeparated ? sx.footerSeparated : sx.footerAttached,
-					index === 0 && sx.invisible,
-				)}
-			>
-				<div {...mergeStylexProps("", sx.phoneGridCols1, sx.phoneItemsStart, sx.mxAuto, sx.grid, sx.hFull, sx.wFull, sx.maxW820px, sx.gridCols1frAuto1fr, sx.itemsCenter)}>
-					<Button
-						variant="ghost"
-						size="lg"
-						icon={<IconChevronLeft size={18} />}
-						onClick={() => goTo(index - 1)}
-						className={mergeStylexOverrideClassName("", sx.desktopBackButton, index === 0 && sx.invisible)}
-					>
-						Back
-					</Button>
-
-					<span className={mergeStylexClassName("", sx.phoneHidden)} />
-
-					<Button
-						variant="primary"
-						size="lg"
-						onClick={() => {
-							if (index === STEPS.length - 1) onDone();
-							else goTo(index + 1);
-						}}
-						disabled={!status} {...mergeStylexProps("", sx.phoneMinH12, sx.phoneWFull, sx.phoneJustifyCenter, sx.phoneRoundedLg, sx.justifySelfEnd)}
-					>
-						{index === 0
-							? "Continue"
-							: index === STEPS.length - 1
-								? `Enter ${PRODUCT_NAME}`
-								: index === STEPS.length - 2
-									? "Review"
-									: "Next"}
-					</Button>
+			{!status ? (
+				<div {...mergeStylexProps("self-center [--smooth-ring-color:var(--dialog-ring)] smooth-shadow-ring-lg", sx.flex, sx.minH40, sx.wFull, sx.maxW560px, sx.justifySelfCenter, sx.itemsCenter, sx.justifyCenter, sx.rounded2xl, sx.bgPaletteGlass, sx.px8, sx.py12, sx.BackdropFilterVarPopupBlur)} >
+					<LoadingState>
+						{failed ? "Couldn't load setup." : "Preparing your workspace…"}
+					</LoadingState>
 				</div>
-			</footer>
+			) : (
+				<motion.section
+					layout
+					onLayoutAnimationComplete={() => {
+						setContentVisible(true);
+						setNavigationVisible(true);
+					}}
+					transition={{
+						layout: {
+							type: "spring",
+							duration: reducedMotion ? duration.micro : duration.large,
+							bounce: 0,
+						},
+					}}
+					className={cn(
+						utilityClassName("relative z-10 flex max-h-full w-full self-center justify-self-center flex-col overflow-hidden rounded-2xl phone:h-full phone:max-h-none phone:max-w-none phone:self-stretch phone:rounded-none phone:[box-shadow:none]"),
+						step.id === "welcome" || step.id === "ready"
+							? cn(
+									step.id === "ready" ? "max-w-[1144px]" : "max-w-[560px]",
+									utilityClassName("bg-transparent [backdrop-filter:none]"),
+								)
+							: utilityClassName("max-w-[750px] bg-palette-glass [--smooth-ring-color:var(--dialog-ring)] [backdrop-filter:var(--popup-blur)] smooth-shadow-ring-lg"),
+					)}
+				>
+					<div
+						key={step.id}
+						aria-hidden={!contentVisible}
+						inert={!contentVisible}
+						className={cn(
+							utilityClassName("flex min-h-0 flex-col"),
+							!contentVisible && utilityClassName("invisible"),
+						)}
+					>
+						<header {...mergeStylexProps("phone:px-5 phone:pt-6", sx.shrink0, sx.px10, sx.pb2, sx.pt9, sx.textCenter)} >
+							{step.id === "welcome" && (
+								<img
+									src={`${BASE_PATH}/mac-app-icon.png`}
+									alt=""
+									{...mergeStylexProps("[filter:drop-shadow(0_18px_28px_rgba(0,0,0,0.16))] phone:mb-6", sx.mxAuto, sx.mb7, sx.size16)}
+								/>
+							)}
+							<h1
+								ref={headingRef}
+								tabIndex={index > 0 ? -1 : undefined}
+								{...mergeStylexProps("m-0 phone:text-section-title", sx.textBalance, sx.fontTitle, sx.leading11, sx.tracking0012em, sx.textFg, sx.outlineNone, typography.pageTitle)}
+							>
+								{step.title}
+							</h1>
+						</header>
+
+						<div
+							className={cn(
+								utilityClassName("min-h-0"),
+								step.id === "welcome"
+									? utilityClassName("h-4 shrink-0")
+									: utilityClassName("overflow-y-auto overscroll-contain px-10 pb-12 pt-5 [-webkit-mask-image:linear-gradient(to_bottom,#000_0,#000_calc(100%_-_36px),transparent_100%)] [mask-image:linear-gradient(to_bottom,#000_0,#000_calc(100%_-_36px),transparent_100%)] [scrollbar-width:thin] phone:px-4 phone:pb-12 phone:pt-4"),
+							)}
+						>
+							{step.id !== "welcome" && (
+								<div
+									className={cn(
+										utilityClassName("mx-auto w-full [&_[data-setting-title]]:text-dialog-title [&_[data-setting-title]]:phone:text-body [&_[data-settings-group-label]]:text-body [&_[data-settings-group-label]]:text-fg [&_[data-settings-hint]]:leading-[1.5] [&_[data-settings-hint]]:text-faint [&_[data-onboarding-caption]]:leading-[1.5]"),
+										step.id === "ready" ? utilityClassName("max-w-[1160px]") : utilityClassName("max-w-[780px]"),
+										"[&_.bg-settings-plate]:border-0 [&_.bg-settings-plate]:bg-transparent! [&_.bg-settings-plate]:shadow-none [&_.bg-settings-plate]:[backdrop-filter:none]",
+										"[&_input]:h-9 [&_input]:min-h-9 [&_input]:px-3 [&_input]:text-base [&_select]:min-h-9 [&_textarea]:min-h-9",
+									)}
+								>
+									{step.id === "github" && (
+										<GithubAuthCard
+											github={status.github}
+											onSaved={setup.applyGithub}
+											onboarding
+										/>
+									)}
+									{step.id === "organization" && (
+										<OrganizationProfileSection
+											githubOrganization={connectedGithubOrganization(status)}
+											onboarding
+										/>
+									)}
+									{step.id === "team" && (
+										<TeamSection
+											onChanged={refetch}
+											title="Members"
+											showCount
+											onboarding
+											syncGithubOrganization={githubOrganizationImportEnabled(status)}
+											compact
+										/>
+									)}
+									{step.id === "ai" && (
+										<ProviderAccountsSection onboarding onChanged={refetch} />
+									)}
+									{step.id === "repos" && (
+										<ReposSection
+											repos={status.repos}
+											onChanged={refetch}
+											compact
+											showLifecycleStatus={false}
+										/>
+									)}
+									{step.id === "ready" && (
+										<FirstMileSummary
+											status={status}
+											onSelect={(stepId) =>
+												goTo(steps.findIndex((item) => item.id === stepId))
+											}
+										/>
+									)}
+								</div>
+							)}
+						</div>
+					</div>
+
+					<motion.footer
+						layout="position"
+						initial={false}
+						animate={{ opacity: navigationVisible ? 1 : 0 }}
+						transition={{ type: "tween", duration: duration.micro, ease }}
+						aria-hidden={!navigationVisible}
+						inert={!navigationVisible}
+						className={cn(
+							utilityClassName("relative z-20 shrink-0 px-6 py-4 phone:px-3 phone:pb-[max(12px,env(safe-area-inset-bottom))] phone:pt-3"),
+							!navigationVisible && utilityClassName("pointer-events-none"),
+						)}
+					>
+						<div
+							className={cn(
+								utilityClassName("flex items-center gap-3"),
+								index === 0 || step.id === "ready"
+									? utilityClassName("justify-center")
+									: utilityClassName("justify-between"),
+							)}
+						>
+							{index > 0 && step.id !== "ready" && (
+								<Button
+									variant="soft"
+									size="lg"
+									onClick={() => goTo(index - 1)}
+									className={utilityClassName("phone:min-h-11")}
+								>
+									Back
+								</Button>
+							)}
+
+							<Button
+								variant="primary"
+								size="lg"
+								onClick={() => {
+									if (index === steps.length - 1) void finish();
+									else goTo(index + 1);
+								}}
+								disabled={finishing}
+								className={mergeStylexOverrideClassName("phone:min-h-11", sx.px4)}
+							>
+								{nextLabel ?? (
+									<>
+										<span className={utilityClassName("phone:hidden")}>Enter {PRODUCT_NAME}</span>
+										<span className={utilityClassName("desktop:hidden")}>Enter</span>
+									</>
+								)}
+							</Button>
+						</div>
+					</motion.footer>
+				</motion.section>
+			)}
 
 			<SetupRestart setup={setup} />
 		</div>

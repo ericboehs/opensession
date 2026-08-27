@@ -2,7 +2,8 @@
  * GitHub's webhook intake route. GithubAgent owns this handler; Slack registers
  * it only as a compatibility fallback when the GitHub agent is disabled.
  */
-import { configuredIntegration } from "../../server/config";
+import { configuredIntegration, isGithubBotLogin } from "../../server/config";
+import { isTrustedGithubLogin } from "../../server/shared/user-mappings";
 import {
   RequestBodyTooLargeError,
   readRequestTextWithinLimit,
@@ -65,9 +66,16 @@ export async function handleGithubWebhook(req: Request): Promise<Response> {
 
   // Slack remains optional: don't load any Slack module in GitHub-only mode.
   if (event === "pull_request_review" && slackAgentEnabled()) {
-    Promise.all([import("../slack/github-reviews"), import("../slack/worktree-channels")])
-      .then(([reviews, channels]) => reviews.handlePullRequestReview(payload, channels.branchToChannel))
-      .catch((e) => console.error("[github] Error handling PR review webhook:", e));
+    const reviewerLogin: string = payload?.review?.user?.login || payload?.sender?.login || "";
+    if (isGithubBotLogin(reviewerLogin) || isTrustedGithubLogin(reviewerLogin)) {
+      Promise.all([import("../slack/github-reviews"), import("../slack/worktree-channels")])
+        .then(([reviews, channels]) => reviews.handlePullRequestReview(payload, channels.branchToChannel))
+        .catch((e) => console.error("[github] Error handling PR review webhook:", e));
+    } else {
+      console.warn(
+        `[github] Ignoring PR review notification from untrusted @${reviewerLogin || "unknown"}`,
+      );
+    }
   }
 
   // Sync PR caches for every delivery; the cache handler filters events itself.

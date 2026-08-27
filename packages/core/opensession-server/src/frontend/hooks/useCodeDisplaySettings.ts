@@ -51,11 +51,14 @@ export function useStoredCodeSetting<T extends string>(
     };
   const allowedKey = allowed.join("\0");
   useEffect(() => {
+    // Rebuild the validation list from the joined key so the listener only
+    // resubscribes when the allowed values actually change.
+    const allowedValues = allowedKey.split("\0");
     const sync = (event: Event) => {
       const detail = (
         event as CustomEvent<{ key?: string; value?: string }>
       ).detail;
-      if (detail?.key === key && allowed.includes(detail.value as T)) {
+      if (detail?.key === key && allowedValues.includes(detail.value as T)) {
         setValue(detail.value as T);
       }
     };

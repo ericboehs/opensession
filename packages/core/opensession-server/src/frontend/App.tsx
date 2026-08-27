@@ -1,3 +1,5 @@
+import { mergeStylexProps, mergeStylexOverrideClassName } from "./ui/cn";
+import { utilityClassName } from "./ui/cn";
 import { BASE_PATH, stripBasePath } from "./lib/base";
 import { DEFAULT_REPO_ID, PRODUCT_NAME } from "./lib/brand";
 import {
@@ -12,6 +14,7 @@ import {
 import { reviewRequestTargetsPerson } from "./lib/review-queue";
 import { repoLabel } from "./lib/repo-label";
 import { NO_REPO } from "./lib/session-repo";
+import { sessionReferenceTitle } from "./lib/session-title";
 import { ASK_BAND } from "./lib/sidebar-workspaces";
 import {
 	sidebarStartsCollapsed,
@@ -19,8 +22,9 @@ import {
 } from "./lib/sidebar-collapse";
 import { openWorkspaceSummary } from "./lib/workspace-summary-open";
 import React, {
-	
+	useCallback,
 	useEffect,
+	useEffectEvent,
 	useLayoutEffect,
 	useRef,
 	useState,
@@ -31,7 +35,7 @@ import { MotionConfig } from "motion/react";
 import { MarkdownRepoProvider } from "./components/MarkdownBody";
 import { Sidebar, type SidebarHandle } from "./components/Sidebar";
 import { Tooltip, TooltipProvider } from "./ui/tooltip";
-import { cn, mergeStylexProps, mergeStylexClassName, mergeStylexOverrideClassName } from "./ui/cn";
+import { cn } from "./ui/cn";
 import {
 	APP_BODY,
 	DETAIL_PANE,
@@ -82,16 +86,19 @@ import {
 } from "./components/NewSession";
 import { clearDraft, saveDraft, NEW_SESSION_DRAFT_KEY } from "./lib/drafts";
 import { dropStagingAttachments } from "./lib/attachments";
-import { IconTile } from "./components/BrandTile";
-import { displayName } from "./brand-logos";
 import type { NewSessionPrefill } from "./lib/new-session-link";
-import { shouldOpenCreatedSession } from "./lib/new-session-navigation";
+import {
+	errorMatchesPendingCreate,
+	shouldApplyCreatedSessionReply,
+	shouldOpenCreatedSession,
+} from "./lib/new-session-navigation";
 import { primeSoftKeyboard } from "./lib/soft-keyboard";
 import { trackKeyboardInset } from "./lib/keyboard-inset";
+import type { CommandPaletteAction } from "./components/SessionSearch";
 import {
-	SessionSearch,
-	type CommandPaletteAction,
-} from "./components/SessionSearch";
+	CommandMenuHost,
+	type CommandMenuHandle,
+} from "./components/CommandMenuHost";
 import { Prs } from "./components/Prs";
 import { Feed } from "./components/Feed";
 import { CatchUpDeck } from "./components/CatchUpDeck";
@@ -112,12 +119,7 @@ import { UserGate, getCurrentUser, useAuthStatus, useCurrentUser } from "./compo
 import { PreviewWait, matchPreviewWaitRoute } from "./components/PreviewWait";
 import { TitleBar } from "./components/TitleBar";
 import { FirstMile } from "./components/FirstMile";
-import { GithubConnectEmptyState } from "./components/GithubConnectEmptyState";
-import {
-	completeFirstMile,
-	firstMileComplete,
-	onFirstMileChanged,
-} from "./lib/first-mile-pref";
+import { useOnboarding } from "./hooks/useOnboarding";
 import {
 	settingsPaletteActions,
 	type SettingsSectionKey,
@@ -195,8 +197,6 @@ import {
 	deleteWorkspaceApi,
 	fetchRepos,
 	cachedRepos,
-	fetchToolAccounts,
-	knownToolAccounts,
 	REPOS_CHANGED_EVENT,
 	resolveWorkspaceApi,
 	type OpenPr,
@@ -302,26 +302,20 @@ import type { UnifiedSession } from "./lib/types";
 // a home. Utilities are linked after both, so they win source-order ties.
 import "./styles/base.css";
 import "./styles/legacy.css";
-import "./styles/smooth-shadow.css";
-import "./styles/residual.css";
 import { EmptyState, LoadingState } from "./ui/state";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "./styles/typography.stylex";
-import { sharedClassStyles } from "./styles/shared-class-styles.stylex";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
 	gap5: {
-			gap: "20px"
-	},
-	m0: {
-			margin: "0"
+			gap: "calc(4px * 5)"
 	},
 	fontSemibold: {
 			fontWeight: "var(--font-weight-semibold)"
 	},
 	tracking001em: {
-			letterSpacing: "-.01em"
+			letterSpacing: "-0.01em"
 	},
 	textFg: {
 			color: "var(--text)"
@@ -333,22 +327,49 @@ const sx = stylex.create({
 			color: "var(--text-dim)"
 	},
 	mt3: {
-			marginTop: "12px"
+			marginTop: "calc(4px * 3)"
 	},
 	justifyEnd: {
 			justifyContent: "flex-end"
 	},
 	gap3: {
-			gap: "12px"
+			gap: "calc(4px * 3)"
 	},
 	ml5: {
-			marginLeft: "20px"
+			marginLeft: "calc(4px * 5)"
 	},
 	fontMedium: {
 			fontWeight: "var(--font-weight-medium)"
 	},
 	opacity70: {
-			opacity: ".7"
+			opacity: "70%"
+	},
+	flex: {
+			display: "flex"
+	},
+	h100dvh: {
+			height: "100dvh"
+	},
+	itemsCenter: {
+			alignItems: "center"
+	},
+	justifyCenter: {
+			justifyContent: "center"
+	},
+	bgBg: {
+			backgroundColor: "var(--bg)"
+	},
+	flexCol: {
+			flexDirection: "column"
+	},
+	gap4: {
+			gap: "calc(4px * 4)"
+	},
+	px6: {
+			paddingInline: "calc(4px * 6)"
+	},
+	textCenter: {
+			textAlign: "center"
 	},
 	shrink0: {
 			flexShrink: "0"
@@ -356,165 +377,29 @@ const sx = stylex.create({
 	textFaint: {
 			color: "var(--text-faint)"
 	},
-	flex: {
-			display: "flex"
-	},
-	itemsCenter: {
-			alignItems: "center"
-	},
 	gap2: {
-			gap: "8px"
+			gap: "calc(4px * 2)"
 	},
 	flex1: {
 			flex: "1"
 	},
-	justifyCenter: {
-			justifyContent: "center"
-	},
 	minH0: {
 			minHeight: "0"
-	},
-	flexCol: {
-			flexDirection: "column"
 	},
 	overflowYAuto: {
 			overflowY: "auto"
 	},
 	px5: {
-			paddingInline: "20px"
+			paddingInline: "calc(4px * 5)"
 	},
 	py8: {
-			paddingBlock: "32px"
+			paddingBlock: "calc(4px * 8)"
 	},
 	wFull: {
 			width: "100%"
 	},
 	maxW680px: {
 			maxWidth: "680px"
-	},
-	bgSidebar: { backgroundColor: "var(--sidebar-bg)" },
-	sidebarIconLeft: { "--sidebar-icon-left": "16px" },
-	desktopSidebarMaterial: {
-		background: {
-			default: null,
-			"@media (min-width: 721px)": "linear-gradient(var(--sidebar-material), var(--sidebar-material)), var(--sidebar-bg)",
-		},
-	},
-	absolute: { position: "absolute" },
-	inset0: { inset: "0" },
-	z1: { zIndex: 1 },
-	relative: { position: "relative" },
-	wSidebar: { width: "var(--sidebar-w, 280px)" },
-	desktopHidden: {
-		display: { default: null, "@media (min-width: 721px)": "none" },
-	},
-	hidden: { display: "none" },
-	hDesktopHeader: { height: "var(--desktop-header-h)" },
-	minW0: { minWidth: "0" },
-	justifyStart: { justifyContent: "flex-start" },
-	py0: { paddingBlock: "0" },
-	pr3: { paddingRight: "12px" },
-	plSidebarBrand: { paddingLeft: "calc(var(--sidebar-icon-left) - 8px)" },
-	inlineFlex: { display: "inline-flex" },
-	px5px: { paddingInline: "5px" },
-	py3px: { paddingBlock: "3px" },
-	top0: { top: "0" },
-	rightNeg3px: { right: "-3px" },
-	z30: { zIndex: 30 },
-	hFull: { height: "100%" },
-	w7px: { width: "7px" },
-	cursorColResize: { cursor: "col-resize" },
-	afterResizeLine: {
-		"::after": {
-			content: '""',
-			position: "absolute",
-			top: "0",
-			right: "3px",
-			height: "100%",
-			width: "2px",
-			backgroundColor: {
-				default: "transparent",
-				":hover": { "@media (hover: hover)": "var(--border-strong)" },
-			},
-			transitionProperty: "background",
-			transitionTimingFunction: "var(--ease)",
-			transitionDuration: "var(--dur-micro)",
-		},
-	},
-	topSidebarReopen: { top: "calc((var(--desktop-header-h) - 35px) / 2)" },
-	left2: { left: "8px" },
-	z20: { zIndex: 20 },
-	size34px: { width: "34px", height: "34px" },
-	p0: { padding: "0" },
-	desktopInlineFlex: {
-		display: { default: null, "@media (min-width: 721px)": "inline-flex" },
-	},
-
-	right3px: {
-		"right": "-3px"
-	},
-	afterAbsolute: {
-		"::after": {
-			"content": "var(--tw-content)",
-			"position": "absolute"
-		}
-	},
-	afterTop0: {
-		"::after": {
-			"content": "var(--tw-content)",
-			"top": "0"
-		}
-	},
-	afterRight3px: {
-		"::after": {
-			"content": "var(--tw-content)",
-			"right": "3px"
-		}
-	},
-	afterHFull: {
-		"::after": {
-			"content": "var(--tw-content)",
-			"height": "100%"
-		}
-	},
-	afterW2px: {
-		"::after": {
-			"content": "var(--tw-content)",
-			"width": "2px"
-		}
-	},
-	afterBgTransparent: {
-		"::after": {
-			"content": "var(--tw-content)",
-			"backgroundColor": "transparent"
-		}
-	},
-	afterTransitionBackground: {
-		"::after": {
-			"content": "var(--tw-content)",
-			"transitionProperty": "background",
-			"transitionTimingFunction": "var(--tw-ease,var(--ease))",
-			"transitionDuration": "var(--tw-duration,var(--dur-micro))"
-		}
-	},
-	afterContent: {
-		"::after": {
-			"--tw-content": "\"\"",
-			"content": "var(--tw-content)"
-		}
-	},
-	hoverAfterBgLineStrong: {
-		"@media (hover: hover)": {
-			":hover": {
-				"::after": {
-					"content": "var(--tw-content)",
-					"backgroundColor": "var(--border-strong)"
-				}
-			}
-		}
-	},
-	topCalcVarDesktopHeaderH35px2: {
-		"top": "calc((var(--desktop-header-h) - 35px) / 2)"
 	},
 });
 
@@ -626,6 +511,7 @@ const SETTINGS_SECTIONS = new Set<SettingsSectionKey>([
 	"setup",
 	"repos",
 	"members",
+	"authentication",
 	"providers",
 	"sandboxes",
 	"runners",
@@ -633,11 +519,13 @@ const SETTINGS_SECTIONS = new Set<SettingsSectionKey>([
 	"integrations",
 	"connections",
 	"memory",
+	"ingress",
 	"storage",
 	"prewarming",
 	"deploys",
 	"papercuts",
 	"audit",
+	"downloads",
 ]);
 
 // Sections that were merged into another one — old links keep working.
@@ -870,6 +758,9 @@ function routePath(route: Route): string {
 type NavState = {
 	d: number | null;
 	settingsReturn?: SettingsReturn;
+	/** A PWA cold-launch restore, so an archived remembered session can yield
+	 * back to home without breaking explicit deep links to archived work. */
+	restoredSession?: string;
 } | null;
 function currentNavState(): NavState {
 	const state = history.state as NavState;
@@ -955,7 +846,13 @@ export function App(
 				const restored: Route = { view: "session", id: lastId };
 				// Push rather than replace: the home entry we actually landed on stays
 				// beneath as the root, so Back returns to it instead of out of the app.
-				history.pushState(navState(1), "", routePath(restored));
+				// Mark this as an automatic restore. Explicit deep links intentionally
+				// keep opening archived sessions, but a stale PWA memory should not.
+				history.pushState(
+					{ d: 1, restoredSession: lastId } satisfies NonNullable<NavState>,
+					"",
+					routePath(restored),
+				);
 				return restored;
 			}
 		}
@@ -978,6 +875,7 @@ export function App(
 		archivedLoaded,
 		refreshArchived,
 		refresh,
+		refreshInvalidated,
 		inject,
 		unstick,
 		patch,
@@ -991,12 +889,19 @@ export function App(
 	// chips need the registered set to resolve, so without it the first paint of
 	// a transcript renders `opensession#128` as plain text and relinks a beat later.
 	const [registeredRepoInfo, setRegisteredRepoInfo] = useState(cachedRepos);
-	const [firstMileIsComplete, setFirstMileIsComplete] =
-		useState(firstMileComplete);
+	const onboarding = useOnboarding();
 	const [forceFirstMile, setForceFirstMile] = useState(landedOnFirstMile);
 	const auth = useAuthStatus();
 	const githubConnectionState = useGithubConnectionState(route.view);
 	const { connected, send, setTyping, addHandler } = useWebSocket();
+	// A disconnected socket may miss list invalidations. The first connection
+	// races the initial list load and needs no extra fetch; later reconnects do.
+	const webSocketConnectedOnceRef = useRef(false);
+	useEffect(() => {
+		if (!connected) return;
+		if (webSocketConnectedOnceRef.current) refresh();
+		else webSocketConnectedOnceRef.current = true;
+	}, [connected, refresh]);
 	const sessionsRef = useRef(sessions);
 	useLayoutEffect(() => {
 	sessionsRef.current = sessions;
@@ -1017,30 +922,26 @@ export function App(
 	// turn") route through the global toast store — stacked, animated, and
 	// firable from anywhere without threading a prop. This wrapper keeps the
 	// existing `onToast`/`showToast` call sites working.
-	const showToast = (message: string) => {
+	const showToast = useCallback((message: string) => {
 		toast(message);
-	};
+	}, []);
 	// Session-reference chips in transcripts (`bks-…`), and the pill the
 	// composer projects a draft id into, label themselves from this registry.
 	// markdown.ts renders to an HTML string rather than React nodes, so it
 	// can't read this from context, so hand it the names we already poll.
 	// No-ops unless a name actually changed.
 	//
-	// The name is the WORKSPACE's, not the session's, for the same reason a
-	// sidebar row takes it (Sidebar.tsx) and the viewer header shows it: a
-	// reference is read as "that piece of work", and clicking one lands on a
-	// page titled after the workspace. Labelling the chip after one of its
-	// tabs promised a name the destination doesn't show. That tab is often a
-	// machine-made per-run label ("Review · PR #5741 …") where the workspace
-	// is what a person recognizes. A session title is the fallback, for a
-	// session whose workspace this client has no name for.
+	// Human sessions name the workspace they open, matching the sidebar and
+	// viewer header. Worker references are different: their session title says
+	// which delegated task the chip opens, while their inherited workspace name
+	// would incorrectly repeat the parent session's subject for every worker.
 	useEffect(() => {
 		setSessionTitles(
 			sessions.map(
 				(s) =>
 					[
 						s.id,
-						s.workspaceName || s.title,
+						sessionReferenceTitle(s),
 						s.isRunning,
 						s.title,
 						s.aliasIds,
@@ -1081,7 +982,7 @@ export function App(
 									...(session
 										? {
 												id: session.id,
-												title: session.workspaceName || session.title,
+												title: sessionReferenceTitle(session),
 												tabTitle: session.title,
 												aliases: session.aliasIds,
 												archived: session.archived === true,
@@ -1311,20 +1212,16 @@ export function App(
 		workspacesLoaded &&
 		sessions.length === 0 &&
 		workspaces.length === 0;
-	const githubConnectionRequired =
-		productEmpty && githubConnectionState === "disconnected";
-	const firstMileActive =
-		forceFirstMile ||
-		(auth?.admin !== false &&
-			productEmpty &&
-			githubConnectionState === "connected" &&
-			!firstMileIsComplete);
-	const refreshWorkspaces = () => {
+	const firstMileActive = forceFirstMile || onboarding.state === "required";
+	// This identity is observable: both subscriptions below depend on it. Keep it
+	// stable even if the compiler bails out on this large component, otherwise a
+	// completed fetch updates state, retriggers the effect, and starts another fetch.
+	const [refreshWorkspaces] = useState(() => () => {
 		return fetchWorkspaces()
 			.then(setWorkspaces)
 			.catch(() => {})
 			.finally(() => setWorkspacesLoaded(true));
-	};
+	});
 	useEffect(() => {
 		refreshWorkspaces();
 		const onFocus = () => refreshWorkspaces();
@@ -1337,11 +1234,12 @@ export function App(
 		return () => window.removeEventListener("opensession:workspaces-changed", onWorkspaceSettingsChanged);
 	}, [refreshWorkspaces]);
 	useEffect(() => {
-		const sync = () => setFirstMileIsComplete(firstMileComplete());
-		const unsubscribe = onFirstMileChanged(sync);
-		sync();
-		return unsubscribe;
-	}, []);
+		if (onboarding.state !== "required" || forceFirstMile) return;
+		// The onboarding gate owns the first incomplete load, including deep links.
+		// Replace rather than push so Back cannot escape a required walkthrough.
+		history.replaceState(history.state ?? navState(0), "", `${BASE_PATH}/welcome`);
+		setForceFirstMile(true);
+	}, [onboarding.state, forceFirstMile]);
 
 	function openFirstMile() {
 		// Keep the settings entry below the walkthrough so browser Back returns to
@@ -1351,8 +1249,15 @@ export function App(
 		setForceFirstMile(true);
 	}
 
-	function finishFirstMile() {
-		completeFirstMile();
+	async function finishFirstMile() {
+		try {
+			await onboarding.complete();
+		} catch (cause) {
+			toast(cause instanceof Error ? cause.message : "Could not finish onboarding", {
+				variant: "error",
+			});
+			return;
+		}
 		if (forceFirstMile) {
 			const url = new URL(location.href);
 			url.searchParams.delete("firstmile");
@@ -1648,6 +1553,10 @@ export function App(
 		};
 	}, []);
 
+	// The current session is declared before the navigation callbacks that read
+	// it. A layout effect below keeps it synchronized once session data resolves.
+	const currentSessionRef = useRef<UnifiedSession | null>(null);
+
 	// Pop back to the sidebar root. With the root beneath us, one `history.go`
 	// lands on it directly — keeping the browser/OS back button in lockstep
 	// without walking back through every panel we pushed on the way. Cold-loaded
@@ -1710,10 +1619,14 @@ export function App(
 
 	// Escape leaves Settings, the same way its Back control does. The window-level
 	// handler below is installed once, so it reads the current closer through a
-	// ref; null when Settings is not the open surface.
+	// ref; null when Settings is not the open surface. Null while the setup
+	// onboarding covers Settings too: opening it pushes /welcome over the
+	// settings entry without changing the route, so Settings still reads as
+	// active — and an Escape would pop history and dismiss the walkthrough.
 	const leaveSettingsRef = useRef<(() => void) | null>(null);
 	useLayoutEffect(() => {
-	leaveSettingsRef.current = settingsActive ? leaveSettings : null;
+	leaveSettingsRef.current =
+		settingsActive && !firstMileActive ? leaveSettings : null;
 	});
 
 	// Edge-swipe-from-left pops the pushed page back to the sidebar on phones.
@@ -2022,24 +1935,10 @@ export function App(
 		if (focusComposerOnOpen) setFocusComposerOnOpen(false);
 	}, [focusComposerOnOpen]);
 
-	// The ⌘K command palette. Sessions, PRs, and app actions share one overlay
-	// driven by its own state so it can open over any view.
-	const [searchOpen, setSearchOpen] = useState(false);
-	const [commandMcpServers, setCommandMcpServers] = useState<string[]>(() =>
-		(knownToolAccounts() || []).map((server) => server.name),
-	);
-	useEffect(() => {
-		if (!searchOpen) return;
-		let live = true;
-		fetchToolAccounts()
-			.then(({ servers }) => {
-				if (live) setCommandMcpServers(servers.map((server) => server.name));
-			})
-			.catch(() => {});
-		return () => {
-			live = false;
-		};
-	}, [searchOpen]);
+	// The command menu owns its open/query state below App, so toggling it does
+	// not reconcile the active route, viewer, and sidebar before the overlay can
+	// paint.
+	const commandMenuRef = useRef<CommandMenuHandle>(null);
 	// The Desk overlay (⌘J / the floating desk button): a standing concierge
 	// session on top of whatever view is open. Its entrance origin follows the
 	// invocation: the corner launcher is spatial, while the shortcut is not.
@@ -2075,10 +1974,6 @@ const path = await resolveAnonymousUserPath(
 			unsub();
 		};
 	}, [addHandler]);
-	const searchOpenRef = useRef(searchOpen);
-	useLayoutEffect(() => {
-	searchOpenRef.current = searchOpen;
-	});
 	const closePalette = () => {
 		setPalette({ open: false });
 		// A deep link left the URL on <base>/new — return home on close.
@@ -2095,7 +1990,6 @@ const path = await resolveAnonymousUserPath(
 				originPath: routePath(routeRef.current),
 			};
 			pendingCreateDraftRef.current = draft;
-			if (!started.openImmediately) return;
 
 			const shell: UnifiedSession = {
 				id: started.id,
@@ -2120,10 +2014,16 @@ const path = await resolveAnonymousUserPath(
 				workspacePreparing: true,
 			};
 			flushSync(() => {
+				// Every create appears in the sidebar at send time. Background and
+				// "Create more" used to wait for session_created even though the open
+				// action already had this complete deterministic shell.
 				inject(shell, { sticky: true });
-				setOptimisticSession(shell);
-				setPalette({ open: false });
+				if (started.openImmediately) {
+					setOptimisticSession(shell);
+					setPalette({ open: false });
+				}
 			});
+			if (!started.openImmediately) return;
 			if (started.prompt || started.images?.length) {
 				setPendingInitialPrompts((current) => ({
 					...current,
@@ -2171,11 +2071,16 @@ const path = await resolveAnonymousUserPath(
 	// Esc closes whichever palette is open (search's
 	// own input also handles Esc, but this covers the case where focus has left
 	// it).
+	// The three component handlers are read through effect events, so the
+	// listener subscribes once and still reaches the latest closures.
+	const hotkeyOpenPalette = useEffectEvent(() => openPalette());
+	const hotkeyClosePalette = useEffectEvent(() => closePalette());
+	const hotkeyToast = useEffectEvent((message: string) => showToast(message));
 	useEffect(() => {
 		const onKey = (e: KeyboardEvent) => {
 			if (matchesShortcut(e, "command-menu")) {
 				e.preventDefault();
-				setSearchOpen((o) => !o);
+				commandMenuRef.current?.toggle();
 				return;
 			}
 			if (matchesShortcut(e, "desk")) {
@@ -2210,7 +2115,7 @@ const path = await resolveAnonymousUserPath(
 				// are already in. ⌘S is free to take because there is no document
 				// here to save, so the browser's Save does nothing worth keeping.
 				e.preventDefault();
-				openPalette();
+				hotkeyOpenPalette();
 				return;
 			}
 			if (matchesShortcut(e, "session-copy-link")) {
@@ -2221,12 +2126,12 @@ const path = await resolveAnonymousUserPath(
 				const path = copyLinkPathRef.current;
 				if (!path) return;
 				e.preventDefault();
-				copyToClipboard(absoluteLink(path), () => showToast("Link copied"));
+				copyToClipboard(absoluteLink(path), () => hotkeyToast("Link copied"));
 				return;
 			}
 			if (e.key === "Escape") {
-				if (searchOpenRef.current) setSearchOpen(false);
-				else if (paletteOpenRef.current) closePalette();
+				if (commandMenuRef.current?.isOpen()) commandMenuRef.current.close();
+				else if (paletteOpenRef.current) hotkeyClosePalette();
 				else if (leaveSettingsRef.current) {
 					// A field, a menu or a modal inside Settings owns the keystroke
 					// first: only an unclaimed Escape closes the whole surface.
@@ -2245,7 +2150,7 @@ const path = await resolveAnonymousUserPath(
 		};
 		window.addEventListener("keydown", onKey);
 		return () => window.removeEventListener("keydown", onKey);
-	}, [openPalette, closePalette, showToast]);
+	}, []);
 
 	// Remember the last session so a cold relaunch can restore it (see above);
 	// clear it when the user deliberately goes home so we don't force them back in.
@@ -2277,6 +2182,22 @@ const path = await resolveAnonymousUserPath(
 		route.view === "session" ? route.id : null,
 		listedSession,
 	);
+	// iOS can kill a standalone PWA before the archive navigation commits. Its
+	// next cold launch then restores the stale last-session id from localStorage.
+	// Once hydration proves that an automatic restore is archived, return to the
+	// home entry beneath it. A real URL/deep link has no restoredSession marker
+	// and remains openable, which is the Archived screen's contract.
+	useEffect(() => {
+		if (
+			route.view !== "session" ||
+			!currentSession?.archived ||
+			currentNavState()?.restoredSession !== route.id
+		)
+			return;
+		localStorage.removeItem("opensession-last-session");
+		localStorage.removeItem("opensession-last-session-user");
+		navigate({ view: "prs" }, { replace: true });
+	}, [currentSession?.archived, route]);
 	const shellLoading = loading && !currentSession;
 
 	// Tear down the launch splash (rendered in index.html) once there is
@@ -2320,15 +2241,20 @@ const path = await resolveAnonymousUserPath(
 	}, [shellLoading]);
 
 	// When a session is created from the New Session form or Ask box, jump straight into it
+	// The handler reads `inject`/`navigate` through effect events, so the
+	// subscription doesn't re-arm just because their closures moved.
+	const socketInject = useEffectEvent(inject);
+	const socketNavigate = useEffectEvent(navigate);
 	useEffect(() => {
 		return addHandler((msg) => {
+			if (msg.type === "sessions_invalidated") {
+				refreshInvalidated();
+				return;
+			}
 			if (msg.type === "error") {
 				const draft = pendingCreateDraftRef.current;
 				const errorSessionId = "sessionId" in msg ? msg.sessionId : undefined;
-				if (
-					draft?.openImmediately &&
-					(!errorSessionId || errorSessionId === draft.id)
-				) {
+				if (draft && errorMatchesPendingCreate(errorSessionId, draft.id)) {
 					pendingCreateDraftRef.current = null;
 					clearTimeout(pendingTimer.current);
 					setPendingSessionId((pending) =>
@@ -2345,21 +2271,23 @@ const path = await resolveAnonymousUserPath(
 					});
 					unstick(draft.id);
 					remove(draft.id);
-					// The accepted send cleared the global composer immediately. Put
-					// its submitted payload back before reopening only when creation
-					// itself fails, so recovery never holds the normal path hostage.
-					saveDraft(NEW_SESSION_DRAFT_KEY, {
-						text: draft.prompt,
-						images: draft.images ?? [],
-						files: draft.files ?? [],
-					});
-					if (
-						routeRef.current.view === "session" &&
-						routeRef.current.id === draft.id
-					) navigate(parseRoute(draft.originPath));
-					primeSoftKeyboard();
-					setPaletteState((current) => ({ ...current, open: true }));
-					toast(msg.message || "Couldn't create the session.");
+					if (draft.openImmediately) {
+						// The accepted send cleared the global composer immediately. Put
+						// its submitted payload back before reopening only when creation
+						// itself fails, so recovery never holds the normal path hostage.
+						saveDraft(NEW_SESSION_DRAFT_KEY, {
+							text: draft.prompt,
+							images: draft.images ?? [],
+							files: draft.files ?? [],
+						});
+						if (
+							routeRef.current.view === "session" &&
+							routeRef.current.id === draft.id
+						) navigate(parseRoute(draft.originPath));
+						primeSoftKeyboard();
+						setPaletteState((current) => ({ ...current, open: true }));
+						toast(msg.message || "Couldn't create the session.");
+					}
 					return;
 				}
 			}
@@ -2388,6 +2316,14 @@ const path = await resolveAnonymousUserPath(
 				const roomScoped = "sessionId" in msg;
 				const draft = pendingDraft?.id === msg.id ? pendingDraft : null;
 				if (draft) pendingCreateDraftRef.current = null;
+				if (!shouldApplyCreatedSessionReply(msg.replayed, !!draft)) {
+					// The durable command outbox replayed a create that this page already
+					// finished. Its real row may be live or archived; either way the lists,
+					// not a repo-less optimistic shell, are the authority now.
+					refresh();
+					refreshWorkspaces();
+					return;
+				}
 				const openedOptimistically =
 					draft?.openImmediately === true && draft.id === msg.id;
 				if (openedOptimistically) {
@@ -2425,7 +2361,7 @@ const path = await resolveAnonymousUserPath(
 					const now = new Date().toISOString();
 					const user = draft?.user || getCurrentUser();
 					const createdAt = draft?.startedAt || now;
-					inject({
+					socketInject({
 						id: msg.id,
 						claudeSessionId: null,
 						source: "opensession",
@@ -2490,10 +2426,18 @@ const path = await resolveAnonymousUserPath(
 				}
 				refresh();
 				refreshWorkspaces();
-				if (stillOwnsForeground) navigate({ view: "session", id: msg.id });
+				if (stillOwnsForeground) socketNavigate({ view: "session", id: msg.id });
 			}
 		});
-	}, [addHandler, navigate, patch, refresh, refreshWorkspaces, remove, unstick]);
+	}, [
+		addHandler,
+		patch,
+		refresh,
+		refreshInvalidated,
+		refreshWorkspaces,
+		remove,
+		unstick,
+	]);
 
 	// Drop the pending flag once we've navigated away from the pending session (its
 	// fallback timeout clears it otherwise). We deliberately DON'T clear it the
@@ -2519,9 +2463,6 @@ const path = await resolveAnonymousUserPath(
 		}
 	}, [route, pendingSessionId, unstick]);
 
-	// The open session, read by the mount-once tab-shortcut handler (⌘⌥C / ⌘W —
-	// see the effect next to closeSession below).
-	const currentSessionRef = useRef<UnifiedSession | null>(null);
 	// Stable key the view-tab state (Review/Preview/Assets panes) is stored
 	// under: the workspace id, the shared isolated worktree, or the lone session
 	// id — the same grouping rule as the tab strip (tabOrderKey below), so a
@@ -2558,10 +2499,10 @@ const path = await resolveAnonymousUserPath(
 		reviewDismissed,
 		wsHasLiveSession,
 	);
-	function setActiveViewTab(tab: ActiveViewTab) {
+	const setActiveViewTab = useCallback((tab: ActiveViewTab) => {
 		setActiveViewTabState(tab);
 		if (wsKey) saveActiveViewTab(wsKey, tab);
-	}
+	}, [wsKey]);
 	// Return each workspace to its last foregrounded tab. A workspace without a
 	// saved selection still starts on its normal default surface. Switching sessions
 	// within a workspace records session as the selection via the tab-strip handler.
@@ -2577,7 +2518,7 @@ const path = await resolveAnonymousUserPath(
 					? defaultSessionView
 					: remembered,
 		);
-	}, [wsKey, defaultSessionView]);
+	}, [wsKey, defaultSessionView, routeSubagentStack.length]);
 	// ...unless we just opened Review for that workspace from the sidebar: once
 	// it lands (this render or the one after navigation), foreground Review and
 	// consume the pulse. Runs after the reset effect above, so it wins.
@@ -2586,7 +2527,7 @@ const path = await resolveAnonymousUserPath(
 			setActiveViewTab("review");
 			setPendingReviewOpen(null);
 		}
-	}, [wsKey, pendingReviewOpen]);
+	}, [wsKey, pendingReviewOpen, setActiveViewTab]);
 	// Add the Review view-tab for a workspace. Presence is the OR of reviewOpen
 	// and "PR-backed and not in reviewClosed", but reviewClosed alone feeds
 	// reviewDismissed (and through it defaultSessionWorkspaceView) — so adding
@@ -2606,9 +2547,14 @@ const path = await resolveAnonymousUserPath(
 	// session (or the main session on first visit). A session-less PR workspace still
 	// opens Review. Declared after the wsKey reset effect above so the landing
 	// choice wins the same commit.
+	// Scalars derived from the route so the effect keys on exactly the values
+	// it reacts to (workspace id + explicit tab), not every route object.
+	const landingWsKey = route.view === "workspace" ? route.id : null;
+	const landingExplicitTab =
+		route.view === "workspace" ? (route.tab ?? null) : null;
 	useEffect(() => {
 		if (
-			route.view !== "workspace" ||
+			landingWsKey === null ||
 			!workspaceLandingReady(workspacesLoaded, loading)
 		)
 			return;
@@ -2619,7 +2565,9 @@ const path = await resolveAnonymousUserPath(
 			suppressWsSeedRef.current = false;
 			return;
 		}
-		const p = workspaces.find((x) => x.id === route.id) || null;
+		// Ref read: the trigger set is the route + readiness, and the freshest
+		// committed list is what a landing decision wants anyway.
+		const p = workspacesRef.current.find((x) => x.id === landingWsKey) || null;
 		// Default pane by workspace shape: ticket workspaces open on the
 		// Conversation; everything else — PR-backed included — lands in its
 		// main/last-open session. A PR workspace only defaults to Review when it
@@ -2630,11 +2578,11 @@ const path = await resolveAnonymousUserPath(
 		// no session to land in. Explicit /conversation-/video URLs still win.
 		const hasSession = !!pickLandingSession(
 			sessionsRef.current,
-			route.id,
-			getWorkspaceLastSession(route.id),
+			landingWsKey,
+			getWorkspaceLastSession(landingWsKey),
 		);
 		const tab =
-			route.tab ??
+			landingExplicitTab ??
 			(hasSession
 				? null
 				: p?.plainThreadId
@@ -2642,7 +2590,7 @@ const path = await resolveAnonymousUserPath(
 					: p?.externalRefs?.some((r) => refWebPanel(r))
 						? "video"
 						: null);
-		const key = route.id;
+		const key = landingWsKey;
 		// Landing in the workspace's first session keeps the full session chrome —
 		// including the right sidebar — around the foregrounded pane (wsKey is
 		// unchanged, so the view-tab reset effect doesn't fire). Session-less
@@ -2717,9 +2665,11 @@ const path = await resolveAnonymousUserPath(
 			}
 		}
 	}, [
-		route.view === "workspace" ? `${route.id}:${route.tab ?? ""}` : null,
+		landingWsKey,
+		landingExplicitTab,
 		workspacesLoaded,
 		loading,
+		setActiveViewTab,
 	]);
 	// A PR reference (`/pr/<repo>/<number>`) that GitHub doesn't know: the
 	// number came out of prose, so it can be a typo or an invention.
@@ -2729,6 +2679,9 @@ const path = await resolveAnonymousUserPath(
 	// The old components keep rendering as the in-flight/failure fallback, so
 	// a failed resolve degrades to the previous behavior instead of a dead
 	// link. Bare /reviews goes home — the sidebar bands are the inbox now.
+	// Read through an effect event so the redirect doesn't re-run when the
+	// refresh closure moves.
+	const redirectRefreshWorkspaces = useEffectEvent(refreshWorkspaces);
 	useEffect(() => {
 		let stale = false;
 		const toWorkspace = (
@@ -2736,7 +2689,7 @@ const path = await resolveAnonymousUserPath(
 			tab: "review" | "conversation",
 		) => {
 			if (stale) return;
-			refreshWorkspaces();
+			redirectRefreshWorkspaces();
 			navigate({ view: "workspace", id: workspaceId, tab }, { replace: true });
 		};
 		if (route.view === "pr") {
@@ -3299,7 +3252,9 @@ const path = await resolveAnonymousUserPath(
 		route.view === "session" && route.subagent?.length
 			? `${route.id}${subagentSuffix(route.subagent)}`
 			: null;
-	useEffect(() => {
+	// The sync reads the live route through an effect event, so the trigger
+	// stays the derived sub-agent key rather than every route field.
+	const syncRouteSubagents = useEffectEvent(() => {
 		if (route.view !== "session" || !route.subagent?.length) return;
 		const ids = route.subagent;
 		setSubagentTabs((prev) => {
@@ -3321,6 +3276,10 @@ const path = await resolveAnonymousUserPath(
 			};
 		});
 		setActiveViewTabState("subagent");
+	});
+	useEffect(() => {
+		if (!routeSubagentKey) return;
+		syncRouteSubagents();
 	}, [routeSubagentKey]);
 	// Dropping the last breadcrumb (or switching to a session with no sub-agent
 	// open) leaves nothing to show — fall back to the session itself. Read from
@@ -3436,10 +3395,12 @@ navigate({ view: "support", threadId: t.id });
 	// Mark the open session read up to its latest activity — both when it's first
 	// opened and as new activity streams in while it stays open — so the sidebar's
 	// unread flag clears for whatever you're currently looking at.
+	const currentSessionId = currentSession?.id;
+	const currentSessionActivity = currentSession?.lastActivity;
 	useEffect(() => {
-		if (currentSession)
-			markRead(currentSession.id, currentSession.lastActivity);
-	}, [currentSession?.id, currentSession?.lastActivity]);
+		if (currentSessionId && currentSessionActivity !== undefined)
+			markRead(currentSessionId, currentSessionActivity);
+	}, [currentSessionId, currentSessionActivity]);
 
 	// The tab strip is scoped to the open session's workspace: its sibling sessions
 	// (same workspaceId), oldest first. Sessions with no workspace (slack/linear
@@ -3463,16 +3424,15 @@ navigate({ view: "support", threadId: t.id });
 			activeViewTab === "video")
 			? workspacePanePath(activeWorkspaceId, activeViewTab)
 			: null;
+	const copyLinkPath =
+		activeWorkspacePane ??
+		(route.view === "session" && currentSession
+			? sessionPath(currentSession) + openSubagentPath
+			: route.view === "workspace" || route.view === "pr"
+				? routePath(route)
+				: null);
 	useLayoutEffect(() => {
-		copyLinkPathRef.current =
-			activeWorkspacePane ??
-			(route.view === "session" && currentSession
-				? sessionPath(currentSession) + openSubagentPath
-				: route.view === "workspace"
-					? routePath(route)
-					: route.view === "pr"
-						? routePath(route)
-						: null);
+		copyLinkPathRef.current = copyLinkPath;
 	});
 
 	// Canonicalize the open session's URL to /workspace/<wsId>/session/<sessionId> once
@@ -3885,6 +3845,7 @@ console.error("Rename failed:", e);
 					refresh();
 				}}
 				onClose={closeSession}
+				onDelete={deleteSessionFromTab}
 				onToast={showToast}
 				onRestore={restoreSession}
 			/>
@@ -4201,6 +4162,13 @@ if (siblingCreateRef.current === optimisticId)
 	}, [runningCloseConfirmation]);
 	const rememberArchived = (ids: string[]) => {
 		if (!ids.length) return;
+		// Do not let a successful archive remain the PWA's cold-launch target if
+		// iOS suspends it before the route change paints. A navigation to another
+		// session writes that newer id back through the route effect above.
+		if (ids.includes(localStorage.getItem("opensession-last-session") || "")) {
+			localStorage.removeItem("opensession-last-session");
+			localStorage.removeItem("opensession-last-session-user");
+		}
 		setArchiveUndo((prev) =>
 			[
 				// An id lives in one entry only: archiving a session again moves it to
@@ -4311,8 +4279,59 @@ if (siblingCreateRef.current === optimisticId)
 	};
 	const confirmRunningClose = (session: UnifiedSession, onConfirm: () => void) =>
 		confirmRunningCloses([session], onConfirm);
+	const archiveWorkspaceFromHeader = (members: UnifiedSession[]) => {
+		if (!members.length) return;
+		confirmRunningCloses(members, () => {
+			void (async () => {
+				goBack();
+				for (const member of members) {
+					patch(member.id, { archived: true, archivedReason: "manual" });
+				}
+				try {
+					await Promise.all(
+						members.map((member) => archiveSessionApi(member.id, true)),
+					);
+					rememberArchived(members.map((member) => member.id));
+					dropStalePins(members);
+					refresh();
+				} catch (error) {
+					console.error("Archive workspace failed:", error);
+					for (const member of members) {
+						patch(member.id, {
+							archived: false,
+							archivedReason: undefined,
+						});
+					}
+				}
+			})();
+		});
+	};
+	const deleteWorkspaceFromHeader = async (workspaceId: string) => {
+		await deleteWorkspaceApi(workspaceId);
+		refreshWorkspaces();
+		refresh();
+		if (route.view === "workspace" && route.id === workspaceId) goBack();
+	};
 	const closeSession = (s: UnifiedSession) =>
 		confirmRunningClose(s, () => void closeSessionNow(s));
+	const deleteSessionFromTab = async (
+		session: UnifiedSession,
+		cleanWorktree: boolean,
+	) => {
+		const wasOpen = currentSession?.id === session.id;
+		const next = wasOpen
+			? workspaceSessions.find((candidate) => candidate.id !== session.id)
+			: undefined;
+		await deleteSessionApi(session.id, cleanWorktree);
+		remove(session.id);
+		if (wasOpen) {
+			if (next) navigate({ view: "session", id: next.id });
+			else if (activeWorkspaceId)
+				navigate({ view: "workspace", id: activeWorkspaceId });
+			else goBack();
+		}
+		refresh();
+	};
 	const selectSessionTab = (next: UnifiedSession) => {
 		const empty =
 			currentSession &&
@@ -4700,7 +4719,7 @@ if (siblingCreateRef.current === optimisticId)
 					},
 				]
 			: []),
-		...(copyLinkPathRef.current
+		...(copyLinkPath
 			? [
 					{
 						id: "copy-link",
@@ -4710,11 +4729,8 @@ if (siblingCreateRef.current === optimisticId)
 						keywords: ["url", "share", "clipboard"],
 						shortcut: shortcutPrimaryKeys("session-copy-link") ?? undefined,
 						icon: <IconCopy size={18} />,
-						run: () => {
-							const path = copyLinkPathRef.current;
-							if (path)
-								copyToClipboard(absoluteLink(path), () => showToast("Link copied"));
-						},
+						run: () =>
+							copyToClipboard(absoluteLink(copyLinkPath), () => showToast("Link copied")),
 					},
 				]
 			: []),
@@ -4895,21 +4911,6 @@ if (siblingCreateRef.current === optimisticId)
 				run: () => navigate({ view: "settings", section }),
 			}),
 		),
-		...commandMcpServers
-			.slice()
-			.sort((a, b) => displayName(a).localeCompare(displayName(b)))
-			.map((server) => {
-				const name = displayName(server);
-				return {
-					id: `new-session-with-${server}`,
-					label: `New session with ${name}`,
-					description: `Start a session with only ${name} connected`,
-					category: "Tools" as const,
-					keywords: [server, name, "tool", "service", "connected"],
-					icon: <IconTile name={server} size={18} />,
-					run: () => openPalette(undefined, [server]),
-				};
-			}),
 	];
 	const openSession = (id: string, created?: UnifiedSession | null) => {
 		const known = sessions.some(
@@ -4963,14 +4964,17 @@ if (siblingCreateRef.current === optimisticId)
 		socket: ReturnType<typeof useWebSocket>,
 		focused: boolean,
 		splitMode: boolean,
-		surfaceId = viewerSession.id,
-	) => (
+		requestedSurfaceId?: string,
+	) => {
+		const surfaceId = requestedSurfaceId ?? viewerSession.id;
+		return (
 		// A `#5528` written anywhere in this pane's transcript means a PR in the
 		// pane's OWN repo — which is why the context is per pane rather than
 		// app-wide: a split view can hold two sessions on two different repos.
 		<MarkdownRepoProvider key={viewerSession.id} repo={viewerSession.repo}>
 			<SessionViewer
 				key={viewerSession.id}
+				canRepairSafety={auth?.admin === true}
 				onOpenPr={(repo, branch) => navigate({ view: "pr", repo, branch })}
 				session={viewerSession}
 				focused={focused}
@@ -4978,11 +4982,10 @@ if (siblingCreateRef.current === optimisticId)
 				hideRightPanel={splitMode && !focused}
 				onBack={goBack}
 				onNextChat={focused && nextChatAvailable ? openNextChat : undefined}
-				onArchive={() =>
-					focused
-						? sidebarRef.current?.archiveSelected()
-						: closeSession(viewerSession)
-				}
+				onArchive={() => {
+					if (focused) sidebarRef.current?.archiveSelected();
+					else closeSession(viewerSession);
+				}}
 				onArchived={() => {
 					// Only fires when the viewer archived on its own — with onArchive
 					// passed (a focused pane) it defers to the sidebar path instead, so
@@ -5139,7 +5142,8 @@ console.error("Rename failed:", error);
 				}}
 				workspaceName={
 					activeWorkspaceId
-						? workspaces.find((project) => project.id === activeWorkspaceId)?.name
+						? workspaces.find((project) => project.id === activeWorkspaceId)?.name ??
+							viewerSession.workspaceName
 						: undefined
 				}
 				onRenameWorkspace={
@@ -5154,9 +5158,20 @@ console.error("Rename workspace failed:", error);
 							}
 						: undefined
 				}
+				onArchiveWorkspace={
+					activeWorkspaceId
+						? () => archiveWorkspaceFromHeader(workspaceSessions)
+						: undefined
+				}
+				onDeleteWorkspace={
+					activeWorkspaceId
+						? () => deleteWorkspaceFromHeader(activeWorkspaceId)
+						: undefined
+				}
 			/>
 		</MarkdownRepoProvider>
-	);
+		);
+	};
 
 	return (
 		<UserGate>
@@ -5170,11 +5185,11 @@ console.error("Rename workspace failed:", error);
 				}}
 				disablePointerDismissal
 			>
-				<Modal.Content widthClassName={mergeStylexClassName("", sharedClassStyles.maxW34rem)} className={mergeStylexOverrideClassName("", sx.gap5)}>
-					<Modal.Title className={mergeStylexOverrideClassName("", sx.m0, sx.fontSemibold, sx.tracking001em, sx.textFg, typography.dialogTitle)}>
+				<Modal.Content widthClassName={utilityClassName("max-w-[34rem]")} className={mergeStylexOverrideClassName("", sx.gap5)}>
+					<Modal.Title className={mergeStylexOverrideClassName("m-0", sx.fontSemibold, sx.tracking001em, sx.textFg, typography.dialogTitle)} >
 						Close running session{runningCloseConfirmation?.runningCount === 1 ? "" : "s"}?
 					</Modal.Title>
-					<Modal.Description className={mergeStylexOverrideClassName("", sx.m0, sx.leadingRelaxed, sx.textDim, typography.body)}>
+					<Modal.Description className={mergeStylexOverrideClassName("m-0", sx.leadingRelaxed, sx.textDim, typography.body)} >
 						{runningCloseConfirmation?.runningCount === 1
 							? "This session is currently running. Closing it will cancel its current run."
 							: `These ${runningCloseConfirmation?.runningCount ?? 0} sessions are currently running. Closing them will cancel their current runs.`}
@@ -5197,7 +5212,16 @@ console.error("Rename workspace failed:", error);
 				</Modal.Content>
 			</Modal.Root>
 			<div className="app">
-				{firstMileActive ? (
+				{!forceFirstMile && onboarding.state === "loading" ? (
+					<div {...stylex.props(sx.flex, sx.h100dvh, sx.itemsCenter, sx.justifyCenter, sx.bgBg)}>
+						<LoadingState>Preparing Open Session…</LoadingState>
+					</div>
+				) : !forceFirstMile && onboarding.state === "failed" ? (
+					<div {...stylex.props(sx.flex, sx.h100dvh, sx.flexCol, sx.itemsCenter, sx.justifyCenter, sx.gap4, sx.bgBg, sx.px6, sx.textCenter)}>
+						<LoadingState>Couldn&rsquo;t check onboarding.</LoadingState>
+						<Button onClick={() => void onboarding.refetch()}>Try again</Button>
+					</div>
+				) : firstMileActive ? (
 					<FirstMile onDone={finishFirstMile} />
 				) : (
 				<>
@@ -5332,7 +5356,7 @@ console.error("Rename workspace failed:", error);
 						{!mobileDetail && (
 							<button
 								className={MOBILE_SEARCH_BTN}
-								onClick={() => setSearchOpen(true)}
+								onClick={() => commandMenuRef.current?.open()}
 								aria-label="Open command menu"
 							>
 								<IconSearch size={22} />
@@ -5404,9 +5428,26 @@ console.error("Rename workspace failed:", error);
 					    fallback) paints this surface by name. */}
 					<div
 						ref={sidebarColRef}
-						{...mergeStylexProps("sidebar-container", sx.flex, sx.minH0, sx.shrink0, sx.flexCol, sx.bgSidebar, sx.sidebarIconLeft, sx.desktopSidebarMaterial, isPhone
-								? [sx.absolute, sx.inset0, sx.z1, sx.wFull]
-								: [sx.relative, sx.wSidebar], sidebarCollapsed && sx.desktopHidden)}
+						className={cn(
+							utilityClassName("sidebar-container flex min-h-0 shrink-0 flex-col bg-sidebar [--sidebar-icon-left:16px]"),
+							// Desktop and the exposed workspace gutter share one chrome
+							// material, so opaque sticky headers scroll over the exact same
+							// surface instead of revealing a gradient seam. No
+							// backdrop-filter: since the shell went opaque the blur sampled
+							// nothing but our own flat background while forcing the
+							// compositor to re-rasterize the whole sidebar on any repaint
+							// behind it (a scroll-flash amplifier).
+							"desktop:[background:linear-gradient(var(--sidebar-material),var(--sidebar-material)),var(--sidebar-bg)]",
+							// On phones the sidebar is the root PAGE of the iOS-style
+							// stack — full bleed under the pushed detail pane — rather than
+							// a fixed-width column.
+							isPhone
+								? utilityClassName("absolute inset-0 z-[1] w-full")
+								: utilityClassName("relative w-[var(--sidebar-w,280px)]"),
+							// Collapsed hides the whole left column; on phones the page
+							// stack owns the sidebar and the class is inert.
+							sidebarCollapsed && utilityClassName("desktop:hidden"),
+						)}
 						style={
 							{ "--sidebar-w": `${sidebarWidth}px` } as React.CSSProperties
 						}
@@ -5425,9 +5466,19 @@ console.error("Rename workspace failed:", error);
 						    row pulls its own in to keep the logo on the list icons'
 						    --sidebar-icon-left column. */}
 						<div
-							{...mergeStylexProps("sidebar-brand wco-chrome", sx.hDesktopHeader, sx.minW0, sx.shrink0, sx.itemsCenter, sx.justifyStart, sx.gap2, sx.py0, sx.pr3, sx.plSidebarBrand, isPhone ? sx.hidden : sx.flex)}
+							className={cn(
+								utilityClassName("sidebar-brand wco-chrome h-[var(--desktop-header-h)] min-w-0 shrink-0 items-center justify-start gap-2 py-0 pr-3 pl-[calc(var(--sidebar-icon-left)-8px)]"),
+								// No scroll hairline: the tools sit fixed below this row and
+								// only the workspace list scrolls, so nothing passes under it.
+								// The brand row (and its account menu) is a desktop
+								// affordance; on phones the top bar carries the brand
+								// instead. Gated in JS rather than at `phone:` because
+								// Tailwind's max-* is `width < 720`, one pixel short of the
+								// `max-width: 720px` the rest of the app means by "phone".
+								isPhone ? utilityClassName("hidden") : utilityClassName("flex"),
+							)}
 						>
-							<div {...mergeStylexProps("sidebar-brand-actions", sx.flex, sx.shrink0, sx.itemsCenter, sx.gap2)}>
+							<div {...mergeStylexProps("sidebar-brand-actions", sx.flex, sx.shrink0, sx.itemsCenter, sx.gap2)} >
 								<Tooltip
 									label="Hide sidebar"
 									side="bottom"
@@ -5437,7 +5488,10 @@ console.error("Rename workspace failed:", error);
 									    sidebar's chrome row and the session header's icon
 									    cluster read as one system. */}
 									<button
-										{...mergeStylexProps(SIDEBAR_CHROME_BTN, sx.inlineFlex, sx.px5px, sx.py3px)}
+										className={cn(
+											SIDEBAR_CHROME_BTN,
+											utilityClassName("inline-flex px-[5px] py-[3px]"),
+										)}
 										onClick={toggleSidebarCollapsed}
 										aria-label="Hide sidebar"
 									>
@@ -5445,7 +5499,7 @@ console.error("Rename workspace failed:", error);
 									</button>
 								</Tooltip>
 							</div>
-							<TitleBar onSearch={() => setSearchOpen(true)} />
+							<TitleBar onSearch={() => commandMenuRef.current?.open()} />
 						</div>
 						<Sidebar
 							ref={sidebarRef}
@@ -5462,7 +5516,13 @@ console.error("Rename workspace failed:", error);
 							workspaceDataReady={!loading && workspacesLoaded}
 							workspaces={workspaces}
 							teamViewing={teamViewing}
-							selectedId={currentSession?.id || null}
+							// Selection is navigation state, not hydrated session data. The
+							// route changes synchronously when a row opens; waiting for detail
+							// hydration makes the old row look selected while the new session
+							// is already loading.
+							selectedId={
+								route.view === "session" ? (listedSession?.id ?? route.id) : null
+							}
 							prsActive={route.view === "prs"}
 							onOpenPrs={() => navigate({ view: "prs" })}
 							feedActive={route.view === "feed"}
@@ -5490,19 +5550,12 @@ console.error("Rename workspace failed:", error);
 							onSelect={(s) => navigate({ view: "session", id: s.id })}
 							onOpenReview={openReviewForSession}
 							onOpenTicket={openTicketWorkspace}
-						onOpenFeedItem={openFeedItemWorkspace}
-							onNewSession={() =>
-								githubConnectionRequired
-									? navigate({ view: "settings", section: "myAccounts" })
-									: openPalette()
-							}
+							onOpenFeedItem={openFeedItemWorkspace}
+							onNewSession={() => openPalette()}
 							showDraftRow={
-								productEmpty &&
-								githubConnectionState !== "loading" &&
-								!githubConnectionRequired
+								productEmpty && githubConnectionState !== "loading"
 							}
 							draftRowActive={productEmpty && route.view === "prs"}
-							githubConnectionRequired={githubConnectionRequired}
 							onOpenDraft={() => {
 								// The row and the panel's card are one unstarted session, so
 								// pressing the row is "put me back in it": return to the panel
@@ -5678,8 +5731,8 @@ console.error("Rename failed:", e);
 						    edge while the list scrolls. */}
 						<div
 							className={cn(
-								mergeStylexClassName("[body.resizing-sidebar_&]:after:bg-faint", sx.absolute, sx.top0, sx.right3px, sx.z30, sx.hFull, sx.w7px, sx.cursorColResize, sx.afterAbsolute, sx.afterTop0, sx.afterRight3px, sx.afterHFull, sx.afterW2px, sx.afterBgTransparent, sx.afterTransitionBackground, sx.afterContent, sx.hoverAfterBgLineStrong),
-								isPhone && mergeStylexClassName("", sx.hidden),
+								utilityClassName("absolute top-0 right-[-3px] z-30 h-full w-[7px] cursor-col-resize after:absolute after:top-0 after:right-[3px] after:h-full after:w-[2px] after:bg-transparent after:transition-[background] after:content-[''] hover:after:bg-line-strong [body.resizing-sidebar_&]:after:bg-faint"),
+								isPhone && utilityClassName("hidden"),
 							)}
 							onMouseDown={startSidebarResize}
 							aria-hidden="true"
@@ -5708,8 +5761,8 @@ console.error("Rename failed:", e);
 							<button
 								className={cn(
 									SIDEBAR_CHROME_BTN,
-									mergeStylexClassName("sidebar-reopen", sx.absolute, sx.topCalcVarDesktopHeaderH35px2, sx.left2, sx.z20, sx.hidden, sx.size34px, sx.p0),
-									sidebarCollapsed && mergeStylexClassName("", sx.desktopInlineFlex),
+									utilityClassName("sidebar-reopen absolute top-[calc((var(--desktop-header-h)-35px)/2)] left-2 z-20 hidden size-[34px] p-0"),
+									sidebarCollapsed && utilityClassName("desktop:inline-flex"),
 								)}
 								onClick={toggleSidebarCollapsed}
 								aria-label="Show sidebar"
@@ -5739,7 +5792,10 @@ console.error("Rename failed:", e);
 									</span>
 									{/* Filled by the page, if it has controls to put here. */}
 									<TopBarActions
-										className={DETAIL_TOPBAR_ACTIONS}
+										className={cn(
+											DETAIL_TOPBAR_ACTIONS,
+											route.view === "prs" && utilityClassName("ml-4 flex-1 pl-0"),
+										)}
 										ref={setTopbarActionsEl}
 									/>
 								</TopBarTitle>
@@ -5805,16 +5861,14 @@ console.error("Rename workspace failed:", error);
 });
 										refreshWorkspaces();
 									}}
-									onArchiveSession={(session, archived) => {
-										if (archived) closeSession(session);
-										else void unarchiveSessions([session]);
-									}}
-									onDeleteSession={async (session, cleanWorktree) => {
-										await deleteSessionApi(session.id, cleanWorktree);
-										remove(session.id);
-										refresh();
-									}}
-									onOpenNewSession={openPrefilledSession}
+									archivedSessions={archivedSessions}
+									onRestoreSession={restoreSession}
+									onArchiveWorkspace={() =>
+										archiveWorkspaceFromHeader(workspaceSessions)
+									}
+									onDeleteWorkspace={() =>
+										deleteWorkspaceFromHeader(routeWorkspace.id)
+									}
 									rightPanelEl={rightPanelEl}
 								/>
 							) : workspacesLoaded ? (
@@ -6053,13 +6107,6 @@ console.error("Archive failed:", e);
 							>
 								Check the connection to this server.
 							</EmptyState>
-						) : githubConnectionRequired ? (
-							<GithubConnectEmptyState
-								onConnect={() =>
-									navigate({ view: "settings", section: "myAccounts" })
-								}
-								className={mergeStylexOverrideClassName("", sx.minH0, sx.flex1)}
-							/>
 						) : productEmpty && githubConnectionState === "loading" ? (
 							<LoadingState className={mergeStylexOverrideClassName("", sx.minH0, sx.flex1)}>Checking GitHub…</LoadingState>
 						) : productEmpty ? (
@@ -6207,15 +6254,14 @@ console.error("Archive failed:", e);
 				/>
 
 				{/* ⌘K command palette — actions, PRs, and sessions across every view. */}
-				{searchOpen && (
-					<SessionSearch
-						sessions={sessions}
-						actions={commandActions}
-						onSelectSession={(id) => navigate({ view: "session", id })}
-						onSelectPr={(pr) => void openPrReview(pr)}
-						onClose={() => setSearchOpen(false)}
-					/>
-				)}
+				<CommandMenuHost
+					ref={commandMenuRef}
+					sessions={sessions}
+					actions={commandActions}
+					onSelectSession={(id) => navigate({ view: "session", id })}
+					onSelectPr={(pr) => void openPrReview(pr)}
+					onOpenWithMcp={(server) => openPalette(undefined, [server])}
+				/>
 
 				{/* New-session palette overlays every view. */}
 				{palette.open && (

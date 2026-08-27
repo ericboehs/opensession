@@ -55,14 +55,12 @@
  *     agent's shell does not have today.
  */
 
-import { homeDir } from "./paths";
+import { stateDir } from "./paths";
 import { existsSync, readFileSync, chmodSync } from "node:fs";
 import { writeJsonAtomic } from "./shared/atomic-write";
 import { audit } from "./audit";
 import { resolveTeammate } from "./shared/user-mappings";
 import { registerAsk, registerAskDomainHandler, type HumanAsk } from "./human-asks";
-
-const HOME = homeDir();
 
 /**
  * Resolved per call, never captured at module load. Tests point
@@ -72,7 +70,7 @@ const HOME = homeDir();
  * test suite write to, or truncate, the real keychain.
  */
 function storePath(): string {
-  return process.env.OPENSESSION_KEYCHAIN_STORE || `${HOME}/.opensession-keychain.json`;
+  return process.env.OPENSESSION_KEYCHAIN_STORE || stateDir("keychain.json");
 }
 
 const ONCE_GRANT_TTL_MS = 60 * 60 * 1000;

@@ -9,7 +9,7 @@
  *   vm      → limactl create/start from lima.yaml, work dir mounted read-only
  *   install → install.sh --artifact <tarball>, no flags (or --repo
  *             <bundle> for the source path), as the guest user
- *   start   → wait for the installer's user service (fallback: systemd-run --user)
+ *   service → require the installer's persistent user service to be active
  *   goss    → goss.yaml (today's bar); goss.dod.yaml with SIMPLE_MODE_STRICT=1
  *   reboot  → limactl stop/start, goss again (STRICT only: needs a service)
  *   uninstall → install.sh --uninstall, goss.uninstalled.yaml (STRICT only)
@@ -49,7 +49,7 @@ const SOURCE = process.env.SIMPLE_MODE_SOURCE === "1";
 const CLAUDE_TOKEN = process.env.OPENSESSION_TEST_CLAUDE_TOKEN;
 
 const PORT = 3850;
-const WEBHOOK_PORT = 3848;
+const INGRESS_PORT = 3860;
 const GUEST_MOUNT = "/mnt/simple-mode";
 const MINUTES = 60_000;
 const GOSS_VERSION = "v0.4.10";
@@ -119,7 +119,7 @@ async function goss(file: string): Promise<string> {
   const home = await guestHome();
   const user = await guestUser();
   const vars =
-    `home: ${home}\nuser: ${user}\nport: ${PORT}\nwebhookPort: ${WEBHOOK_PORT}\n` +
+    `home: ${home}\nuser: ${user}\nport: ${PORT}\ningressPort: ${INGRESS_PORT}\n` +
     `source: ${SOURCE}\ntoken: ${CLAUDE_TOKEN ? "true" : ""}\n`;
   const varsPath = await putInGuest("vars.yaml", vars);
   const r = await guest(
@@ -254,44 +254,32 @@ describe("simple mode install", () => {
         `exit \${PIPESTATUS[0]}`,
     );
     expectOk(r, "install.sh");
-    expect(r.stdout).toContain("Done");
-    expect(r.stdout).toContain(`Open http://127.0.0.1:${PORT}`);
+    const installedAt = r.stdout.lastIndexOf("Installed");
+    const startedAt = r.stdout.lastIndexOf("Started");
+    const urlAt = r.stdout.lastIndexOf(`Open Session is running at http://127.0.0.1:${PORT}`);
+    expect(installedAt).toBeGreaterThanOrEqual(0);
+    expect(startedAt).toBeGreaterThan(installedAt);
+    expect(urlAt).toBeGreaterThan(startedAt);
     if (!commandWasOnPath) {
-      expect(r.stdout).toContain("Run this in your current shell: source ~/.bashrc");
+      expect(r.stdout).toContain("To use opensession in this shell, run:\n    source ~/.bashrc");
     }
   }, 30 * MINUTES);
 
-  test("start: the installer's user service, or a transient unit", async () => {
-    // The installer installs and starts a user unit (R3.1). If it did not (a
-    // box with no user manager, say), the harness supervises the server
-    // itself with systemd-run so the rest of the run still means something.
-    // With STRICT that fallback is off: the installer's own service must be
-    // what is running (goss.dod.yaml asserts it).
+  test("service: the installer's user service is active", async () => {
+    // A successful install means the persistent service is active. Do not hide
+    // an installer regression behind a transient foreground fallback: that
+    // would pass health checks but stop Open Session at logout or reboot.
     const own = await guest(
       `XDG_RUNTIME_DIR=/run/user/$(id -u) systemctl --user is-active opensession`,
     );
-    if (own.stdout.trim() === "active") {
-      console.log("installer's user service is active");
-    } else if (STRICT) {
+    if (own.stdout.trim() !== "active") {
       const log = await guest(
         "XDG_RUNTIME_DIR=/run/user/$(id -u) journalctl --user -u opensession --no-pager | tail -40; " +
           "loginctl show-user $(id -un) -p Linger --value",
       );
-      throw new Error(`STRICT: installer's service is not active (${own.stdout})\n${log.stdout}`);
-    } else {
-      console.log(`installer's service not active (${own.stdout || own.stderr}); falling back to systemd-run`);
-      const r = await guest(
-        // A non-login ssh session may have no user manager yet: linger
-        // starts one at boot, and the runtime dir tells systemctl where.
-        `sudo -n loginctl enable-linger "$(id -un)" 2>/dev/null; ` +
-          `export XDG_RUNTIME_DIR=/run/user/$(id -u); ` +
-          `systemctl --user stop opensession-harness 2>/dev/null; ` +
-          `systemctl --user reset-failed opensession-harness 2>/dev/null; ` +
-          `systemd-run --user --unit opensession-harness --collect --same-dir ` +
-          `bash -lc 'exec opensession start --foreground'`,
-      );
-      expectOk(r, "systemd-run opensession");
+      throw new Error(`installer's service is not active (${own.stdout || own.stderr})\n${log.stdout}`);
     }
+    console.log("installer's user service is active");
     // Wait for health.
     const deadline = Date.now() + 3 * MINUTES;
     let last = "";

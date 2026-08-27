@@ -9,7 +9,11 @@
  */
 
 import { audit } from "./audit";
-import { clearSessionKernel, sessionKernel, sessionKernelStore } from "./session-kernel";
+import {
+	clearSessionKernel,
+	sessionKernel,
+	sessionRunStateProjection,
+} from "./session-kernel";
 
 export {
 	RUN_STATE_TRANSITIONS,
@@ -47,7 +51,7 @@ const detachedRunHost = () => !!process.env.OPENSESSION_RUN_JOURNAL;
 export const runStates = {
 	get(sessionId: string): RunStateEntry | undefined {
 		if (detachedRunHost()) return detachedHostStates.get(sessionId);
-		const current = sessionKernelStore().runState(sessionId);
+		const current = sessionRunStateProjection(sessionId);
 		if (current.changeSeq === 0) return undefined;
 		return {
 			state: current.state as RunState,
@@ -59,7 +63,7 @@ export const runStates = {
 
 export function getRunState(sessionId: string): RunState {
 	if (detachedRunHost()) return detachedHostStates.get(sessionId)?.state ?? "idle";
-	return sessionKernelStore().runState(sessionId).state as RunState;
+	return sessionRunStateProjection(sessionId).state as RunState;
 }
 
 type AuditEmit = (event: Record<string, unknown>) => void;
@@ -74,12 +78,12 @@ export type RunStateTransitionDecision = {
 };
 
 /** Apply one run event and retain the actor's admission decision. */
-export function decideRunStateTransition(
+export async function decideRunStateTransition(
 	sessionId: string,
 	event: RunEvent,
 	detail?: Record<string, unknown>,
 	emit: AuditEmit = audit,
-): RunStateTransitionDecision {
+): Promise<RunStateTransitionDecision> {
 	if (detachedRunHost()) {
 		const from = getRunState(sessionId);
 		const next = nextRunState(from, event);
@@ -98,7 +102,7 @@ export function decideRunStateTransition(
 	}
 
 	const runKey = typeof detail?.run_key === "string" ? detail.run_key : undefined;
-	const decision = sessionKernel(sessionId).applyRunEvent({
+	const decision = await sessionKernel(sessionId).applyRunEvent({
 		event,
 		detail,
 		runKey,
@@ -151,18 +155,18 @@ export function decideRunStateTransition(
  * durable state and emits `run_state_transition`; an undefined one leaves the
  * state untouched and emits `run_state_rejected`.
  */
-export function transitionRunState(
+export async function transitionRunState(
 	sessionId: string,
 	event: RunEvent,
 	detail?: Record<string, unknown>,
 	emit: AuditEmit = audit,
-): RunState {
-	const decision = decideRunStateTransition(sessionId, event, detail, emit);
+): Promise<RunState> {
+	const decision = await decideRunStateTransition(sessionId, event, detail, emit);
 	return decision.accepted ? decision.to : decision.from;
 }
 
 /** Drop tracking for a deleted session. */
-export function clearRunState(sessionId: string): void {
+export async function clearRunState(sessionId: string): Promise<void> {
 	if (detachedRunHost()) detachedHostStates.delete(sessionId);
-	else clearSessionKernel(sessionId);
+	else await clearSessionKernel(sessionId);
 }

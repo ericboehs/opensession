@@ -88,6 +88,9 @@ export interface StreamEvent {
     | "tool_use"
     | "tool_result"
     | "usage_snapshot"
+    // Internal runner acknowledgement: an accepted steer crossed the engine's
+    // step boundary. The server consumes this before broadcasting run events.
+    | "steer_delivered"
     | "done"
     | "error"
     | "model_switch"
@@ -119,6 +122,8 @@ export interface StreamEvent {
   toolName?: string;
   toolInput?: unknown;
   toolUseId?: string;
+  /** Exact queue receipt on an internal steer_delivered event. */
+  steerId?: string;
   content?: string;
   result?: string;
   /**

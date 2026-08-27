@@ -26,9 +26,19 @@ import { userMatchesAny } from "./shared/user-mappings";
 import {
 	DeliveryOwnedMap,
 	EphemeralSessionSet,
+	markSessionDeliveryMigrationComplete,
 	sessionDelivery,
-	sessionKernelStore,
+	sessionDeliveryMigrationComplete,
+  sessionKernel,
+	sessionQuarantineSnapshot,
+  sessionTurn,
+  sessionTurnSnapshot,
 } from "./session-kernel";
+import type { DurableSteerTarget } from "./session-kernel/store";
+
+const queueMigrationState = ((globalThis as typeof globalThis & {
+	__opensessionQueueMigrationState?: { complete: boolean };
+}).__opensessionQueueMigrationState ??= { complete: false });
 
 export type QueueItem = {
 	id?: string;
@@ -58,12 +68,12 @@ export type QueueItem = {
 	reviewHandoff?: boolean;
 	/** When the engine ACCEPTED this message as a steer (epoch ms). Set by
    * acceptQueuedSteer, read by the clients to show how long the fold-in has been
-   * waiting. Acceptance is not delivery: the agent loop polls its steering
-   * queue only after the current assistant message and its whole tool batch
-   * finish, so a long tool call holds the message for minutes. */
+   * waiting. Acceptance is not delivery: the current tool or assistant message
+   * must reach its boundary, so a long tool call can hold the message for
+   * minutes. */
 	steeredAt?: number;
 };
-export const promptQueues: Map<string, QueueItem[]> = new DeliveryOwnedMap(
+export const promptQueues = new DeliveryOwnedMap<QueueItem[]>(
 	"queued",
 );
 
@@ -76,7 +86,7 @@ export type PromptDispatch = {
 	items: QueueItem[];
 	kind?: "create";
 };
-export const promptDispatches: Map<string, PromptDispatch> = new DeliveryOwnedMap(
+export const promptDispatches = new DeliveryOwnedMap<PromptDispatch>(
 	"dispatch"
 );
 
@@ -150,23 +160,23 @@ function queueActorMatches(item: QueueItem, actor?: string): boolean {
 
 /** Atomically remove an ordinary human message so a client can put its full
  * payload back in the normal composer. Routed/system items stay queue-owned. */
-export function takeQueuedPrompt(
+export async function takeQueuedPrompt(
 	sessionId: string,
 	queueId: string,
 	actor?: string,
 	effects = true,
-): QueueItem | undefined {
+): Promise<QueueItem | undefined> {
 	const queue = promptQueues.get(sessionId);
 	if (!queue) return;
 	const index = queue.findIndex((candidate) => candidate.id === queueId);
 	const item = queue[index];
 	if (!isEditableQueueItem(item) || !item || !queueActorMatches(item, actor)) return;
 	queue.splice(index, 1);
-	if (queue.length > 0) promptQueues.set(sessionId, queue);
-	else promptQueues.delete(sessionId);
+	if (queue.length > 0) await promptQueues.set(sessionId, queue);
+	else await promptQueues.delete(sessionId);
 	if (effects) {
 		persistQueues();
-		broadcastQueue(sessionId);
+		await broadcastQueue(sessionId);
 	}
 	return item;
 }
@@ -187,22 +197,22 @@ export function editableSteerReceipt(
 /** Remove a steer receipt only after the engine confirms the exact message is
  * still pending. The caller owns that ordering; this function owns auth and
  * durable receipt state. */
-export function takeSteeredPrompt(
+export async function takeSteeredPrompt(
 	sessionId: string,
 	queueId: string,
 	actor?: string,
 	effects = true,
-): QueueItem | undefined {
+): Promise<QueueItem | undefined> {
 	const item = editableSteerReceipt(sessionId, queueId, actor);
 	if (!item) return;
 	const steered = steeredReceipts.get(sessionId);
 	if (!steered) return;
 	const next = steered.filter((candidate) => candidate.id !== queueId);
-	if (next.length > 0) steeredReceipts.set(sessionId, next);
-	else steeredReceipts.delete(sessionId);
+	if (next.length > 0) await steeredReceipts.set(sessionId, next);
+	else await steeredReceipts.delete(sessionId);
 	if (effects) {
 		persistQueues();
-		broadcastQueue(sessionId);
+		await broadcastQueue(sessionId);
 	}
 	return item;
 }
@@ -212,7 +222,7 @@ export function takeSteeredPrompt(
 // their turn lands they're invisible on reload, so we keep a display-only
 // receipt here: shown as "folded in" in the UI and reconciled away once the real
 // transcript entry appears. Cleared when the run finishes (or is cancelled).
-export const steeredReceipts: Map<string, QueueItem[]> = new DeliveryOwnedMap(
+export const steeredReceipts = new DeliveryOwnedMap<QueueItem[]>(
 	"steered",
 );
 
@@ -225,11 +235,11 @@ export const stoppedSessions = new EphemeralSessionSet();
 
 /** Durable Stop ownership survives a gateway restart until an explicit prompt
  * advances the actor run state out of `stopped`. */
-export function isUserStopped(sessionId: string): boolean {
-  const cancel = sessionKernelStore().turnSnapshot(sessionId).cancel;
+export async function isUserStopped(sessionId: string): Promise<boolean> {
+  const cancel = (await sessionTurnSnapshot(sessionId)).cancel;
   return (
     stoppedSessions.has(sessionId) ||
-    sessionKernelStore().runState(sessionId).state === "stopped" ||
+    sessionKernel(sessionId).runStateProjection().state === "stopped" ||
     cancel?.phase === "prepared" ||
     cancel?.phase === "executing"
   );
@@ -243,10 +253,15 @@ export function isUserStopped(sessionId: string): boolean {
  * is parked forever and reads as lost (most visible right after a create, when
  * the opening turn is stopped before it settles).
  */
-export function liftUserStop(sessionId: string): void {
+export async function liftUserStop(sessionId: string): Promise<void> {
   stoppedSessions.delete(sessionId);
-  if (sessionKernelStore().runState(sessionId).state === "stopped")
-    sessionKernelStore().applyRunEvent({ sessionId, event: "prompt" });
+  if (sessionKernel(sessionId).runStateProjection().state === "stopped")
+    // Intake only releases the durable Stop latch. The later physical run
+    // reservation owns `prompt` -> `starting` and supplies its run token.
+    // Advancing to `starting` here makes the intake busy-check observe its own
+    // half-created run, queue the message, and wait forever for an engine owner
+    // that was never started.
+    await sessionKernel(sessionId).applyRunEvent({ event: "stop_lifted" });
 }
 
 // Both maps are persisted to disk so a real restart/crash (not just a hot
@@ -300,10 +315,10 @@ export function persistQueues(storePath = QUEUE_STORE): void {
 		// being a projection once the actor acknowledged its one-time import.
 		if (
 			storePath === QUEUE_STORE &&
-			sessionKernelStore().deliveryMigrationComplete()
+			queueMigrationState.complete
 		)
 			return;
-		const entries = (m: Map<string, QueueItem[]>) =>
+		const entries = (m: Iterable<[string, QueueItem[]]>) =>
 			Object.fromEntries(
 				[...m]
 					.map(([k, v]) => [k, queueWithIds(v)] as const)
@@ -358,40 +373,50 @@ function readPersistedQueueState(storePath: string,): PersistedQueueState | null
 
 /** Load raw durable maps before the server accepts writes. Ownership and
  * transcript reconciliation happen after recovery identifies adopted runs. */
-export function hydratePersistedQueueState(storePath = QUEUE_STORE): number {
-  const kernelStore = sessionKernelStore();
+export async function hydratePersistedQueueState(storePath = QUEUE_STORE): Promise<number> {
   const migrateToKernel = storePath === QUEUE_STORE;
-  if (migrateToKernel && kernelStore.deliveryMigrationComplete()) {
+  const actorAuthority =
+		migrateToKernel && await sessionDeliveryMigrationComplete();
+	if (migrateToKernel) queueMigrationState.complete = actorAuthority;
+	if (actorAuthority) {
     removeLegacyQueueStore(storePath);
-    sessionDelivery({ op: "settle_pending_steers" });
-    return (
-      [...promptQueues.values(), ...steeredReceipts.values()].reduce(
-        (count, items) => count + items.length,
-        0,
-      ) + promptDispatches.size
-    );
+		// The first schema-29 boot rebuilds the durable sparse projection in
+		// bounded retryable read turns. Finish that before the one mutating
+		// pending-steer reconciliation so no isolated store is skipped.
+		await sessionDelivery({ op: "entries", slot: "queued" });
+    await sessionDelivery({ op: "settle_pending_steers" });
+		const [queued, steered, dispatching] = await Promise.all([
+			sessionDelivery({ op: "entries", slot: "queued" }),
+			sessionDelivery({ op: "entries", slot: "steered" }),
+			sessionDelivery({ op: "entries", slot: "dispatch" }),
+		]);
+		return [...queued, ...steered].reduce(
+			(count, [, items]) => count + (items as unknown[]).length,
+			0,
+		) + dispatching.length;
   }
   if (!existsSync(storePath)) {
     if (migrateToKernel) {
-      kernelStore.markDeliveryMigrationComplete();
+			await markSessionDeliveryMigrationComplete();
+			queueMigrationState.complete = true;
       removeLegacyQueueStore(storePath);
     }
     return 0;
   }
 	const data = readPersistedQueueState(storePath);
 	if (!data) return 0;
-	promptQueues.clear();
-	steeredReceipts.clear();
-	promptDispatches.clear();
+	await promptQueues.clear();
+	await steeredReceipts.clear();
+	await promptDispatches.clear();
 	for (const [sessionId, items] of Object.entries(data.queued || {})) {
-		if (items?.length) promptQueues.set(sessionId, queueWithIds(items, sessionId));
+		if (items?.length) await promptQueues.set(sessionId, queueWithIds(items, sessionId));
 	}
 	for (const [sessionId, items] of Object.entries(data.steered || {})) {
-		if (items?.length) steeredReceipts.set(sessionId, queueWithIds(items, sessionId));
+		if (items?.length) await steeredReceipts.set(sessionId, queueWithIds(items, sessionId));
 	}
 	for (const [sessionId, dispatch] of Object.entries(data.dispatching || {})) {
 		if (dispatch?.promptEntryId && dispatch.items?.length) {
-			promptDispatches.set(sessionId, {
+			await promptDispatches.set(sessionId, {
 				promptEntryId: dispatch.promptEntryId,
 				items: queueWithIds(dispatch.items, sessionId),
 				...(dispatch.kind === "create" ? { kind: "create" as const } : {}),
@@ -399,7 +424,8 @@ export function hydratePersistedQueueState(storePath = QUEUE_STORE): number {
 		}
 	}
   if (migrateToKernel) {
-    kernelStore.markDeliveryMigrationComplete();
+		await markSessionDeliveryMigrationComplete();
+		queueMigrationState.complete = true;
     removeLegacyQueueStore(storePath);
   }
 	return (
@@ -413,26 +439,44 @@ export function hydratePersistedQueueState(storePath = QUEUE_STORE): number {
 /** Restore queue-owned state without deciding when queued prompts should drain.
  * The caller supplies journal/session/transcript facts and arms drains for the
  * returned queuedSessionIds. */
-export function restorePersistedQueueState(options: {
+export async function restorePersistedQueueState(options: {
 	storePath?: string;
 	sessionExists: (sessionId: string) => boolean;
+	sessionQuarantined?: (sessionId: string) => boolean | Promise<boolean>;
 	journalOwnsPrompt: (sessionId: string, promptEntryId: string) => boolean;
-	creationOwnsPrompt?: (sessionId: string, promptEntryId: string) => boolean;
+	creationOwnsPrompt?: (sessionId: string, promptEntryId: string) => boolean | Promise<boolean>;
 	runOwnsSteers: (sessionId: string) => boolean;
-	deliveredUserTexts: (sessionId: string) => string[];
+	deliveredUserTexts: (sessionId: string) => string[] | Promise<string[]>;
 	effects?: boolean;
-}): { queuedSessionIds: string[]; queuedCount: number; steeredCount: number } {
+}): Promise<{ queuedSessionIds: string[]; queuedCount: number; steeredCount: number }> {
 	const storePath = options.storePath ?? QUEUE_STORE;
 	const actorOwned =
 		storePath === QUEUE_STORE &&
-		sessionKernelStore().deliveryMigrationComplete();
+		await sessionDeliveryMigrationComplete();
+	if (storePath === QUEUE_STORE) queueMigrationState.complete = actorOwned;
+	const actorEntries = actorOwned
+		? await Promise.all([
+				sessionDelivery({ op: "entries", slot: "queued" }),
+				sessionDelivery({ op: "entries", slot: "steered" }),
+				sessionDelivery({ op: "entries", slot: "dispatch" }),
+			])
+		: undefined;
   const data: PersistedQueueState =
     actorOwned
       ? {
-          queued: Object.fromEntries(promptQueues),
-          steered: Object.fromEntries(steeredReceipts),
-          dispatching: Object.fromEntries(promptDispatches),
-	}
+					queued: Object.fromEntries(actorEntries![0]) as Record<
+						string,
+						QueueItem[]
+					>,
+					steered: Object.fromEntries(actorEntries![1]) as Record<
+						string,
+						QueueItem[]
+					>,
+					dispatching: Object.fromEntries(actorEntries![2]) as Record<
+						string,
+						PromptDispatch
+					>,
+		}
       : (readPersistedQueueState(storePath) ?? {});
   if (
     !Object.keys(data.queued || {}).length &&
@@ -442,52 +486,89 @@ export function restorePersistedQueueState(options: {
     return { queuedSessionIds: [], queuedCount: 0, steeredCount: 0 };
 
 	if (actorOwned) {
-		for (const [sessionId] of promptQueues) {
-			if (!options.sessionExists(sessionId)) promptQueues.delete(sessionId);
+		const actorSessionIds = new Set([
+			...Object.keys(data.queued || {}),
+			...Object.keys(data.steered || {}),
+			...Object.keys(data.dispatching || {}),
+		]);
+		const quarantined = new Set(
+			(await Promise.all(
+				[...actorSessionIds].map(async (sessionId) =>
+					(await sessionQuarantineSnapshot(sessionId)) ||
+					(await options.sessionQuarantined?.(sessionId))
+						? sessionId
+						: undefined,
+				),
+			)).filter((sessionId): sessionId is string => !!sessionId),
+		);
+		const restorable = (sessionId: string) => !quarantined.has(sessionId);
+		for (const sessionId of Object.keys(data.queued || {})) {
+			if (!restorable(sessionId)) continue;
+			if (!options.sessionExists(sessionId)) await promptQueues.delete(sessionId);
 		}
-		for (const [sessionId, dispatch] of promptDispatches) {
+		for (const [sessionId, dispatch] of Object.entries(data.dispatching || {})) {
+			if (!restorable(sessionId)) continue;
+			const creationOwned =
+				dispatch.kind === "create" &&
+				((await options.creationOwnsPrompt?.(sessionId, dispatch.promptEntryId)) ||
+					!options.journalOwnsPrompt(sessionId, dispatch.promptEntryId));
+			// Creation dispatches intentionally precede the session file. The actor
+			// opening plan and effect remain their recovery authority in this window.
+			if (creationOwned) continue;
 			if (!options.sessionExists(sessionId)) {
-				promptDispatches.delete(sessionId);
+				await promptDispatches.delete(sessionId);
 				continue;
 			}
-			if (
-				dispatch.kind === "create" &&
-				(options.creationOwnsPrompt?.(sessionId, dispatch.promptEntryId) ||
-					!options.journalOwnsPrompt(sessionId, dispatch.promptEntryId))
-			) continue;
 			if (options.journalOwnsPrompt(sessionId, dispatch.promptEntryId))
-				acknowledgePromptDispatch(sessionId, dispatch.promptEntryId, false);
-			else failPromptDispatch(sessionId, dispatch.promptEntryId, false);
+				await acknowledgePromptDispatch(sessionId, dispatch.promptEntryId, false);
+			else await failPromptDispatch(sessionId, dispatch.promptEntryId, false);
 		}
 
-		let steeredCount = 0;
-		for (const [sessionId, items] of steeredReceipts) {
+		for (const [sessionId, items] of Object.entries(data.steered || {})) {
+			if (!restorable(sessionId)) continue;
 			if (!options.sessionExists(sessionId)) {
-				steeredReceipts.delete(sessionId);
+				await steeredReceipts.delete(sessionId);
 				continue;
 			}
-			const delivered = options.deliveredUserTexts(sessionId);
+			const delivered = await options.deliveredUserTexts(sessionId);
 			const pending = queueWithIds(undeliveredSteers(items, delivered), sessionId);
 			if (options.runOwnsSteers(sessionId)) {
-				if (pending.length) steeredReceipts.set(sessionId, pending);
-				else steeredReceipts.delete(sessionId);
-				steeredCount += pending.length;
-			} else requeueSteerReceipts(sessionId, delivered);
+				if (pending.length) await steeredReceipts.set(sessionId, pending);
+				else await steeredReceipts.delete(sessionId);
+			} else {
+				await sessionDelivery({
+					op: "requeue_steers",
+					sessionId,
+					items: pending,
+				});
+			}
 		}
+		const [finalQueued, finalSteered] = await Promise.all([
+			sessionDelivery({ op: "entries", slot: "queued" }),
+			sessionDelivery({ op: "entries", slot: "steered" }),
+		]);
 		if (options.effects !== false) {
 			persistQueues(storePath);
 			for (const sessionId of new Set([
-				...promptQueues.keys(),
-				...steeredReceipts.keys(),
-			])) broadcastQueue(sessionId);
+				...finalQueued.map(([sessionId]) => sessionId),
+				...finalSteered.map(([sessionId]) => sessionId),
+			])) if (restorable(sessionId)) await broadcastQueue(sessionId);
 		}
+		const queuedSessionIds = finalQueued
+			.map(([sessionId]) => sessionId)
+			.filter(restorable);
 		return {
-			queuedSessionIds: [...promptQueues.keys()],
-			queuedCount: [...promptQueues.values()].reduce(
-				(count, items) => count + items.length,
+			queuedSessionIds,
+			queuedCount: finalQueued.reduce(
+				(count, [sessionId, items]) =>
+					count + (restorable(sessionId) ? (items as unknown[]).length : 0),
 				0,
 			),
-			steeredCount,
+			steeredCount: finalSteered.reduce(
+				(count, [sessionId, items]) =>
+					count + (restorable(sessionId) ? (items as unknown[]).length : 0),
+				0,
+			),
 		};
 	}
 
@@ -504,7 +585,7 @@ export function restorePersistedQueueState(options: {
 		if (
 			dispatch?.kind === "create" &&
 			dispatch.promptEntryId &&
-			(options.creationOwnsPrompt?.(sessionId, dispatch.promptEntryId) ||
+			((await options.creationOwnsPrompt?.(sessionId, dispatch.promptEntryId)) ||
 				!options.journalOwnsPrompt(sessionId, dispatch.promptEntryId))
 		) {
 			const createDispatch: PromptDispatch =
@@ -541,25 +622,25 @@ export function restorePersistedQueueState(options: {
 		queued.set(sessionId, [...items, ...(queued.get(sessionId) || [])]);
 	}
 
-	promptQueues.clear();
-	steeredReceipts.clear();
-	promptDispatches.clear();
+	await promptQueues.clear();
+	await steeredReceipts.clear();
+	await promptDispatches.clear();
 	for (const [sessionId, dispatch] of preservedDispatches)
-		promptDispatches.set(sessionId, dispatch);
-	for (const [sessionId, items] of queued) promptQueues.set(sessionId, items);
+		await promptDispatches.set(sessionId, dispatch);
+	for (const [sessionId, items] of queued) await promptQueues.set(sessionId, items);
 
 	let steeredCount = 0;
 	for (const [sessionId, items] of Object.entries(data.steered || {})) {
 		if (!options.sessionExists(sessionId) || !items?.length) continue;
-		const delivered = options.deliveredUserTexts(sessionId);
+		const delivered = await options.deliveredUserTexts(sessionId);
 		const pending = queueWithIds(undeliveredSteers(items, delivered), sessionId);
 		if (!pending.length) continue;
 		if (options.runOwnsSteers(sessionId)) {
-			steeredReceipts.set(sessionId, pending);
+			await steeredReceipts.set(sessionId, pending);
 			steeredCount += pending.length;
 		} else {
 			queued.set(sessionId, [...pending, ...(queued.get(sessionId) || [])]);
-			promptQueues.set(sessionId, queued.get(sessionId)!);
+			await promptQueues.set(sessionId, queued.get(sessionId)!);
 		}
 	}
 
@@ -569,7 +650,7 @@ export function restorePersistedQueueState(options: {
 			...promptQueues.keys(),
 			...steeredReceipts.keys(),
 		])) {
-			broadcastQueue(sessionId);
+			await broadcastQueue(sessionId);
 		}
 	}
 	return {
@@ -583,16 +664,16 @@ export function restorePersistedQueueState(options: {
 }
 
 /** Persist the interrupt before attempting its physical cancellation. */
-export function preparePromptInterrupt(
+export async function preparePromptInterrupt(
 	sessionId: string,
 	anchorId: string,
   dispatchId: string,
 	soloId?: string,
-): string {
+): Promise<string> {
   const interruptId = `interrupt:${new Bun.CryptoHasher("sha256")
     .update(`${sessionId}\0${anchorId}`)
     .digest("hex")}`;
-	sessionDelivery({
+	await sessionDelivery({
 		op: "prepare_interrupt",
 		sessionId,
 		interruptId,
@@ -603,11 +684,11 @@ export function preparePromptInterrupt(
 	return interruptId;
 }
 
-export function beginPromptInterruptEffect(
+export async function beginPromptInterruptEffect(
 	sessionId: string,
 	interruptId: string,
 	runGeneration: number,
-): "execute" | "retry" | "adopt_confirmed" | "confirmed" | "settled" {
+): Promise<"execute" | "retry" | "adopt_confirmed" | "confirmed" | "settled"> {
 	return sessionDelivery({
 		op: "begin_interrupt_effect",
 		sessionId,
@@ -616,12 +697,12 @@ export function beginPromptInterruptEffect(
 	});
 }
 
-export function settlePromptInterrupt(
+export async function settlePromptInterrupt(
 	sessionId: string,
 	interruptId: string,
 	outcome: "confirmed" | "not_aborted",
-): void {
-	const settled = sessionDelivery({
+): Promise<void> {
+	const settled = await sessionDelivery({
 		op: "settle_interrupt",
 		sessionId,
 		interruptId,
@@ -632,13 +713,13 @@ export function settlePromptInterrupt(
 }
 
 /** Let the actor select and claim the next queue batch in one transaction. */
-export function beginNextPromptDispatch(
+export async function beginNextPromptDispatch(
 	sessionId: string,
 	opts: {
 		stillWorking?: boolean;
 	},
 	effects = true,
-):
+): Promise<
 	| { kind: "empty" }
 	| { kind: "hold"; heldCount: number }
 	| {
@@ -646,8 +727,9 @@ export function beginNextPromptDispatch(
 			promptEntryId: string;
 			batch: QueueItem[];
 			interrupted: boolean;
-		} {
-	const claimed = sessionDelivery({
+		}
+> {
+	const claimed = await sessionDelivery({
 		op: "claim_next_dispatch",
 		sessionId,
 		promptEntryId: crypto.randomUUID(),
@@ -667,17 +749,17 @@ export function beginNextPromptDispatch(
  * runner work. The caller has already removed the batch from promptQueues, so
  * this single persistence point records either the old queued copy (if we die
  * before it) or the dispatching copy (if we die after it). */
-export function beginPromptDispatch(
+export async function beginPromptDispatch(
 	sessionId: string,
 	items: QueueItem[],
 	promptEntryId = items.length === 1 ? items[0]?.promptEntryId : undefined,
 	effects = true,
 	kind?: "create",
 	requireQueued = false,
-): string {
+): Promise<string> {
 	const id = promptEntryId || crypto.randomUUID();
 	const durableItems = queueWithIds(items, sessionId);
-  sessionDelivery({
+  await sessionDelivery({
     op: "claim_dispatch",
     sessionId,
     items: durableItems,
@@ -691,48 +773,56 @@ export function beginPromptDispatch(
 
 /** The engine's active-run journal is now durable, so it owns recovery and the
  * intake dispatch record can be removed. */
-export function acknowledgePromptDispatch(
+export async function acknowledgePromptDispatch(
 	sessionId: string | undefined,
 	promptEntryId: string | undefined,
 	effects = true,
-): void {
+): Promise<void> {
 	if (!sessionId || !promptEntryId) return;
-  const acknowledged = sessionDelivery({
+  const acknowledged = await sessionDelivery({
     op: "ack_dispatch",
     sessionId,
     promptEntryId,
   });
   if (acknowledged && effects) {
 		persistQueues();
-		broadcastQueue(sessionId);
+		await broadcastQueue(sessionId);
 	}
 }
 
 /** A runner failed before it adopted the dispatch. Restore its exact batch
  * atomically ahead of later queued work. */
-export function failPromptDispatch(
+export async function failPromptDispatch(
   sessionId: string,
   promptEntryId: string,
   effects = true,
-): boolean {
-  const restored = sessionDelivery({
+): Promise<boolean> {
+  const restored = await sessionDelivery({
     op: "fail_dispatch",
     sessionId,
     promptEntryId,
   });
   if (restored && effects) {
     persistQueues();
-    broadcastQueue(sessionId);
+    await broadcastQueue(sessionId);
   }
   return restored;
 }
 
 /** Automated turns stay durable in the queue but are not messages a person
  * sent. Review handoffs have their own Agents surface; workflow completion
- * nudges are model-routing plumbing whose eventual transcript row is already
- * classified as a system notice. Neither belongs in message counts or chips. */
+ * nudges and auto-continues are model-routing plumbing. None belongs in message
+ * counts or chips. */
 function isClientVisibleQueueItem(item: QueueItem): boolean {
-	return !item.reviewHandoff && !isWorkflowQueueItem(item);
+	return (
+		!item.reviewHandoff &&
+		!isWorkflowQueueItem(item) &&
+		item.user !== AUTO_CONTINUE_USER &&
+		// Background waits and other fenced system context are runner plumbing,
+		// not messages a person queued. If transcript sanitization leaves no
+		// visible body, do not expose the receipt as "(auto-continue)".
+		stripContext(item.content).trim().length > 0
+	);
 }
 
 export function clientVisibleQueuedCount(sessionId: string): number {
@@ -741,9 +831,9 @@ export function clientVisibleQueuedCount(sessionId: string): number {
 }
 
 /** One actor snapshot for list rendering, instead of one RPC per session. */
-export function clientVisibleQueuedCounts(): Map<string, number> {
+export async function clientVisibleQueuedCounts(): Promise<Map<string, number>> {
 	const counts = new Map<string, number>();
-	for (const [sessionId, value] of sessionDelivery({
+	for (const [sessionId, value] of await sessionDelivery({
 		op: "entries",
 		slot: "queued",
 	})) {
@@ -754,16 +844,14 @@ export function clientVisibleQueuedCounts(): Map<string, number> {
 	return counts;
 }
 
-export function queueDisplayState(sessionId: string) {
-	const queued = queueWithIds(promptQueues.get(sessionId));
-	const steered = queueWithIds(steeredReceipts.get(sessionId));
-	if (queued.length > 0) promptQueues.set(sessionId, queued);
-	if (steered.length > 0) steeredReceipts.set(sessionId, steered);
+export async function queueDisplayState(sessionId: string) {
+	const snapshot = await sessionDelivery({ op: "snapshot", sessionId });
+	const queued = queueWithIds(snapshot.queued as QueueItem[]);
+	const steered = queueWithIds(snapshot.steered as QueueItem[]);
 	// Display copy only: automated turns remain in the internal queue until
-	// dispatch but never enter a client's message surface. Fenced
-	// <opensession:context> blocks (e.g. the queued auto-continue nudge) are
-	// model plumbing too, so strip them from the remaining rows. The stored
-	// items keep their full content for delivery.
+	// dispatch but never enter a client's message surface. Strip fenced
+	// <opensession:context> blocks from the remaining human-authored rows. The
+	// stored items keep their full content for delivery.
 	const forDisplay = (items: typeof queued) =>
 		items.filter(isClientVisibleQueueItem).map((i) => {
 			const shown = stripContext(i.content);
@@ -776,62 +864,94 @@ export function queueDisplayState(sessionId: string) {
 	return { queued: forDisplay(queued), steered: forDisplay(steered) };
 }
 
-export function broadcastQueue(sessionId: string) {
+export async function broadcastQueue(sessionId: string): Promise<void> {
 	broadcastToSession(sessionId, {
 		type: "queue_update",
 		sessionId,
-		...queueDisplayState(sessionId),
+		...await queueDisplayState(sessionId),
 	});
 }
 
 /** Move one queued item into an actor-owned pending steer before touching the
  * runner. A crash after this point recovers it as an ambiguous steer receipt
  * instead of delivering the same message again. */
-export function prepareQueuedSteer(
+export async function prepareQueuedSteer(
 	sessionId: string,
 	itemId: string,
+	target: DurableSteerTarget,
 	directItem?: QueueItem,
-): QueueItem | undefined {
-	return sessionDelivery({
+): Promise<QueueItem | undefined> {
+	return await sessionDelivery({
 		op: "prepare_steer",
 		sessionId,
 		itemId,
+		target,
 		...(directItem ? { item: directItem } : {}),
 	}) as QueueItem | undefined;
 }
 
-export function acceptQueuedSteer(sessionId: string, itemId: string): boolean {
-	const accepted = sessionDelivery({
+export async function acceptQueuedSteer(
+	sessionId: string,
+	itemId: string,
+	target: DurableSteerTarget,
+): Promise<boolean> {
+	const accepted = await sessionDelivery({
 		op: "accept_steer",
 		sessionId,
 		itemId,
+		target,
 	});
 	if (accepted) {
 		persistQueues();
-		broadcastQueue(sessionId);
+		await broadcastQueue(sessionId);
 	}
 	return accepted;
 }
 
-export function rejectQueuedSteer(sessionId: string, itemId: string): boolean {
-	const rejected = sessionDelivery({
+export async function rejectQueuedSteer(
+	sessionId: string,
+	itemId: string,
+	target: DurableSteerTarget,
+): Promise<boolean> {
+	const rejected = await sessionDelivery({
 		op: "reject_steer",
 		sessionId,
 		itemId,
+		target,
 	});
 	if (rejected) {
 		persistQueues();
-		broadcastQueue(sessionId);
+		await broadcastQueue(sessionId);
 	}
 	return rejected;
 }
 
+/** Retire one exact receipt when the engine reports that it crossed the step
+ * boundary. This is authoritative even when the delivered message is fenced
+ * system context that transcript parsing intentionally hides. */
+export async function acknowledgeSteerDelivery(
+	sessionId: string,
+	steerId: string,
+	effects = true,
+): Promise<boolean> {
+	const steered = steeredReceipts.get(sessionId);
+	if (!steered?.some((item) => item.id === steerId)) return false;
+	const remaining = steered.filter((item) => item.id !== steerId);
+	if (remaining.length > 0) await steeredReceipts.set(sessionId, remaining);
+	else await steeredReceipts.delete(sessionId);
+	if (effects) {
+		persistQueues();
+		await broadcastQueue(sessionId);
+	}
+	return true;
+}
+
 /** Clear a session's steer receipts once the run that owned them is done. */
-export function clearSteerReceipts(sessionId: string): void {
+export async function clearSteerReceipts(sessionId: string): Promise<void> {
 	if (!steeredReceipts.has(sessionId)) return;
-	steeredReceipts.delete(sessionId);
+	await steeredReceipts.delete(sessionId);
 	persistQueues();
-	broadcastQueue(sessionId);
+	await broadcastQueue(sessionId);
 }
 
 /**
@@ -855,11 +975,11 @@ export function clearSteerReceipts(sessionId: string): void {
  * watchers see one consistent update rather than a moment with the message
  * in neither place.
  */
-export function takeSteerReceiptForText(
+export async function takeSteerReceiptForText(
 	sessionId: string,
 	text: string,
 	effects = true,
-): QueueItem | undefined {
+): Promise<QueueItem | undefined> {
 	const steered = steeredReceipts.get(sessionId);
 	if (!steered?.length) return undefined;
 	const wanted = text.trim();
@@ -871,11 +991,11 @@ export function takeSteerReceiptForText(
 	});
 	if (index < 0) return undefined;
 	const [item] = steered.splice(index, 1);
-	if (steered.length > 0) steeredReceipts.set(sessionId, steered);
-	else steeredReceipts.delete(sessionId);
+	if (steered.length > 0) await steeredReceipts.set(sessionId, steered);
+	else await steeredReceipts.delete(sessionId);
 	if (effects) {
 		persistQueues();
-		broadcastQueue(sessionId);
+		await broadcastQueue(sessionId);
 	}
 	return item;
 }
@@ -937,10 +1057,10 @@ export function undeliveredSteers(
 	});
 }
 
-function reconcileSteerReceiptsOnAppend(
+async function reconcileSteerReceiptsOnAppend(
 	sessionId: string,
 	entries: TranscriptEntry[],
-): void {
+): Promise<void> {
 	const steered = steeredReceipts.get(sessionId);
 	if (!steered?.length) return;
 	const users = entries
@@ -949,10 +1069,10 @@ function reconcileSteerReceiptsOnAppend(
 	if (users.length === 0) return;
 	const remaining = undeliveredSteers(steered, users);
 	if (remaining.length === steered.length) return;
-	if (remaining.length > 0) steeredReceipts.set(sessionId, remaining);
-	else steeredReceipts.delete(sessionId);
+	if (remaining.length > 0) await steeredReceipts.set(sessionId, remaining);
+	else await steeredReceipts.delete(sessionId);
 	persistQueues();
-	broadcastQueue(sessionId);
+	await broadcastQueue(sessionId);
 }
 
 setTranscriptAppendListener(reconcileSteerReceiptsOnAppend);
@@ -975,22 +1095,22 @@ setAppendHook(reconcileSteerReceiptsOnAppend);
  * that already landed are dropped instead of requeued; only steers the
  * engine never got (a failed fire-and-forget POST) go back into the queue.
  */
-export function requeueSteerReceipts(
+export async function requeueSteerReceipts(
 	sessionId: string,
 	deliveredUserTexts?: string[],
 	effects = true,
-): number {
+): Promise<number> {
 	const steered = steeredReceipts.get(sessionId);
 	if (!steered?.length) return 0;
 	const undelivered = undeliveredSteers(steered, deliveredUserTexts || []);
-	sessionDelivery({
+	await sessionDelivery({
 		op: "requeue_steers",
 		sessionId,
 		items: undelivered,
 	});
 	if (effects) {
 		persistQueues();
-		broadcastQueue(sessionId);
+		await broadcastQueue(sessionId);
 	}
 	return undelivered.length;
 }
@@ -1014,22 +1134,22 @@ export function queuedPromptIndex(
 	return -1;
 }
 
-export function deleteQueuedPrompt(
+export async function deleteQueuedPrompt(
 	sessionId: string,
 	queueId?: string,
 	queueIndex?: number,
 	effects = true,
-): boolean {
+): Promise<boolean> {
 	const queue = promptQueues.get(sessionId);
 	if (queue) {
 		const index = queuedPromptIndex(queue, queueId, queueIndex);
 		if (index >= 0) {
 			const next = queue.filter((_, i) => i !== index);
-			if (next.length > 0) promptQueues.set(sessionId, next);
-			else promptQueues.delete(sessionId);
+			if (next.length > 0) await promptQueues.set(sessionId, next);
+			else await promptQueues.delete(sessionId);
 			if (effects) {
 				persistQueues();
-				broadcastQueue(sessionId);
+				await broadcastQueue(sessionId);
 			}
 			return true;
 		}
@@ -1043,11 +1163,11 @@ export function deleteQueuedPrompt(
 		const index = (steered || []).findIndex((item) => item.id === queueId);
 		if (steered && index >= 0) {
 			const next = steered.filter((_, i) => i !== index);
-			if (next.length > 0) steeredReceipts.set(sessionId, next);
-			else steeredReceipts.delete(sessionId);
+			if (next.length > 0) await steeredReceipts.set(sessionId, next);
+			else await steeredReceipts.delete(sessionId);
 			if (effects) {
 				persistQueues();
-				broadcastQueue(sessionId);
+				await broadcastQueue(sessionId);
 			}
 			return true;
 		}
@@ -1057,13 +1177,13 @@ export function deleteQueuedPrompt(
 
 /** Compatibility path for clients shipped before queued messages moved back
  * into the normal composer. Current clients use takeQueuedPrompt instead. */
-export function updateQueuedPrompt(
+export async function updateQueuedPrompt(
 	sessionId: string,
 	queueId: string | undefined,
 	queueIndex: number | undefined,
 	content: string,
 	images?: string[],
-): boolean {
+): Promise<boolean> {
 	const queue = promptQueues.get(sessionId);
 	if (!queue) return false;
 	const index = queuedPromptIndex(queue, queueId, queueIndex);
@@ -1082,10 +1202,10 @@ export function updateQueuedPrompt(
 	) {
 		queue.splice(index, 1);
 	}
-	if (queue.length > 0) promptQueues.set(sessionId, queue);
-	else promptQueues.delete(sessionId);
+	if (queue.length > 0) await promptQueues.set(sessionId, queue);
+	else await promptQueues.delete(sessionId);
 	persistQueues();
-	broadcastQueue(sessionId);
+	await broadcastQueue(sessionId);
 	return true;
 }
 
@@ -1097,11 +1217,11 @@ export function updateQueuedPrompt(
  * (unknown session, <2 items, or an order that doesn't change anything) return
  * false without a broadcast.
  */
-export function reorderQueuedPrompt(
+export async function reorderQueuedPrompt(
 	sessionId: string,
 	order: string[],
 	effects = true,
-): boolean {
+): Promise<boolean> {
 	const queue = promptQueues.get(sessionId);
 	if (!queue || queue.length < 2) return false;
 	const byId = new Map(
@@ -1121,10 +1241,10 @@ export function reorderQueuedPrompt(
 	}
 	// Same references in the same slots ⇒ nothing moved.
 	if (next.every((item, i) => item === queue[i])) return false;
-	promptQueues.set(sessionId, next);
+	await promptQueues.set(sessionId, next);
 	if (effects) {
 		persistQueues();
-		broadcastQueue(sessionId);
+		await broadcastQueue(sessionId);
 	}
 	return true;
 }

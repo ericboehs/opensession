@@ -24,6 +24,35 @@
 import type { AnsweredAskData, EntryNotice, NoticeKind } from "./notices";
 import type { ToolPresentation } from "./tool-presentation";
 
+/** The complete set of managed Executor providers. */
+export const EXECUTOR_PROVIDERS = ["box", "daytona", "modal"] as const;
+export type ExecutorProvider = (typeof EXECUTOR_PROVIDERS)[number];
+
+export type ExecutorLifecycle =
+  "preparing" | "awake" | "sleeping" | "waking" | "needs_attention";
+
+/** Where tool and workspace operations execute. This state contains no model
+ * or conversation identity. Omission at creation normalizes to `local`. */
+export type ExecutionTarget =
+  | { kind: "local" }
+  | { kind: "runner"; executorId: string; workspaceId: string }
+  | {
+      kind: "executor";
+      provider: ExecutorProvider;
+      executorId: string;
+      workspaceId: string;
+      instanceId?: string;
+      lifecycle: ExecutorLifecycle;
+      durableDeltaId?: string;
+    };
+
+export function isExecutorProvider(value: unknown): value is ExecutorProvider {
+  return (
+    typeof value === "string" &&
+    (EXECUTOR_PROVIDERS as readonly string[]).includes(value)
+  );
+}
+
 /** One rendered line of a session's durable transcript (the jsonl record). */
 export interface TranscriptEntry {
   id: string;
@@ -179,10 +208,9 @@ export interface QueuedPrompt {
   editable?: boolean;
   /**
    * When the engine ACCEPTED this message as a steer (epoch ms). Acceptance
-   * is not delivery: the agent loop only polls its steering queue after the
-   * current assistant message and its whole tool batch have finished, so the
-   * wait is routinely seconds and occasionally minutes (a long test run, a
-   * subagent). Clients count from here so a still chip cannot read as a hang.
+   * is not delivery: the current tool or assistant message must still reach
+   * its boundary. A long test run or subagent can therefore hold it for
+   * minutes. Clients count from here so a still chip cannot read as a hang.
    */
   steeredAt?: number;
 }
@@ -292,8 +320,18 @@ export type ProtocolClientMessage =
       queueId?: string;
       queueIndex?: number;
     }
-  | { type: "take_queued_prompt"; sessionId: string; requestId?: string; queueId: string; }
-  | { type: "take_steered_prompt"; sessionId: string; requestId?: string; queueId: string; }
+  | {
+      type: "take_queued_prompt";
+      sessionId: string;
+      requestId?: string;
+      queueId: string;
+    }
+  | {
+      type: "take_steered_prompt";
+      sessionId: string;
+      requestId?: string;
+      queueId: string;
+    }
   | {
       /** @deprecated Current clients take the item back into the composer. */
       type: "update_queued_prompt";
@@ -353,8 +391,9 @@ export type ProtocolClientMessage =
       model?: string;
       /** Optional MCP server allowlist for the opening run. [] means none. */
       mcpServers?: string[];
-      /** Run in a sandbox: true = server's default provider, or an explicit
-       *  configured provider id. Omit = host. */
+      /** Execute on a managed Executor from this provider. Omit to use this machine. */
+      executor?: ExecutorProvider;
+      /** @deprecated Transitional pre-Executor selection. Use executor. */
       sandbox?: boolean | string;
       images?: string[];
       /** Non-image composer attachments, staged server-side or kept inline. */
@@ -384,6 +423,15 @@ export type ProtocolClientMessage =
  * identical shape, so a client can unwrap a feed frame straight into its
  * ordinary handler, and a new field can never reach one route only.
  */
+export interface SessionSafetyState {
+  status: "paused_for_safety";
+  explanation: string;
+  automaticReconciliationRunning: boolean;
+  pausedAt: string;
+  operation: string;
+  repairAvailable: boolean;
+}
+
 export type SessionLiveEvent =
   | {
       type: "transcript_append";
@@ -413,7 +461,12 @@ export type SessionLiveEvent =
   | { type: "stream_tool_use"; sessionId?: string; entry: TranscriptEntry }
   | { type: "stream_tool_result"; sessionId?: string; entry: TranscriptEntry }
   | { type: "stream_done"; sessionId?: string }
-  | { type: "session_status"; sessionId?: string; isRunning: boolean };
+  | {
+      type: "session_status";
+      sessionId?: string;
+      isRunning: boolean;
+      safety?: SessionSafetyState;
+    };
 
 /**
  * Core server → client frames. sessionId on the session-scoped messages lets
@@ -528,10 +581,18 @@ export type ProtocolServerMessage =
       newWorkspace?: boolean;
       /** True while the session's worktree is still being created. */
       preparingWorkspace?: boolean;
+      /** Stored result of an already-completed durable create command. */
+      replayed?: boolean;
     }
   // The create run finished (or failed) preparing the session's worktree.
   | { type: "workspace_status"; sessionId: string; ready: boolean }
-  | { type: "model_changed"; sessionId: string; model: string; from?: string; by?: string; }
+  | {
+      type: "model_changed";
+      sessionId: string;
+      model: string;
+      from?: string;
+      by?: string;
+    }
   | {
       type: "queue_update";
       sessionId: string;
@@ -584,7 +645,8 @@ export type ProtocolServerMessage =
       ts?: string;
     }
   | { type: "command_ack_result"; sessionId: string; requestId: string }
-  | { type: "command_result";
+  | {
+      type: "command_result";
       sessionId: string;
       requestId: string;
       status: "completed" | "failed";

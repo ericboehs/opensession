@@ -1,5 +1,5 @@
 import { FileTree, useFileTree } from "@pierre/trees/react";
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useEffectEvent, useLayoutEffect, useRef, useState } from "react";
 import type { PrFile } from "../../lib/types";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../../styles/typography.stylex";
@@ -333,7 +333,9 @@ export function PrFileTree({
   const onOpenFileRef = useRef(onOpenFile);
   const rootRef = useRef<HTMLElement | null>(null);
   const stopResizeRef = useRef<(() => void) | null>(null);
-  onOpenFileRef.current = onOpenFile;
+	useLayoutEffect(() => {
+		onOpenFileRef.current = onOpenFile;
+	});
   const { model } = useFileTree({
     paths,
     initialExpandedPaths: allDirectories(paths),
@@ -343,9 +345,13 @@ export function PrFileTree({
     },
   });
 
-  useEffect(() => {
+  const pathsKey = paths.join("\0");
+  const syncPaths = useEffectEvent(() => {
     model.resetPaths(paths, { initialExpandedPaths: allDirectories(paths) });
-  }, [model, paths.join("\0")]);
+  });
+  useEffect(() => {
+    syncPaths();
+  }, [model, pathsKey]);
 
   useEffect(
     () => () => {

@@ -134,9 +134,32 @@ export function buildSeededOpenaiAuth(
   };
 }
 
-/** Pi does not expose OpenAI priority-tier variants. */
-export function supportsOpenaiFastMode(_model?: string): boolean {
-  return false;
+const OPENAI_FAST_MODE_MODELS = new Set([
+  "gpt-5.6-sol",
+  "gpt-5.6-terra",
+  "gpt-5.6-luna",
+]);
+
+/** ChatGPT subscription models whose backend accepts the priority service tier. */
+export function supportsOpenaiFastMode(model?: string): boolean {
+  if (!model) return false;
+  const id = model.replace(/^pi\/openai\//, "").replace(/^openai\//, "");
+  return OPENAI_FAST_MODE_MODELS.has(id);
+}
+
+/** Make Pi's final ChatGPT Codex payload use the priority service tier. */
+export function enableOpenaiFastMode<TModel>(agent: {
+  onPayload?: (payload: unknown, model: TModel) => unknown | Promise<unknown>;
+}): void {
+  const baseOnPayload = agent.onPayload;
+  agent.onPayload = async (payload, model) => {
+    const transformed = await baseOnPayload?.(payload, model);
+    const finalPayload = transformed ?? payload;
+    if (!finalPayload || typeof finalPayload !== "object" || Array.isArray(finalPayload)) {
+      return finalPayload;
+    }
+    return { ...finalPayload, service_tier: "priority" };
+  };
 }
 
 export function openaiSeedAuthPath(seedRoot: string, accountId: string): string {

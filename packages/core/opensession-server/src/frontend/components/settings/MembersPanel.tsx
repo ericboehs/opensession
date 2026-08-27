@@ -1,5 +1,15 @@
+import { mergeStylexProps } from "../../ui/cn";
+import { BASE_PATH } from "../../lib/base";
 import { SettingsHeader, SettingsPanel } from "../../ui/settings";
 import { TeamSection } from "../SetupTeam";
+import * as stylex from "@stylexjs/stylex";
+
+/* Converted from Tailwind utilities; names mirror the original class tokens. */
+const sx = stylex.create({
+	textLink: {
+			color: "var(--link)"
+	},
+});
 
 // Workspace → Members: the identity table, on a page of its own. Commit
 // attribution, `allowedUsers` scoping and GitHub sign-in all resolve through
@@ -10,9 +20,20 @@ export function MembersPanel() {
 		<SettingsPanel>
 			<SettingsHeader
 				title="Members"
-				description="Members from your GitHub organization are added automatically."
+				description={
+					<>
+						Members identify who sessions act as. Configure who can sign in under{" "}
+						<a
+							href={`${BASE_PATH}/settings/authentication`}
+							{...mergeStylexProps("hover:underline", sx.textLink)}
+						>
+							Authentication
+						</a>
+						.
+					</>
+				}
 			/>
-			<TeamSection onChanged={() => {}} githubOnly />
+			<TeamSection onChanged={() => {}} />
 		</SettingsPanel>
 	);
 }

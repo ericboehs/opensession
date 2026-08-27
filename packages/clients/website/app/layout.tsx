@@ -1,9 +1,10 @@
+import { Analytics } from "@vercel/analytics/next";
 import type { Metadata, Viewport } from "next";
 import type { ReactNode } from "react";
 import "../site.css";
 
 export const metadata: Metadata = {
-  metadataBase: new URL("https://opensession.com"),
+  metadataBase: new URL("https://www.opensession.com"),
   title: "Open Session · Your team’s control room for coding agents",
   description:
     "Open Session is the open-source workspace for running coding agents together on your own infrastructure.",
@@ -13,14 +14,21 @@ export const metadata: Metadata = {
     title: "Open Session · Your team’s control room for coding agents",
     description:
       "Start parallel agents, collaborate with your team, and review and ship every session from one self-hosted workspace.",
-    images: ["/opensession-social.png"],
+    images: [
+      {
+        url: "/opensession-social-landing.png",
+        width: 1200,
+        height: 600,
+        alt: "Open Session",
+      },
+    ],
   },
   twitter: {
-    card: "summary",
+    card: "summary_large_image",
     title: "Open Session · Your team’s control room for coding agents",
     description:
       "The open-source workspace for teams running coding agents together.",
-    images: ["/opensession-social.png"],
+    images: ["/opensession-social-landing.png"],
   },
   icons: { icon: "/icon.png" },
 };
@@ -37,7 +45,10 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body>
+        {children}
+        <Analytics />
+      </body>
     </html>
   );
 }

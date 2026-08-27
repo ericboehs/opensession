@@ -1,4 +1,6 @@
-import React, { useEffect, useState } from "react";
+import { mergeStylexProps, mergeStylexOverrideClassName } from "../../ui/cn";
+import { utilityClassName } from "../../ui/cn";
+import React, { useEffect, useEffectEvent, useState } from "react";
 import {
 	fetchGithubOrganizationProfile,
 	fetchOrganizationSettings,
@@ -11,8 +13,9 @@ import { rememberOrganizationIcon } from "../../hooks/useOrganizationIcon";
 import { PRODUCT_NAME } from "../../lib/brand";
 import { pngFromImageFile, pngFromImageUrl } from "../../lib/icon-image";
 import { REPO_TILE_INK, repoColor, repoIconFill } from "../../lib/repo-colors";
-import { cn, mergeStylexProps, mergeStylexClassName, mergeStylexOverrideClassName } from "../../ui/cn";
+import { cn } from "../../ui/cn";
 import { OverlayAction } from "../../ui/overlay-action";
+import { Field } from "../../ui/input";
 import {
 	SettingCard,
 	SettingCardSkeleton,
@@ -30,27 +33,14 @@ import { InlineAlert } from "../../ui/state";
 import { IconArrowUpToLine, IconTrash } from "../icons";
 import { IdentityRows } from "../SetupIdentity";
 import * as stylex from "@stylexjs/stylex";
-import { type as typography } from "../../styles/typography.stylex";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
-	itemsCenter: {
-			alignItems: "center"
+	relative: {
+			position: "relative"
 	},
 	flex: {
 			display: "flex"
-	},
-	flexWrap: {
-			flexWrap: "wrap"
-	},
-	justifyEnd: {
-			justifyContent: "flex-end"
-	},
-	gap2: {
-			gap: "8px"
-	},
-	relative: {
-			position: "relative"
 	},
 	shrink0: {
 			flexShrink: "0"
@@ -58,34 +48,11 @@ const sx = stylex.create({
 	flexCol: {
 			flexDirection: "column"
 	},
+	itemsCenter: {
+			alignItems: "center"
+	},
 	gap15: {
-			gap: "6px"
-	},
-	focusRing: {
-			":focus-visible": {
-					outline: "2px solid var(--accent-ink)",
-					outlineOffset: "2px"
-			}
-	},
-	size14: {
-			width: "56px",
-			height: "56px"
-	},
-	justifyCenter: {
-			justifyContent: "center"
-	},
-	overflowHidden: {
-			overflow: "hidden"
-	},
-	roundedLg: {
-			borderRadius: "calc(14px * var(--rf))"
-	,
-		cornerShape: "var(--cs)"},
-	fontSemibold: {
-			fontWeight: "var(--font-weight-semibold)"
-	},
-	outlineDivider: {
-			outlineColor: "var(--divider)"
+			gap: "calc(4px * 1.5)"
 	},
 	sizeFull: {
 			width: "100%",
@@ -110,25 +77,22 @@ const sx = stylex.create({
 			placeItems: "center"
 	},
 	roundedInherit: {
-			borderRadius: "inherit"
-	,
-		cornerShape: "var(--cs)"},
-	bgBlack50: {
-			backgroundColor: "color-mix(in srgb, var(--color-black) 50%, transparent)"
-	},
+			borderRadius: "inherit",
+
+		cornerShape: "var(--cs)",},
 	textWhite: {
 			color: "var(--color-white)"
 	},
 	opacity0: {
-			opacity: "0"
+			opacity: "0%"
 	},
 	transitionOpacity: {
 			transitionProperty: "opacity",
-			transitionTimingFunction: "var(--tw-ease,var(--ease))",
-			transitionDuration: "var(--tw-duration,var(--dur-micro))"
+			transitionTimingFunction: "var(--tw-ease, var(--ease))",
+			transitionDuration: "var(--tw-duration, var(--dur-micro))"
 	},
 	duration150: {
-			transitionDuration: ".15s"
+			transitionDuration: "150ms"
 	},
 	textRed: {
 			color: "var(--red)"
@@ -136,62 +100,68 @@ const sx = stylex.create({
 	hidden: {
 			display: "none"
 	},
-	nameInput: {
-		width: "220px",
-		maxWidth: "100%",
+	p6: {
+			padding: "calc(4px * 6)"
 	},
-
-	phonePointerEventsAuto: {
-		"@media (max-width: 720px)": {
-			"pointerEvents": "auto"
-		}
+	justifyCenter: {
+			justifyContent: "center"
 	},
-	phoneOpacity100: {
-		"@media (max-width: 720px)": {
-			"opacity": "1"
-		}
+	py4: {
+			paddingBlock: "calc(4px * 4)"
 	},
-	phoneHidden: {
-		"@media (max-width: 720px)": {
-			"display": "none"
-		}
+	mxAuto: {
+			marginInline: "auto"
 	},
-
-	outline: {
-		"outlineStyle": "var(--tw-outline-style)",
-		"outlineWidth": "1px"
+	mt5: {
+			marginTop: "calc(4px * 5)"
 	},
-	outline1: {
-		"outlineStyle": "var(--tw-outline-style)",
-		"outlineWidth": "1px"
+	wFull: {
+			width: "100%"
 	},
-	disabledPointerEventsNone: {
-		":disabled": {
-			"pointerEvents": "none"
-		}
+	maxW400px: {
+			maxWidth: "400px"
+	},
+	gridCols1: {
+			gridTemplateColumns: "repeat(1, minmax(0, 1fr))"
+	},
+	gap4: {
+			gap: "calc(4px * 4)"
+	},
+	textFg: {
+			color: "var(--text)"
+	},
+	flexWrap: {
+			flexWrap: "wrap"
+	},
+	justifyEnd: {
+			justifyContent: "flex-end"
+	},
+	gap2: {
+			gap: "calc(4px * 2)"
 	},
 });
 
+const NAME_INPUT_CLASS = cn(settingsInputClass, utilityClassName("w-[220px] max-w-full"));
+
 /**
- * The organization's name, mark and email domain.
+ * The organization's name and mark.
  *
  * In onboarding this step runs directly after GitHub, and `githubOrganization`
- * is the org that was just connected. Rather than ask for three things the
+ * is the org that was just connected. Rather than ask for two things the
  * connection already knows, the first render of a fresh instance fills them in
- * from GitHub — the org's display name, its avatar, and the domain off its
- * profile — and leaves every field editable. It only ever fills a field nobody
- * has set, so re-opening onboarding cannot overwrite a rename.
+ * from GitHub: the org's display name and avatar. It leaves both editable and
+ * only fills values nobody has set, so re-opening onboarding cannot overwrite
+ * a rename.
  */
 export function OrganizationProfileSection({
 	githubOrganization,
-	showDomain = true,
+	onboarding = false,
 }: {
 	githubOrganization?: string;
-	showDomain?: boolean;
+	onboarding?: boolean;
 } = {}) {
 	const [settings, setSettings] = useState<OrganizationSettingsDto | null>(null);
 	const [draft, setDraft] = useState("");
-	const [domainDraft, setDomainDraft] = useState("");
 	const [busy, setBusy] = useState(false);
 	const [loadError, setLoadError] = useState<string | null>(null);
 	const [iconFailed, setIconFailed] = useState(false);
@@ -207,7 +177,6 @@ const next = await fetchOrganizationSettings();
 			if (cancelled?.()) return;
 			setSettings(next);
 			setDraft(next.organizationName);
-			setDomainDraft(next.organizationDomain);
 			rememberOrganizationIcon(next);
 })().catch(async (error: any) => {
 if (cancelled?.()) return;
@@ -232,7 +201,6 @@ if (cancelled?.()) return;
 const next = await work();
 			setSettings(next);
 			setDraft(next.organizationName);
-			setDomainDraft(next.organizationDomain);
 			setIconFailed(false);
 			rememberOrganizationIcon(next);
 			toast(message, { variant: "success" });
@@ -240,10 +208,7 @@ const next = await work();
 toast(error?.message || "Couldn’t save organization settings", {
 				variant: "error",
 			});
-			if (settings) {
-				setDraft(settings.organizationName);
-				setDomainDraft(settings.organizationDomain);
-			}
+			if (settings) setDraft(settings.organizationName);
 }).finally(async () => {
 setBusy(false);
 });
@@ -261,16 +226,17 @@ setBusy(false);
 		);
 	}
 
-	// Fill only what is still unset. A fresh install has no icon, no domain, and
-	// a name that is still the product's own.
-	useEffect(() => {
+	// Fill only what is still unset. A fresh install has no icon and a name that
+	// is still the product's own.
+	// The body reads `update` through an effect event: the trigger set stays the
+	// org/settings state, while the call always reaches the latest closure.
+	const maybePrefillFromGithub = useEffectEvent(() => {
 		const login = githubOrganization?.trim();
 		if (!login || !settings || prefilled.current || busy) return;
 		const needsName =
 			!settings.organizationName || settings.organizationName === PRODUCT_NAME;
 		const needsIcon = !settings.organizationIconUrl;
-		const needsDomain = !settings.organizationDomain;
-		if (!needsName && !needsIcon && !needsDomain) return;
+		if (!needsName && !needsIcon) return;
 		prefilled.current = true;
 		void (async () => {
 			const profile = await fetchGithubOrganizationProfile(login);
@@ -281,25 +247,13 @@ setBusy(false);
 				}
 				return saveOrganizationSettings({
 					...(needsName ? { organizationName: profile?.name || login } : {}),
-					...(needsDomain && profile?.domain
-						? { organizationDomain: profile.domain }
-						: {}),
 				});
 			}, `Filled in from ${login} on GitHub.`);
 		})();
+	});
+	useEffect(() => {
+		maybePrefillFromGithub();
 	}, [githubOrganization, settings, busy]);
-
-	async function commitDomain() {
-		const next = domainDraft.trim();
-		if (!settings || next === settings.organizationDomain || busy) {
-			if (settings) setDomainDraft(settings.organizationDomain);
-			return;
-		}
-		await update(
-			() => saveOrganizationSettings({ organizationDomain: next }),
-			next ? "Organization domain saved." : "Organization domain cleared.",
-		);
-	}
 
 	async function upload(file: File) {
 		await update(async () => {
@@ -320,6 +274,84 @@ setBusy(false);
 	).toUpperCase();
 	const showIcon = !!settings?.organizationIconUrl && !iconFailed;
 	const fallbackColor = repoColor(settings?.organizationName || "organization");
+	const iconEditor = (
+		<div {...mergeStylexProps("group/overlay-action", sx.relative, sx.flex, sx.shrink0, sx.flexCol, sx.itemsCenter, sx.gap15)} >
+			<button
+				type="button"
+				disabled={busy}
+				onClick={() => fileInput.current?.click()}
+				aria-label={showIcon ? "Change organization icon" : "Upload organization icon"}
+				className={cn(
+					utilityClassName("focus-ring group/upload relative flex shrink-0 items-center justify-center overflow-hidden rounded-lg text-section-title font-semibold outline outline-1 outline-divider disabled:pointer-events-none"),
+					onboarding ? utilityClassName("size-16") : utilityClassName("size-14"),
+				)}
+				style={
+					showIcon
+						? undefined
+						: {
+								backgroundImage: repoIconFill(fallbackColor),
+								color: REPO_TILE_INK,
+							}
+				}
+			>
+				{showIcon ? (
+					<img
+						src={settings?.organizationIconUrl || undefined}
+						alt=""
+						{...stylex.props(sx.sizeFull, sx.objectCover)}
+						onError={() => setIconFailed(true)}
+					/>
+				) : (
+					initials
+				)}
+				<span {...mergeStylexProps("bg-black/50 group-hover/upload:opacity-100 group-focus-visible/upload:opacity-100", sx.pointerEventsNone, sx.absolute, sx.inset0, sx.grid, sx.placeItemsCenter, sx.roundedInherit, sx.textWhite, sx.opacity0, sx.transitionOpacity, sx.duration150)} >
+					<IconArrowUpToLine size={20} />
+				</span>
+			</button>
+			{settings?.organizationIconUrl && (
+				<OverlayAction
+					icon={<IconTrash className={mergeStylexOverrideClassName("", sx.textRed)} size={20} />}
+					disabled={busy}
+					onClick={removeIcon}
+					aria-label="Remove organization icon"
+					title="Remove icon"
+					className="phone:pointer-events-auto! phone:opacity-100!"
+				/>
+			)}
+			<input
+				ref={fileInput}
+				type="file"
+				disabled={busy}
+				accept="image/*"
+				{...stylex.props(sx.hidden)}
+				onChange={(event) => {
+					const file = event.target.files?.[0];
+					event.target.value = "";
+					if (file) void upload(file);
+				}}
+			/>
+		</div>
+	);
+	const organizationNameInput = (
+		<input
+			className={cn(
+				NAME_INPUT_CLASS,
+				onboarding && utilityClassName("h-12! min-h-12! w-full! px-3.5! text-base!"),
+			)}
+			// data-setup-field: FirstMile promotes this to the large field step.
+			data-setup-field="org-name"
+			value={draft}
+			maxLength={80}
+			disabled={busy}
+			onChange={(event) => setDraft(event.target.value)}
+			onBlur={() => void commitName()}
+			onKeyDown={(event) => {
+				if (event.key === "Enter") event.currentTarget.blur();
+				else if (event.key === "Escape") setDraft(settings?.organizationName || "");
+			}}
+			aria-label="Organization name"
+		/>
+	);
 
 	return (
 		<>
@@ -327,117 +359,49 @@ setBusy(false);
 				<InlineAlert onRetry={() => void load()}>{loadError}</InlineAlert>
 			) : settings ? (
 				<>
-					<SettingCard>
-						<SettingRow className={mergeStylexOverrideClassName("", sx.itemsCenter)}>
-							<SettingRowText>
-								<SettingRowTitle>Upload icon</SettingRowTitle>
-							</SettingRowText>
-							<SettingRowControl className={mergeStylexOverrideClassName("", sx.flex, sx.flexWrap, sx.itemsCenter, sx.justifyEnd, sx.gap2)}>
-								<div {...mergeStylexProps("group/overlay-action", sx.relative, sx.flex, sx.shrink0, sx.flexCol, sx.itemsCenter, sx.gap15)}>
-									<button
-										type="button"
-										disabled={busy}
-										onClick={() => fileInput.current?.click()}
-										aria-label={showIcon ? "Change organization icon" : "Upload organization icon"} {...mergeStylexProps("group/upload", sx.outline, sx.outline1, sx.disabledPointerEventsNone, sx.focusRing, sx.relative, sx.flex, sx.size14, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.overflowHidden, sx.roundedLg, sx.fontSemibold, sx.outlineDivider, typography.sectionTitle)}
-										style={
-											showIcon
-												? undefined
-												: {
-														backgroundImage: repoIconFill(fallbackColor),
-														color: REPO_TILE_INK,
-													}
-										}
-									>
-										{showIcon ? (
-											<img
-												src={settings.organizationIconUrl || undefined}
-												alt=""
-												{...stylex.props(sx.sizeFull, sx.objectCover)}
-												onError={() => setIconFailed(true)}
-											/>
-										) : (
-											initials
-										)}
-										<span {...mergeStylexProps("group-hover/upload:opacity-100 group-focus-visible/upload:opacity-100", sx.pointerEventsNone, sx.absolute, sx.inset0, sx.grid, sx.placeItemsCenter, sx.roundedInherit, sx.bgBlack50, sx.textWhite, sx.opacity0, sx.transitionOpacity, sx.duration150)}>
-											<IconArrowUpToLine size={20} />
-										</span>
-									</button>
-									{settings.organizationIconUrl && (
-										<OverlayAction
-											icon={<IconTrash className={mergeStylexOverrideClassName("", sx.textRed)} size={20} />}
-											disabled={busy}
-											onClick={removeIcon}
-											aria-label="Remove organization icon"
-											title="Remove icon"
-											className={mergeStylexOverrideClassName("", sx.phonePointerEventsAuto, sx.phoneOpacity100)}
-										/>
-									)}
+					<SettingCard
+						className={
+							onboarding
+								? utilityClassName("mx-auto max-w-[560px] bg-[color-mix(in_srgb,var(--popup-surface)_76%,transparent)]!")
+								: undefined
+						}
+					>
+						{onboarding ? (
+							<div {...mergeStylexProps("phone:p-5", sx.p6)} >
+								<div {...stylex.props(sx.flex, sx.justifyCenter, sx.py4)}>{iconEditor}</div>
+								<div {...stylex.props(sx.mxAuto, sx.mt5, sx.grid, sx.wFull, sx.maxW400px, sx.gridCols1, sx.gap4)}>
+									<Field label={<span {...stylex.props(sx.textFg)}>Organization name</span>}>
+										{organizationNameInput}
+									</Field>
+									<IdentityRows compact showProductName={false} />
 								</div>
-								<input
-									ref={fileInput}
-									type="file"
-									disabled={busy}
-									accept="image/*"
-									{...stylex.props(sx.hidden)}
-									onChange={(event) => {
-										const file = event.target.files?.[0];
-										event.target.value = "";
-										if (file) void upload(file);
-									}}
-								/>
-							</SettingRowControl>
-						</SettingRow>
-						<SettingRow>
-							<SettingRowText>
-								<SettingRowTitle>Organization name</SettingRowTitle>
-							</SettingRowText>
-							<input
-								className={cn(settingsInputClass, stylex.props(sx.nameInput).className)}
-								value={draft}
-								maxLength={80}
-								disabled={busy}
-								onChange={(event) => setDraft(event.target.value)}
-								onBlur={() => void commitName()}
-								onKeyDown={(event) => {
-									if (event.key === "Enter") event.currentTarget.blur();
-									else if (event.key === "Escape") setDraft(settings.organizationName);
-								}}
-								aria-label="Organization name"
-							/>
-						</SettingRow>
-						{showDomain && (
-							<SettingRow>
-								<SettingRowText>
-									<SettingRowTitle>Email domain</SettingRowTitle>
-								</SettingRowText>
-								<input
-									className={cn(settingsInputClass, stylex.props(sx.nameInput).className)}
-									value={domainDraft}
-									maxLength={80}
-									disabled={busy}
-									placeholder="acme.com"
-									inputMode="url"
-									autoCapitalize="none"
-									autoCorrect="off"
-									spellCheck={false}
-									onChange={(event) => setDomainDraft(event.target.value)}
-									onBlur={() => void commitDomain()}
-									onKeyDown={(event) => {
-										if (event.key === "Enter") event.currentTarget.blur();
-										else if (event.key === "Escape")
-											setDomainDraft(settings.organizationDomain);
-									}}
-									aria-label="Organization email domain"
-								/>
-							</SettingRow>
+							</div>
+						) : (
+							<>
+								<SettingRow className={mergeStylexOverrideClassName("", sx.itemsCenter)}>
+									<SettingRowText>
+										<SettingRowTitle>Upload icon</SettingRowTitle>
+									</SettingRowText>
+									<SettingRowControl className={mergeStylexOverrideClassName("", sx.flex, sx.flexWrap, sx.itemsCenter, sx.justifyEnd, sx.gap2)}>
+										{iconEditor}
+									</SettingRowControl>
+								</SettingRow>
+								<SettingRow>
+									<SettingRowText>
+										<SettingRowTitle>Organization name</SettingRowTitle>
+									</SettingRowText>
+									{organizationNameInput}
+								</SettingRow>
+								<IdentityRows />
+							</>
 						)}
-						<IdentityRows />
 					</SettingCard>
-					<SettingsHint>
-						Shared by everyone in this organization. Clearing the name restores the
-						product name. The domain is who belongs here, so an invite outside it
-						stands out.
-					</SettingsHint>
+					{!onboarding && (
+						<SettingsHint>
+							Shared by everyone in this organization. Clearing the name restores the
+							product name.
+						</SettingsHint>
+					)}
 				</>
 			) : (
 				<SettingCardSkeleton rows={2} label="Loading organization settings" />
@@ -449,7 +413,7 @@ setBusy(false);
 export function GeneralPanel() {
 	return (
 		<SettingsPanel>
-			<SettingsHeader title="General" className={mergeStylexOverrideClassName("", sx.phoneHidden)} />
+			<SettingsHeader title="General" className={utilityClassName("phone:hidden")} />
 			<OrganizationProfileSection />
 		</SettingsPanel>
 	);

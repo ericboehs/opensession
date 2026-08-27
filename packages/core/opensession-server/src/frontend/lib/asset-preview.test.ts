@@ -67,7 +67,7 @@ describe("asset previews", () => {
 			`/media?path=${encodeURIComponent(path)}`;
 		expect(
 			assetPathForMediaSrc(
-				media("/home/ubuntu/.opensession-assets/os-1/demo/capture.mp4"),
+				media("/home/ubuntu/.opensession/assets/os-1/demo/capture.mp4"),
 				paths,
 			),
 		).toBe("demo/capture.mp4");
@@ -81,7 +81,7 @@ describe("asset previews", () => {
 		// An absolute URL from the DOM, with the poster-frame fragment.
 		expect(
 			assetPathForMediaSrc(
-				`http://localhost:3850${media("/home/ubuntu/.opensession-assets/os-1/chart.png")}#t=0.1`,
+				`http://localhost:3850${media("/home/ubuntu/.opensession/assets/os-1/chart.png")}#t=0.1`,
 				paths,
 			),
 		).toBe("chart.png");

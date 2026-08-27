@@ -4,14 +4,22 @@
  *
  *   GET  /api/setup/github/repos: repos the instance's GitHub credential can
  *                                  see, for the registration picker.
- *   POST /api/setup/repos: clone `owner/name` and register it in config.repos.
+ *   POST /api/setup/repos: clone a remote or register an existing local checkout.
  *   PATCH /api/setup/repos/:id: change its default branch or worktree policy.
  */
 
 import { $ } from "bun";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "fs";
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from "fs";
 import { tmpdir } from "os";
-import { join } from "path";
+import { basename, isAbsolute, join } from "path";
 import { audit } from "../audit";
 import {
   codeStorageConfig,
@@ -20,8 +28,9 @@ import {
   type Repo,
   type RepoSection,
 } from "../config";
+import { remoteUrl as csRemoteUrl } from "../codestorage/auth";
 import { getRepo as getCsRepo, listRepos as listCsRepos } from "../codestorage/client";
-import { cloneCsCheckout } from "../codestorage/remote";
+import { cloneCsCheckout, ensureCsCredentialHelper } from "../codestorage/remote";
 import {
   persistRawConfig,
   rawConfig,
@@ -29,7 +38,13 @@ import {
   repoSectionForMutation,
   withConfigMutationLock,
 } from "../config-mutation";
-import { githubCredentialForLogin, soleGithubAccount, type GithubCredential } from "../github-auth";
+import {
+  githubAppInstallUrl,
+  githubCredentialForLogin,
+  resolveGithubCredential,
+  serviceGithubCredential,
+  type GithubCredential,
+} from "../github-auth";
 import { githubCredentialHelperCommand } from "../github-git-credential";
 import { homeDir } from "../paths";
 import { fetchWithTimeout } from "../shared/fetch-with-timeout";
@@ -37,9 +52,11 @@ import { shellSafeDefaultBranch } from "../repo-branch";
 import type { RouteContext } from "./context";
 import {
   inspectRepo,
+  normalizeRepoOrigin,
   repoCurrentBranch,
   repoHasBranch,
   repoIdFromName,
+  repoOriginIdentity,
 } from "./repo-inspection";
 
 /** Strict: this value reaches a spawn argv (always array-spawned, never a
@@ -74,15 +91,31 @@ async function normalizeInspectedDefaultBranch(value: unknown): Promise<string> 
 
 /**
  * The GitHub credential to act with for listing and cloning: the signed-in
- * user's stored token when web sign-in is active (operator mode), else the
- * single connected account in simple mode (soleGithubAccount, no authUser to
- * scope by there). Null falls back to the bot PAT or anonymous access.
+ * user's stored App token when GitHub authentication is active. With no
+ * authenticated teammate, repository setup uses the workspace App.
  */
 function actingGithubCredential(ctx: RouteContext): GithubCredential | null {
-  return (
-    (ctx.authUser?.login ? githubCredentialForLogin(ctx.authUser.login) : null) ??
-    soleGithubAccount()
-  );
+  return ctx.authUser?.login ? githubCredentialForLogin(ctx.authUser.login) : null;
+}
+
+/** Prefer the configured App installation, whose selected repositories are the
+ * source of truth for workspace setup. A configured but unavailable App fails
+ * closed instead of being masked by a user's narrower token. Without a service
+ * configuration, a signed-in teammate remains the compatibility path.
+ * Repository setup never inherits the server user's ambient gh login. */
+async function setupGithubCredential(ctx: RouteContext): Promise<GithubCredential | null> {
+  const { githubConfiguredCredential } = await import("../github-app");
+  if (githubConfiguredCredential()) {
+    try {
+      return await resolveGithubCredential(serviceGithubCredential);
+    } catch {
+      // A just-installed App can take a moment to appear in GitHub's installation
+      // list. Retry once so the next onboarding step does not race that edge.
+      await Bun.sleep(750);
+      return resolveGithubCredential(serviceGithubCredential).catch(() => null);
+    }
+  }
+  return actingGithubCredential(ctx);
 }
 
 // ── GitHub repo listing ──────────────────────────────────────────────────────
@@ -104,7 +137,7 @@ const REPO_CACHE_TTL_MS = 60_000;
  *  snappy across the setup page's refetches. */
 const repoListCache = new Map<
   string,
-  { at: number; payload: { source: "user" | "bot"; repos: PickerRepo[] } }
+  { at: number; payload: { source: "user" | "app"; repos: PickerRepo[] } }
 >();
 
 async function githubJson(
@@ -145,7 +178,7 @@ function registeredGhRepos(): Set<string> {
   );
 }
 
-/** PAT path: everything the token's user owns or is an org member of. */
+/** User-token path: everything the connected teammate can access. */
 async function listReposViaUserRepos(token: string): Promise<PickerRepo[]> {
   const registered = registeredGhRepos();
   const repos: PickerRepo[] = [];
@@ -185,7 +218,7 @@ export async function listReposViaAppInstallation(token: string): Promise<Picker
 }
 
 /** GitHub App user-token path: union of the token's accessible installations.
- *  Returns null when the token isn't installation-scoped (classic OAuth/PAT)
+ *  Returns null when the token isn't installation-scoped (a non-installation OAuth token)
  *  so the caller can fall back to /user/repos. */
 async function listReposViaInstallations(token: string): Promise<PickerRepo[] | null> {
   const installations = await githubJson(
@@ -302,8 +335,9 @@ function scrubSecret(text: string, secret?: string): string {
  * carries the username `x-access-token` (GitHub's app-token username, not a
  * secret) so git skips the username prompt; origin is normalized to the
  * tokenless URL afterward, holding the "no credential in the persisted remote"
- * invariant. Without a token: `gh` (brings its own auth) if present, else an
- * anonymous https clone — still enough for public repos.
+ * invariant. Without a token, use an anonymous HTTPS clone. Never invoke the
+ * host's ambient gh login: repository setup is authorized only by the selected
+ * user or the configured GitHub App installation.
  */
 async function cloneGithubRepo(
   fullName: string,
@@ -345,17 +379,129 @@ async function cloneGithubRepo(
     }
     return;
   }
-  const argv = Bun.which("gh")
-    ? ["gh", "repo", "clone", cleanUrl, dest]
-    : ["git", "clone", "--", cleanUrl, dest];
-  const result = await runCommand(argv, 5 * 60_000);
+  const result = await runCommand(["git", "clone", "--", cleanUrl, dest], 5 * 60_000);
   if (result.exitCode !== 0) {
-    throw new Error(result.stderr || `${argv[0]} clone failed`);
+    throw new Error(result.stderr || "git clone failed");
   }
 }
 
 function checkoutsRoot(): string {
   return `${homeDir()}/checkouts`;
+}
+
+function setupRepoError(message: string, status: number): Error {
+  const error = new Error(message);
+  (error as Error & { status: number }).status = status;
+  return error;
+}
+
+function statusForError(error: unknown, fallback = 500): number {
+  const status = (error as { status?: unknown } | null)?.status;
+  return typeof status === "number" ? status : fallback;
+}
+
+function canonicalRepoPath(path: string): string {
+  try {
+    return realpathSync(path);
+  } catch {
+    return path;
+  }
+}
+
+function sectionFromRepo(repo: Repo): RepoSection {
+  const { id: _id, ...section } = repo;
+  return section;
+}
+
+function assertRepoSlotAvailable(
+  id: string,
+  registered: Record<string, Repo>,
+): void {
+  if (registered[id]) {
+    throw setupRepoError(`Repository id already registered: ${id}`, 409);
+  }
+  if (Object.values(registered).some((repo) => repo.wtPrefix === id)) {
+    throw setupRepoError(`Worktree prefix already registered: ${id}`, 409);
+  }
+}
+
+function assertRepoPathAvailable(path: string, registered: Record<string, Repo>): void {
+  const canonical = canonicalRepoPath(path);
+  if (
+    Object.values(registered).some(
+      (repo) => canonicalRepoPath(repo.repo) === canonical,
+    )
+  ) {
+    throw setupRepoError(`Repository is already registered: ${canonical}`, 409);
+  }
+}
+
+async function assertRepoOriginAvailable(
+  originIdentity: string,
+  registered: Record<string, Repo>,
+): Promise<void> {
+  if (!originIdentity) return;
+  const matches = await Promise.all(
+    Object.values(registered).map(async (repo) => ({
+      repo,
+      originIdentity: await repoOriginIdentity(repo.repo),
+    })),
+  );
+  const duplicate = matches.find((match) => match.originIdentity === originIdentity);
+  if (duplicate) {
+    throw setupRepoError(
+      `Repository origin is already registered: ${duplicate.repo.id}`,
+      409,
+    );
+  }
+}
+
+/** Once config has an explicit `repos` object it becomes authoritative. Seed
+ *  it from the effective registry when the first repo is added so turning an
+ *  implicit built-in registry into an explicit one cannot remove that repo. */
+function repoSectionsForMutation(
+  config: Record<string, unknown>,
+  registered: Record<string, Repo>,
+): Record<string, RepoSection> {
+  if (config.repos === undefined) {
+    return Object.fromEntries(
+      Object.entries(registered).map(([id, repo]) => [id, sectionFromRepo(repo)]),
+    );
+  }
+  if (!config.repos || typeof config.repos !== "object" || Array.isArray(config.repos)) {
+    throw new Error("Config repos must contain a JSON object");
+  }
+  return { ...(config.repos as Record<string, RepoSection>) };
+}
+
+function persistRepoRegistration(input: {
+  id: string;
+  entry: RepoSection;
+  registered: Record<string, Repo>;
+  auditRepo: string;
+  adopted?: boolean;
+}): RepoSection & { id: string } {
+  const config = rawConfig();
+  const repos = repoSectionsForMutation(config, input.registered);
+  const entry: RepoSection = {
+    ...input.entry,
+    ...(Object.keys(input.registered).length === 0 ? { default: true } : {}),
+  };
+  repos[input.id] = entry;
+  config.repos = repos;
+  persistRawConfig(config);
+  // Registration changes the `registered` bit in both browse payloads. Do not
+  // serve a stale Add button when the picker reopens after a background clone.
+  repoListCache.clear();
+  csRepoListCache = null;
+  audit({
+    kind: "setup_repo_register",
+    repo: input.auditRepo,
+    id: input.id,
+    path: entry.repo,
+    ...(input.adopted ? { adopted: true } : {}),
+  });
+  return { id: input.id, ...entry };
 }
 
 async function configureGithubCredentialHelper(checkoutPath: string): Promise<void> {
@@ -402,54 +548,141 @@ async function registerGithubRepo(input: {
 }): Promise<RepoSection & { id: string }> {
   const name = input.fullName.split("/")[1];
   const id = repoIdFromName(input.id?.trim() || name);
-  if (configuredRepos()[id]) {
-    const err = new Error(`Repository id already registered: ${id}`);
-    (err as any).status = 409;
-    throw err;
+  const registered = configuredRepos();
+  assertRepoSlotAvailable(id, registered);
+  if (
+    Object.values(registered).some(
+      (repo) => repo.ghRepo.toLowerCase() === input.fullName.toLowerCase(),
+    )
+  ) {
+    throw setupRepoError(`GitHub repository is already registered: ${input.fullName}`, 409);
   }
   const root = checkoutsRoot();
   const dest = `${root}/${id}`;
+  assertRepoPathAvailable(dest, registered);
+  await assertRepoOriginAvailable(
+    normalizeRepoOrigin(`https://github.com/${input.fullName}.git`),
+    registered,
+  );
   const adopted = await adoptExistingCheckout(
     dest,
     (i) => (i.ghRepo || "").toLowerCase() === input.fullName.toLowerCase(),
   );
   mkdirSync(root, { recursive: true });
   try {
-    if (!adopted) await cloneGithubRepo(input.fullName, dest, input.credential?.env.GH_TOKEN);
-    // A private clone authenticated through a one-shot GIT_ASKPASS; the remote
-    // it leaves is tokenless, so wire the credential helper for future
-    // fetch/push. No-op for a public (tokenless) clone — the helper simply has
-    // nothing to answer with. An adopted checkout gets it too, so a checkout
-    // left by a previous install authenticates with the current credential.
+    if (!adopted) {
+      await cloneGithubRepo(input.fullName, dest, input.credential?.env.GH_TOKEN);
+    }
+    // A private clone authenticated through a one-shot GIT_ASKPASS leaves a
+    // tokenless remote. Wire the helper for future fetches and pushes, and
+    // refresh it on a checkout preserved from an earlier install.
     if (input.credential) await configureGithubCredentialHelper(dest);
     const inspected = adopted ?? (await inspectRepo(dest));
     const defaultBranch = await normalizeInspectedDefaultBranch(inspected.defaultBranch);
-    const config = rawConfig();
-    const repos = reposForMutation(config) as Record<string, RepoSection>;
-    const entry: RepoSection = {
-      label: name,
-      repo: inspected.path,
-      wtPrefix: id,
-      defaultBranch,
-      ghRepo: inspected.ghRepo || input.fullName,
-      ...(Object.keys(configuredRepos()).length === 0 ? { default: true } : {}),
-    };
-    repos[id] = entry;
-    config.repos = repos;
-    persistRawConfig(config);
-    audit({
-      kind: "setup_repo_register",
-      repo: input.fullName,
+    return persistRepoRegistration({
       id,
-      path: inspected.path,
-      ...(adopted ? { adopted: true } : {}),
+      registered,
+      auditRepo: input.fullName,
+      adopted: Boolean(adopted),
+      entry: {
+        label: name,
+        repo: inspected.path,
+        wtPrefix: id,
+        defaultBranch,
+        ghRepo: inspected.ghRepo || input.fullName,
+      },
     });
-    return { id, ...entry };
   } catch (error) {
     // Only clean up a checkout this call created. An adopted one predates us.
     if (!adopted) rmSync(dest, { recursive: true, force: true });
     throw error;
   }
+}
+
+async function inspectLocalRepo(input: {
+  path: string;
+  id?: string;
+}): Promise<{ inspected: InspectedRepo; name: string; id: string }> {
+  try {
+    const inspected = await inspectRepo(input.path);
+    const name = basename(inspected.path);
+    return {
+      inspected,
+      name,
+      id: repoIdFromName(input.id?.trim() || name),
+    };
+  } catch (error) {
+    throw setupRepoError(
+      error instanceof Error ? error.message : String(error),
+      400,
+    );
+  }
+}
+
+async function registerLocalRepo(input: {
+  inspected: InspectedRepo;
+  name: string;
+  id: string;
+}): Promise<RepoSection & { id: string }> {
+  const { inspected, name, id } = input;
+  const registered = configuredRepos();
+  assertRepoSlotAvailable(id, registered);
+  assertRepoPathAvailable(inspected.path, registered);
+  if (
+    inspected.ghRepo &&
+    Object.values(registered).some(
+      (repo) => repo.ghRepo.toLowerCase() === inspected.ghRepo!.toLowerCase(),
+    )
+  ) {
+    throw setupRepoError(`GitHub repository is already registered: ${inspected.ghRepo}`, 409);
+  }
+  if (
+    inspected.cs &&
+    Object.values(registered).some(
+      (repo) =>
+        repo.host === "codestorage" &&
+        repo.csRepo?.toLowerCase() === inspected.cs!.repoId.toLowerCase(),
+    )
+  ) {
+    throw setupRepoError(
+      `code.storage repository is already registered: ${inspected.cs.repoId}`,
+      409,
+    );
+  }
+  await assertRepoOriginAvailable(inspected.originIdentity, registered);
+  if (inspected.cs) {
+    const csConfig = codeStorageConfig();
+    if (!csConfig) {
+      throw setupRepoError(
+        "code.storage is not configured (integrations.codeStorage)",
+        400,
+      );
+    }
+    if (csConfig.org !== inspected.cs.org) {
+      throw setupRepoError(
+        `code.storage is configured for ${csConfig.org}, not ${inspected.cs.org}`,
+        400,
+      );
+    }
+    await ensureCsCredentialHelper(inspected.path, inspected.cs.org);
+  }
+
+  const defaultBranch = await normalizeInspectedDefaultBranch(inspected.defaultBranch);
+  return persistRepoRegistration({
+    id,
+    registered,
+    auditRepo: inspected.path,
+    entry: {
+      label: name,
+      repo: inspected.path,
+      wtPrefix: id,
+      defaultBranch,
+      ...(inspected.ghRepo ? { ghRepo: inspected.ghRepo } : {}),
+      ...(inspected.cs
+        ? { host: "codestorage" as const, csRepo: inspected.cs.repoId }
+        : {}),
+    },
+  });
 }
 
 /** code.storage repo path, e.g. "acme/widget" — only ever reaches an https
@@ -483,22 +716,24 @@ async function registerCodestorageRepo(input: {
   const csRepo = resolved.url || input.repoId;
   const name = csRepo.split("/").pop() || csRepo;
   const id = repoIdFromName(input.id?.trim() || name);
-  if (configuredRepos()[id]) {
-    const err = new Error(`Repository id already registered: ${id}`);
-    (err as any).status = 409;
-    throw err;
-  }
+  const registered = configuredRepos();
+  assertRepoSlotAvailable(id, registered);
   if (
-    Object.values(configuredRepos()).some(
-      (repo) => repo.host === "codestorage" && repo.csRepo === csRepo,
+    Object.values(registered).some(
+      (repo) =>
+        repo.host === "codestorage" &&
+        repo.csRepo?.toLowerCase() === csRepo.toLowerCase(),
     )
   ) {
-    const err = new Error(`code.storage repository already registered: ${csRepo}`);
-    (err as any).status = 409;
-    throw err;
+    throw setupRepoError(`code.storage repository is already registered: ${csRepo}`, 409);
   }
   const root = checkoutsRoot();
   const dest = `${root}/${id}`;
+  assertRepoPathAvailable(dest, registered);
+  await assertRepoOriginAvailable(
+    normalizeRepoOrigin(csRemoteUrl(cfg.org, csRepo)),
+    registered,
+  );
   const adopted = await adoptExistingCheckout(
     dest,
     (i) => matchesCodeStorageCheckout(i, cfg.org, csRepo),
@@ -506,36 +741,25 @@ async function registerCodestorageRepo(input: {
   mkdirSync(root, { recursive: true });
   try {
     // Clones with a short-lived JWT, persists the credential-free remote, and
-    // wires the URL-scoped credential helper for ambient git fetch/push. An
-    // adopted checkout already carries both (boot re-wires the helper for
-    // every configured code.storage repo).
+    // wires the URL-scoped credential helper for ambient git fetch/push. Boot
+    // rewires the helper on a checkout preserved from an earlier install.
     if (!adopted) await cloneCsCheckout(csRepo, dest);
     const inspected = adopted ?? (await inspectRepo(dest));
-    const defaultBranch = await normalizeInspectedDefaultBranch(
-      inspected.defaultBranch || resolved.default_branch || "main",
-    );
-    const config = rawConfig();
-    const repos = reposForMutation(config) as Record<string, RepoSection>;
-    const entry: RepoSection = {
-      label: name,
-      repo: inspected.path,
-      wtPrefix: id,
-      defaultBranch,
-      host: "codestorage",
-      csRepo,
-      ...(Object.keys(configuredRepos()).length === 0 ? { default: true } : {}),
-    };
-    repos[id] = entry;
-    config.repos = repos;
-    persistRawConfig(config);
-    audit({
-      kind: "setup_repo_register",
-      repo: csRepo,
+    const defaultBranch = await normalizeInspectedDefaultBranch(inspected.defaultBranch);
+    return persistRepoRegistration({
       id,
-      path: inspected.path,
-      ...(adopted ? { adopted: true } : {}),
+      registered,
+      auditRepo: csRepo,
+      adopted: Boolean(adopted),
+      entry: {
+        label: name,
+        repo: inspected.path,
+        wtPrefix: id,
+        defaultBranch,
+        host: "codestorage",
+        csRepo,
+      },
     });
-    return { id, ...entry };
   } catch (error) {
     if (!adopted) rmSync(dest, { recursive: true, force: true });
     throw error;
@@ -568,44 +792,60 @@ function migrateLegacySelfDev(
 
 // ── Routes ───────────────────────────────────────────────────────────────────
 
+function registrationErrorResponse(error: unknown): Response {
+  return Response.json(
+    { error: error instanceof Error ? error.message : String(error) },
+    { status: statusForError(error) },
+  );
+}
+
+async function registrationResponse(
+  register: () => Promise<RepoSection & { id: string }>,
+): Promise<Response> {
+  try {
+    const repo = await withConfigMutationLock(register);
+    return Response.json(repo, { status: 201 });
+  } catch (error) {
+    return registrationErrorResponse(error);
+  }
+}
+
 export async function handleSetupRepoRoutes(
   ctx: RouteContext,
 ): Promise<Response | undefined> {
   const { req, path } = ctx;
 
   if (path === "/api/setup/github/repos" && req.method === "GET") {
-    // Credential preference: the acting user's stored GitHub token (signed-in
-    // user in operator mode, the sole connected account in simple mode), else
-    // the bot PAT, else an empty (but well-formed) answer.
-    const userCredential = actingGithubCredential(ctx);
-    // Bot credential: the App installation token when configured, else the PAT.
-    const { githubBotCredentialMode, githubToken } = await import("../github-app");
-    const botCredential = githubBotCredentialMode();
-    const botToken = userCredential ? null : await githubToken();
-    const token = userCredential?.env.GH_TOKEN || botToken;
-    const source: "user" | "bot" | null = userCredential
-      ? "user"
-      : botToken
-        ? "bot"
-        : null;
+    // Browse the repositories selected for the workspace App installation.
+    // A connected teammate is only a compatibility path when no App service
+    // credential is configured; ambient credentials are never consulted.
+    const credential = await setupGithubCredential(ctx);
+    const token = credential?.env.GH_TOKEN;
+    const source: "user" | "app" | null = credential
+      ? credential.kind === "user" ? "user" : "app"
+      : null;
     if (!token || !source) {
-      return Response.json({ source: null, repos: [] });
+      const { githubConfiguredCredential } = await import("../github-app");
+      return Response.json({
+        source: null,
+        repos: [],
+        appConfigured: githubConfiguredCredential(),
+        appInstallUrl: githubAppInstallUrl(),
+      });
     }
-    const cacheKey = userCredential
-      ? userCredential.principal
-      : `bot:${botCredential}`;
+    const cacheKey = credential.principal;
     const cached = repoListCache.get(cacheKey);
     if (cached && Date.now() - cached.at < REPO_CACHE_TTL_MS) {
       return Response.json(cached.payload);
     }
     try {
-      // App user tokens list via installations; anything else (PAT, classic
-      // OAuth) via /user/repos. The installations call itself tells us which
-      // kind we have — a non-App token gets an error and we fall back.
+      // Installation tokens have a direct repository list. App user tokens list
+      // through their installations, with /user/repos as a compatibility path
+      // for older non-expiring OAuth grants already stored before migration.
       const repos =
-        source === "bot" && botCredential === "app"
+        source === "app"
           ? await listReposViaAppInstallation(token)
-          : (source === "user" ? await listReposViaInstallations(token) : null) ??
+          : (await listReposViaInstallations(token)) ??
             (await listReposViaUserRepos(token));
       repos.sort((a, b) => (b.pushedAt || "").localeCompare(a.pushedAt || ""));
       const payload = {
@@ -651,8 +891,31 @@ export async function handleSetupRepoRoutes(
       source?: unknown;
       fullName?: unknown;
       repoId?: unknown;
+      path?: unknown;
       id?: unknown;
     } | null;
+    if (body?.source === "local") {
+      if (typeof body.path !== "string" || !isAbsolute(body.path.trim())) {
+        return Response.json(
+          { error: "path must be an absolute path to a Git repository" },
+          { status: 400 },
+        );
+      }
+      const localPath = body.path.trim();
+      if (body?.id !== undefined && (typeof body.id !== "string" || !body.id.trim())) {
+        return Response.json({ error: "id must be a non-empty string" }, { status: 400 });
+      }
+      let inspected: Awaited<ReturnType<typeof inspectLocalRepo>>;
+      try {
+        inspected = await inspectLocalRepo({
+          path: localPath,
+          ...(typeof body.id === "string" ? { id: body.id } : {}),
+        });
+      } catch (error) {
+        return registrationErrorResponse(error);
+      }
+      return registrationResponse(() => registerLocalRepo(inspected));
+    }
     if (body?.source === "codestorage") {
       // Accepts the id under either key so the wizard can reuse its GitHub
       // submit shape ({fullName}) unchanged.
@@ -672,21 +935,12 @@ export async function handleSetupRepoRoutes(
           { status: 400 },
         );
       }
-      try {
-        const repo = await withConfigMutationLock(() =>
-          registerCodestorageRepo({
-            repoId,
-            ...(typeof body!.id === "string" ? { id: body!.id } : {}),
-          }),
-        );
-        return Response.json(repo, { status: 201 });
-      } catch (e) {
-        const status = (e as any)?.status === 409 ? 409 : 400;
-        return Response.json(
-          { error: e instanceof Error ? e.message : String(e) },
-          { status },
-        );
-      }
+      return registrationResponse(() =>
+        registerCodestorageRepo({
+          repoId,
+          ...(typeof body!.id === "string" ? { id: body!.id } : {}),
+        }),
+      );
     }
     if (!validGithubFullName(body?.fullName)) {
       return Response.json(
@@ -699,23 +953,26 @@ export async function handleSetupRepoRoutes(
     }
     // The acting token lets a private clone succeed without ambient gh /
     // credential-helper auth; absent, the clone stays anonymous (public repos).
-    const credential = actingGithubCredential(ctx);
-    try {
-      const repo = await withConfigMutationLock(() =>
-        registerGithubRepo({
-          fullName: body!.fullName as string,
-          ...(typeof body!.id === "string" ? { id: body!.id } : {}),
-          ...(credential ? { credential } : {}),
-        }),
-      );
-      return Response.json(repo, { status: 201 });
-    } catch (e) {
-      const status = (e as any)?.status === 409 ? 409 : 400;
-      return Response.json(
-        { error: e instanceof Error ? e.message : String(e) },
-        { status },
-      );
+    const credential = await setupGithubCredential(ctx);
+    if (!credential) {
+      const { githubConfiguredCredential } = await import("../github-app");
+      if (githubConfiguredCredential()) {
+        return Response.json(
+          {
+            error:
+              "The configured GitHub App installation is unavailable. Check the installation owner and make sure the App is installed for this repository.",
+          },
+          { status: 409 },
+        );
+      }
     }
+    return registrationResponse(() =>
+      registerGithubRepo({
+        fullName: body!.fullName as string,
+        ...(typeof body!.id === "string" ? { id: body!.id } : {}),
+        ...(credential ? { credential } : {}),
+      }),
+    );
   }
 
   const updateMatch = path.match(/^\/api\/setup\/repos\/([^/]+)$/);

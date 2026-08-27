@@ -1,5 +1,7 @@
+import { utilityClassName } from "../ui/cn";
 import React from "react";
-import { cn, mergeStylexProps } from "../ui/cn";
+import { cn } from "../ui/cn";
+import { markTileShadow } from "../lib/mark-tile";
 import { repoLetter } from "../lib/repo-label";
 import {
 	hasRepoIcon,
@@ -9,7 +11,6 @@ import {
 	repoIconRevision,
 } from "../lib/repo-colors";
 import * as stylex from "@stylexjs/stylex";
-import { type as typography } from "../styles/typography.stylex";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -21,16 +22,12 @@ const sx = stylex.create({
 			objectFit: "cover"
 	},
 	BorderRadiusInherit: {
-			borderRadius: "inherit"
+			borderRadius: "inherit",
+
+		cornerShape: "var(--cs)",},
+	translateYPx: {
+			translate: "0 1px"
 	},
-	inlineFlex: { display: "inline-flex" },
-	size18px: { width: "18px", height: "18px" },
-	shrink0: { flexShrink: "0" },
-	itemsCenter: { alignItems: "center" },
-	justifyCenter: { justifyContent: "center" },
-	roundedSm: { borderRadius: "calc(4px * var(--rf))" ,
-		cornerShape: "var(--cs)"},
-	fontBold: { fontWeight: "var(--font-weight-bold)" },
 });
 
 // The display-name map lives in lib/repo-label and the tile colors in
@@ -73,17 +70,24 @@ const ICON_VERSION = 6;
 // session-info hero). The phone header used to be a second, but its tile moved
 // out of the metadata line and into the title pill's own leading slot, and the
 // rule that held it there had been matching nothing since.
-const TILE = "repo-tile";
+const TILE =
+	// Settings applies body leading to every descendant, which makes the fallback
+	// letter's line box taller than the tile and leaves its cap height visibly
+	// high. A direct-child rule wins that page-level override; the one-pixel
+	// nudge then centers the glyph optically rather than its font metrics.
+	utilityClassName("repo-tile inline-flex size-[18px] shrink-0 items-center justify-center rounded-sm text-meta font-bold [&>span]:!leading-none");
 
 export function RepoTile({
 	name,
 	size,
 	round,
+	glow = false,
 	className,
 }: {
 	name: string;
 	size?: number;
 	round?: boolean;
+	glow?: boolean;
 	className?: string;
 }) {
 	// Failure is tracked per name AND icon revision, so a tile retries the img
@@ -105,11 +109,12 @@ export function RepoTile({
 	// on both, from the same module as the fill (the two are chosen together,
 	// see REPO_TILE_INK) rather than as a raw colour in a utility.
 	style.color = REPO_TILE_INK;
+	if (glow) style.boxShadow = markTileShadow(repoColor(name));
 	const rev = repoIconRevision(name);
 	const attempt = `${name}:${rev ?? 0}`;
 	if (hasRepoIcon(name) && failedFor !== attempt) {
 		return (
-			<span style={style} {...mergeStylexProps(cn(TILE, className), sx.inlineFlex, sx.size18px, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.roundedSm, sx.fontBold, typography.meta)}>
+			<span className={cn(TILE, className)} style={style}>
 				{/* The img fills the tile and inherits its rounding; the tile keeps
 				    no colored backing, so icons with transparency sit on the
 				    surface itself. No inset on purpose, at either end: the route
@@ -137,8 +142,8 @@ export function RepoTile({
 	style.background = repoIconFill(repoColor(name));
 	const letter = repoLetter(name);
 	return (
-		<span style={style} {...mergeStylexProps(cn(TILE, className), sx.inlineFlex, sx.size18px, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.roundedSm, sx.fontBold, typography.meta)}>
-			{letter}
+		<span className={cn(TILE, className)} style={style}>
+			<span {...stylex.props(sx.translateYPx)}>{letter}</span>
 		</span>
 	);
 }

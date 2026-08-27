@@ -36,6 +36,7 @@ import {
 } from "./github-auth";
 import { ghRateLimited, noteGhRateLimited, isGhRateLimitMsg } from "./github-limit";
 import { audited } from "./audit";
+import { noteGithubGraphqlCall } from "./github-budget";
 import type { PrStack, PrStackLayer } from "./pr-contract";
 export type { PrStack, PrStackLayer } from "./pr-contract";
 
@@ -211,7 +212,9 @@ async function graphql(
   const args = ["api", "graphql", "-f", `query=${query}`];
   for (const [k, v] of Object.entries(strings)) args.push("-f", `${k}=${v}`);
   for (const [k, v] of Object.entries(numbers)) args.push("-F", `${k}=${v}`);
+  const started = Date.now();
   const { code, out, err } = await runGh(args, credential);
+  noteGithubGraphqlCall("pr-stack", Date.now() - started, code === 0);
   if (code !== 0) {
     const msg = String(err || "gh api graphql failed").slice(0, 300);
     if (isUnknownFieldMsg(msg)) {

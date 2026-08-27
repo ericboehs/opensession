@@ -32,11 +32,10 @@ function summary(input: Partial<SessionSummary> & Pick<SessionSummary, "id">): S
 
 describe("GitHub session notification matching", () => {
   test("does not treat a shared checkout HEAD as every session's branch", () => {
-    const shared = summary({ id: "shared-session" });
-    const actualSharedHead = Bun.spawnSync(["git", "-C", defaultRepo().repo, "branch", "--show-current"])
-      .stdout.toString().trim();
-    expect(actualSharedHead).not.toBe("");
-    expect(matchSessions(controlWith([shared]), defaultRepo().id, actualSharedHead)).toEqual([]);
+    const shared = summary({ id: "shared-session", branch: "recorded-branch" });
+    expect(matchSessions(controlWith([shared]), defaultRepo().id, "shared-checkout-head")).toEqual(
+      [],
+    );
   });
 
   test("still follows actual HEAD for an isolated worktree", () => {

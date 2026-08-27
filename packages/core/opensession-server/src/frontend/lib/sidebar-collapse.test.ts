@@ -26,8 +26,8 @@ afterEach(() => {
 });
 
 describe("desktop sidebar preference", () => {
-	test("defaults collapsed for a new browser", () => {
-		expect(sidebarStartsCollapsed()).toBe(true);
+	test("defaults open for a new browser", () => {
+		expect(sidebarStartsCollapsed()).toBe(false);
 	});
 
 	test("preserves an explicit open or closed choice", () => {

@@ -7,6 +7,7 @@
  *                 durably, so a reply never renders twice
  * - `./runner`  — the run-host wire contract (`RunHostSpec`, host/client
  *                 messages, NDJSON framing): what "bring your own runner" means
+ * - `./executor` — the tool/workspace-only execution wire contract
  * - `./session` — the client↔server session contract (`TranscriptEntry`,
  *                 asks, usage, core WebSocket frames): "bring your own UI"
  * - `./notices` — how a transcript entry reads: the classifier that turns

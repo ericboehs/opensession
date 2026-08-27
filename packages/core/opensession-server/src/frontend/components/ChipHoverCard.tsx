@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
 	fetchRecentPrs,
 	relativeTime,
@@ -180,7 +180,9 @@ export function ChipHoverCards({ sessions }: { sessions: UnifiedSession[] }) {
 	const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 	// The listeners below are bound once; this is how they read current state.
 	const hoverRef = useRef(hover);
-	hoverRef.current = hover;
+	useLayoutEffect(() => {
+		hoverRef.current = hover;
+	});
 
 	function cancelTimers() {
 		if (openTimer.current) clearTimeout(openTimer.current);
@@ -212,7 +214,9 @@ export function ChipHoverCards({ sessions }: { sessions: UnifiedSession[] }) {
 		openTimer.current = setTimeout(() => setHover({ el, target }), delay);
 	}
 	const api = useRef({ enter, scheduleClose, close, cancelTimers });
-	api.current = { enter, scheduleClose, close, cancelTimers };
+	useLayoutEffect(() => {
+		api.current = { enter, scheduleClose, close, cancelTimers };
+	});
 	useEffect(() => cancelTimers, []);
 
 	// A PR mention should carry state before someone has to hover it. Sessions

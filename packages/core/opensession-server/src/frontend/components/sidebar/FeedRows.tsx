@@ -1,3 +1,5 @@
+import { mergeStylexProps, mergeStylexOverrideClassName } from "../../ui/cn";
+import { utilityClassName } from "../../ui/cn";
 import { useIsPhone } from "../../hooks/useIsPhone";
 import { fetchFeedFilterOptions, relativeTime } from "../../lib/api";
 import {
@@ -18,7 +20,7 @@ import { mineStatus } from "../../lib/sidebar-lanes";
 import { MINE_STATUS_META, type Group, type LaneChoice } from "../../lib/sidebar-types";
 import { shortTime } from "../../lib/time";
 import type { FeedDescriptor, FeedFilterSpec, FeedItem, SupportThread, UnifiedSession } from "../../lib/types";
-import { cn, mergeStylexProps, mergeStylexClassName, mergeStylexOverrideClassName } from "../../ui/cn";
+import { cn } from "../../ui/cn";
 import { Menu } from "../../ui/menu";
 import { Popover } from "../../ui/popover";
 import { Tooltip } from "../../ui/tooltip";
@@ -26,7 +28,7 @@ import { CardFooter, RowCardPopup, SupportRowCard, useRowHoverCard } from "../Si
 import { IconCheck, IconFilter, IconPin } from "../icons";
 import { SidebarCtxMenu } from "../sidebar/SidebarCtxMenu";
 import { SIDEBAR_ROW, SIDEBAR_ROW_TITLE } from "../sidebar/SidebarItem";
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useEffectEvent, useState } from "react";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../../styles/typography.stylex";
 
@@ -37,9 +39,9 @@ const sx = stylex.create({
 			height: "7px"
 	},
 	roundedFull: {
-			borderRadius: "calc(infinity * 1px)"
-	,
-		cornerShape: "round"},
+			borderRadius: "calc(infinity * 1px)",
+
+		cornerShape: "round",},
 	mt5px: {
 			marginTop: "5px"
 	},
@@ -54,7 +56,7 @@ const sx = stylex.create({
 	},
 	textXs: {
 			fontSize: "var(--type-label)",
-			lineHeight: "var(--tw-leading,var(--text-xs--line-height))"
+			lineHeight: "var(--tw-leading, var(--text-xs--line-height))"
 	},
 	leadingSnug: {
 			lineHeight: "var(--leading-snug)"
@@ -69,8 +71,8 @@ const sx = stylex.create({
 			display: "flex"
 	},
 	size4: {
-			width: "16px",
-			height: "16px"
+			width: "calc(4px * 4)",
+			height: "calc(4px * 4)"
 	},
 	itemsCenter: {
 			alignItems: "center"
@@ -79,52 +81,21 @@ const sx = stylex.create({
 			justifyContent: "center"
 	},
 	truncate: {
+			overflow: "hidden",
 			textOverflow: "ellipsis",
-			whiteSpace: "nowrap",
-			overflow: "hidden"
+			whiteSpace: "nowrap"
 	},
 	minW230px: {
 			minWidth: "230px"
 	},
 	px3: {
-			paddingInline: "12px"
+			paddingInline: "calc(4px * 3)"
 	},
 	py1: {
 			paddingBlock: "4px"
 	},
 	textFaint: {
 			color: "var(--text-faint)"
-	},
-
-	bgSelected: {
-		"backgroundColor": "var(--selected)"
-	},
-	textAccent: {
-		"color": "var(--accent-ink)"
-	},
-	hoverTextFg: {
-		"@media (hover: hover)": {
-			":hover": {
-				"color": "var(--text)"
-			}
-		}
-	},
-	hoverTextGreen: {
-		"@media (hover: hover)": {
-			":hover": {
-				"color": "var(--green)"
-			}
-		}
-	},
-	textFg: {
-		"color": "var(--text)"
-	},
-
-	lineClamp4: {
-		"WebkitLineClamp": "4",
-		"WebkitBoxOrient": "vertical",
-		"display": "-webkit-box",
-		"overflow": "hidden"
 	},
 });
 
@@ -176,7 +147,7 @@ export function SupportRow({
 							SIDEBAR_ROW,
 							SIDEBAR_WS_ROW,
 							SIDEBAR_HOVER_LAYER,
-							active && mergeStylexClassName("", sx.bgSelected),
+							active && utilityClassName("bg-selected"),
 						)}
 						data-sidebar-row=""
 						data-ws-row=""
@@ -214,7 +185,7 @@ export function SupportRow({
 							// One colour, picked here: a pinned action keeps its accent
 							// under the pointer, where two `text-*` utilities would leave
 							// the winner to Tailwind's ordering.
-							pinned ? mergeStylexClassName("", sx.textAccent) : mergeStylexClassName("", sx.textFaint, sx.hoverTextFg),
+							pinned ? "text-accent" : utilityClassName("text-faint hover:text-fg"),
 						)}
 						aria-label={pinned ? "Unpin ticket" : "Pin ticket"}
 						onClick={(e) => {
@@ -234,7 +205,7 @@ export function SupportRow({
 						<span
 							role="button"
 							tabIndex={0}
-							className={cn(SIDEBAR_WS_ACTION, mergeStylexClassName("", sx.textFaint, sx.hoverTextGreen))}
+							className={cn(SIDEBAR_WS_ACTION, utilityClassName("text-faint hover:text-green"))}
 							aria-label="Mark done in Plain"
 							onClick={(e) => {
 								e.stopPropagation();
@@ -334,7 +305,7 @@ export function FeedRow({
 							SIDEBAR_ROW,
 							SIDEBAR_WS_ROW,
 							SIDEBAR_HOVER_LAYER,
-							active && mergeStylexClassName("", sx.bgSelected),
+							active && utilityClassName("bg-selected"),
 						)}
 						data-sidebar-row=""
 						data-ws-row=""
@@ -352,7 +323,7 @@ export function FeedRow({
 					/>
 				</span>
 				<span
-					className={cn(SIDEBAR_ROW_TITLE, unread && mergeStylexClassName("", sx.fontSemibold, sx.textFg))}
+					className={cn(SIDEBAR_ROW_TITLE, unread && utilityClassName("font-semibold text-fg"))}
 				>
 					{item.title}
 				</span>
@@ -373,7 +344,7 @@ export function FeedRow({
 							// One colour, picked here: a pinned action keeps its accent
 							// under the pointer, where two `text-*` utilities would leave
 							// the winner to Tailwind's ordering.
-							pinned ? mergeStylexClassName("", sx.textAccent) : mergeStylexClassName("", sx.textFaint, sx.hoverTextFg),
+							pinned ? "text-accent" : utilityClassName("text-faint hover:text-fg"),
 						)}
 						aria-label={pinned ? "Unpin" : "Pin"}
 						onClick={(e) => {
@@ -394,7 +365,7 @@ export function FeedRow({
 			<RowCardPopup>
 				<div {...stylex.props(sx.mt5px, sx.fontSemibold, sx.leading13, typography.label)}>{item.title}</div>
 				{item.preview && (
-					<div {...mergeStylexProps("selectable", sx.lineClamp4, sx.mt1, sx.textXs, sx.leadingSnug, sx.textDim)}>
+					<div {...mergeStylexProps("selectable line-clamp-4", sx.mt1, sx.textXs, sx.leadingSnug, sx.textDim)} >
 						{item.preview}
 					</div>
 				)}
@@ -450,8 +421,7 @@ export function FeedFilterMenu({
 	const [opened, setOpened] = useState(false);
 	const argSpecs = (feed.filters || []).filter((f) => f.mode !== "meta");
 	const metaSpecs = (feed.filters || []).filter((f) => f.mode === "meta");
-	useEffect(() => {
-		if (!opened) return;
+	const loadArgOptions = useEffectEvent(() => {
 		for (const spec of argSpecs) {
 			if (argOptions[spec.key]) continue;
 			fetchFeedFilterOptions(feed.id, spec.key)
@@ -460,6 +430,10 @@ export function FeedFilterMenu({
 				)
 				.catch(() => {});
 		}
+	});
+	useEffect(() => {
+		if (!opened) return;
+		loadArgOptions();
 	}, [opened, feed.id]);
 
 	const active = Object.entries(values).some(
@@ -509,7 +483,7 @@ export function FeedFilterMenu({
 							// Unlike the workspace header's filter, this one's hover beat
 							// its filtered tint in the old sheet's source order — so the
 							// accent is a resting colour here, not a sticky one.
-							active ? mergeStylexClassName("", sx.textAccent) : mergeStylexClassName("", sx.textDim),
+							active ? "text-accent" : utilityClassName("text-dim"),
 							active && SIDEBAR_FILTER_DOT,
 						)}
 						onClick={(e: React.MouseEvent) => e.stopPropagation()}

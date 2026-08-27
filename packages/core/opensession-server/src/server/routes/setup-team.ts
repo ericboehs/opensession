@@ -191,10 +191,11 @@ async function syncGithubOrganizationMembers(ctx: RouteContext): Promise<Respons
     ? githubCredentialForLogin(ctx.authUser.login)
     : null;
   const { githubToken } = await import("../github-app");
-  const credentials = [
-    userCredential?.env.GH_TOKEN,
-    await githubToken(),
-  ].filter((token, index, all): token is string => !!token && all.indexOf(token) === index);
+  const userToken = userCredential?.env.GH_TOKEN;
+  const serviceToken = userToken ? null : await githubToken();
+  const credentials = [userToken, serviceToken].filter(
+    (token, index, all): token is string => !!token && all.indexOf(token) === index,
+  );
   if (credentials.length === 0) {
     return Response.json({
       organization,

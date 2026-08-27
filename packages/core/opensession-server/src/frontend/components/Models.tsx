@@ -1,6 +1,7 @@
 import { BASE_PATH } from "../lib/base";
 import { useEffect, useState } from "react";
 import { shortModelLabel, splitModelOptions } from "./ModelEffortSelect";
+import { ModelMark } from "./ModelMark";
 import { Select } from "../ui/select";
 import {
 	SettingCard,
@@ -35,6 +36,7 @@ interface ModelInfo {
 	label: string;
 	aliases: string[];
 	efforts: string[];
+	composition?: string[];
 }
 
 /** The model half of Settings → Providers: what new runs start on. Renders as
@@ -119,6 +121,12 @@ setError(e.message);
 		...claudeModels.map((m) => ({ value: m.id, label: m.label })),
 		...codexModels.map((m) => ({ value: m.id, label: m.label })),
 	];
+	// Vendor mark per row; combo presets show each participating vendor while
+	// the slot stays reserved on every row (and the trigger) for alignment.
+	const markFor = (m: ModelInfo) => (
+		<ModelMark id={m.id} provider={m.provider} composition={m.composition} />
+	);
+	const currentModel = (models || []).find((m) => m.id === current);
 
 	return (
 		<SettingRow>
@@ -138,11 +146,12 @@ setError(e.message);
 				>
 					<Select.Trigger
 						aria-label="Default model"
+						icon={currentModel ? markFor(currentModel) : null}
 						sizeTo={items.map((m) => m.label)}
 					/>
 					<Select.Popup align="end">
 						{primaryModels.map((m) => (
-							<Select.Item key={m.id} value={m.id}>
+							<Select.Item key={m.id} value={m.id} icon={markFor(m)}>
 								{engineLabel(m)}
 							</Select.Item>
 						))}
@@ -150,7 +159,7 @@ setError(e.message);
 							<Select.Group>
 								<Select.GroupLabel>{legacyGroup("Claude")}</Select.GroupLabel>
 								{claudeModels.map((m) => (
-									<Select.Item key={m.id} value={m.id}>
+									<Select.Item key={m.id} value={m.id} icon={markFor(m)}>
 										{m.label}
 									</Select.Item>
 								))}
@@ -160,7 +169,7 @@ setError(e.message);
 							<Select.Group>
 								<Select.GroupLabel>{legacyGroup("Codex")}</Select.GroupLabel>
 								{codexModels.map((m) => (
-									<Select.Item key={m.id} value={m.id}>
+									<Select.Item key={m.id} value={m.id} icon={markFor(m)}>
 										{m.label}
 									</Select.Item>
 								))}

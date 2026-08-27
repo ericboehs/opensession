@@ -93,15 +93,19 @@ final class AssetLinksTests: XCTestCase {
     }
 
     func testMediaSourceResolvesToARegisteredAsset() {
-        let absolute = "/home/ubuntu/.opensession-assets/os-old/viz/index.html"
-        let encoded = absolute.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed)!
-        XCTAssertEqual(
-            AssetLinks.path(
-                forMediaSource: "https://os.tella.dev/media?path=\(encoded)#t=0.1",
-                sessionId: session
-            ),
-            "viz/index.html"
-        )
+        for absolute in [
+            "/home/ubuntu/.opensession/assets/os-old/viz/index.html",
+            "/home/ubuntu/.opensession-assets/os-old/viz/index.html",
+        ] {
+            let encoded = absolute.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed)!
+            XCTAssertEqual(
+                AssetLinks.path(
+                    forMediaSource: "https://os.tella.dev/media?path=\(encoded)#t=0.1",
+                    sessionId: session
+                ),
+                "viz/index.html"
+            )
+        }
     }
 
     func testMediaSourceNeverGuessesAnUnregisteredAsset() {

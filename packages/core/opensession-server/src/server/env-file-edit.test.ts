@@ -32,14 +32,14 @@ afterEach(() => {
 describe("applyEnvEdits", () => {
   test("replaces an existing KEY=... line in place", () => {
     const before = "A=1\nSLACK_BOT_TOKEN=old\nB=2\n";
-    const after = applyEnvEdits(before, { SLACK_BOT_TOKEN: "xoxb-new" });
-    expect(after).toBe("A=1\nSLACK_BOT_TOKEN=xoxb-new\nB=2\n");
+    const after = applyEnvEdits(before, { SLACK_BOT_TOKEN: "replacement-token" });
+    expect(after).toBe("A=1\nSLACK_BOT_TOKEN=replacement-token\nB=2\n");
   });
 
   test("uncomments a commented # KEY=... line in place", () => {
     const before = "A=1\n# SLACK_BOT_TOKEN=old\nB=2\n";
-    const after = applyEnvEdits(before, { SLACK_BOT_TOKEN: "xoxb-new" });
-    expect(after).toBe("A=1\nSLACK_BOT_TOKEN=xoxb-new\nB=2\n");
+    const after = applyEnvEdits(before, { SLACK_BOT_TOKEN: "replacement-token" });
+    expect(after).toBe("A=1\nSLACK_BOT_TOKEN=replacement-token\nB=2\n");
   });
 
   test("prefers the active line over a commented one", () => {
@@ -145,7 +145,7 @@ describe("applyEnvFileEdits (disk)", () => {
 
 describe("validateEnvValue", () => {
   test("accepts ordinary single-line strings", () => {
-    expect(validateEnvValue("xoxb-abc123")).toBeNull();
+    expect(validateEnvValue("test-token-value")).toBeNull();
     expect(validateEnvValue("")).toBeNull();
   });
 

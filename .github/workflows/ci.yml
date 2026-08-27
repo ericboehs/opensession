@@ -30,7 +30,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.2.2
       # Pinned to a SHA, not a tag: this is the one third-party action that runs
       # on every pull request, and a moved tag would execute in CI unreviewed.
       # (v2.2.0 at time of pinning.)
@@ -50,35 +50,13 @@ jobs:
       - name: Lint (rules of hooks)
         run: bun run lint
 
-      # The unit suite is NOT a gate yet, and that is a deliberate call rather
-      # than laziness: it is ORDER DEPENDENT, and the order is not stable
-      # between identical runs, so neither colour means what a gate needs it to
-      # mean.
-      #
-      # Measured 2026-08-16, one commit, clean detached worktree, four
-      # consecutive sweeps of exactly this command: two green at 2904 pass, two
-      # red. The red ones did not agree with each other. Both flagged the two
-       # cases in zz-pr-cache-staleness.test.ts, which sit at 5000ms (their
-       # timeout) in the sweep and pass in 54ms run alone.
-      #
-      # So a red build would not reliably mean "you broke something" — and, the
-      # half people forget, a green sweep is not evidence the ordering is fixed:
-      # it was green half the time with the problem fully present. Two runs are
-      # not enough to conclude anything either. The three files that failed
-      # outright when this workflow was written have since been fixed; the shared
-      # state between files has not.
-      #
-      # It still runs on every PR so regressions are visible in the log, and the
-      # type-check plus the real end-to-end installs below ARE gates.
-      #
-      # Fixing this means finding the cross-file state (this codebase parks a lot
-      # on globalThis) and isolating it. Then delete continue-on-error, on the
-      # evidence of repeated sweeps rather than one.
-      #
-       # These two directories are where every server-side test lives.
-      - name: Unit tests (reported, not yet a gate — see comment)
-        continue-on-error: true
-        run: bun test packages/core/opensession-server/src scripts
+      # Test files replace process.env, fetch, module-level path caches, and
+      # globalThis state. Run each file in a fresh process so those intentional
+      # fixtures cannot make later files depend on discovery order. Keep the
+      # required gate sequential by default: several process-heavy integration
+      # fixtures have tight readiness budgets under shared-runner contention.
+      - name: Unit tests
+        run: scripts/test-unit-isolated.sh
 
       # The snapshot scenarios are exactly the part of that sweep the ordering
       # problem eats: they redirect the sessions dir, transcript store, MCP
@@ -113,7 +91,7 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.2.2
 
       - name: Lint the installer
         if: runner.os == 'Linux'
@@ -211,7 +189,7 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 25
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.2.2
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
         with:
           bun-version: 1.4.0

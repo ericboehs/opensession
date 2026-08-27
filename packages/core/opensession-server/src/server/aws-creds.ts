@@ -26,7 +26,7 @@
  * the instance creds.
  */
 
-import { homeDir } from "./paths";
+import { stateDir } from "./paths";
 import { mkdirSync, renameSync, writeFileSync } from "fs";
 import { userInfo } from "os";
 import { configuredIntegration } from "./config";
@@ -230,7 +230,7 @@ export async function getAgentAwsEnv(
  * run proceeds without AWS and `aws` calls error visibly, same contract as
  * getAgentAwsEnv.
  */
-const CREDS_DIR = `${homeDir()}/.opensession-aws`;
+const CREDS_DIR = stateDir("aws");
 const CREDS_FILE = `${CREDS_DIR}/agent-credentials`;
 const FILE_REFRESH_MS = 10 * 60_000;
 

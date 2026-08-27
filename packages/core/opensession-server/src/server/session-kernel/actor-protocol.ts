@@ -1,27 +1,20 @@
-import type {
-  LegacyGatewayEffect,
-  SessionActorReducerCommand,
-} from "./lifecycle-protocol";
+import type { SessionActorReducerCommand } from "./lifecycle-protocol";
 import type {
   DurableOutboxItem,
   DurableTimer,
   RunEventDecisionResult,
 } from "./store";
 
-export const SESSION_KERNEL_ACTOR_VERSION = 15;
-export const SESSION_KERNEL_MAX_WAITERS_PER_COMMAND = 64;
-export const SESSION_KERNEL_MAX_WAITERS_TOTAL = 4096;
-export const SESSION_KERNEL_MAX_EXECUTIONS_PER_SESSION = 128;
-export const SESSION_KERNEL_MAX_EXECUTIONS_TOTAL = 4096;
+export const SESSION_KERNEL_ACTOR_VERSION = 33;
+export const SESSION_KERNEL_TRANSPORT_VERSION = 1;
+// A transcript mutation can carry one accepted 50 MiB legacy/base64 image
+// (about 67 MiB on the JSON wire) before the actor splits it into blob storage.
+export const SESSION_KERNEL_MAX_REQUEST_BYTES = 80 * 1024 * 1024;
+export const SESSION_KERNEL_MAX_RESPONSE_BYTES = 128 * 1024 * 1024;
+export const SESSION_KERNEL_MAX_TRANSPORT_REQUESTS = 1024;
 
 export type KernelActorAsyncRequest =
   | { t: "hello"; rpcId: string; version: number }
-  | {
-      t: "begin";
-      rpcId: string;
-      command: LegacyGatewayEffect;
-      sessionId: string;
-    }
   | { t: "acknowledge"; rpcId: string; sessionId: string; requestId: string }
   | { t: "stats"; rpcId: string }
   | { t: "maintain"; rpcId: string }
@@ -32,35 +25,11 @@ export type KernelActorAsyncRequest =
       timerKinds: string[];
       effectKinds: string[];
       limit: number;
-    }
-  | {
-      t: "complete";
-      rpcId: string;
-      executionId: string;
-      result: unknown;
-      effects: Array<{ kind: string; payload: unknown; effectKey: string }>;
-    }
-  | {
-      t: "fail";
-      rpcId: string;
-      executionId: string;
-      error: string;
-      retryable: boolean;
     };
 
 export type KernelActorAsyncResponse =
-  | { t: "ready"; rpcId: string; version: number }
-  | {
-      t: "begin_result";
-      rpcId: string;
-      duplicate: boolean;
-      executionId?: string;
-      result?: unknown;
-    }
-  | {
-      t: "complete_result" | "fail_result" | "acknowledge_result";
-      rpcId: string;
-    }
+  | { t: "ready"; rpcId: string; version: number; serviceEpoch?: string }
+  | { t: "acknowledge_result"; rpcId: string }
   | { t: "maintain_result"; rpcId: string; pending: boolean }
   | {
       t: "stats_result";
@@ -75,13 +44,79 @@ export type KernelActorAsyncResponse =
     }
   | { t: "error"; rpcId: string; error: string; retryable?: boolean };
 
-type SyncBuffers = {
-  control: SharedArrayBuffer;
-  output: SharedArrayBuffer;
+/** Gateway-worker-only async call. The transport wraps this in a service call;
+ * it never crosses the independently supervised service boundary directly. */
+export type KernelActorClientCallRequest =
+  | { t: "store"; rpcId: string; method: string; args: unknown[] }
+  | { t: "reduce"; rpcId: string; command: SessionActorReducerCommand };
+
+export type KernelActorServiceCall = {
+  t: "call";
+  rpcId: string;
+  request:
+    | { t: "store"; method: string; args: unknown[] }
+    | { t: "reduce"; command: SessionActorReducerCommand };
+  outputBytes: number;
 };
 
-export type KernelActorSyncRequest =
-  | ({ t: "store"; method: string; args: unknown[] } & SyncBuffers)
-  | ({ t: "reduce"; command: SessionActorReducerCommand } & SyncBuffers);
+export type KernelActorResponse =
+  | KernelActorAsyncResponse
+  | {
+      t: "call_result";
+      rpcId: string;
+      status: -1 | 1 | 2;
+      length: number;
+      body?: string;
+    };
+
+/** HTTP service responses are fenced after the actor worker replies. */
+export type KernelActorServiceResponse = KernelActorResponse & {
+  serviceEpoch: string;
+};
+
+export type KernelActorClientRequest =
+  KernelActorAsyncRequest | KernelActorClientCallRequest;
+
+export type KernelActorClientResponse = KernelActorResponse;
+
+export type KernelActorTransportEnvelope = {
+  version: number;
+  actorVersion: number;
+  serviceEpoch?: string;
+  request: KernelActorAsyncRequest | KernelActorServiceCall;
+};
 
 export type KernelActorRunEventResult = RunEventDecisionResult;
+
+/** Settlement follows a physical or externally visible action. A rejected
+ * session-scoped settlement quarantines that session. Infrastructure failures
+ * still fail-stop the whole actor because commit state may be unknowable. */
+export function isCriticalSettlementCommand(
+  command: SessionActorReducerCommand,
+): boolean {
+  if (command.kind === "gateway")
+    return command.request.op === "complete" || command.request.op === "fail";
+  if (command.kind === "core")
+    return (
+      command.request.op === "ack_outbox" ||
+      command.request.op === "fail_outbox"
+    );
+  if (command.kind === "timer")
+    return command.request.op === "complete" || command.request.op === "fail";
+  if (command.kind === "delivery")
+    return [
+      "complete_submit_command",
+      "fail_submit_command",
+      "settle_interrupt",
+      "ack_dispatch",
+      "fail_dispatch",
+    ].includes(command.request.op);
+  if (command.kind === "turn")
+    return [
+      "complete_cancel_command",
+      "fail_cancel_command",
+      "settle_cancel",
+      "settle_outcome_projection",
+    ].includes(command.request.op);
+  return false;
+}

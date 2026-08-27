@@ -27,7 +27,8 @@ const sx = stylex.create({
 			outline: "2px solid var(--accent-ink)",
 			outlineOffset: "2px",
 		},
-	},
+
+		cornerShape: "var(--cs)",},
 	active: {
 		backgroundColor: "var(--hover)",
 		color: "var(--text)",

@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { UnifiedSession } from "../lib/types";
 import { fetchSessionsSnapshot } from "../lib/api";
 import {
@@ -47,6 +47,9 @@ const ARCHIVED_QUERY = "?archived=only&slim=1";
  * refreshes it immediately.
  */
 const ARCHIVED_POLL_MS = 30_000;
+/** WebSocket invalidations are the primary live-list trigger. This slow poll
+ * repairs missed frames after long transport failures or older servers. */
+export const LIVE_POLL_FALLBACK_MS = 60_000;
 
 export function sessionPatchNeedsAcknowledgement(
   patch: Partial<UnifiedSession>,
@@ -55,6 +58,17 @@ export function sessionPatchNeedsAcknowledgement(
   // can observe it. Keep that exact state across list polls until the matching
   // stop frame arrives, just as an archive survives an older poll in flight.
   return "archived" in patch || "isRunning" in patch;
+}
+
+/** A sidebar response is scoped to the route that requested it. Navigating
+ * while an older request is in flight must fence that response out: its
+ * selected-session exception can otherwise put the session just archived on
+ * the previous route back into the live list. */
+export function liveSnapshotMatchesQuery(
+  requestQuery: string,
+  currentQuery: string,
+): boolean {
+  return requestQuery === currentQuery;
 }
 
 export interface PendingSessionPatch {
@@ -112,7 +126,7 @@ export function reconcilePendingSessionPatches(
 
 export function useSessions({
   loadArchived = false,
-  pollInterval = 5000,
+  pollInterval = LIVE_POLL_FALLBACK_MS,
   liveQuery = LIVE_QUERY,
 }: {
   loadArchived?: boolean;
@@ -123,9 +137,9 @@ export function useSessions({
   // When the live list last came back. Settles a local unarchive: a poll that
   // STARTED after the change and still doesn't list the session means the
   // change didn't take, and the override should stop hiding the archived row.
-  // Every poll writes it, including the byte-identical ones the ETag and
-  // `lastTextRef` guards exist to make free — as state that re-rendered the
-  // whole app every 5s for nothing. The ref is the value; the state is only
+  // Every refresh writes it, including byte-identical fallback responses the
+  // ETag and `lastTextRef` guards exist to make free. The ref is the value; the
+  // state is only
   // the trigger, promoted while an override is actually waiting on it.
   const liveAtRef = useRef(0);
   const [liveAt, setLiveAt] = useState(0);
@@ -133,8 +147,8 @@ export function useSessions({
     null,
   );
   // When the archived index last came back, with the same split as `liveAt`
-  // above: the archived poll runs every few seconds for as long as the
-  // Archived screen is open, and its 304s carried no new rows but re-rendered
+  // above: the archived fallback runs while the Archived screen is open, and
+  // its 304s carried no new rows but re-rendered
   // the app anyway. The ref is the value; the state is only the trigger.
   const archivedIndexAtRef = useRef(0);
   const [archivedIndexAt, setArchivedIndexAt] = useState(0);
@@ -165,8 +179,8 @@ export function useSessions({
     locallyArchivedRef.current = locallyArchived;
     locallyUnarchivedRef.current = locallyUnarchived;
   });
-  // Raw JSON text of the last applied poll. When a poll returns byte-identical
-  // data (the common case every 5s), skip setSessions entirely — a fresh array
+  // Raw JSON text of the last applied refresh. When it returns byte-identical
+  // data, skip setSessions entirely — a fresh array
   // identity would otherwise re-render the whole app (Sidebar memos, the open
   // SessionViewer's `session` prop, …) for nothing.
   const lastTextRef = useRef<string | null>(null);
@@ -177,6 +191,21 @@ export function useSessions({
     promise: Promise<void>;
   } | null>(null);
   const pollAbortRef = useRef<AbortController | null>(null);
+  // An invalidation can land while a list request is in flight. The revision
+  // lets that request finish, then immediately reruns it instead of mistaking
+  // the already-running request for a refresh of the newer server state.
+  const invalidationRevisionRef = useRef(0);
+  const invalidationTimerRef = useRef<number | undefined>(undefined);
+  // Fence the previous route's scoped response before passive effects start its
+  // replacement poll. Abort is best-effort; the query comparison after await is
+  // the authority when a completed fetch wins the race with cancellation.
+  useLayoutEffect(() => {
+    if (appliedLiveQueryRef.current === liveQuery) return;
+    appliedLiveQueryRef.current = liveQuery;
+    etagRef.current = null;
+    lastTextRef.current = null;
+    pollAbortRef.current?.abort();
+  }, [liveQuery]);
   // Optimistically-injected sessions the server hasn't caught up to yet (a
   // just-created workspace/session). A plain poll replaces the whole array and
   // would drop the injected copy — flashing a loading placeholder until the
@@ -211,12 +240,17 @@ export function useSessions({
       });
     };
 
-  const poll = (): Promise<void> => {
-    if (pollPromiseRef.current?.query === liveQuery)
+  // Stable per query: refs, setters and module fns otherwise. The polling
+  // effect below can list it without re-arming on unrelated re-renders.
+  // Named function expression so the invalidation re-poll can recurse
+  // without the compiler seeing a read of `poll` mid-initialization.
+  const poll = useCallback(async function pollSelf(): Promise<void> {
+    const requestQuery = liveQuery;
+    if (pollPromiseRef.current?.query === requestQuery)
       return pollPromiseRef.current.promise;
     if (pollPromiseRef.current) pollAbortRef.current?.abort();
-    if (appliedLiveQueryRef.current !== liveQuery) {
-      appliedLiveQueryRef.current = liveQuery;
+    if (appliedLiveQueryRef.current !== requestQuery) {
+      appliedLiveQueryRef.current = requestQuery;
       etagRef.current = null;
       lastTextRef.current = null;
     }
@@ -224,14 +258,22 @@ export function useSessions({
     pollAbortRef.current = controller;
     const startedAt = Date.now();
     const snapshotRuntimeRevision = runtimeRevisionRef.current;
+    const invalidationRevision = invalidationRevisionRef.current;
     const promise = (async () => {
       await (async () => {
 const snapshot = await fetchSessionsSnapshot({
           etag: etagRef.current,
           signal: controller.signal,
-          query: liveQuery,
+          query: requestQuery,
         });
-        if (!mountedRef.current) return;
+        if (
+          !mountedRef.current ||
+          !liveSnapshotMatchesQuery(
+            requestQuery,
+            appliedLiveQueryRef.current,
+          )
+        )
+          return;
         if (!snapshot.notModified && snapshot.text !== null) {
           etagRef.current = snapshot.etag;
           if (snapshot.text !== lastTextRef.current) {
@@ -258,10 +300,16 @@ if (e?.name === "AbortError") return;
       if (pollPromiseRef.current?.promise === promise)
         pollPromiseRef.current = null;
       if (pollAbortRef.current === controller) pollAbortRef.current = null;
+      if (
+        mountedRef.current &&
+        document.visibilityState !== "hidden" &&
+        invalidationRevisionRef.current !== invalidationRevision
+      )
+        void pollSelf();
     });
-    pollPromiseRef.current = { query: liveQuery, promise };
+    pollPromiseRef.current = { query: requestQuery, promise };
     return promise;
-  };
+  }, [liveQuery]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -289,6 +337,8 @@ if (e?.name === "AbortError") return;
       active = false;
       mountedRef.current = false;
       if (timer !== undefined) window.clearTimeout(timer);
+      if (invalidationTimerRef.current !== undefined)
+        window.clearTimeout(invalidationTimerRef.current);
       pollAbortRef.current?.abort();
       document.removeEventListener("visibilitychange", onVisibility);
     };
@@ -299,9 +349,10 @@ if (e?.name === "AbortError") return;
   const archivedEtagRef = useRef<string | null>(null);
   const archivedPromiseRef = useRef<Promise<void> | null>(null);
 
-  const pollArchived = (): Promise<void> => {
+  const pollArchived = useCallback(async function pollArchivedSelf(): Promise<void> {
     if (archivedPromiseRef.current) return archivedPromiseRef.current;
     const startedAt = Date.now();
+    const invalidationRevision = invalidationRevisionRef.current;
     const promise = (async () => {
       await (async () => {
 const snapshot = await fetchSessionsSnapshot({
@@ -328,10 +379,16 @@ const snapshot = await fetchSessionsSnapshot({
 });
     })().finally(() => {
       if (archivedPromiseRef.current === promise) archivedPromiseRef.current = null;
+      if (
+        mountedRef.current &&
+        document.visibilityState !== "hidden" &&
+        invalidationRevisionRef.current !== invalidationRevision
+      )
+        void pollArchivedSelf();
     });
     archivedPromiseRef.current = promise;
     return promise;
-  };
+  }, []);
 
   // The sidebar only links to Archived now; it does not render archived rows or
   // their count. Keep this larger index out of the app entirely until that
@@ -409,10 +466,26 @@ const snapshot = await fetchSessionsSnapshot({
     locallyUnarchived,
   ]);
 
-  // Expose manual refresh for after deletes
+  // Expose manual refresh for after deletes.
   const refresh = () => {
     poll();
     if (loadArchived || archivedIndex !== null) pollArchived();
+  };
+
+  // Coalesce write bursts into one scoped list read. If the timer meets an
+  // older request already in flight, poll's revision fence runs once more when
+  // that request settles.
+  const refreshInvalidated = () => {
+    invalidationRevisionRef.current++;
+    if (invalidationTimerRef.current !== undefined)
+      window.clearTimeout(invalidationTimerRef.current);
+    if (document.visibilityState === "hidden") return;
+    invalidationTimerRef.current = window.setTimeout(() => {
+      invalidationTimerRef.current = undefined;
+      if (document.visibilityState === "hidden") return;
+      void poll();
+      if (loadArchived || archivedIndex !== null) void pollArchived();
+    }, 250);
   };
 
   // Drop a just-created session straight into the list so the UI can render it
@@ -525,6 +598,7 @@ const snapshot = await fetchSessionsSnapshot({
     archivedLoaded: archivedIndex !== null,
     refreshArchived: pollArchived,
     refresh,
+    refreshInvalidated,
     inject,
     unstick,
     patch,

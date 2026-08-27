@@ -27,8 +27,8 @@ import { envRequired, type IntegrationSpec } from "../integrations/registry";
 import { setupAccessSnapshot } from "../setup-access";
 import { requireWorkspaceAdmin } from "../workspace-auth";
 import type { RouteContext } from "./context";
-import { handleSetupAccessRoutes } from "./setup-access";
 import { handleSetupCodestorageRoutes } from "./setup-codestorage";
+import { handleSetupGithubManifestRoutes } from "./setup-github-manifest";
 import { handleSetupRepoRoutes } from "./setup-repos";
 import { handleSetupTeamRoutes } from "./setup-team";
 
@@ -112,20 +112,23 @@ async function primaryGithubOrg(): Promise<string | undefined> {
 export function buildOnboardingGithubAppCreateUrl(
   org: string | undefined,
   homepageUrl: string,
+  ingressUrl: string,
   appName = `Open Session (${Math.random().toString(36).slice(2, 6)})`,
 ): string {
   const params = new URLSearchParams({
     name: appName,
     url: homepageUrl.trim() || "http://localhost:3850",
     public: "false",
-    webhook_active: "false",
+    ...(ingressUrl.trim()
+      ? {
+          webhook_url: `${ingressUrl.replace(/\/$/, "")}/github/webhook`,
+          webhook_active: "true",
+        }
+      : {}),
     // The canonical grant set (checks + statuses + issues included) — the same
     // permissions the installation token mints request, so a created App is
     // never born missing a scope the server needs.
     ...GITHUB_APP_GRANT_PERMISSIONS,
-    // Undocumented by GitHub, but supported by the new-App form. The onboarding
-    // still tells the person to check it in case GitHub ever drops the parameter.
-    device_flow_enabled: "true",
   });
   const owner = org?.trim();
   const base = owner
@@ -135,20 +138,39 @@ export function buildOnboardingGithubAppCreateUrl(
 }
 
 async function githubSnapshot() {
-  const { githubUserAuthSettings, githubAppOrg, githubAuthOnConnect } =
-    await import("../github-auth");
-  const { githubAppConfigured, githubBotCredentialMode } =
+  const {
+    githubAppIdentity,
+    githubUserAuthSettings,
+    githubAppOrg,
+    githubAuthOnConnect,
+  } = await import("../github-auth");
+  const { githubAppConfigured, githubAppPrivateKeyConfigured } =
     await import("../github-app");
-  const { configuredServer } = await import("../config");
+  const { configuredIngress, configuredIntegration, configuredServer, personaName } = await import("../config");
   const github = githubUserAuthSettings();
+  const app = githubAppIdentity();
+  const integration = configuredIntegration("github");
   const org = await primaryGithubOrg();
+  const configuredHandles = configuredIntegration("github").mentionHandles;
+  const mentionHandle = (
+    process.env.GITHUB_MENTION_HANDLES?.split(",")[0] ||
+    (Array.isArray(configuredHandles)
+      ? configuredHandles.find((value): value is string => typeof value === "string")
+      : "") ||
+    personaName().toLowerCase().replace(/[^a-z0-9-]/g, "")
+  ).trim().replace(/^@/, "");
   return {
     userPrAuth: github.enabled,
     clientIdConfigured: !!github.clientId,
     clientSecretConfigured: !!github.clientSecret,
-    botTokenPresent: !!process.env.GITHUB_API_TOKEN,
-    botCredential: githubBotCredentialMode(),
+    mentionHandle,
     appCredentialConfigured: githubAppConfigured(),
+    privateKeyConfigured: githubAppPrivateKeyConfigured(),
+    appSlug: app.slug,
+    installationOwner:
+      typeof integration.installationOwner === "string"
+        ? integration.installationOwner
+        : null,
     // Captured install/app-setup intent: the org the App is owned by, and
     // whether connecting should turn on per-user sign-in. Both are inert until
     // the simple-mode connect handler consumes authOnConnect.
@@ -157,6 +179,7 @@ async function githubSnapshot() {
     appCreateUrl: buildOnboardingGithubAppCreateUrl(
       org,
       configuredServer().publicBaseUrl,
+      configuredIngress().publicBaseUrl,
     ),
   };
 }
@@ -196,8 +219,69 @@ export async function handleSetupRoutes(
   const { req, path } = ctx;
   if (!path.startsWith("/api/setup/")) return undefined;
 
+  // This one boolean is safe for every signed-in teammate to read. It must sit
+  // before the admin gate so a completed instance never sends non-admins into
+  // an onboarding flow they cannot configure.
+  if (path === "/api/setup/onboarding" && req.method === "GET") {
+    // Read the file directly rather than the mtime-cached resolved config: a GET
+    // immediately after the completion PUT must observe that write even on a
+    // filesystem whose timestamp resolution folds both operations together.
+    const { rawConfig } = await import("../config-mutation");
+    // Older instances predate the flag and have already been in use. Only the
+    // installer-written explicit false represents a first run.
+    return Response.json({ completed: rawConfig().onboardingCompleted !== false });
+  }
+
   const forbidden = requireWorkspaceAdmin(ctx);
   if (forbidden) return forbidden;
+
+  const githubManifestResponse = await handleSetupGithubManifestRoutes(ctx);
+  if (githubManifestResponse) return githubManifestResponse;
+
+  if (path === "/api/setup/onboarding" && req.method === "PUT") {
+    const body = (await req.json().catch(() => null)) as { completed?: unknown } | null;
+    if (body?.completed !== true) {
+      return Response.json({ error: "completed must be true" }, { status: 400 });
+    }
+    const { rawConfig, persistRawConfig, withConfigMutationLock } =
+      await import("../config-mutation");
+    return withConfigMutationLock(async () => {
+      const config = rawConfig();
+      if (config.onboardingCompleted !== true) {
+        const { parseTeamMember } = await import("../config");
+        const { connectedGithubAccounts, soleGithubLogin } = await import(
+          "../github-auth"
+        );
+        const { rawTeam } = await import("./setup-team");
+        const team = rawTeam(config);
+        if (!team.some((member) => parseTeamMember(member))) {
+          const connectedLogin = ctx.authUser?.login || soleGithubLogin() || "";
+          const connectedAccount = connectedLogin
+            ? connectedGithubAccounts().find(
+                (account) =>
+                  account.login.toLowerCase() === connectedLogin.toLowerCase(),
+              )
+            : undefined;
+          const name =
+            ctx.authUser?.name?.trim() ||
+            connectedAccount?.name?.trim() ||
+            connectedLogin ||
+            "Local User";
+          team.push({
+            name,
+            ...(connectedLogin
+              ? { github: connectedLogin, admin: true }
+              : {}),
+          });
+          (config.identity as Record<string, unknown>).team = team;
+        }
+        config.onboardingCompleted = true;
+        persistRawConfig(config);
+        audit({ kind: "setup_onboarding_complete", by: ctx.authUser?.login || null });
+      }
+      return Response.json({ completed: true });
+    });
+  }
 
   if (path === "/api/setup/status" && req.method === "GET") {
     const { configuredRepos, configuredIdentity } = await import("../config");
@@ -349,7 +433,9 @@ export async function handleSetupRoutes(
       userPrAuth?: unknown;
       oauthClientId?: unknown;
       oauthClientSecret?: unknown;
-      botCredential?: unknown;
+      appSlug?: unknown;
+      installationOwner?: unknown;
+      mentionHandle?: unknown;
       privateKey?: unknown;
     } | null;
     if (!body || typeof body !== "object" || Array.isArray(body)) {
@@ -358,27 +444,31 @@ export async function handleSetupRoutes(
     if (body.userPrAuth !== undefined && typeof body.userPrAuth !== "boolean") {
       return Response.json({ error: "userPrAuth must be a boolean" }, { status: 400 });
     }
-    if (
-      body.botCredential !== undefined &&
-      body.botCredential !== "pat" &&
-      body.botCredential !== "app"
-    ) {
-      return Response.json({ error: "botCredential must be pat or app" }, { status: 400 });
-    }
-    if (body.botCredential === "app") {
-      const { githubAppConfigured } = await import("../github-app");
-      if (!githubAppConfigured())
-        return Response.json(
-          { error: "Configure the GitHub App client id and private key before switching" },
-          { status: 409 },
-        );
-    }
-    for (const field of ["oauthClientId", "oauthClientSecret"] as const) {
+    for (const field of [
+      "oauthClientId",
+      "oauthClientSecret",
+      "appSlug",
+      "installationOwner",
+    ] as const) {
       if (body[field] === undefined) continue;
       const invalid = await validateSetting(body[field]);
       if (invalid) {
         return Response.json({ error: `${field}: ${invalid}` }, { status: 400 });
       }
+    }
+    const mentionHandle =
+      typeof body.mentionHandle === "string"
+        ? body.mentionHandle.trim().replace(/^@/, "")
+        : body.mentionHandle;
+    if (
+      mentionHandle !== undefined &&
+      (typeof mentionHandle !== "string" ||
+        (mentionHandle !== "" && !/^[a-z\d](?:[a-z\d-]{0,37}[a-z\d])?$/i.test(mentionHandle)))
+    ) {
+      return Response.json(
+        { error: "mentionHandle must be a valid GitHub handle" },
+        { status: 400 },
+      );
     }
     // The private key is a multi-line PEM, so it bypasses validateSetting (single
     // line). Require a complete block that parses, so a truncated paste cannot
@@ -410,7 +500,9 @@ export async function handleSetupRoutes(
       body.userPrAuth === undefined &&
       body.oauthClientId === undefined &&
       body.oauthClientSecret === undefined &&
-      body.botCredential === undefined &&
+      body.appSlug === undefined &&
+      body.installationOwner === undefined &&
+      mentionHandle === undefined &&
       !privateKey
     ) {
       return Response.json({ error: "Nothing to change" }, { status: 400 });
@@ -440,10 +532,62 @@ export async function handleSetupRoutes(
         (nextClientId !== undefined && github.oauthClientId !== nextClientId
           ? null
           : undefined);
-      const effectiveBotCredential = body.botCredential ?? github.botCredential ?? "pat";
-      if (keyMutation === null && effectiveBotCredential === "app") {
+      const { githubAppIdentity } = await import("../github-auth");
+      const { githubAppConfigured } = await import("../github-app");
+      const effectiveAppSlug =
+        body.appSlug !== undefined
+          ? String(body.appSlug).trim()
+          : githubAppIdentity().slug;
+      const appSettingsChanging =
+        body.oauthClientId !== undefined ||
+        body.oauthClientSecret !== undefined ||
+        body.appSlug !== undefined ||
+        body.installationOwner !== undefined ||
+        !!privateKey;
+      if ((appSettingsChanging || body.userPrAuth === true) && !effectiveAppSlug) {
         return Response.json(
-          { error: "Switch bot actions to the PAT before changing the GitHub App without a replacement key" },
+          { error: "Configure the GitHub App slug" },
+          { status: 409 },
+        );
+      }
+      if (keyMutation === null) {
+        return Response.json(
+          { error: "Changing the GitHub App client id requires its replacement private key" },
+          { status: 409 },
+        );
+      }
+      const effectiveClientId =
+        body.oauthClientId !== undefined
+          ? String(body.oauthClientId).trim()
+          : typeof github.oauthClientId === "string"
+            ? github.oauthClientId
+            : "";
+      const effectiveOwner =
+        body.installationOwner !== undefined
+          ? String(body.installationOwner).trim()
+          : typeof github.installationOwner === "string"
+            ? github.installationOwner
+            : typeof github.appOrg === "string"
+              ? github.appOrg
+              : "";
+      const effectiveSecret =
+        body.oauthClientSecret !== undefined
+          ? String(body.oauthClientSecret).trim()
+          : typeof github.oauthClientSecret === "string"
+            ? github.oauthClientSecret
+            : "";
+      if (
+        (appSettingsChanging || body.userPrAuth === true) &&
+        (!effectiveClientId || !effectiveOwner || (!privateKey && !githubAppConfigured()))
+      ) {
+        return Response.json(
+          { error: "Client id, installation owner and private key are required for the GitHub App" },
+          { status: 409 },
+        );
+      }
+      if (body.userPrAuth === true && !effectiveSecret) {
+        return Response.json(
+          { error: "A client secret is required for GitHub authentication" },
           { status: 409 },
         );
       }
@@ -502,12 +646,19 @@ export async function handleSetupRoutes(
             team.push({ name: displayName, github: login, admin: true });
           }
           (config.identity as Record<string, unknown>).team = team;
-          github.webhookForwardLogin = login;
         }
       }
       if (body.userPrAuth !== undefined) github.userPrAuth = body.userPrAuth;
-      if (body.botCredential !== undefined) github.botCredential = body.botCredential;
-      for (const field of ["oauthClientId", "oauthClientSecret"] as const) {
+      if (mentionHandle !== undefined) {
+        if (mentionHandle) github.mentionHandles = [mentionHandle];
+        else delete github.mentionHandles;
+      }
+      for (const field of [
+        "oauthClientId",
+        "oauthClientSecret",
+        "appSlug",
+        "installationOwner",
+      ] as const) {
         const value = body[field];
         if (value === undefined) continue;
         if (value === "") delete github[field]; // empty string clears
@@ -527,7 +678,14 @@ export async function handleSetupRoutes(
       }
       audit({
         kind: "setup_github_update",
-        fields: (["userPrAuth", "oauthClientId", "oauthClientSecret", "botCredential"] as const).filter(
+        fields: ([
+          "userPrAuth",
+          "oauthClientId",
+          "oauthClientSecret",
+          "appSlug",
+          "installationOwner",
+          "mentionHandle",
+        ] as const).filter(
           (f) => body[f] !== undefined,
         ),
       });
@@ -538,7 +696,8 @@ export async function handleSetupRoutes(
       // createdByLogin boot migration waits for the next restart.)
       return Response.json({
         github: await githubSnapshot(),
-        restartRequired: false,
+        // Mention matching is initialized with the GitHub agent at boot.
+        restartRequired: mentionHandle !== undefined,
       });
     });
   }
@@ -572,10 +731,9 @@ export async function handleSetupRoutes(
     return Response.json({ restarting: true });
   }
 
-  // ── Sibling modules: /api/setup/{access,team*,github/repos,repos},
+  // ── Sibling modules: /api/setup/{team*,github/repos,repos},
   //    /api/setup/codestorage/{connect,status,disconnect} ───────────────────
   return (
-    (await handleSetupAccessRoutes(ctx)) ??
     (await handleSetupTeamRoutes(ctx)) ??
     (await handleSetupRepoRoutes(ctx)) ??
     (await handleSetupCodestorageRoutes(ctx))

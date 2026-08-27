@@ -4,8 +4,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   accountProviderForModel,
+  automaticFallbackModel,
   explicitEngineFor,
   fallbackPlan,
+  interactiveFallbackModel,
   modelEngineKey,
   modelLabel,
   nextFallbackModel,
@@ -17,10 +19,21 @@ import {
 } from "./models";
 
 const originalPiConfig = process.env.OPENSESSION_PI_CONFIG;
+const originalModelProvidersConfig =
+  process.env.OPENSESSION_MODEL_PROVIDERS_CONFIG;
+const originalHaikuFallbackModel = process.env.OPENSESSION_HAIKU_FALLBACK_MODEL;
 let pickerConfigDir = "";
 afterEach(() => {
   if (originalPiConfig === undefined) delete process.env.OPENSESSION_PI_CONFIG;
   else process.env.OPENSESSION_PI_CONFIG = originalPiConfig;
+  if (originalModelProvidersConfig === undefined)
+    delete process.env.OPENSESSION_MODEL_PROVIDERS_CONFIG;
+  else
+    process.env.OPENSESSION_MODEL_PROVIDERS_CONFIG =
+      originalModelProvidersConfig;
+  if (originalHaikuFallbackModel === undefined)
+    delete process.env.OPENSESSION_HAIKU_FALLBACK_MODEL;
+  else process.env.OPENSESSION_HAIKU_FALLBACK_MODEL = originalHaikuFallbackModel;
   refreshPickerModels();
   if (pickerConfigDir) rmSync(pickerConfigDir, { recursive: true, force: true });
   pickerConfigDir = "";
@@ -63,6 +76,37 @@ describe("Pi-only model routing", () => {
     expect(resolveModel("wafer/glm-5.2")?.id).toBe("pi/wafer/glm-5.2");
   });
 
+  test("resolves an unambiguous provider model by its visible slug", () => {
+    pickerConfigDir = mkdtempSync(join(tmpdir(), "pi-provider-alias-"));
+    process.env.OPENSESSION_PI_CONFIG = join(pickerConfigDir, "pi.json");
+    process.env.OPENSESSION_MODEL_PROVIDERS_CONFIG = join(
+      pickerConfigDir,
+      "providers.json",
+    );
+    writeFileSync(
+      process.env.OPENSESSION_PI_CONFIG,
+      JSON.stringify({
+        enabled: true,
+        pickerModels: ["pi/openrouter/stealth/ox-alpha"],
+      }),
+    );
+    writeFileSync(
+      process.env.OPENSESSION_MODEL_PROVIDERS_CONFIG,
+      JSON.stringify({
+        enabled: true,
+        providers: { openrouter: { apiKey: "test-key" } },
+      }),
+    );
+    refreshPickerModels();
+
+    expect(resolveModel("ox-alpha")?.id).toBe(
+      "pi/openrouter/stealth/ox-alpha",
+    );
+    expect(resolveModel("Ox Alpha")?.id).toBe(
+      "pi/openrouter/stealth/ox-alpha",
+    );
+  });
+
   test("selects the account pool from Pi's upstream provider", () => {
     expect(accountProviderForModel("pi/anthropic/claude-opus-5")).toBe("claude");
     expect(accountProviderForModel("pi/openai/gpt-5.6-sol")).toBe("codex");
@@ -85,6 +129,23 @@ describe("Pi-only model routing", () => {
       .toSatisfy((hops) => hops.every((hop) => hop.id.startsWith("pi/")));
   });
 
+  test("crosses exhausted Haiku sessions to OpenAI", () => {
+    expect(automaticFallbackModel("claude-haiku-4-5")).toBe(
+      "pi/openai/gpt-5.6-luna",
+    );
+    expect(interactiveFallbackModel("claude-haiku-4-5")).toBe(
+      "pi/openai/gpt-5.6-luna",
+    );
+    expect(interactiveFallbackModel("pi/anthropic/claude-haiku-4-5")).toBe(
+      "pi/openai/gpt-5.6-luna",
+    );
+
+    process.env.OPENSESSION_HAIKU_FALLBACK_MODEL = "gpt-5.6-sol";
+    expect(automaticFallbackModel("claude-haiku-4-5")).toBe(
+      "pi/openai/gpt-5.6-sol",
+    );
+  });
+
   test("labels Pi models without an engine prefix", () => {
     expect(modelLabel("pi/openai/gpt-5.6-sol")).toBe("GPT-5.6 Sol");
   });
@@ -102,5 +163,21 @@ describe("Pi-only model routing", () => {
       .map((model) => model.id);
     expect(pickerIds).toContain("pi/openai/gpt-5.6-sol");
     expect(pickerIds).toContain("pi/anthropic/claude-fable-5");
+  });
+
+  test("deduplicates retired pickerModels after routing", () => {
+    pickerConfigDir = mkdtempSync(join(tmpdir(), "pi-picker-models-"));
+    const path = join(pickerConfigDir, "pi.json");
+    writeFileSync(path, JSON.stringify({
+      enabled: true,
+      pickerModels: ["pi/openai/gpt-5.6-sol"],
+    }));
+    process.env.OPENSESSION_PI_CONFIG = path;
+
+    refreshPickerModels();
+
+    expect(
+      KNOWN_MODELS.filter((model) => model.id === "pi/openai/gpt-5.6-sol"),
+    ).toHaveLength(1);
   });
 });

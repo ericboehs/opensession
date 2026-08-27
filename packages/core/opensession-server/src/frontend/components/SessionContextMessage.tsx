@@ -1,3 +1,4 @@
+import { mergeStylexProps, mergeStylexOverrideClassName } from "../ui/cn";
 import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { BASE_PATH } from "../lib/base";
 import {
@@ -5,12 +6,24 @@ import {
 	msgSystemRow,
 } from "../lib/msg-classes";
 import { Button } from "../ui/button";
+import { Skeleton, SkeletonBar } from "../ui/state";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
-import { mergeStylexProps, mergeStylexClassName } from "../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
+	mxAuto: {
+			marginInline: "auto"
+	},
+	h5: {
+			height: "calc(4px * 5)"
+	},
+	w44: {
+			width: "calc(4px * 44)"
+	},
+	maxW60: {
+			maxWidth: "60%"
+	},
 	hAuto: {
 			height: "auto"
 	},
@@ -38,11 +51,8 @@ const sx = stylex.create({
 	textDim: {
 			color: "var(--text-dim)"
 	},
-	mxAuto: {
-			marginInline: "auto"
-	},
 	mt2: {
-			marginTop: "8px"
+			marginTop: "calc(4px * 2)"
 	},
 	wFull: {
 			width: "100%"
@@ -51,23 +61,20 @@ const sx = stylex.create({
 			maxWidth: "560px"
 	},
 	roundedLg: {
-			borderRadius: "calc(14px * var(--rf))"
-	,
-		cornerShape: "var(--cs)"},
+			borderRadius: "calc(14px * var(--rf))",
+
+		cornerShape: "var(--cs)",},
 	bgPanel: {
 			backgroundColor: "var(--bg-panel)"
 	},
 	px4: {
-			paddingInline: "16px"
+			paddingInline: "calc(4px * 4)"
 	},
 	py3: {
-			paddingBlock: "12px"
+			paddingBlock: "calc(4px * 3)"
 	},
 	textLeft: {
 			textAlign: "left"
-	},
-	m0: {
-			margin: "0"
 	},
 	maxH70vh: {
 			maxHeight: "70vh"
@@ -90,13 +97,8 @@ const sx = stylex.create({
 	textFg: {
 			color: "var(--text)"
 	},
-
-	hoverBgTransparent: {
-		"@media (hover: hover)": {
-			":hover": {
-				"backgroundColor": "transparent"
-			}
-		}
+	block: {
+			display: "block"
 	},
 });
 
@@ -121,7 +123,14 @@ function tokenLabel(tokens: number): string {
 
 /** The complete provider input that preceded the initial user message. The
  * body is fetched only after expansion, so making prompt bloat visible does
- * not add that bloat to every transcript load. */
+ * not add that bloat to every transcript load.
+ *
+ * The collapsed row keeps its final geometry while metadata loads. This route
+ * can need a cold transcript read, and mounting the row only after that work
+ * completed used to prepend roughly 40px to an already-painted conversation.
+ * A one-line ghost replaces in place instead, preserving the reader's scroll
+ * position. Ancient sessions with no recorded context retain the same quiet
+ * slot so resolving the negative result cannot shift the transcript either. */
 export function SessionContextMessage({ sessionId }: { sessionId: string }) {
 	const [metadata, setMetadata] = useState<SessionContextMetadata | null>(null);
 	const [open, setOpen] = useState(false);
@@ -138,11 +147,13 @@ export function SessionContextMessage({ sessionId }: { sessionId: string }) {
 			`${BASE_PATH}/api/sessions/${encodeURIComponent(sessionId)}/session-context`,
 			{ signal: controller.signal },
 		)
-			.then((response) => (response.ok ? response.json() : null))
-			.then((value) => {
-				if (value) setMetadata(value);
-			})
-			.catch(() => {});
+			.then((response) =>
+				response.ok ? response.json() : { available: false },
+			)
+			.then((value) => setMetadata(value))
+			.catch(() => {
+				if (!controller.signal.aborted) setMetadata({ available: false });
+			});
 		return () => controller.abort();
 	}, [sessionId]);
 
@@ -154,14 +165,16 @@ export function SessionContextMessage({ sessionId }: { sessionId: string }) {
 			rowRef.current?.scrollIntoView({ block: "start", behavior: "auto" });
 	}, [open, content]);
 
-	if (!metadata?.available) return null;
-	const bytes = metadata.bytes ?? 0;
-	const tokens = metadata.estimatedTokens ?? 0;
-	const title = [
-		metadata.exact === false ? "Session context · partial" : "Session context",
-		sizeLabel(bytes),
-		tokenLabel(tokens),
-	].join(" · ");
+	const available = metadata?.available === true;
+	const bytes = metadata?.bytes ?? 0;
+	const tokens = metadata?.estimatedTokens ?? 0;
+	const title = available
+		? [
+				metadata.exact === false ? "Session context · partial" : "Session context",
+				sizeLabel(bytes),
+				tokenLabel(tokens),
+			].join(" · ")
+		: "";
 
 	const toggle = async () => {
 		if (open) {
@@ -172,44 +185,59 @@ export function SessionContextMessage({ sessionId }: { sessionId: string }) {
 		if (content != null || loading) return;
 		setLoading(true);
 		await (async () => {
-const response = await fetch(
+			const response = await fetch(
 				`${BASE_PATH}/api/sessions/${encodeURIComponent(sessionId)}/session-context?content=1`,
 			);
 			if (!response.ok) throw new Error("context request failed");
 			const value = (await response.json()) as SessionContextMetadata;
 			setContent(value.content ?? "");
-})().catch(async () => {
-setContent("Couldn’t load the session context.");
-}).finally(async () => {
-setLoading(false);
-});
+		})()
+			.catch(() => {
+				setContent("Couldn’t load the session context.");
+			})
+			.finally(() => {
+				setLoading(false);
+			});
 	};
 
 	return (
 		<div ref={rowRef} className={msgSystemRow} data-session-context>
-			<span className={msgSystemInline}>
-				<Button
-					size="sm"
-					variant="ghost"
-					aria-expanded={open}
-					onClick={toggle} {...mergeStylexProps("", sx.hoverBgTransparent, sx.hAuto, sx.minH0, sx.cursorPointer, sx.bgTransparent, sx.p0, sx.FontFamilyInherit, sx.textInherit)}
-				>
-					{title} ·{" "}
-					<span {...stylex.props(sx.fontMedium, sx.textDim)}>
-						{open ? "hide" : "show"}
+			{metadata === null ? (
+				<Skeleton label="Loading session context" className={msgSystemInline}>
+					<SkeletonBar className={mergeStylexOverrideClassName("", sx.mxAuto, sx.h5, sx.w44, sx.maxW60)} />
+				</Skeleton>
+			) : available ? (
+				<>
+					<span className={msgSystemInline}>
+						<Button
+							size="sm"
+							variant="ghost"
+							aria-expanded={open}
+							onClick={toggle}
+							className={mergeStylexOverrideClassName("hover:bg-transparent", sx.hAuto, sx.minH0, sx.cursorPointer, sx.bgTransparent, sx.p0, sx.FontFamilyInherit, sx.textInherit)}
+						>
+							{title} ·{" "}
+							<span {...stylex.props(sx.fontMedium, sx.textDim)}>
+								{open ? "hide" : "show"}
+							</span>
+						</Button>
 					</span>
-				</Button>
-			</span>
-			{open && (
-				<div {...stylex.props(sx.mxAuto, sx.mt2, sx.wFull, sx.maxW560px, sx.roundedLg, sx.bgPanel, sx.px4, sx.py3, sx.textLeft)}>
-					{loading ? (
-						<p {...stylex.props(sx.m0, sx.textDim, typography.label)}>Loading…</p>
-					) : (
-						<pre {...stylex.props(sx.m0, sx.maxH70vh, sx.overflowAuto, sx.whitespacePreWrap, sx.breakWords, sx.fontSans, sx.leadingRelaxed, sx.textFg, typography.label)}>
-							{content}
-						</pre>
+					{open && (
+						<div {...stylex.props(sx.mxAuto, sx.mt2, sx.wFull, sx.maxW560px, sx.roundedLg, sx.bgPanel, sx.px4, sx.py3, sx.textLeft)}>
+							{loading ? (
+								<p {...mergeStylexProps("m-0", sx.textDim, typography.label)} >Loading…</p>
+							) : (
+								<pre {...mergeStylexProps("m-0", sx.maxH70vh, sx.overflowAuto, sx.whitespacePreWrap, sx.breakWords, sx.fontSans, sx.leadingRelaxed, sx.textFg, typography.label)} >
+									{content}
+								</pre>
+							)}
+						</div>
 					)}
-				</div>
+				</>
+			) : (
+				<span className={msgSystemInline} aria-hidden>
+					<span {...stylex.props(sx.block, sx.h5)} />
+				</span>
 			)}
 		</div>
 	);

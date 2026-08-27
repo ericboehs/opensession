@@ -14,15 +14,22 @@ import {
   PI_STATE_DIR,
   runPi,
 } from "./pi-runner";
-import { toPiModel, type SessionEffort } from "./models";
+import {
+  configuredHaikuFallbackModel,
+  toPiModel,
+  type SessionEffort,
+} from "./models";
 import { isShuttingDown } from "./shutdown-state";
+import { envCapacity } from "./shared/env-capacity";
 
 const DEFAULT_ONESHOT_MODEL = "pi/anthropic/claude-haiku-4-5";
 const DEFAULT_TIMEOUT_MS = 120_000;
 const ONESHOT_CWD = `${PI_STATE_DIR}/oneshot`;
-const ONESHOT_CONCURRENCY = Math.max(
+const ONESHOT_CONCURRENCY = envCapacity(
+  "OPENSESSION_ONESHOT_CONCURRENCY",
+  4,
   1,
-  Number(process.env.OPENSESSION_ONESHOT_CONCURRENCY || 4),
+  64,
 );
 
 type OneShotPool = {
@@ -70,6 +77,25 @@ export function oneShotModel(model?: string): string | undefined {
   return toPiModel(requested);
 }
 
+const HAIKU_FALLOVER_SHAPES =
+  /usage[-_ ]?limit|weekly limit|no usable|exhausted|sidelined|rate[-_ ]?limit|quota|subscription access|disabled Claude|timed out|overloaded|too many requests|\b(429|500|502|503|529)\b|ECONNREFUSED|ECONNRESET|fetch failed|socket hang up/i;
+
+export function haikuOneShotShouldFallOver(error: string | null): boolean {
+  if (!error) return true;
+  return HAIKU_FALLOVER_SHAPES.test(error);
+}
+
+export function haikuOneShotFallbackModel(
+  model: string | undefined,
+  error: string | null,
+): string | undefined {
+  if (!model?.startsWith("pi/anthropic/claude-haiku-")) return undefined;
+  if (!haikuOneShotShouldFallOver(error)) return undefined;
+  const fallback = configuredHaikuFallbackModel();
+  if (!fallback?.startsWith("pi/openai/") || fallback === model) return undefined;
+  return fallback;
+}
+
 /** What a one-shot did: the answer, or the reason there is not one.
  *  `oneShot` collapses this to null by design, since every caller has a
  *  deterministic fallback and must not have to catch. But a caller that can
@@ -90,6 +116,37 @@ export async function oneShot(
 export async function oneShotDetailed(
   prompt: string,
   opts: OneShotOpts = {},
+): Promise<OneShotResult> {
+  const primaryModel = oneShotModel(opts.model);
+  const primary = await runOneShotAttempt(prompt, opts);
+  if (primary.text) return primary;
+  if (process.env.NODE_ENV === "test") return primary;
+
+  const fallbackModel = haikuOneShotFallbackModel(primaryModel, primary.error);
+  if (!fallbackModel) return primary;
+
+  const label = opts.label || "oneshot";
+  console.warn(
+    `[oneshot:${label}] Haiku unavailable (${primary.error || "empty answer"}); retrying on ${fallbackModel}`,
+  );
+  const fallback = await runOneShotAttempt(prompt, {
+    ...opts,
+    model: fallbackModel,
+    label: `${label}-openai-fallback`,
+  });
+  if (fallback.text) return fallback;
+  return {
+    text: null,
+    error: [
+      primary.error ? `Haiku: ${primary.error}` : "Haiku: empty answer",
+      fallback.error ? `OpenAI fallback: ${fallback.error}` : "OpenAI fallback: empty answer",
+    ].join("; "),
+  };
+}
+
+async function runOneShotAttempt(
+  prompt: string,
+  opts: OneShotOpts,
 ): Promise<OneShotResult> {
   // One-shots are real model calls. Import-heavy test suites rely on their
   // deterministic fallback paths and must never spend a model turn.

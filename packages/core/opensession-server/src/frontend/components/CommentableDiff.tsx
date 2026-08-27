@@ -1,10 +1,6 @@
-import React, {
-  useState,
-  useRef,
-  
-  useEffect,
-  startTransition,
-} from "react";
+import { utilityClassName } from "../ui/cn";
+import { mergeStylexProps, mergeStylexOverrideClassName } from "../ui/cn";
+import React, { startTransition, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { parsePatchFiles } from "@pierre/diffs";
 import { EditProvider, FileDiff } from "@pierre/diffs/react";
@@ -50,7 +46,6 @@ import { UserAvatar } from "./UserAvatar";
 import { ExtBadge, fileExt } from "./lang-marks";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
-import { mergeStylexProps, mergeStylexClassName, mergeStylexOverrideClassName } from "../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -64,7 +59,7 @@ const sx = stylex.create({
 			justifyContent: "space-between"
 	},
 	gap2: {
-			gap: "8px"
+			gap: "calc(4px * 2)"
 	},
 	textFaint: {
 			color: "var(--text-faint)"
@@ -82,7 +77,7 @@ const sx = stylex.create({
 			paddingInline: "4px"
 	},
 	py05: {
-			paddingBlock: "2px"
+			paddingBlock: "calc(4px * 0.5)"
 	},
 	leading145: {
 			lineHeight: "1.45"
@@ -96,26 +91,9 @@ const sx = stylex.create({
 	OverflowWrapAnywhere: {
 			overflowWrap: "anywhere"
 	},
-	pointerEventsNone: {
-			pointerEvents: "none"
-	},
-	absolute: {
-			position: "absolute"
-	},
-	inset0: {
-			inset: "0"
-	},
-	hidden: {
-			display: "none"
-	},
-	roundedTLg: {
-			borderTopLeftRadius: "calc(14px * var(--rf))",
-			borderTopRightRadius: "calc(14px * var(--rf))"
-	,
-		cornerShape: "var(--cs)"},
 	size5: {
-			width: "20px",
-			height: "20px"
+			width: "calc(4px * 5)",
+			height: "calc(4px * 5)"
 	},
 	shrink0: {
 			flexShrink: "0"
@@ -154,7 +132,7 @@ const sx = stylex.create({
 			marginLeft: "auto"
 	},
 	gap15: {
-			gap: "6px"
+			gap: "calc(4px * 1.5)"
 	},
 	maxW260px: {
 			maxWidth: "260px"
@@ -166,14 +144,14 @@ const sx = stylex.create({
 			minHeight: "0"
 	},
 	px25: {
-			paddingInline: "10px"
+			paddingInline: "calc(4px * 2.5)"
 	},
 	py3px: {
 			paddingBlock: "3px"
 	},
 	textXs: {
 			fontSize: "var(--type-label)",
-			lineHeight: "var(--tw-leading,var(--text-xs--line-height))"
+			lineHeight: "var(--tw-leading, var(--text-xs--line-height))"
 	},
 	fontNormal: {
 			fontWeight: "var(--font-weight-normal)"
@@ -188,9 +166,9 @@ const sx = stylex.create({
 			flex: "1"
 	},
 	truncate: {
+			overflow: "hidden",
 			textOverflow: "ellipsis",
-			whiteSpace: "nowrap",
-			overflow: "hidden"
+			whiteSpace: "nowrap"
 	},
 	flexCol: {
 			flexDirection: "column"
@@ -206,32 +184,29 @@ const sx = stylex.create({
 			backgroundColor: "var(--bg-raised)"
 	},
 	p2: {
-			padding: "8px"
+			padding: "calc(4px * 2)"
 	},
 	gap1: {
 			gap: "4px"
 	},
 	gap25: {
-			gap: "10px"
+			gap: "calc(4px * 2.5)"
 	},
 	roundedMd: {
-			borderRadius: "calc(7px * var(--rf))"
-	,
-		cornerShape: "var(--cs)"},
+			borderRadius: "calc(7px * var(--rf))",
+
+		cornerShape: "var(--cs)",},
 	bgGreenSoft: {
 			backgroundColor: "var(--green-soft)"
 	},
 	px3: {
-			paddingInline: "12px"
+			paddingInline: "calc(4px * 3)"
 	},
 	py15: {
-			paddingBlock: "6px"
-	},
-	textGreen: {
-			color: "var(--green)"
+			paddingBlock: "calc(4px * 1.5)"
 	},
 	Mb1: {
-			marginBottom: "-4px"
+			marginBottom: "calc(4px * -1)"
 	},
 	justifyEnd: {
 			justifyContent: "flex-end"
@@ -259,10 +234,10 @@ const sx = stylex.create({
 			borderColor: "var(--border)"
 	},
 	pl3: {
-			paddingLeft: "12px"
+			paddingLeft: "calc(4px * 3)"
 	},
 	pb2: {
-			paddingBottom: "8px"
+			paddingBottom: "calc(4px * 2)"
 	},
 	textCenter: {
 			textAlign: "center"
@@ -274,37 +249,31 @@ const sx = stylex.create({
 	bgBg: {
 			backgroundColor: "var(--bg)"
 	},
-	focusRing: {
-			":focus-visible": {
-					outline: "2px solid var(--accent-ink)",
-					outlineOffset: "2px"
-			}
-	},
 	minH11: {
-			minHeight: "44px"
+			minHeight: "calc(4px * 11)"
 	},
 	border0: {
 			borderStyle: "solid",
-			borderWidth: "0"
+			borderWidth: "0px"
 	},
 	py2: {
-			paddingBlock: "8px"
+			paddingBlock: "calc(4px * 2)"
 	},
 	py3: {
-			paddingBlock: "12px"
+			paddingBlock: "calc(4px * 3)"
 	},
 	mb2: {
-			marginBottom: "8px"
+			marginBottom: "calc(4px * 2)"
 	},
 	roundedSm: {
-			borderRadius: "calc(4px * var(--rf))"
-	,
-		cornerShape: "var(--cs)"},
+			borderRadius: "calc(4px * var(--rf))",
+
+		cornerShape: "var(--cs)",},
 	bgYellowSoft: {
 			backgroundColor: "var(--yellow-soft)"
 	},
 	px15: {
-			paddingInline: "6px"
+			paddingInline: "calc(4px * 1.5)"
 	},
 	textYellow: {
 			color: "var(--yellow)"
@@ -313,13 +282,13 @@ const sx = stylex.create({
 			lineHeight: "var(--leading-relaxed)"
 	},
 	p3: {
-			padding: "12px"
+			padding: "calc(4px * 3)"
 	},
 	flexWrap: {
 			flexWrap: "wrap"
 	},
 	gap3: {
-			gap: "12px"
+			gap: "calc(4px * 3)"
 	},
 	mr1: {
 			marginRight: "4px"
@@ -333,330 +302,85 @@ const sx = stylex.create({
 	py6px: {
 			paddingBlock: "6px"
 	},
-
-	borderL3px: {
-		"borderLeftStyle": "var(--tw-border-style)",
-		"borderLeftWidth": "3px"
-	},
-	borderLineStrong: {
-		"borderColor": "var(--border-strong)"
-	},
-	borderLAccent: {
-		"borderLeftColor": "var(--accent)"
-	},
-	py9px: {
-		"paddingBlock": "9px"
-	},
-	transitionTransform: {
-		"transitionProperty": "transform,translate,scale,rotate",
-		"transitionTimingFunction": "var(--tw-ease,var(--ease))",
-		"transitionDuration": "var(--tw-duration,var(--dur-micro))"
-	},
-	p3px: {
-		"padding": "3px"
-	},
-	hoverBgHover: {
-		"@media (hover: hover)": {
-			":hover": {
-				"backgroundColor": "var(--hover)"
-			}
-		}
-	},
-	hoverTextFg: {
-		"@media (hover: hover)": {
-			":hover": {
-				"color": "var(--text)"
-			}
-		}
-	},
-	phonePointerEventsAuto: {
-		"@media (max-width: 720px)": {
-			"pointerEvents": "auto"
-		}
-	},
-	phoneOpacity100: {
-		"@media (max-width: 720px)": {
-			"opacity": "1"
-		}
-	},
-	phoneHidden: {
-		"@media (max-width: 720px)": {
-			"display": "none"
-		}
-	},
-	right2: {
-		"right": "8px"
-	},
-	p05: {
-		"padding": "2px"
-	},
-	gap5px: {
-		"gap": "5px"
-	},
-	pl1: {
-		"paddingLeft": "4px"
-	},
-	selectNone: {
-		"WebkitUserSelect": "none",
-		"userSelect": "none"
-	},
-	beforeSize5px: {
-		"::before": {
-			"content": "var(--tw-content)",
-			"width": "5px",
-			"height": "5px"
-		}
-	},
-	beforeRoundedFull: {
-		"::before": {
-			"content": "var(--tw-content)",
-			"borderRadius": "3.40282e38px"
-		}
-	},
-	beforeBgAccent: {
-		"::before": {
-			"content": "var(--tw-content)",
-			"backgroundColor": "var(--accent)"
-		}
-	},
-	beforeContent: {
-		"::before": {
-			"--tw-content": "\"\"",
-			"content": "var(--tw-content)"
-		}
-	},
-	rotate180: {
-		"rotate": "180deg"
-	},
-	opacity80: {
-		"opacity": ".8"
-	},
-	borderAccent: {
-		"borderColor": "var(--accent)"
-	},
-	p25: {
-		"padding": "10px"
-	},
-
-	rotate90: {
-		"rotate": "90deg"
-	},
-	cursorDefault: {
-		"cursor": "default"
-	},
-	hoverTextRed: {
-		"@media (hover: hover)": {
-			":hover": {
-				"color": "var(--red)"
-			}
-		}
-	},
-	invisible: {
-		"visibility": "hidden"
-	},
-
-	mx2: {
-		"marginInline": "8px"
-	},
-	my15: {
-		"marginBlock": "6px"
-	},
-	bgPanel: {
-		"backgroundColor": "var(--bg-panel)"
-	},
-	isolate: {
-		"isolation": "isolate"
-	},
-	maxWFull: {
-		"maxWidth": "100%"
-	},
-	overflowClip: {
-		"overflow": "clip"
-	},
-	roundedLg: {
-		"borderRadius": "calc(14px * var(--rf))"
-	,
-		cornerShape: "var(--cs)"},
-	relative: {
-		"position": "relative"
-	},
-	minH9: {
-		"minHeight": "36px"
-	},
-	px2: {
-		"paddingInline": "8px"
-	},
-	phoneMinH11: {
-		"@media (max-width: 720px)": {
-			"minHeight": "44px"
-		}
-	},
-	phonePx25: {
-		"@media (max-width: 720px)": {
-			"paddingInline": "10px"
-		}
-	},
-	sticky: {
-		"position": "sticky"
-	},
-	topVarReviewFileHeaderTop0px: {
-		"top": "var(--review-file-header-top,0px)"
-	},
-	z6: {
-		"zIndex": "6"
-	},
-	shadowInset0001pxVarBorderInset01px0VarDivider: {
-		"--tw-shadow": "inset 0 0 0 1px var(--tw-shadow-color,var(--border)), inset 0 -1px 0 var(--tw-shadow-color,var(--divider))",
-		"boxShadow": "var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow)"
-	},
-	selfStretch: {
-		"alignSelf": "stretch"
-	},
-	p0: {
-		"padding": "0"
-	},
-	transitionColorBackgroundOpacity: {
-		"transitionProperty": "color,background,opacity",
-		"transitionTimingFunction": "var(--tw-ease,var(--ease))",
-		"transitionDuration": "var(--tw-duration,var(--dur-micro))"
-	},
-	opacity0: {
-		"opacity": "0"
-	},
-	focusVisiblePointerEventsAuto: {
-		":focusVisible": {
-			"pointerEvents": "auto"
-		}
-	},
-	focusVisibleOpacity100: {
-		":focusVisible": {
-			"opacity": "1"
-		}
-	},
-	beforeTextMeta: {
-		"::before": {
-			"content": "var(--tw-content)",
-			"fontSize": "var(--type-meta)",
-			"fontWeight": "var(--tw-font-weight,var(--font-weight-normal))"
-		}
-	},
-	shadowNone: {
-		"--tw-shadow": "0 0 transparent",
-		"boxShadow": "var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow)"
-	},
-	top12: {
-		"top": "50%"
-	},
-	TranslateY12: {
-		"--tw-translate-y": "calc(calc(1 / 2 * 100%) * -1)",
-		"translate": "var(--tw-translate-x) var(--tw-translate-y)"
-	},
-	pointerEventsAuto: {
-		"pointerEvents": "auto"
-	},
-	opacity100: {
-		"opacity": "1"
-	},
-	z0: {
-		"zIndex": "0"
-	},
-	mrAuto: {
-		"marginRight": "auto"
-	},
-	Max540pxHidden: {
-		"display": "none"
-	},
-	tabularNums: {
-		"--tw-numeric-spacing": "tabular-nums",
-		"fontVariantNumeric": "var(--tw-ordinal,) var(--tw-slashed-zero,) var(--tw-numeric-figure,) var(--tw-numeric-spacing,) var(--tw-numeric-fraction,)"
-	},
-	m0: {
-		"margin": "0"
-	},
-	maxWMin480px100: {
-		"maxWidth": "min(480px,100%)"
-	},
-	flex01Auto: {
-		"flex": "0 auto"
-	},
-	block: {
-		"display": "block"
-	},
-	maxH360px: {
-		"maxHeight": "360px"
-	},
-	bgRepeatingConicGradientRgba128128128018025Transparent050: {
-		"backgroundImage": "repeating-conic-gradient(color-mix(in srgb, var(--neutral-mid) 18%, transparent) 0% 25%,transparent 0% 50%)"
-	},
-	bgLength16px16px: {
-		"backgroundSize": "16px 16px"
-	},
-	mt1: {
-		"marginTop": "4px"
-	},
-	resizeY: {
-		"resize": "vertical"
-	},
-	outlineNone: {
-		"--tw-outline-style": "none",
-		"outlineStyle": "none"
-	},
-	focusBorderAccent: {
-		":focus": {
-			"borderColor": "var(--accent)"
-		}
-	},
 });
 
 /* The +/− counts. DiffPanel's summary strip carries the same pair, and the two
    must read alike. */
-const DIFF_ADD = mergeStylexClassName("", sx.fontSemibold, sx.textGreen);
-const DIFF_DEL = mergeStylexClassName("", sx.fontSemibold, sx.textRed);
+const DIFF_ADD = utilityClassName("font-semibold text-green");
+const DIFF_DEL = utilityClassName("font-semibold text-red");
 
 /* One collapsible file. The header is the hover group for the edit and discard
    actions revealed inside editable worktree diffs. */
 const FILE_ROW =
-  mergeStylexClassName("", sx.isolate, sx.minW0, sx.maxWFull, sx.overflowClip, sx.roundedLg, sx.border, sx.borderLine, sx.bgBg);
+  utilityClassName("isolate min-w-0 max-w-full overflow-clip rounded-lg border border-line bg-bg");
 const FILE_HEADER =
-  mergeStylexClassName("group", sx.relative, sx.flex, sx.minH9, sx.wFull, sx.minW0, sx.itemsCenter, sx.gap15, sx.overflowClip, sx.px2, sx.textLeft, sx.textFg, sx.hoverBgHover, sx.phoneMinH11, sx.phonePx25);
-const FILE_BODY = mergeStylexClassName("", sx.relative, sx.z0, sx.maxWFull, sx.overflowClip);
+  "group relative flex min-h-9 w-full min-w-0 items-center gap-1.5 overflow-clip px-2 text-left text-fg hover:bg-hover phone:min-h-11 phone:px-2.5";
+// Clip the scrolling diff at its own lower corners. The parent keeps sticky
+// headers working with `overflow-clip`, but a positioned body needs to own the
+// bottom radius so its painted code surface can never square off the file row.
+const FILE_BODY = utilityClassName("relative z-0 max-w-full overflow-clip rounded-b-lg");
+// The outer row owns the rounded frame. The square sticky layer masks code
+// below the header's curved corners with the surrounding surface, while the
+// inner surface draws the actual rounded top bar. Overlap the scroll edge by a
+// pixel so code cannot peek above either layer.
 const STICKY_FILE_HEADER =
-  mergeStylexClassName("data-[stuck]:shadow-[inset_0_-1px_0_var(--divider)]", sx.sticky, sx.topVarReviewFileHeaderTop0px, sx.z6, sx.roundedTLg, sx.bgBg);
+  "sticky top-[calc(var(--review-file-header-top,0px)-1px)] z-[6] bg-surface";
+const STICKY_FILE_HEADER_SURFACE =
+  "rounded-t-lg bg-bg group-data-[stuck]:shadow-[inset_0_0_0_1px_var(--border),inset_0_-1px_0_var(--divider)]";
 const FILE_TOGGLE =
-  mergeStylexClassName("", sx.focusRing, sx.flex, sx.minW0, sx.cursorPointer, sx.itemsCenter, sx.gap2, sx.selfStretch, sx.borderNone, sx.bgTransparent, sx.p0, sx.textLeft, sx.textFg);
+  "focus-ring flex min-w-0 cursor-pointer items-center gap-2 self-stretch border-none bg-transparent p-0 text-left text-fg";
 
 /* Revealed on row hover but always occupying its space (opacity, not display),
    so nothing can shift under the pointer. Focus reveals it too — hover cannot
    be the only way to reach a control. */
 const REVEAL =
-  mergeStylexClassName("group-hover:pointer-events-auto group-hover:opacity-100", sx.pointerEventsNone, sx.opacity0, sx.focusVisiblePointerEventsAuto, sx.focusVisibleOpacity100);
-const REVEALED = mergeStylexClassName("", sx.pointerEventsAuto, sx.opacity100);
+  "pointer-events-none opacity-0 group-hover:pointer-events-auto group-hover:opacity-100 focus-visible:pointer-events-auto focus-visible:opacity-100";
+const REVEALED = "pointer-events-auto opacity-100";
 /* The edit action sits directly after the filename and always reserves its
    space, so revealing it cannot shift the rest of the row. */
 const INLINE_ACTION =
-  mergeStylexClassName("", sx.inlineFlex, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.roundedMd, sx.borderNone, sx.bgTransparent, sx.transitionColorBackgroundOpacity);
+  "inline-flex shrink-0 items-center justify-center rounded-md border-none bg-transparent transition-[color,background,opacity]";
 /* The discard action overlays the stats at the row's trailing edge. No cursor
    here on purpose: the in-flight state wants `cursor-default`, and two cursor
    utilities on one element resolve by Tailwind's output order, not by which
    was written last. */
 const ROW_ACTION =
-  mergeStylexClassName("", sx.absolute, sx.top12, sx.inlineFlex, sx.TranslateY12, sx.itemsCenter, sx.justifyCenter, sx.roundedMd, sx.borderNone, sx.bgTransparent, sx.transitionColorBackgroundOpacity);
+  "absolute top-1/2 inline-flex -translate-y-1/2 items-center justify-center rounded-md border-none bg-transparent transition-[color,background,opacity]";
 
 /* The comment card and the pending-comment card share their surface. */
-const CARD = mergeStylexClassName("", sx.mx2, sx.my15, sx.flex, sx.flexCol, sx.roundedMd, sx.bgPanel, sx.fontSans);
+const CARD = "mx-2 my-1.5 flex flex-col rounded-md bg-panel font-sans";
 const CARD_INPUT =
-  mergeStylexClassName("", sx.resizeY, sx.roundedMd, sx.border, sx.borderLineStrong, sx.bgRaised, sx.px25, sx.py2, sx.fontSans, typography.label, sx.leading145, sx.textFg, sx.outlineNone, sx.focusBorderAccent);
+  utilityClassName("resize-y rounded-md border border-line-strong bg-raised px-2.5 py-2 font-sans text-label leading-[1.45] text-fg outline-none focus:border-accent");
 
 /* The "Organizing files…" / "AI organized" note, left of the toolbar's actions. */
 const GROUPS_NOTE =
-  mergeStylexClassName("", sx.mrAuto, sx.flex, sx.itemsCenter, sx.gap7px, typography.label, sx.textFaint, sx.phoneHidden, sx.Max540pxHidden);
+  utilityClassName("mr-auto flex items-center gap-[7px] text-label text-faint phone:hidden @max-[540px]:hidden");
 
 /* A changed image, shown as the actual picture. Checkerboard backing so
    transparency reads as transparency rather than as white. */
-const IMAGE_CELL = mergeStylexClassName("", sx.m0, sx.maxWMin480px100, sx.minW0, sx.flex01Auto);
+const IMAGE_CELL = utilityClassName("m-0 max-w-[min(480px,100%)] min-w-0 flex-[0_1_auto]");
 const IMAGE =
-  mergeStylexClassName("", sx.block, sx.maxH360px, sx.maxWFull, sx.roundedMd, sx.border, sx.borderLine, sx.bgRepeatingConicGradientRgba128128128018025Transparent050, sx.bgLength16px16px);
-const IMAGE_CAPTION = mergeStylexClassName("", sx.mt1, typography.meta, sx.textDim);
+  utilityClassName("block max-h-[360px] max-w-full rounded-md border border-line bg-[repeating-conic-gradient(rgba(128,128,128,0.18)_0%_25%,transparent_0%_50%)] bg-[length:16px_16px]");
+const IMAGE_CAPTION = utilityClassName("mt-1 text-meta text-dim");
+
+class CommentDraftText {
+  private value = "";
+  read() {
+    return this.value;
+  }
+  write(value: string) {
+    this.value = value;
+  }
+  clear() {
+    this.value = "";
+  }
+}
+
+let editModulePromise: Promise<typeof import("@pierre/diffs/edit")> | null = null;
+function loadEditModule() {
+  if (!editModulePromise) editModulePromise = import("@pierre/diffs/edit");
+  return editModulePromise;
+}
 
 export interface CommentTarget {
   path: string;
@@ -1090,9 +814,7 @@ toast(error?.message || "Couldn’t copy file contents");
   const editorRef = useRef<Editor<Meta> | null>(null);
 
   const startEdit = async (file: FileDiffMetadata, index: number) => {
-    if (!editModuleRef.current) {
-      editModuleRef.current = await import("@pierre/diffs/edit");
-    }
+    if (!editModuleRef.current) editModuleRef.current = await loadEditModule();
     setEditError(null);
     setEditingPath(file.name);
     setExpanded((prev) => new Set(prev).add(index));
@@ -1147,10 +869,12 @@ setSavingEdit(false);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [confirmation, setConfirmation] = useState<string | null>(null);
   const draftRef = useRef<Draft | null>(null);
-  draftRef.current = draft;
-  // Draft text is held in a ref so it survives the form remounting when the
-  // selection range is adjusted, without re-rendering the diff on each keystroke.
-  const draftTextRef = useRef("");
+  useLayoutEffect(() => {
+    draftRef.current = draft;
+  });
+  // Kept outside React render state so text survives a range-change remount
+  // without making the full diff tree rerender on every textarea keystroke.
+  const [draftText] = useState(() => new CommentDraftText());
 
   const handleSelect = (fileIndex: number, path: string, range: SelectedLineRange | null) => {
     if (!range) return; // keep the draft on stray deselects; Cancel closes it
@@ -1159,7 +883,7 @@ setSavingEdit(false);
     };
 
   const closeDraft = () => {
-    draftTextRef.current = "";
+    draftText.clear();
     setDraft(null);
   };
 
@@ -1177,7 +901,7 @@ setSavingEdit(false);
         },
         body,
       );
-      draftTextRef.current = "";
+      draftText.clear();
       setDraft(null);
       // In review mode the pending card is the confirmation; skip the toast.
       if (!reviewMode) {
@@ -1193,7 +917,7 @@ setSavingEdit(false);
           : `lines ${comment.startLine}–${comment.endLine}`;
       return (
         <div
-          className={[CARD, mergeStylexClassName("", sx.gap15, sx.border, sx.borderL3px, sx.borderLineStrong, sx.borderLAccent, sx.px25, sx.py9px)].filter(Boolean).join(" ")}
+          className={utilityClassName(`${CARD} gap-1.5 border border-l-[3px] border-line-strong border-l-accent px-2.5 py-[9px]`)}
           onClick={(e) => e.stopPropagation()}
         >
           <div {...stylex.props(sx.flex, sx.itemsCenter, sx.justifyBetween, sx.gap2)}>
@@ -1202,7 +926,8 @@ setSavingEdit(false);
               {comment.side === "deletions" ? " (removed)" : ""}
             </span>
             {onRemovePending && (
-              <button {...mergeStylexProps("", sx.hoverTextRed, sx.cursorPointer, sx.borderNone, sx.bgTransparent, sx.px1, sx.py05, sx.textFaint, typography.meta)}
+              <button
+                {...mergeStylexProps("hover:text-red", sx.cursorPointer, sx.borderNone, sx.bgTransparent, sx.px1, sx.py05, sx.textFaint, typography.meta)}
                 onClick={() => onRemovePending(comment.id)}
                 title="Remove this pending comment"
               >
@@ -1237,7 +962,7 @@ setSavingEdit(false);
           disabledHint={disabledHint}
           placeholder={placeholder}
           submitLabel={submitLabel}
-          textRef={draftTextRef}
+          textStore={draftText}
           onCancel={closeDraft}
           onSubmit={submitDraft}
         />
@@ -1338,17 +1063,15 @@ const pendingByFile = m;
         data-diff-file={file.name}
       >
         <div
-          // `diff-file-header` is a DOM hook, not styling — no rule reaches it
-          // any more: PrPanel's Files card finds this row by that class to
-          // scroll to and expand a file (`el.querySelector(".diff-file-header")`).
-          className={`${FILE_HEADER} ${stickyFileHeaders ? STICKY_FILE_HEADER : mergeStylexClassName("", sx.bgTransparent)}`}
+          className={`group ${stickyFileHeaders ? STICKY_FILE_HEADER : ""}`}
           data-sticky-edge={stickyFileHeaders ? "" : undefined}
         >
-          {stickyFileHeaders && (
-            <span
-              aria-hidden="true" {...mergeStylexProps("group-data-[stuck]:block", sx.shadowInset0001pxVarBorderInset01px0VarDivider, sx.pointerEventsNone, sx.absolute, sx.inset0, sx.hidden, sx.roundedTLg)}
-            />
-          )}
+          <div
+            // `diff-file-header` is a DOM hook, not styling — no rule reaches it
+            // any more: PrPanel's Files card finds this row by that class to
+            // scroll to and expand a file (`el.querySelector(".diff-file-header")`).
+            className={`${FILE_HEADER} ${stickyFileHeaders ? STICKY_FILE_HEADER_SURFACE : "bg-transparent"}`}
+          >
           <button
             type="button"
             className={`diff-file-header ${FILE_TOGGLE}`}
@@ -1360,7 +1083,7 @@ const pendingByFile = m;
           >
             <IconChevronRight
               size={16}
-              className={[mergeStylexClassName("", sx.shrink0, sx.textFaint, sx.transitionTransform), isOpen ? mergeStylexClassName("", sx.rotate90) : ""].filter(Boolean).join(" ")}
+              className={utilityClassName(`shrink-0 text-faint transition-transform ${isOpen ? "rotate-90" : ""}`)}
             />
             <span {...stylex.props(sx.flex, sx.size5, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.textDim)}>
               {fileExt(base) ? (
@@ -1384,7 +1107,7 @@ const pendingByFile = m;
             <Tooltip label="Edit file in place">
               <button
                 type="button"
-                className={[INLINE_ACTION, REVEAL, mergeStylexClassName("", sx.cursorPointer, sx.p3px, sx.textFaint, sx.hoverBgHover, sx.hoverTextFg, sx.phonePointerEventsAuto, sx.phoneOpacity100)].filter(Boolean).join(" ")}
+                className={utilityClassName(`${INLINE_ACTION} ${REVEAL} cursor-pointer p-[3px] text-faint hover:bg-hover hover:text-fg phone:pointer-events-auto phone:opacity-100`)}
                 aria-label="Edit this file in place"
                 onClick={(e) => {
                   e.stopPropagation();
@@ -1399,7 +1122,7 @@ const pendingByFile = m;
             <Button
               variant="ghost"
               size="sm"
-              className={[mergeStylexClassName("", sx.phoneHidden), copied === file.name ? mergeStylexClassName("", sx.textGreen) : mergeStylexClassName("", sx.textFaint)].filter(Boolean).join(" ")}
+              className={utilityClassName(`phone:hidden ${copied === file.name ? "text-green" : "text-faint"}`)}
               aria-label={`Copy path ${file.name}`}
               icon={
                 copied === file.name ? (
@@ -1412,7 +1135,7 @@ const pendingByFile = m;
             />
           </Tooltip>
           {pend.length > 0 && (
-            <span {...mergeStylexProps("before:content-['💬']", sx.beforeTextMeta, sx.inlineFlex, sx.shrink0, sx.itemsCenter, sx.gap3px, sx.fontSans, sx.textFaint, typography.meta)}>
+            <span {...mergeStylexProps("before:text-meta before:content-['💬']", sx.inlineFlex, sx.shrink0, sx.itemsCenter, sx.gap3px, sx.fontSans, sx.textFaint, typography.meta)} >
               {pend.length}
             </span>
           )}
@@ -1437,7 +1160,8 @@ const pendingByFile = m;
               </Button>
               <Button
                 variant="primary"
-                size="sm" {...mergeStylexProps("", sx.shadowNone, sx.minH0, sx.px25, sx.py3px, sx.textXs, sx.fontMedium)}
+                size="sm"
+                className={mergeStylexOverrideClassName("shadow-none", sx.minH0, sx.px25, sx.py3px, sx.textXs, sx.fontMedium)}
                 onClick={saveEdit}
                 disabled={savingEdit}
               >
@@ -1458,11 +1182,13 @@ const pendingByFile = m;
               <button
                 type="button"
                 data-discard
-                className={[ROW_ACTION, mergeStylexClassName("", sx.right2, sx.p05), discarding === file.name
-                    ? [REVEALED, mergeStylexClassName("", sx.cursorDefault, sx.textFaint)].filter(Boolean).join(" ")
+                className={`${ROW_ACTION} right-2 p-0.5 ${
+                  discarding === file.name
+                    ? `${REVEALED} cursor-default text-faint`
                     : armed === file.name
-                      ? [REVEALED, mergeStylexClassName("", sx.cursorPointer, sx.textRed)].filter(Boolean).join(" ")
-                      : [REVEAL, mergeStylexClassName("", sx.cursorPointer, sx.textFaint, sx.hoverBgHover, sx.hoverTextRed)].filter(Boolean).join(" ")].filter(Boolean).join(" ")}
+                      ? `${REVEALED} cursor-pointer text-red`
+                      : `${REVEAL} cursor-pointer text-faint hover:bg-hover hover:text-red`
+                }`}
                 disabled={discarding === file.name}
                 aria-label="Discard this file's changes (reset to base)"
                 onClick={(e) => {
@@ -1477,9 +1203,13 @@ const pendingByFile = m;
           {/* Change counts stay pinned right, before the review state and menu. */}
           {showFileStats && (
             <span
-              className={[mergeStylexClassName("", sx.mlAuto, sx.flex, sx.shrink0, sx.gap15, typography.meta), isEditing ? mergeStylexClassName("", sx.hidden) : "", onDiscard
+              className={utilityClassName(`ml-auto flex shrink-0 gap-1.5 text-meta ${
+                isEditing ? "hidden" : ""
+              } ${
+                onDiscard
                   ? "group-hover:invisible [[data-discard]:focus-visible~&]:invisible"
-                  : "", armed === file.name || discarding === file.name ? mergeStylexClassName("", sx.invisible) : ""].filter(Boolean).join(" ")}
+                  : ""
+              } ${armed === file.name || discarding === file.name ? "invisible" : ""}`)}
             >
               {s.add > 0 && <span className={DIFF_ADD}>+{s.add}</span>}
               {s.del > 0 && <span className={DIFF_DEL}>−{s.del}</span>}
@@ -1487,7 +1217,9 @@ const pendingByFile = m;
           )}
           {viewedEnabled && (
             <label
-              className={[mergeStylexClassName("", sx.inlineFlex, sx.shrink0, sx.cursorPointer, sx.itemsCenter, sx.gap5px, sx.pl1, sx.fontSans, typography.label, sx.selectNone), isViewed ? mergeStylexClassName("", sx.textDim) : mergeStylexClassName("", sx.textFaint)].filter(Boolean).join(" ")}
+              className={utilityClassName(`inline-flex shrink-0 cursor-pointer items-center gap-[5px] pl-1 font-sans text-label select-none ${
+                isViewed ? "text-dim" : "text-faint"
+              }`)}
               onClick={(e) => e.stopPropagation()}
             >
               <Checkbox
@@ -1560,6 +1292,7 @@ const pendingByFile = m;
               </Menu.Popup>
             </Menu.Root>
           )}
+          </div>
         </div>
         {(isOpen || resolved.length > 0) && (
           <div className={FILE_BODY}>
@@ -1612,13 +1345,14 @@ const pendingByFile = m;
       )}
       {showGroupsStatus && !groupsLoading && groupedFiles && (
         <span
-          className={[GROUPS_NOTE, mergeStylexClassName("", sx.beforeSize5px, sx.beforeRoundedFull, sx.beforeBgAccent, sx.beforeContent)].filter(Boolean).join(" ")}
+          className={utilityClassName(`${GROUPS_NOTE} before:size-[5px] before:rounded-full before:bg-accent before:content-['']`)}
         >
           AI organized
         </span>
       )}
       {viewedEnabled && showViewedProgress && (
-        <span {...mergeStylexProps("", sx.tabularNums, sx.flex, sx.itemsCenter, sx.gap1, sx.textFaint, typography.meta)}
+        <span
+          {...mergeStylexProps("tabular-nums", sx.flex, sx.itemsCenter, sx.gap1, sx.textFaint, typography.meta)}
           aria-label={`${viewedCount} of ${files.length} files viewed`}
         >
           <IconEye size={20} />
@@ -1633,7 +1367,7 @@ const pendingByFile = m;
             icon={
               <IconArrowUpToLine
                 size={20}
-                className={allOpen ? undefined : mergeStylexClassName("", sx.rotate180)}
+                className={allOpen ? undefined : utilityClassName("rotate-180")}
               />
             }
             aria-label={allOpen ? "Collapse all" : "Expand all"}
@@ -1647,7 +1381,7 @@ const pendingByFile = m;
   return (
     <div ref={setStickyRoot} {...stylex.props(sx.flex, sx.flexCol, sx.gap25)}>
       {confirmation && (
-        <div {...stylex.props(sx.roundedMd, sx.bgGreenSoft, sx.px3, sx.py15, sx.fontSemibold, sx.textGreen, typography.label)}>
+        <div {...mergeStylexProps("text-green", sx.roundedMd, sx.bgGreenSoft, sx.px3, sx.py15, sx.fontSemibold, typography.label)} >
           {confirmation}
         </div>
       )}
@@ -1670,11 +1404,13 @@ const pendingByFile = m;
             return (
               // Group headers are deliberately quieter than file rows: they
               // give scan structure without competing with filenames.
-              <section {...mergeStylexProps("[section+&]:mt-1", sx.flex, sx.flexCol, sx.gap7px)}
+              <section
+                {...mergeStylexProps("[section+&]:mt-1", sx.flex, sx.flexCol, sx.gap7px)}
                 key={groupKey}
               >
                 <button
-                  type="button" {...mergeStylexProps("", sx.hoverTextFg, sx.flex, sx.wFull, sx.cursorPointer, sx.itemsCenter, sx.gap7px, sx.borderNone, sx.bgTransparent, sx.px3px, sx.py1, sx.textLeft, sx.fontSans, sx.textDim)}
+                  type="button"
+                  {...mergeStylexProps("hover:text-fg", sx.flex, sx.wFull, sx.cursorPointer, sx.itemsCenter, sx.gap7px, sx.borderNone, sx.bgTransparent, sx.px3px, sx.py1, sx.textLeft, sx.fontSans, sx.textDim)}
                   data-diff-group-files={JSON.stringify(
                     group.indices.map((index) => files[index].name),
                   )}
@@ -1690,7 +1426,7 @@ const pendingByFile = m;
                 >
                   <IconChevronRight
                     size={16}
-                    className={[mergeStylexClassName("", sx.shrink0, sx.textFaint, sx.transitionTransform), collapsed ? "" : mergeStylexClassName("", sx.rotate90)].filter(Boolean).join(" ")}
+                    className={utilityClassName(`shrink-0 text-faint transition-transform ${collapsed ? "" : "rotate-90"}`)}
                   />
                   <span {...stylex.props(sx.fontSemibold, typography.label)}>
                     {group.title}
@@ -1752,7 +1488,8 @@ function ResolvedReviewThread({
   return (
     <article {...stylex.props(sx.overflowHidden, sx.roundedMd, sx.border, sx.borderDividerSoft, sx.bgBg)}>
       <button
-        type="button" {...mergeStylexProps("", sx.hoverBgHover, sx.focusRing, sx.flex, sx.minH11, sx.wFull, sx.cursorPointer, sx.itemsCenter, sx.gap2, sx.border0, sx.bgTransparent, sx.px3, sx.py2, sx.textLeft, sx.textDim, typography.label)}
+        type="button"
+        {...mergeStylexProps("focus-ring hover:bg-hover", sx.flex, sx.minH11, sx.wFull, sx.cursorPointer, sx.itemsCenter, sx.gap2, sx.border0, sx.bgTransparent, sx.px3, sx.py2, sx.textLeft, sx.textDim, typography.label)}
         aria-expanded={open}
         onClick={() => setOpen((value) => !value)}
       >
@@ -1762,14 +1499,15 @@ function ResolvedReviewThread({
         </span>
         <IconChevronRight
           size={16}
-          className={[mergeStylexClassName("", sx.shrink0, sx.textFaint, sx.transitionTransform), open ? mergeStylexClassName("", sx.rotate90) : ""].filter(Boolean).join(" ")}
+          className={utilityClassName(`shrink-0 text-faint transition-transform ${open ? "rotate-90" : ""}`)}
         />
       </button>
       {open && (
         <div {...stylex.props(sx.borderT, sx.borderDividerSoft)}>
           {comments.map((comment, index) => (
             <div
-              key={`${thread.id}-${index}`} {...mergeStylexProps("[&+&]:border-t [&+&]:border-divider-soft", sx.px3, sx.py3)}
+              key={`${thread.id}-${index}`}
+              {...mergeStylexProps("[&+&]:border-t [&+&]:border-divider-soft", sx.px3, sx.py3)}
             >
               <div {...stylex.props(sx.mb2, sx.flex, sx.itemsCenter, sx.gap2)}>
                 <UserAvatar
@@ -1786,7 +1524,8 @@ function ResolvedReviewThread({
                   </span>
                 )}
               </div>
-              <div {...mergeStylexProps("markdown", sx.leadingRelaxed, sx.textDim, typography.label)}
+              <div
+                {...mergeStylexProps("markdown", sx.leadingRelaxed, sx.textDim, typography.label)}
                 dangerouslySetInnerHTML={{
                   __html: renderPrCommentMarkdown(comment.body, { repo }),
                 }}
@@ -1826,7 +1565,7 @@ function ImageDiffRow({
       {showOld && (
         <figure className={IMAGE_CELL}>
           <img
-            className={[IMAGE, mergeStylexClassName("", sx.opacity80)].filter(Boolean).join(" ")}
+            className={`${IMAGE} opacity-80`}
             src={srcs!.oldSrc}
             alt=""
             loading="lazy"
@@ -1848,7 +1587,7 @@ function ImageDiffRow({
             onError={() => setNewErr(true)}
           />
           <figcaption className={IMAGE_CAPTION}>
-            <span {...stylex.props(sx.mr1, sx.textGreen)}>+</span>
+            <span {...mergeStylexProps("text-green", sx.mr1)} >+</span>
             {file.type === "new" ? "Added" : "After"}
           </figcaption>
         </figure>
@@ -1858,9 +1597,9 @@ function ImageDiffRow({
 }
 
 /**
- * Inline comment form with its OWN text/sending/error state, so keystrokes
- * re-render just this form — not the parent diff. Seeds from `textRef` (which
- * the parent keeps) so text survives the form remounting on range changes.
+ * Inline comment form with its own React state, so keystrokes stay local. A
+ * tiny non-rendering store preserves text if a selected-range change remounts
+ * the form.
  */
 const CommentForm = function CommentForm({
   targetLabel,
@@ -1868,7 +1607,7 @@ const CommentForm = function CommentForm({
   disabledHint,
   placeholder,
   submitLabel,
-  textRef,
+  textStore,
   onCancel,
   onSubmit,
 }: {
@@ -1877,11 +1616,11 @@ const CommentForm = function CommentForm({
   disabledHint?: string;
   placeholder: string;
   submitLabel: string;
-  textRef: React.MutableRefObject<string>;
+  textStore: CommentDraftText;
   onCancel: () => void;
   onSubmit: (body: string) => Promise<void>;
 }) {
-  const [text, setText] = useState(textRef.current);
+  const [text, setText] = useState(() => textStore.read());
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -1890,18 +1629,16 @@ const CommentForm = function CommentForm({
     if (!body || sending) return;
     setSending(true);
     setError(null);
-    await (async () => {
-await onSubmit(body);
-      // Success unmounts this form (parent clears the draft) — don't touch state.
-})().catch(async (e: any) => {
-setError(e.message || "Failed to submit");
+    await onSubmit(body).catch((error: any) => {
+      setError(error.message || "Failed to submit");
       setSending(false);
-});
+    });
+    // Success unmounts this form (parent clears the draft), so do not touch state.
   }
 
   return (
     <div
-      className={[CARD, mergeStylexClassName("", sx.gap2, sx.border, sx.borderAccent, sx.p25)].filter(Boolean).join(" ")}
+      className={utilityClassName(`${CARD} gap-2 border border-accent p-2.5`)}
       onClick={(e) => e.stopPropagation()}
     >
       <div {...stylex.props(sx.textFaint, typography.meta)}>{targetLabel}</div>
@@ -1920,7 +1657,7 @@ setError(e.message || "Failed to submit");
             value={text}
             onChange={(e) => {
               setText(e.target.value);
-              textRef.current = e.target.value;
+              textStore.write(e.target.value);
             }}
             onKeyDown={(e) => {
               if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
@@ -1942,7 +1679,8 @@ setError(e.message || "Failed to submit");
             </Button>
             <Button
               variant="primary"
-              size="sm" {...mergeStylexProps("", sx.shadowNone, sx.minH0, sx.px14px, sx.py6px, sx.fontMedium, typography.supporting)}
+              size="sm"
+              className={mergeStylexOverrideClassName("shadow-none", sx.minH0, sx.px14px, sx.py6px, sx.fontMedium, typography.supporting)}
               onClick={submit}
               disabled={sending || !text.trim()}
             >

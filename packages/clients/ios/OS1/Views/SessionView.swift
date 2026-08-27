@@ -850,6 +850,15 @@ struct SessionView: View {
                    openPanel.isAvailable {
                     openPanel(.changes(sessionId: viewModel.session.id))
                 }
+                if ProcessInfo.processInfo.environment["OS1_SHOW_SLACK_RECEIPT"] == "1" {
+                    viewModel.resolveSlackComposer(SlackComposeReceipt(
+                        requestId: "screenshot-slack-receipt",
+                        status: .sent,
+                        channel: .init(id: "C123", name: "shipping"),
+                        permalink: "https://slack.com",
+                        ts: "1700000000.000000"
+                    ))
+                }
                 #endif
             }
             .onDisappear {
@@ -1328,9 +1337,13 @@ struct SessionView: View {
                 .transcriptTail(true)
         }
         if let receipt = viewModel.slackComposeReceipt {
-            SlackComposeReceiptRow(receipt: receipt)
-                .id("slack-receipt-\(receipt.id)")
-                .transcriptTail(true)
+            SlackComposeReceiptRow(
+                receipt: receipt,
+                isUndoing: viewModel.undoingSlackComposeReceiptId == receipt.id,
+                onUndo: { await viewModel.undoSlackComposeReceipt() }
+            )
+            .id("slack-receipt-\(receipt.id)")
+            .transcriptTail(true)
         }
         // A small child at the end keeps a single giant lazy transcript block
         // realized when the reader lands at the bottom. It is not the scroll
@@ -1519,6 +1532,8 @@ private extension View {
 
 private struct SlackComposeReceiptRow: View {
     let receipt: SlackComposeReceipt
+    let isUndoing: Bool
+    let onUndo: () async -> Void
 
     var body: some View {
         HStack(spacing: 6) {
@@ -1538,6 +1553,15 @@ private struct SlackComposeReceiptRow: View {
                     Link("Open in Slack", destination: url)
                         .underline()
                 }
+                if receipt.channel != nil, receipt.ts != nil {
+                    Text("·").foregroundStyle(OS1VisualStyle.textFaint)
+                    Button(isUndoing ? "Undoing…" : "Undo") {
+                        Task { await onUndo() }
+                    }
+                    .buttonStyle(.plain)
+                    .underline()
+                    .disabled(isUndoing)
+                }
             } else {
                 Text("Slack message cancelled")
             }
@@ -1545,7 +1569,6 @@ private struct SlackComposeReceiptRow: View {
         .font(.footnote)
         .foregroundStyle(OS1VisualStyle.textDim)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .accessibilityElement(children: .combine)
     }
 }
 

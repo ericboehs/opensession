@@ -23,6 +23,8 @@ on:
 
 permissions:
   contents: write
+  id-token: write
+  attestations: write
 
 jobs:
   artefacts:
@@ -30,7 +32,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.2.2
         with:
           ref: ${{ github.event.inputs.tag || github.ref }}
       - name: Prepare release draft
@@ -63,6 +65,7 @@ jobs:
           version="${TAG#v}"
           out="$RUNNER_TEMP/release"
           mkdir -p "$out/assets"
+          export SOURCE_DATE_EPOCH="$(git show -s --format=%ct HEAD)"
           for target in linux/x64 linux/arm64 darwin/x64 darwin/arm64; do
             os="${target%/*}"; arch="${target#*/}"
             # The default artefact is the compiled single-executable
@@ -74,7 +77,58 @@ jobs:
             cp "$versioned" "$out/assets/"
             cp "$versioned" "$out/assets/opensession-$os-$arch.tar.gz"
           done
+          cd "$out/assets"
+          for asset in *.tar.gz; do
+            hash="$(sha256sum "$asset" | awk '{ print $1 }')"
+            printf '%s  %s\n' "$hash" "$asset" > "$asset.sha256"
+          done
           ls -la "$out/assets"
+      - name: Smoke-test Linux binary
+        env:
+          TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          version="${TAG#v}"
+          root="$RUNNER_TEMP/release-smoke"
+          log="$root/server.log"
+          kernel_log="$root/session-kernel.log"
+          mkdir -p "$root"
+          printf '%s\n' '{"provider":"local","publicIngress":{"enabled":true,"port":43860,"host":"127.0.0.1"}}' > "$root/sandbox.json"
+          binary="$RUNNER_TEMP/release/stage/opensession-$version-linux-x64/opensession"
+          common_env=(
+            OPENSESSION_STATE_DIR="$root/state"
+            OPENSESSION_SANDBOX_CONFIG="$root/sandbox.json"
+            OPENSESSION_SESSION_KERNEL_PORT=43849
+            OPENSESSION_SESSION_KERNEL_TOKEN=release-smoke-token
+          )
+          env "${common_env[@]}" "$binary" session-kernel-service > "$kernel_log" 2>&1 &
+          kernel_pid=$!
+          env "${common_env[@]}" \
+            OPENSESSION_MCP_HTTP_PORT=43852 \
+            HOST=127.0.0.1 \
+            PORT=43850 \
+            OPENSESSION_PUBLIC_URL=http://127.0.0.1:43850 \
+            "$binary" server > "$log" 2>&1 &
+          pid=$!
+          cleanup() {
+            status=$?
+            kill "$pid" "$kernel_pid" 2>/dev/null || true
+            wait "$pid" 2>/dev/null || true
+            wait "$kernel_pid" 2>/dev/null || true
+            if [ "$status" -ne 0 ]; then
+              cat "$kernel_log"
+              cat "$log"
+            fi
+            exit "$status"
+          }
+          trap cleanup EXIT
+          curl --fail --silent --show-error --retry 20 --retry-delay 1 --retry-connrefused \
+            http://127.0.0.1:43850/api/health > "$root/health.json"
+          grep -Fq 'Frontend served from embedded assets' "$log"
+      - name: Attest release archives
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2.4.0
+        with:
+          subject-path: ${{ runner.temp }}/release/assets/*.tar.gz
       - name: Upload release assets
         env:
           GH_TOKEN: ${{ github.token }}

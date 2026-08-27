@@ -39,11 +39,23 @@ import {
 import { writeJsonAtomic } from "./shared/atomic-write";
 import type { UnifiedSession, NativeSessionFile } from "./types";
 import {
+	publicSessionSafety,
+	reconcileAutomaticallyRecoverableSessionSafety,
+} from "./session-safety";
+import {
   sessionDeliveryProjection,
+  sessionDeliveryProjectionCached,
+  quarantineSessionForSafety,
+  releaseSessionQuarantine,
+  sessionGatewayCommand,
   sessionKernel,
   sessionKernelActorActive,
+  sessionQuarantines,
+  sessionRunStateProjections,
   sessionTurn,
 } from "./session-kernel";
+import { withSessionMutationLock } from "./session-mutation-lock";
+import { broadcastToAll } from "./ws-hub";
 
 export const SESSIONS_DIR = OPENSESSION_SESSIONS_DIR;
 
@@ -76,8 +88,8 @@ const sessionsCacheGenerations: Record<SessionArchiveSlice, number> = {
 	exclude: 0,
 	only: 0,
 };
-// The UI polls every 5s and live run changes also arrive over WebSocket. Keep
-// the expensive multi-thousand-file fallback scan out of every poll wave;
+// The UI refreshes on WebSocket invalidations, with a slow fallback poll. Keep
+// the expensive multi-thousand-file fallback scan out of every refresh wave;
 // in-process mutations invalidate this cache immediately.
 const CACHE_TTL = 10_000;
 
@@ -99,6 +111,10 @@ export function invalidateSessionsCache(): void {
 		| Map<string, { expiresAt: number }>
 		| undefined;
 	for (const snapshot of responses?.values() || []) snapshot.expiresAt = 0;
+	// Publish only after every cache layer is stale, so a client reacting
+	// immediately cannot race ahead of the invalidation it was told about.
+	// Older and native clients safely ignore unknown server frames.
+	broadcastToAll({ type: "sessions_invalidated" });
 }
 
 export interface SessionRuntimeSnapshot {
@@ -130,9 +146,18 @@ export function enrichSessionRuntime(
 	snapshot = sessionRuntimeSnapshot(),
 ): UnifiedSession[] {
 	const { runStarts, journalBusy } = snapshot;
+	// Full session lists must not make one compatibility RPC per historical
+	// session. Take the actor client's mirrored projection once; missing rows are
+	// idle. Small detail updates keep the targeted accessor to avoid copying the
+	// whole projection for a single session.
+	const runStateBySession = data.length > 32
+		? new Map(sessionRunStateProjections().map((state) => [state.sessionId, state]))
+		: undefined;
 	// Sessions driven from the web UI run in-process; surface those too
 	for (const s of data) {
-		const rs = getRunState(s.id);
+		const rs = runStateBySession
+			? ((runStateBySession.get(s.id)?.state as RunState | undefined) ?? "idle")
+			: getRunState(s.id);
 		const engineBusy = isAgentEngineBusy(
 			s.claudeSessionId,
 			s.codexThreadId,
@@ -161,7 +186,7 @@ export function enrichSessionRuntime(
 			delete s.runStartedAt;
 		}
 		if (rs !== "idle") s.runState = rs;
-		checkRunStateWedge(s.id, rs, liveEngineBusy);
+		checkRunStateWedge(s.id, rs, liveEngineBusy || recoveryBusy);
 	}
 	return data;
 }
@@ -275,6 +300,18 @@ export async function getCachedSessionsAsync(
 }
 
 /**
+ * Read the durable list projection without attaching live runtime state.
+ * Background maintenance that only needs session metadata must use this path:
+ * enriching every historical row can otherwise monopolize the synchronous
+ * actor compatibility bridge even though the maintenance task itself is async.
+ */
+export async function getSessionListSnapshotAsync(
+	slice: SessionArchiveSlice = "include",
+): Promise<UnifiedSession[]> {
+	return indexedSessions(slice) ?? getAllSessionsAsync(slice);
+}
+
+/**
  * Return the last session snapshot without triggering a synchronous disk scan.
  * Hot-path autocomplete can safely omit optional session suggestions until the
  * normal sessions refresh repopulates this cache.
@@ -307,7 +344,7 @@ export function isRunSettled(sessionId: string): boolean {
 	}
 	// Queue authority lives in the actor. Read its per-session delivery snapshot
 	// directly rather than reaching through queue-state's former global map.
-	if (sessionDeliveryProjection(id).queued.length > 0)
+	if (sessionDeliveryProjectionCached(id).queued.length > 0)
 		return false;
 	return true;
 }
@@ -322,20 +359,28 @@ const WEDGE_AFTER_MS = 3 * 60 * 1000;
 const wedgeSince: Map<string, number> = (g.__runStateWedgeSince ??= new Map());
 const wedgeReported: Set<string> = (g.__runStateWedgeReported ??= new Set());
 
+export function runStateRequiresLiveOwner(state: RunState): boolean {
+	return (
+		state === "preparing" ||
+		state === "starting" ||
+		state === "running" ||
+		state === "interrupted" ||
+		state === "reattaching"
+	);
+}
+
 function checkRunStateWedge(
 	sessionId: string,
 	state: RunState,
-	engineBusy: boolean,
+	ownerBusy: boolean,
 ): void {
-	const fsmActive =
-		state === "running" || state === "starting" || state === "ask_blocked";
-	// ask_blocked idles the engine legitimately (the turn is parked on a
-	// question card) — only a busy-engine-while-FSM-idle or an idle-engine
-	// while the FSM believes a turn is RUNNING counts as divergence.
-	const diverged =
-		state === "ask_blocked"
-			? false
-			: fsmActive !== engineBusy;
+	// ask_blocked is visibly waiting on a person. Other unsettled states must
+	// have either a live engine or a claimed recovery journal; without one they
+	// are not allowed to remain a green "running" projection indefinitely.
+	const missingOwner = runStateRequiresLiveOwner(state) && !ownerBusy;
+	// Keep auditing the inverse mismatch too. A live engine during a nominally
+	// settled state can be a short fallback gap, so it is never auto-quarantined.
+	const diverged = missingOwner || (!isRunStateUnsettled(state) && ownerBusy);
 	if (!diverged) {
 		wedgeSince.delete(sessionId);
 		wedgeReported.delete(sessionId);
@@ -350,15 +395,108 @@ function checkRunStateWedge(
 		return;
 	wedgeReported.add(sessionId);
 	console.warn(
-		`[run-state] wedge: session ${sessionId} FSM=${state} engineBusy=${engineBusy} for ${Math.round((Date.now() - since) / 1000)}s`,
+		`[run-state] wedge: session ${sessionId} FSM=${state} ownerBusy=${ownerBusy} for ${Math.round((Date.now() - since) / 1000)}s`,
 	);
 	audit({
 		msg: "run_state_wedge",
 		session_id: sessionId,
 		run_state: state,
-		engine_busy: engineBusy,
+		owner_busy: ownerBusy,
 		diverged_for_ms: Date.now() - since,
 	});
+	if (!missingOwner) return;
+	void quarantineSessionForSafety(
+		sessionId,
+		"The active run no longer has a live execution owner or recovery claim",
+		`run_state:${state}`,
+	).then((quarantine) => {
+		invalidateSessionsCache();
+		broadcastToAll({
+			type: "session_status",
+			sessionId,
+			isRunning: false,
+			safety: publicSessionSafety(quarantine),
+		});
+	}).catch((error) => {
+		// Let the next cache refresh retry rather than leaving the invisible wedge
+		// permanently marked as handled after a transient actor outage.
+		wedgeReported.delete(sessionId);
+		console.error(`[run-state] could not pause orphaned session ${sessionId}:`, error);
+	});
+}
+
+type OwnershipWatchdogState = {
+	timer?: ReturnType<typeof setTimeout>;
+	safetyReconciliation?: Promise<string[]>;
+};
+const ownershipWatchdog: OwnershipWatchdogState = (g.__sessionOwnershipWatchdog ??= {});
+
+export async function reconcileRecoverableSafetyFences(): Promise<string[]> {
+	if (ownershipWatchdog.safetyReconciliation)
+		return ownershipWatchdog.safetyReconciliation;
+	const reconciliation = (async () => {
+		const released = await reconcileAutomaticallyRecoverableSessionSafety(
+			await sessionQuarantines(),
+			releaseSessionQuarantine,
+		);
+		if (!released.length) return released;
+		invalidateSessionsCache();
+		for (const sessionId of released) {
+			audit({
+				msg: "session_safety_automatically_reconciled",
+				session_id: sessionId,
+			});
+			broadcastToAll({
+				type: "session_status",
+				sessionId,
+				isRunning: isAgentSessionBusy(sessionId),
+			});
+		}
+		return released;
+	})().catch((error) => {
+		console.error("[session-safety] automatic reconciliation failed:", error);
+		return [];
+	}).finally(() => {
+		if (ownershipWatchdog.safetyReconciliation === reconciliation)
+			ownershipWatchdog.safetyReconciliation = undefined;
+	});
+	ownershipWatchdog.safetyReconciliation = reconciliation;
+	return reconciliation;
+}
+
+/** Independently enforce the visible-ownership invariant even when nobody has
+ * the session list open. The scan reads the actor client's local projection
+ * and process-local owner registries only; it never fans out to session files. */
+export function startSessionOwnershipWatchdog(): void {
+	if (ownershipWatchdog.timer) return;
+	const tick = () => {
+		void reconcileRecoverableSafetyFences();
+		try {
+			const recovery = sessionRuntimeSnapshot();
+			for (const run of sessionRunStateProjections()) {
+				const state = run.state as RunState;
+				const ownerBusy =
+					isAgentLiveEngineBusy(undefined, undefined, run.sessionId) ||
+					recovery.journalBusy.has(run.sessionId);
+				checkRunStateWedge(run.sessionId, state, ownerBusy);
+			}
+		} catch (error) {
+			console.error("[run-state] ownership watchdog scan failed:", error);
+		} finally {
+			ownershipWatchdog.timer = setTimeout(tick, 30_000);
+			ownershipWatchdog.timer.unref?.();
+		}
+	};
+	// Reconcile proven actor-restart fences as soon as boot recovery establishes
+	// ownership. The regular tick catches evidence that becomes sufficient later.
+	reconcileRecoverableSafetyFences();
+	ownershipWatchdog.timer = setTimeout(tick, 30_000);
+	ownershipWatchdog.timer.unref?.();
+}
+
+export function stopSessionOwnershipWatchdog(): void {
+	if (ownershipWatchdog.timer) clearTimeout(ownershipWatchdog.timer);
+	ownershipWatchdog.timer = undefined;
 }
 
 export function findSession(sessionId: string): UnifiedSession | undefined {
@@ -431,7 +569,18 @@ export function updateSessionFile(
 	sessionId: string,
 	mutator: SessionFileMutator,
 ): Promise<void> {
-	return sessionKernel(sessionId).runExclusive("session_file_updated", () => {
+  return withSessionMutationLock(sessionId, async () => {
+    const requestId = `session-file:${crypto.randomUUID()}`;
+    const plan = await sessionGatewayCommand({
+      op: "request",
+      sessionId,
+      requestId,
+      operation: "session_file_updated",
+    });
+    if (plan.status !== "execute")
+      throw new Error("Unexpected duplicate session-file command");
+    let physicalFinished = false;
+    try {
 		const path = `${SESSIONS_DIR}/${sessionId}.json`;
 		const current: NativeSessionFile = existsSync(path)
 			? JSON.parse(readFileSync(path, "utf-8"))
@@ -446,6 +595,25 @@ export function updateSessionFile(
 			upsertIndexedSession(indexed);
 		}
 		invalidateSessionsCache();
+      physicalFinished = true;
+      await sessionGatewayCommand({
+        op: "complete",
+        sessionId,
+        requestId,
+        operation: "session_file_updated",
+        result: null,
+      });
+    } catch (error) {
+      if (!physicalFinished) await sessionGatewayCommand({
+        op: "fail",
+        sessionId,
+        requestId,
+        operation: "session_file_updated",
+        error: error instanceof Error ? error.message : String(error),
+        retryable: false,
+      });
+      throw error;
+    }
 	});
 }
 
@@ -638,10 +806,10 @@ export const runErrors: Map<string, { message: string; at: string }> =
  *
  * `require` rather than a static import: pi-transcript lazily requires
  * this module back (its own cycle-breaker), and the transcript write must be
- * synchronous so it lands before the client re-reads the transcript.
- * Never throws — a dead transcript store must not break outcome recording.
+ * ordered so it lands before the client re-reads the transcript.
+ * Never throws unless strict projection ownership requires fail-closed behavior.
  */
-function persistRunFailureNotice(
+async function persistRunFailureNotice(
 	sessionId: string,
 	engineSessionId: string | null | undefined,
 	message: string,
@@ -649,7 +817,7 @@ function persistRunFailureNotice(
 	projectionId?: string,
 	projectedAt?: string,
 	strict = false,
-): void {
+): Promise<void> {
 	try {
 		const m = require("./transcript-persistence") as typeof import("./transcript-persistence");
 		const line = m.transcriptLineRunnerNotice(
@@ -658,13 +826,13 @@ function persistRunFailureNotice(
 			projectedAt,
 		);
 		if (strict)
-			m.applyForwardedTranscriptStrict(
+			await m.applyForwardedTranscriptStrict(
 				sessionId,
 				engineSessionId || sessionId,
 				[line],
 			);
 		else
-			m.applyForwardedTranscript(sessionId, engineSessionId || sessionId, [line]);
+			await m.applyForwardedTranscript(sessionId, engineSessionId || sessionId, [line]);
 	} catch (error) {
 		if (strict) throw error;
 	}
@@ -692,24 +860,36 @@ export type RunOutcomeProjectionOptions = {
 	projectedAt?: string;
 };
 
-export function recordRunOutcome(
+let runOutcomeProjectorForTest:
+	| typeof applyRunOutcomeProjection
+	| undefined;
+
+export function __setRunOutcomeProjectorForTest(
+	projector: typeof applyRunOutcomeProjection | undefined,
+): typeof applyRunOutcomeProjection | undefined {
+	const previous = runOutcomeProjectorForTest;
+	runOutcomeProjectorForTest = projector;
+	return previous;
+}
+
+export async function recordRunOutcome(
 	sessionId: string,
 	errorMessage: string | null,
 	opts?: RunOutcomeProjectionOptions,
-): void {
+): Promise<void> {
 	const session = findSession(sessionId);
 	const id = session?.id || sessionId;
 	// runAgent settles every journal-owned run on its terminal event. Keep this
 	// persistence choke point compatible with non-runner callers without
 	// emitting a false double-teardown rejection for the normal path.
 	if (isRunStateUnsettled(getRunState(id)))
-		transitionRunState(id, errorMessage ? "run_failed" : "turn_end", {
+		await transitionRunState(id, errorMessage ? "run_failed" : "turn_end", {
 			...(opts?.runId ? { run_key: opts.runId } : {}),
 		});
 	if (opts?.projectionId && opts.runId && sessionKernelActorActive()) {
 		const runGeneration =
-			opts.runGeneration ?? sessionKernel(id).runState().generation;
-		sessionTurn({
+			opts.runGeneration ?? sessionKernel(id).runStateProjection().generation;
+		await sessionTurn({
 			op: "prepare_outcome_projection",
 			sessionId: id,
 			projectionId: opts.projectionId,
@@ -732,7 +912,11 @@ export function recordRunOutcome(
 		!process.env.OPENSESSION_RUN_JOURNAL
 	)
 		throw new Error("Turn outcome projection requires the authoritative actor");
-	void applyRunOutcomeProjection(id, errorMessage, opts);
+	await (runOutcomeProjectorForTest ?? applyRunOutcomeProjection)(
+		id,
+		errorMessage,
+		opts,
+	);
 }
 
 /** Idempotent destination-side implementation for actor-issued projections. */
@@ -759,7 +943,7 @@ export async function applyRunOutcomeProjection(
 					: session?.codexThreadId
 						? "codex"
 						: "claude");
-			persistRunFailureNotice(
+			await persistRunFailureNotice(
 				id,
 				opts?.engineSessionId ||
 					(session ? engineSessionIdFor(session, provider) : undefined),

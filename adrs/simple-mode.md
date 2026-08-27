@@ -68,14 +68,17 @@ On a fresh macOS or Ubuntu box with only `curl` and `git`:
   requirement**, not a follow-on: the multi-gigabyte dependency tree is the
   single largest cost on the critical path and the main reason the install
   cannot hit the five-minute bar.
-  - Artefact: a `bun build --compile` single executable, tarred as
-    `opensession-<ver>-<os>-<arch>.tar.gz` beside a small `node_modules`
-    sharp sidecar (its platform native cannot be embedded), the service
-    templates, and `release.json`. `src/main.ts` is the front controller (server / CLI /
-    runner-host / mcp-proxy behind one argv), so the binary re-execs itself
-    for its side entrypoints via `process.execPath`; the prebuilt frontend is
-    baked in with `Bun.embeddedFiles`. `bun build --compile --target=bun-<os>-
-    <arch>` cross-compiles every target from one runner. Unpacked to
+  - Artefact: a `bun build --compile` executable, tarred as
+    `opensession-<ver>-<os>-<arch>.tar.gz` with the required session-kernel,
+    transport, workflow, and code-flow worker `.js` sidecars; the minimal
+    `node_modules` Sharp sidecar; gateway, executor, and session-kernel service
+    templates; the fixed privileged-helper installation assets; and
+    `release.json`. `src/main.ts` is the front controller for the server, CLI,
+    runner host, MCP proxy, executor, session-kernel service, and
+    transcript-search worker, so the binary re-execs itself for process side
+    entrypoints via `process.execPath`; the prebuilt frontend is baked in with
+    `Bun.embeddedFiles`. `bun build --compile --target=bun-<os>-<arch>`
+    cross-compiles every target from one runner. Unpacked to
     `~/.opensession/releases/<ver>/` with the `src` link; `opensession update`
     swaps it and keeps the previous release for rollback.
   - Consequences: no `bun` on the box, no `.git`, no full `node_modules`
@@ -84,20 +87,22 @@ On a fresh macOS or Ubuntu box with only `curl` and `git`:
     embedded; the harness installs the artefact, not the source. The
     `--source` install (a git checkout + `bun install`) stays as the
     self-development and contributor path.
-- **R1.4** Idempotent and pinnable: re-run to upgrade (true today when
-  the checkout is clean and fast-forwardable), and `--channel` for a tag.
-  Keep `--uninstall`. A release install upgrades by download-and-swap:
-  `opensession update` fetches the latest artefact for the OS/arch, unpacks
-  it beside the current release, swaps the `src` symlink atomically, and
-  restarts, keeping the old release for rollback. `--uninstall` preserves any
-  session worktree that holds uncommitted or unpushed work.
+- **R1.4** Idempotent and pinnable. Source installs can select a branch or tag
+  with `install.sh --channel`, which implies the source path. Release installs
+  currently use `--artifact` for an explicit tarball; release tag/channel
+  selection is not implemented. On a release install, `opensession update
+  --channel` currently expects a complete artefact URL. With no channel it
+  fetches the latest artefact for the OS/arch, unpacks it beside the current
+  release, swaps the `src` symlink atomically, and restarts, keeping the old
+  release for rollback. Keep `--uninstall`; it preserves any session worktree
+  that holds uncommitted or unpushed work.
 - **R1.5** Installer output is a checklist, not a log; the last line is the
   URL.
 
 ## R2. First run in the browser, not the terminal
 
 - **R2.1** The installer writes `config.json` + `.env` with all defaults
-  (product name, `127.0.0.1:3850`, webhook `3848`, worktrees dir, no
+  (product name, private app `127.0.0.1:3850`, ingress `3860`, worktrees dir, no
   integrations, no automations) and starts the server. `opensession onboard`
   becomes `--advanced` mode; the ten questions still exist there. The
   no-flag installer runs `onboard --defaults` (no questions, service
@@ -120,15 +125,13 @@ On a fresh macOS or Ubuntu box with only `curl` and `git`:
   This is `doctor`'s "can run turns" check, made visible.
 - **R2.4** Everything else (integrations, automations, sharing, service)
   is a "next steps" checklist inside the UI, each item one screen.
-- **R2.5** Unattended provisioning of the model account, in this order:
-  `OPENSESSION_CLAUDE_TOKEN` in the
-  environment at install or boot; else a one-line
-  `~/.opensession-claude-token` file (0600); else the first-run page. A
-  token from either source is written into
-  `~/.opensession-claude-accounts.json` as the pool account and the file
-  source is removed after import. This is what cloud-init, the VM harness
-  and the "paste this into an agent" README path use, and it is how the
-  harness runs a real turn (DoD 5).
+- **R2.5** Unattended model-account provisioning remains a requirement, not
+  current behavior. The intended precedence is `OPENSESSION_CLAUDE_TOKEN` at
+  install or boot, then a one-line `~/.opensession-claude-token` file (0600),
+  then the first-run page; a token should enter the account pool and the staged
+  file should be removed. Currently the installer writes its environment token
+  to that file, but the server consumes neither source and does not remove the
+  file. The harness's secret-backed real-turn path therefore cannot pass yet.
 
 ## R3. Runs as a service from the start
 
@@ -155,21 +158,19 @@ On a fresh macOS or Ubuntu box with only `curl` and `git`:
 ## R4. Webhooks without a public server
 
 Inbound webhooks are fundamental (Slack, GitHub, Linear, Plain, Stripe all
-land on the loopback webhook server on `:3848`) and a simple-mode box has no
-public hostname. Prior art splits two ways; we need both.
+land on the fail-closed loopback ingress gateway on `:3860`) and a simple-mode
+box has no public hostname. The same gateway serves remote Sandbox callbacks
+and workload identity.
 
-- **R4.1 `opensession expose`**: one command that gives `:3848` a public
-  HTTPS URL, stores it as the webhook base, and prints paste-ready URLs for
-  every integration. Backends, in preference order:
-  1. **Tailscale Funnel** (`tailscale funnel --bg 3848`): stable URL, real
-     cert, survives reboots; needs a tailnet + the `funnel` ACL attribute,
-     which the command links to.
-  2. **Cloudflare quick tunnel** (`cloudflared tunnel --url`): no account,
-     random hostname; good enough to try Slack for ten minutes. Named tunnel
-     with a free account for stability.
-  Only `:3848` is exposed. The UI on `:3850` never is: every exposed route
-  is HMAC-verified and fail-closed, the UI has no auth. `doctor` reports the
-  tunnel's state and whether the stored base URL still resolves to us.
+- **R4.1 Settings → Public ingress**: choose an exposure method that gives
+  `:3860` a public HTTPS URL and stores one canonical origin:
+  1. **Tailscale Funnel** (`tailscale funnel --bg 3860`): stable `*.ts.net`
+     URL, real certificate, no DNS records or inbound ports.
+  2. **Cloudflare Tunnel**: a named tunnel with a CNAME to
+     `<tunnel-id>.cfargotunnel.com`, also without inbound ports.
+  3. **Custom domain**: A/AAAA records plus a managed Caddy site.
+  Only `:3860` is exposed. The private app on `:3850` never is: the gateway
+  dispatches exact registered routes and returns 404 for everything else.
 - **R4.2 Integration setup screens show the URLs.** Enabling Slack/GitHub/
   Linear/Plain/Stripe in the UI shows *this install's* event URL(s) and the
   secret fields, and verifies the first inbound event, instead of linking to
@@ -196,22 +197,23 @@ until sessions start failing, and will not know that a pinned CPU is a
 runaway `cargo build` in a worktree. The system must stay healthy on its
 own, and when it cannot, tell the user in the UI in words, with a button.
 
-Parts of the chassis exist, none of it as a default: three hourly sweeps
-(`disk-gc.ts` reclaims Rust `target/` under pressure; `worktree-reaper.ts`
-parks clean idle checkouts; `sweepArchivedWorktrees` in `worktree.ts`),
-Linux system-scope memory/task limits on detached engine and preview scopes;
-rootless mode keeps agent turns in the gateway process, the `instance-health` recipe
-(`enabled: false`, Slack delivery), and a self-deploy watchdog that only
-guards rollbacks and is never installed by the app. Simple mode turns
-these on by default, adds the missing pieces, and surfaces them.
+Disk GC and the worktree reaper are enabled by default and run hourly after
+short initial delays; the archived-session worktree sweep runs every six hours.
+The reaper may bank dirty or unpushed state in the parked-work store before
+removing a worktree, and keeps the tree if banking fails. Other chassis parts
+include Linux system-scope memory/task limits on detached engine and preview
+scopes, rootless runs in the gateway process, and a self-deploy watchdog that
+only guards rollbacks and is never installed by the app. The
+`instance-health` recipe remains disabled by default. Simple mode adds the
+missing pieces and surfaces them.
 
 - **R5.1 Budgets, not limits.** Simple mode ships with a **disk budget**
   (default: whichever is smaller of 20 GB or 40 % of the free space at
   install) and enforces it in layers: worktree parking → archived-session
   sweep → engine DB compaction → build-output eviction (`target/`, `dist`,
   `.next`, `build`, `node_modules` in *parked* worktrees only) → refuse new
-  sessions with a clear message when still over. Never touch dirty or
-  unpushed work (existing rule). The UI shows the budget as a bar with
+  sessions with a clear message when still over. Never discard dirty or
+  unpushed work. The UI shows the budget as a bar with
   "what is using it" and a "reclaim now" button.
 - **R5.2 Runaway runs.** Per-run CPU/memory/time caps on by default on both
   platforms: transient systemd scopes on Linux (already exists for detached
@@ -249,18 +251,22 @@ these on by default, adds the missing pieces, and surfaces them.
 The cloud metadata endpoint is a caveat worth stating. Rootless Linux mode
 runs agent turns inside the user gateway, where a per-user manager cannot
 apply `IPAddressDeny=` on stock Ubuntu. The hardened system scope launches
-runs through the credentialed executor and fixed root helper. `service
-install` probes 169.254.169.254 before installing user scope and refuses when
-it answers, naming the controls that cover every process for that uid: use the
-system scope, add a host firewall rule on the endpoint, or set
-`OPENSESSION_ALLOW_IMDS=1` on a box with no role. Full detail is in
-`docs/setup/integrations-misc.md`.
+runs through the credentialed executor and fixed root helper. Before installing
+a user-scope service, `service install` probes 169.254.169.254 and refuses when
+it responds unless `OPENSESSION_ALLOW_IMDS=1` is explicitly set. The complete
+host-level control is a firewall rule covering the service uid. The system
+unit's `IPAddressDeny=` is defense in depth for its own cgroup and does not
+cover detached user scopes. Full detail is in
+[`docs/setup/integrations-misc.md`](../docs/setup/integrations-misc.md).
 
 - Bind stays loopback; sharing with a teammate is a deliberate `opensession
   bind` / Tailscale step with the trust-model warning (exists).
-- Only the webhook server is ever exposed, only via R4, only HMAC-verified
-  routes. No route on the exposed port may serve UI or accept unsigned
-  input.
+- Only the isolated public-ingress listener on `:3860` may be exposed. It
+  serves an explicit allowlist of webhook and OAuth routes, authenticated
+  sandbox and RPC WebSockets, workload identity, an unsigned health endpoint,
+  and capability/signed public image and card routes. Each sensitive route
+  applies its own signature, token, OAuth-state, or workload-identity check.
+  Unknown methods and paths return 404, and the app UI is never served there.
 - Auto-update pulls signed tags/`main` from the configured remote only;
   self-development installs (forks) keep the existing "your fork, your
   remote" rules.
@@ -281,31 +287,52 @@ second consumer of the same files, not the primary one.
   Multipass is the fallback if Lima ever becomes a problem; Vagrant is out
   (no sane Apple Silicon provider).
 - **Goss** for assertions (`test/simple-mode/goss.yaml`): ports, services,
-  files, HTTP, commands, in YAML with a pass/fail table. Two files:
-  `goss.yaml` is what must hold today (installer exit, `opensession` on
-  PATH, health, loopback-only listeners, `doctor` clean but for accounts);
-  `goss.dod.yaml` is the simple-mode bar (user service active, linger,
-  survives reboot, uninstall leaves nothing) and is expected to fail until
-  simple mode lands.
-- **A `bun test` driver** orchestrates: build the release artefact for the
-  VM's arch (R1.3), create the VM, run the installer against that artefact
-  exactly as a customer would (no Bun, no git clone in the guest), run
-  Goss, reboot, run Goss again, uninstall, run Goss, destroy. A
-  `--source` variant of the same run covers the contributor path. TypeScript calling `limactl` and `goss`; no
-  hand-written shell scripts. `SIMPLE_MODE_TARGET=host` runs the same steps
-  on the current machine (a CI runner, or a throwaway box) without Lima.
-- **The real turn** (DoD 5) runs only when `OPENSESSION_TEST_CLAUDE_TOKEN`
-  is set; everything else runs without any secret.
+  files, HTTP, and commands in YAML with a pass/fail table. `goss.yaml` is the
+  current post-install bar (`opensession` on PATH, expected runtime files and
+  model CLIs, `doctor` runs, loopback-only listeners, health, and embedded
+  assets). `goss.dod.yaml` adds the user service, linger, stricter `doctor`, and
+  no Tailscale or source checkout; `goss.uninstalled.yaml` checks the strict
+  clean uninstall. Both strict files run only with
+  `SIMPLE_MODE_STRICT=1`.
+- **A `bun test` driver** builds the release artefact for the VM's arch,
+  creates the VM, installs the artefact as a customer would (no Bun or clone in
+  the guest), checks the service and current Goss bar, creates a session
+  worktree, performs the basic uninstall, and destroys the VM. Strict mode adds
+  the DoD Goss checks, Lima reboot, the saved-work uninstall guard, and strict
+  uninstall assertions. `SIMPLE_MODE_SOURCE=1` covers the contributor path.
+  The driver is TypeScript calling `limactl` and `goss`, with no hand-written
+  shell scripts. `SIMPLE_MODE_TARGET=host` runs without Lima, but skips the
+  reboot check.
+- **The real turn** runs only when `OPENSESSION_TEST_CLAUDE_TOKEN` is set;
+  everything else runs without a secret. Its timer starts after installation
+  and permits eight minutes, so it does not yet enforce DoD 5's five-minute,
+  download-inclusive limit.
 - **Sudo is a test dimension.** The Lima user has passwordless sudo, which
-  hides R1.1. The driver has a no-sudo mode that runs the installer as a
-  second user without sudoers rights; that mode is the one that must pass
-  for simple mode.
+  hides R1.1. `SIMPLE_MODE_NOSUDO=1` runs as a second user without sudoers
+  rights. Lima currently pre-enables linger for that user during root
+  provisioning, so this mode does not yet prove that the installer enabled it.
 - CI (GitHub Actions `ubuntu-latest` as the fresh VM, `macos-latest` for
   the LaunchAgent path) reuses the driver with `SIMPLE_MODE_TARGET=host`.
   Later; local comes first.
 
-Run: `bun test ./test/simple-mode/harness.test.ts` (not part of `bun test`'s default `src
-scripts` set; it takes minutes and needs Lima).
+Smoke/current bar:
+
+```sh
+bun test ./test/simple-mode/harness.test.ts
+```
+
+Current strict Linux no-sudo checks:
+
+```sh
+SIMPLE_MODE_STRICT=1 SIMPLE_MODE_NOSUDO=1 \
+  bun test ./test/simple-mode/harness.test.ts
+```
+
+Add `OPENSESSION_TEST_CLAUDE_TOKEN` for the real-turn path. The harness does
+not yet enforce the five-minute install-inclusive bar, verify removal of
+separately installed tooling such as Claude or `gh`, or prove installer-driven
+linger setup for the no-sudo user. It is not part of `bun test`'s default
+`src scripts` set and needs Lima unless `SIMPLE_MODE_TARGET=host` is set.
 
 ## Non-goals
 
@@ -315,12 +342,12 @@ scripts` set; it takes minutes and needs Lima).
   compose file is a full-install artefact.
 - Public exposure of the UI. Ever.
 
-## Open questions
+## Open questions and resolved history
 
-1. Prebuilt binary: single `bun build --compile` executable vs. tarball
-   with pinned Bun; how the engine (Pi, bundled) and the `claude` CLI and
-   frontend assets travel with it; how self-development installs (source) and
-   simple-mode installs (artefact) share `opensession update`.
+1. **Resolved in the current implementation:** the prebuilt distribution is
+   a compiled executable plus the required worker, Sharp, service, and policy
+   sidecars. Pi and the frontend are embedded, Claude is installed separately,
+   and source and artefact installs share `opensession update`.
 2. Slack Socket Mode: coexistence with the HTTP path for full installs, and
    what breaks in the Slack agent's request-signature assumptions.
 3. macOS run caps: is `ulimit` + a supervisor timer enough, or does simple

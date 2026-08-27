@@ -37,14 +37,13 @@ test("the restored draft is what the field shows", () => {
 	expect(html).toContain('placeholder="What do you want to work on?"');
 });
 
-// The palette does not hold the draft any more, so this ref is the only way a
-// create can read what was typed. It has to be current as of the render, not
-// one commit behind.
-test("the draft is published to the palette's ref while rendering", () => {
+// Rendering can be abandoned under concurrent React, so the external ref is
+// updated by a layout effect only after the draft commits.
+test("a server render does not publish an uncommitted draft", () => {
 	const valueRef = { current: "" };
 	field({ initialText: "Ship the palette split", valueRef });
 
-	expect(valueRef.current).toBe("Ship the palette split");
+	expect(valueRef.current).toBe("");
 });
 
 test("attachments share the prompt's scroller", () => {

@@ -19,6 +19,18 @@ import { organizationIconBytes } from "../organization-settings";
 // that hasn't changed since the last request.
 const trimmedIcons = new Map<string, { mtimeMs: number; bytes: Uint8Array }>();
 
+export function builtAssetContentType(name: string): string | null {
+	if (name.endsWith(".css")) return "text/css";
+	if (name.endsWith(".map")) return "application/json";
+	if (name.endsWith(".js")) return "text/javascript";
+	if (name.endsWith(".webp")) return "image/webp";
+	if (name.endsWith(".png")) return "image/png";
+	if (name.endsWith(".jpg") || name.endsWith(".jpeg")) return "image/jpeg";
+	if (name.endsWith(".svg")) return "image/svg+xml";
+	if (name.endsWith(".woff2")) return "font/woff2";
+	return null;
+}
+
 // Per-prefix PWA identity keeps legacy /backstage installs distinct, while the
 // shortcut still opens the new-agent flow in that same deployed shell.
 export function pwaManifest(publicPrefix: string) {
@@ -32,6 +44,12 @@ export function pwaManifest(publicPrefix: string) {
 		start_url: `${publicPrefix}/`,
 		display: "standalone",
 		display_override: ["window-controls-overlay"],
+		// A link into the app from outside it (a Plain card, a Slack message)
+		// navigates the installed window to that link. Without this the default
+		// is to focus the existing window and ignore the URL, so the deep link
+		// silently lands on whatever was already open — and there is no history
+		// entry behind it, so Back does nothing either.
+		launch_handler: { client_mode: "navigate-existing" },
 		// Match the current dark page and chrome surfaces. WebKit exposes the
 		// manifest background if its standalone window is briefly letterboxed.
 		background_color: "#1c1c1c",
@@ -127,22 +145,24 @@ export async function handleStaticAssetsRoutes(
 		});
 	}
 
-	// The sign-in screen's backdrop: the "Silver Silk" loop the landing page
-	// runs, re-encoded down from the site's 4K/7.4MB master (1920x1080, no
-	// audio track, 435KB) and vendored rather than pulled from the site's CDN.
-	// A login screen is the one surface that has to render before anything is
-	// trusted, on a server that is usually private, so it cannot depend on a
-	// third-party fetch, and nobody should have to talk to a CDN to look at our
-	// sign-in box. The `-dark` pair is the same footage graded to charcoal for
-	// the dark palette; the browser fetches one cut, not both. Each webp is its
-	// own video's first frame, so the swap when the loop starts is invisible,
-	// and it is the whole picture for a reduced-motion visitor.
-	// scripts/signin-bg.sh regenerates all four from the master.
+	// The exact fixed light/dark artwork used behind opensession.com. Keep the
+	// sign-in gate and onboarding independent of the marketing deployment and
+	// public network. The old sign-in poster URLs remain aliases so a page still
+	// running the previous bundle switches artwork immediately; its retired mp4
+	// request simply falls back to this poster.
 	const mediaFiles: Record<string, string> = {
-		"/signin-bg.mp4": "signin-bg.mp4",
-		"/signin-bg.webp": "signin-bg.webp",
-		"/signin-bg-dark.mp4": "signin-bg-dark.mp4",
-		"/signin-bg-dark.webp": "signin-bg-dark.webp",
+		"/signin-bg.webp": "onboarding-bg.webp",
+		"/signin-bg-dark.webp": "onboarding-bg-dark.webp",
+		"/onboarding-bg.webp": "onboarding-bg.webp",
+		"/onboarding-bg-dark.webp": "onboarding-bg-dark.webp",
+		// DownloadAppsDialog's app-card previews. Referenced by URL (not bundler
+		// imports) so both the Bun SPA build and the Next.js website build see a
+		// plain string instead of diverging asset module types. The backgrounds are
+		// the exact light and dark artwork used behind opensession.com's landing page.
+		"/download-background.webp": "download-background.webp",
+		"/download-background-dark.webp": "download-background-dark.webp",
+		"/download-mac.webp": "download-mac.webp",
+		"/download-phone.webp": "download-phone.webp",
 	};
 	if (mediaFiles[path] && req.method === "GET") {
 		const file = frontendStaticFile(mediaFiles[path]);
@@ -250,23 +270,24 @@ export async function handleStaticAssetsRoutes(
 	}
 
 	// Built SPA assets (prod only). Content-hashed filenames → cache forever.
-	// Served gzipped (computed once, then memoised) since the JS is large.
+	// JS/CSS/maps are gzipped (computed once, then memoised); images and fonts
+	// already carry compact encodings and are served byte-for-byte.
 	const assetMatch =
-		frontend && path.match(/^\/([\w.-]+\.(?:js|css|map))$/);
+		frontend && path.match(/^\/([\w.-]+\.(?:js|css|map|webp|png|jpe?g|svg|woff2))$/);
 	if (assetMatch && frontend) {
 		const name = assetMatch[1];
 		const file = frontendDistFile(name);
-		if (file && await file.exists()) {
-			const type = name.endsWith(".css")
-				? "text/css"
-				: name.endsWith(".map")
-					? "application/json"
-					: "text/javascript";
+		const type = builtAssetContentType(name);
+		if (file && type && await file.exists()) {
+			const compress = /\.(?:js|css|map)$/.test(name);
 			const headers: Record<string, string> = {
-				"Content-Type": `${type}; charset=utf-8`,
+				"Content-Type": `${type}${compress ? "; charset=utf-8" : ""}`,
 				"Cache-Control": "public, max-age=31536000, immutable",
 			};
-			if ((req.headers.get("accept-encoding") || "").includes("gzip")) {
+			if (
+				compress &&
+				(req.headers.get("accept-encoding") || "").includes("gzip")
+			) {
 				let gz = frontend.gzip.get(name);
 				if (!gz) {
 					gz = new Blob([

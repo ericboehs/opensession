@@ -6,7 +6,7 @@ import { handleSetupTeamRoutes } from "./setup-team";
 import type { RouteContext } from "./context";
 
 const savedConfig = process.env.OPENSESSION_CONFIG;
-const savedToken = process.env.GITHUB_API_TOKEN;
+const savedStore = process.env.OPENSESSION_GITHUB_AUTH_STORE;
 const originalFetch = globalThis.fetch;
 const dirs: string[] = [];
 
@@ -17,7 +17,7 @@ function context(): RouteContext {
     url,
     path: url.pathname,
     publicPrefix: "",
-    authUser: null,
+    authUser: { login: "ada", name: "Ada Lovelace" },
   };
 }
 
@@ -30,12 +30,14 @@ function writeConfig(): string {
     JSON.stringify({
       // The App wizard records its organization as appOrg before this
       // first-mile import runs.
-      integrations: { github: { appOrg: "acme" } },
+      integrations: { github: { appOrg: "acme", userPrAuth: true, oauthClientId: "Iv-test" } },
       identity: { team: [{ name: "Ada Lovelace", github: "ada" }] },
     }),
   );
   process.env.OPENSESSION_CONFIG = path;
-  process.env.GITHUB_API_TOKEN = "test-token";
+  const store = join(dir, "github-auth.json");
+  writeFileSync(store, JSON.stringify({ users: { ada: { login: "ada", token: "test-token", source: "device", connectedAt: new Date().toISOString() } } }));
+  process.env.OPENSESSION_GITHUB_AUTH_STORE = store;
   return path;
 }
 
@@ -43,8 +45,8 @@ afterEach(() => {
   globalThis.fetch = originalFetch;
   if (savedConfig === undefined) delete process.env.OPENSESSION_CONFIG;
   else process.env.OPENSESSION_CONFIG = savedConfig;
-  if (savedToken === undefined) delete process.env.GITHUB_API_TOKEN;
-  else process.env.GITHUB_API_TOKEN = savedToken;
+  if (savedStore === undefined) delete process.env.OPENSESSION_GITHUB_AUTH_STORE;
+  else process.env.OPENSESSION_GITHUB_AUTH_STORE = savedStore;
   for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
 

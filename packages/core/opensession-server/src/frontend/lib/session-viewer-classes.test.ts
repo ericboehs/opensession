@@ -8,8 +8,10 @@ import {
 } from "./session-viewer-classes";
 
 const SOURCE = new URL("./session-viewer-classes.ts", import.meta.url).pathname;
+const UTILITY_COMPAT = new URL("../styles/utility-compat.stylex.ts", import.meta.url).pathname;
 const collector = newStylexCollector();
 stylexTransform(SOURCE, readFileSync(SOURCE, "utf8"), collector);
+stylexTransform(UTILITY_COMPAT, readFileSync(UTILITY_COMPAT, "utf8"), collector);
 const css = stylexCss(collector);
 
 test("the desktop tab strip cannot cover the header actions", () => {

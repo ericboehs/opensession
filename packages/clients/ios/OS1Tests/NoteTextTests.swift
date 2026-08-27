@@ -23,11 +23,11 @@ final class NoteTextTests: XCTestCase {
         XCTAssertEqual(tokens("@Kent look"), [.mention("@Kent"), .plain(" look")])
     }
 
-    /// The web bolds `@tella.com` out of an address, which reads as a mention
+    /// The web bolds `@example.com` out of an address, which reads as a mention
     /// of a person who does not exist. A mention has to follow a non-word
     /// character here.
     func testEmailAddressIsNotAMention() {
-        XCTAssertEqual(tokens("mail kent@tella.com"), [.plain("mail kent@tella.com")])
+        XCTAssertEqual(tokens("mail alex@example.com"), [.plain("mail alex@example.com")])
     }
 
     func testUrlBecomesALink() {

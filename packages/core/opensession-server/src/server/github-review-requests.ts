@@ -79,7 +79,7 @@ export async function fetchReviewTeamLogins(
   const key = `${owner.toLowerCase()}/${teamSlug.toLowerCase()}`;
   const cached = reviewTeamCache.get(key);
   if (cached?.expiresAt && cached.expiresAt > Date.now()) return cached.logins;
-  if (ghRateLimited()) return cached?.logins || null;
+  if (ghRateLimited("rest")) return cached?.logins || null;
   const token = await botGhToken();
   if (!token) return cached?.logins || null;
 
@@ -106,6 +106,7 @@ export async function fetchReviewTeamLogins(
           noteGhRateLimited(
             "pr-review-team",
             Number.isFinite(reset) ? reset : undefined,
+            "rest",
           );
         }
         return cached?.logins || null;

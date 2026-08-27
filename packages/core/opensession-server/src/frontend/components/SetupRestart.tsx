@@ -109,6 +109,11 @@ const sx = stylex.create({
 // the change was made. The parent must be `relative` — the veil is absolute.
 
 export function SetupRestart({ setup }: { setup: SetupController }) {
+	// First-run setup applies live-readable settings as it progresses. Do not
+	// interrupt /welcome with a restart prompt between steps.
+	if (typeof window !== "undefined" && /\/welcome\/?$/.test(window.location.pathname)) {
+		return null;
+	}
 	const { restartNeeded, restartState, restartServer } = setup;
 	return (
 		<>

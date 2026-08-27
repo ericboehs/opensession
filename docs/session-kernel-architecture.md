@@ -15,14 +15,98 @@ executor event belongs to the current run.
 The implementation lives in
 `packages/core/opensession-server/src/server/session-kernel/`.
 
+## Service boundary
+
+The writable actor runs in a separately supervised session-kernel service
+process, not in the HTTP gateway. Systemd names that process
+`opensession-session-kernel.service`. The service binds only `127.0.0.1:3849`,
+bearer-authenticates every `/rpc` call, and negotiates a
+transport version separately from the actor/schema version. System-scope
+installs use the root-owned systemd `session-kernel-token` credential. User
+systemd and launchd installs use a user-owned `0600` token file, while foreground
+startup generates an inline token shared only with its child service. `/live`
+reports process/actor liveness and `/ready` reports whether the actor handshake
+completed. Neither endpoint exposes RPC data.
+
+The network frontend and actors are separate isolates. The frontend bounds
+requests at 16 MiB, responses at 128 MiB, and outstanding calls at 1024. A
+catalog lane plus a configurable bounded pool of session Worker lanes host typed
+messages. The service owns one serial promise mailbox per canonical session ID
+and gives that actor stable lane affinity, so process-local reducer caches remain
+coherent and two turns for one session cannot overlap. Many actors share each
+lane, while the short isolated SQLite wait bound leaves unrelated lanes
+available. A failed lane is restarted without stopping healthy lanes;
+system-catalog ambiguity still fail-stops the service. After startup ownership
+checks, actor turns perform bounded SQLite
+reductions only. They do not bind sockets, perform filesystem or process work,
+invoke models, or execute outbox effects. Physical filesystem, network,
+process, and model work remains in gateway continuations, the executor service,
+run hosts, sandboxes, or Runners. Active effect receipts do not hold the actor
+mailbox, so Stop, steering, and fenced run events remain responsive.
+
+The gateway retains a Worker bridge for typed reductions. Mutations and durable
+reads perform authenticated bounded HTTP RPC and wake the gateway through its
+existing `SharedArrayBuffer`. Reads also route through the actor host because a
+central WAL mirror cannot authoritatively represent sessions placed in separate
+databases. Hot run-state projections remain cached in the gateway and are
+invalidated by committed actor replies. A missing credential,
+actor/transport/incarnation mismatch, service failure, or invalid response
+fail-stops the gateway. There is no in-process actor or direct writer fallback
+in production.
+
+Installer, deploy, and CLI restart flows stop the old gateway before restarting
+the actor service, then start the new gateway. This sequencing prevents mixed
+releases from opening two writable SQLite connections. The actor process does
+not load the application environment file. It receives only its runtime path,
+`HOME`, `NODE_ENV`, active state-directory overrides, and its credential. Source
+installs use `packages/core/opensession-server/src/session-kernel-service.ts`;
+compiled installs dispatch `opensession session-kernel-service` and ship both
+actor and transport Worker sidecars. Built-in supervisors use port 3849. A
+manual launcher may set `OPENSESSION_SESSION_KERNEL_PORT` on the service and a
+matching `OPENSESSION_SESSION_KERNEL_URL` or
+`OPENSESSION_SESSION_KERNEL_HOST`/`OPENSESSION_SESSION_KERNEL_PORT` pair on the
+gateway. It must also give both processes the same
+`OPENSESSION_SESSION_KERNEL_TOKEN` or
+`OPENSESSION_SESSION_KERNEL_TOKEN_FILE`. Both sides still require plain HTTP on
+`127.0.0.1`. Systemd user units, macOS launchd installs, and foreground startup
+supervise the same separate actor process.
+
 The target is an Erlang/Durable Objects style state machine: each typed message
 is reduced and committed in one short actor turn, external work is emitted as a
 durable effect, and results return as fenced messages. The actor never waits for
 a model run or gateway callback before processing the next state fact.
 
+Schema 27 includes the production-unwired foundation for atomic signed Agent
+Host supervision receipts. Authority construction, bounded synchronous signing,
+receipt insertion, supersession and high-water updates share one immediate
+transaction. Production has no signing credential and therefore fails signed
+claim issuance closed. Legacy unsigned receipts remain explicitly
+non-authorizing. The exact protocol-v3 Host attach path now verifies that foundation with only
+a strict public keyring and fresh socket-bound challenges, but remains
+production-unwired. A separate import-inert Linux Unix-socket gate can verify
+`SO_PEERCRED` before reading protocol bytes, but is likewise not composed into
+the Host or SessionKernel services. Socket path ownership and modes are defense
+in depth; future activation requires an exact allowed numeric UID and must fail
+closed rather than falling back to a token, loopback, or socket permissions.
+Separate Host, SessionKernel, and gateway service identities, private/public key
+provisioning, and detached Host deployment are still required before it can
+authorize production work.
+
 ## Durable state
 
-`~/.opensession-sessions/session-kernel.sqlite` contains:
+The storage router uses two durable locations within the active sessions
+directory. A fresh default install uses `~/.opensession/sessions`; an existing
+legacy `~/.opensession-sessions` directory remains active when the new directory
+does not exist. `OPENSESSION_SESSIONS_DIR` overrides the sessions directory
+directly. Without that override, `OPENSESSION_STATE_DIR` places it at
+`<state-dir>/.opensession-sessions/`.
+
+- `session-kernel.sqlite` is the placement/wake catalog and temporary source for
+  not-yet-migrated legacy rows.
+- `session-kernel-sessions/<prefix>/<sha256>.sqlite` is the authoritative
+  database for each placed session.
+
+Each authoritative session database contains:
 
 - Durable commands, keyed by session id and client request id.
 - Authoritative run state, run id, and generation.
@@ -30,17 +114,19 @@ a model run or gateway callback before processing the next state fact.
 - A monotonic session change stream.
 - Durable timers.
 - A retrying effect outbox.
+- Durable per-session quarantine records for ambiguous settlements.
 
-Completed request ids are retained permanently because clients retain unresolved
-intents without an expiry. Payloads become SHA-256 fingerprints after admission. Large semantic results
-remain fully replayable until the client durably records and delivers
-`command_ack`; the client retries that acknowledgement until
-`command_ack_result`. After 30 days acknowledged results compact to a permanent
-digest marker. Terminal
-failures always retain their bounded error. Replaying an unresolved id therefore
-returns the complete committed result without duplicating attachment bodies
-forever. Reusing an id with another payload is
-rejected. WebSocket receipt replay is capability-negotiated. Mutations wait
+While a session exists, request ids have no age expiry because clients retain
+unresolved intents without one. After execution admission, most payload bodies
+are dropped while their SHA-256 fingerprints remain; bounded cancel and
+WebSocket command payloads stay with their receipts for fenced replay. Large
+semantic results remain fully replayable until the client durably records and
+delivers `command_ack`; the client retries that acknowledgement until
+`command_ack_result`. After 30 days, acknowledged results larger than 64 KiB
+compact to a permanent digest marker. Terminal failures always retain their
+bounded error. Replaying an unresolved id therefore returns the complete
+committed result without retaining large request bodies forever. Reusing an id
+with another payload is rejected. WebSocket receipt replay is capability-negotiated. Mutations wait
 behind the hello handshake, then become durable commands on a capable server
 or one-shot sends on an older server. A command whose physical execution was
 interrupted becomes a retryable durable failure receipt only when its server
@@ -48,12 +134,15 @@ call site explicitly declares the operation replay-safe. Admission committed but
 never marked as executing is also promoted to that safe retry receipt on actor
 restart, because no physical callback could have begun. Replay policy is not part of client request identity,
 and the first policy-aware migration preserves pre-existing interrupted receipts. The default is fail-closed: interrupted physical work
-becomes `indeterminate` and cannot execute again without reconciliation. Web and
-native clients keep every unresolved mutation envelope until `command_result`,
-without age or count eviction, then replay the same request id after reconnect
-or app restart. Chrome keeps unresolved create and follow-up intents by request
-identity instead of overwriting one ambiguous request with the next. Completed retries return the
-stored result; interrupted retries re-enter the actor with the original id.
+becomes `indeterminate` and cannot execute again without reconciliation. Web and native clients persist each admitted mutation until a terminal
+`command_result`, then persist its acknowledgement until `command_ack_result`.
+They do not evict by age or count; both cap pending mutation storage at 3 MiB and
+reject a new durable admission when full instead of evicting unresolved work.
+After reconnect or app restart they replay the same request id. Chrome keeps
+unresolved create and follow-up intents by request identity instead of
+overwriting one ambiguous request with the next. Completed retries return the
+stored result; replay-safe interrupted retries re-enter the actor with the
+original id.
 Readiness ages only pending or processing commands. Indeterminate outcomes have
 separate count and oldest-age metrics, so a retained forensic receipt cannot make
 an unrelated active command report the whole actor service as stale.
@@ -67,12 +156,13 @@ launch two opening turns. Creation is owned by the deterministic target session,
 not a person-wide mailbox. Command admission completes once the session and
 opening dispatch are durable, while the opening run continues under generation
 fencing. A retried create rebuilds
-its full environment plan from the deterministic id and original request. A
-0600 create-plan record persists nondeterministic branch and workspace choices
-before those resources are created, plus the serializable `ResolvedCreate`
-decisions (model, sandbox, MCP scope and assembled opening context) before the
-opening run. Attachments remain in their dedicated durable store rather than
-being copied into the plan. The plan survives until setup completes. REST and native callers reuse the original request id. MCP calls derive it from
+its full environment plan from the deterministic id and original request. The actor's write-once setup plan persists nondeterministic branch and workspace
+choices before those resources are created, plus the serializable
+`ResolvedCreate` decisions (model, sandbox, MCP scope and assembled opening
+context) before the opening run. Attachments remain in their dedicated durable
+store rather than being copied into the plan. Setup state is retired when the
+opening launch commits; pre-schema-11 create-plan JSON is only a read-only
+recovery fallback. REST and native callers reuse the original request id. MCP calls derive it from
 the model's durable tool-use id, which the Pi bridge forwards in request
 metadata rather than relying on a transport JSON-RPC id. Recovery therefore
 resumes the same worktree, attachment, sandbox or runner preparation before
@@ -132,7 +222,7 @@ remain process-local executor state because they are not durable decisions.
 ## Creation ownership
 
 The actor persists a fenced creation aggregate with `planned`, `preparing`,
-`opening_dispatched`, `ready`, and `failed` states. Typed creation events reject
+`opening_dispatched`, `ready`, `failed`, and `cancelled` states. Typed creation events reject
 identity crossover, invalid transitions, and stale physical-effect results while
 other gateway work is active. Creation reductions can now atomically persist state and a stable typed effect.
 The protocol names workspace, branch, sandbox, credential, attachment-reference,
@@ -154,8 +244,8 @@ branch ambiguity dead-letters immediately instead of overwriting the workspace.
 The interactive MCP and WebSocket create paths now record the actor plan before
 physical setup and emit `creation_workspace_prepare` instead of writing a new
 workspace. Their gateway continuations wait for the completed actor receipt,
-never workspace file presence. Existing-workspace joins remain reads, while
-create-plan JSON still carries other recovery decisions.
+never workspace file presence. Existing-workspace joins remain reads, while the
+actor setup plan carries the other recovery decisions.
 The branch effect also has a production executor. It adopts only an exact
 project, branch, and worktree-path match, or materializes the requested branch
 with stable base and isolation options before returning its actor fence. Branch
@@ -305,10 +395,11 @@ the stable effect id. It is exact-once only where the destination honors that
 id. Each effect has a stable destination id and unique command-local key. Registered executors retry with exponential backoff; poison
 effects dead-letter after a bounded attempt count. Unknown kinds remain queued but
 are excluded from registered-kind work batches, so version skew cannot make them head-of-line block compatible work. Timers and
-outbox effects both dead-letter after bounded attempts; authenticated operators
-can inspect, paginate, retry or discard them through
+outbox effects both dead-letter after bounded attempts. Workspace admins can
+inspect and paginate dead letters and quarantines, retry or discard dead timers
+and outbox effects, and release a reconciled session quarantine through
 `/api/system/session-kernel/dead-letters`.
-Slack human-ask delivery is the first production handler and uses the ask id as
+Slack human-ask delivery was the first production handler and uses the ask id as
 Slack `client_msg_id`. Durable timers use the same bounded backoff discipline.
 
 The runtime starts only after run-host recovery and queue restoration establish
@@ -338,36 +429,75 @@ and replay committed changes without becoming another session owner.
 
 ## Process boundary
 
-The writable `SessionKernelStore` and autonomous per-session coordinator run in
-`session-kernel-worker.ts`, a separate JavaScript actor isolate. The gateway
-starts and handshakes that actor before hydrating projections.
+The writable stores and autonomous session coordinators run in the bounded
+actor-host Worker pool behind `SessionKernelStoreHost`. The service mailbox is
+the logical actor: it is created on first routing, serializes one session's
+turns, and disappears when its queue drains. At activation, two rendezvous
+candidates are compared by live lane load; the chosen lane remains pinned until
+the mailbox drains. Worker-local kernel and transcript SQLite connections
+activate lazily and are passivated by separate bounded LRUs. The pool scales to
+available CPUs (16 session lanes on the production host), keeps a separate
+compatibility catalog lane, and is bounded to 32 session lanes. `/ready` reports
+per-lane queue occupancy, wait and processing time, restarts/timeouts, separate
+kernel/transcript cache misses and evictions, and SQLite-busy events.
+A session with no legacy durable rows is claimed in the placement catalog before
+its first mutation, then writes only its own SQLite database. The schema-23
+offline deploy migrator runs after gateway and actor shutdown, verifies each
+unpublished target, and atomically switches placement while removing central
+rows. The router never dual-writes authoritative state. Isolated outbox
+rows use a globally reserved numeric identity allocated by the catalog so
+existing settlement protocols remain additive and mixed-version safe.
 
-A command admission is short: the actor fingerprints and persists the intent,
-allocates a fenced `executionId`, and immediately returns an execution descriptor.
-It does not retain a per-session gateway lease and does not stop reducing run,
-delivery or ask messages while physical work is active. Different command intents
-can be admitted concurrently. The temporary `LegacyGatewayEffect` adapter preserves physical effect
-order for eight compatibility call sites, but that queue is not authoritative:
-every item in it is already durable in the actor. Its operation union and exact
-production call-site baseline are structural migration fences. New lifecycle
-work must use typed reducer messages and executors rather than add a callback.
-A restart re-admits replay-safe intent and marks ambiguous non-replay-safe
-execution indeterminate.
+Before every isolated mutation, the host durably marks that session's catalog
+wake record dirty. A crash can therefore leave an extra scan but cannot hide a
+committed timer or outbox item. Runtime reconciliation reads the authoritative
+session database, dispatches due work, and repairs its next-wake projection.
 
-Retries of an executing request attach as bounded waiters to the same execution;
-they never allocate a second physical effect. Active executions and waiters have
-per-session and process-wide limits. Completion and failure messages carry the
-`executionId`; an unknown or stale id fail-stops the actor rather than committing
-over a successor. Settlement commits the command result and its typed outbox
-effects transactionally, then releases attached waiters.
+The gateway starts and handshakes the actor host before hydrating projections. A
+failed session-scoped critical settlement durably quarantines only that session,
+suppresses its timer and outbox dispatch, and leaves reads and unrelated
+sessions available. An isolated database infrastructure failure is recorded as
+a catalog quarantine for that session. Catalog or legacy-store infrastructure
+ambiguity still fail-stops the whole actor.
 
-Synchronous transcript and session-file compatibility callbacks use their own
-short execution IDs against the same physical SQLite writer. They can run while an
-async effect is suspended without borrowing its ownership. Session JSON and the
-transcript database remain specialized effect stores, but their writes are admitted
-and receipted by the actor. Moving the Worker to an independently supervised Unix
-process is therefore a transport and failure-isolation change, not an ownership
-migration; no fallback writer is permitted.
+Sessions therefore converge on distinct physical databases and logical
+mailboxes inside a bounded, independently supervised pool. A locked isolated
+database has a 250 ms SQLite busy bound, after which that session is quarantined;
+the compatibility gateway's synchronous bridge cannot inherit the central
+store's five-second wait. Catalog-wide compatibility scans use read-only transient connections and paged
+maintenance; their final decomposition is cleanup rather than an authority
+change.
+
+A command admission is a short bounded reduction: the actor fingerprints and
+persists the intent, then immediately returns `execute`, `in_progress`, or the
+committed result. It never awaits filesystem, network, process, sandbox, Runner,
+or model work. Different command intents are interleaved as short serialized
+reductions, and Stop or steering remains responsive while physical continuations
+are queued or running. A restart re-admits replay-safe intent and marks ambiguous
+non-replay-safe execution indeterminate.
+
+Physical continuations run in the gateway process or executor processes outside
+the actor. Their per-session mutex can queue physical work, but it does not hold
+the actor mailbox. An exact retry of executing work receives `in_progress` immediately
+rather than attaching an actor-held waiter. Typed completion and failure
+reductions settle immutable receipts. A session-scoped settlement ambiguity
+quarantines that session rather than committing over a successor or killing
+unrelated sessions. Infrastructure ambiguity still fail-stops the actor client.
+
+Transcript and session-file projections use typed admission and settlement
+receipts, then mutate their specialized destination stores on the gateway thread.
+The narrowly scoped `transcript_destination_append` command is replay-safe
+because `transcripts.db` consumes the same stable append identity and stores an
+immutable transactional result receipt. Legacy `transcript_append` remains
+non-replay-safe. A crash after the transcript commit but before actor completion
+therefore re-admits only the new command and reconciles from the destination
+receipt. Admission and settlement are separate short actor reductions; SQLite,
+bus publication, and append hooks never run while a session mailbox lease is
+held.
+The actor returns from admission before that destination work begins and retains
+no execution waiter or callback. Extracting the Worker into the independently supervised local service was
+therefore a transport and failure-isolation change, not an ownership migration;
+no fallback writer is permitted.
 
 ## Tests
 
@@ -375,9 +505,13 @@ migration; no fallback writer is permitted.
 re-admission, restart-persistent idempotency, generations, transactional
 effects, timer/outbox backoff, dead-lettering, and passivation.
 
-`session-kernel/actor-client.test.ts` exercises the real IPC boundary, including
-cross-isolate serialization, duplicate-result replay, and sync/async race
-fencing. Web and native outbox tests pin request-id retention through receipts.
+`session-kernel/actor-client.test.ts` exercises the Worker IPC boundary,
+including cross-isolate serialization, duplicate-result replay, asynchronous
+acknowledgement, quarantine, and response-buffer resizing.
+`session-kernel/actor-service.test.ts` exercises authenticated HTTP transport,
+version and incarnation fencing, readiness, the response bound, and actor
+responsiveness. Web and native outbox tests pin request-id retention through
+receipts.
 
 `session-kernel/ownership.test.ts` pins the architectural boundary and rejects
 new direct session-file writers. Existing queue, ask, journal, transcript,
@@ -393,15 +527,19 @@ first process's commands. The database file is forced to mode `0600`.
 
 Deleting a session first cancels its active engine or detached host and waits
 for ownership to be released. If absence cannot be proven, deletion returns a
-conflict and keeps the session. A successful deletion leaves a permanent tombstone after its files, transcript
-and runtime slots are removed. Recreating intentionally deleted work requires a
+conflict and keeps the session. A successful serialized deletion removes its
+session file and kernel runtime slots and leaves a permanent tombstone.
+Transcript, search, sandbox, and Runner cleanup is best-effort. Workspace
+metadata and optional worktree cleanup run after the tombstone; a failure can
+leave retained resources even though late writes remain fenced. Recreating intentionally deleted work requires a
 new request identity and therefore a new deterministic session id. Late executor
 frames, run outcomes and queued commands cannot recreate the deleted session.
 
 ## Scheduled prompts
 
-Scheduled prompts use the same durable timer runtime. Their schedule id is also
-the prompt delivery id. A crash after queueing but before timer acknowledgement
+Scheduled prompt definitions remain in the JSON UI listing, while the kernel
+timer is delivery authority. Boot rehydrates timers from that listing. Their
+schedule id is also the prompt delivery id. A crash after queueing but before timer acknowledgement
 adopts the existing queue or command receipt on retry. The former destructive
 30-second polling loop is no longer part of delivery.
 
@@ -411,3 +549,13 @@ instead of posting a second one. GitHub conflict transitions likewise persist
 their delivery intent until SessionControl durably admits it. Restored ask
 answers keep their durable card until the stable continuation delivery is
 admitted, so a restart cannot lose the answer between retirement and queueing.
+Explicit Stop requests likewise enter through a typed turn command plan: the
+actor permanently selects the original run id and generation before gateway
+bookkeeping or physical cancellation, and an exact retry cannot target a
+successor. Durable timer tokens also key typed actor begin/complete/fail
+receipts. Once actor completion commits, recovery retires only that timer
+generation without executing its handler again; a crash before that commit
+remains destination-idempotent at-least-once delivery. SessionControl prompt
+delivery uses the same pattern: the actor fingerprints the full immutable
+delivery identity before slash handling, queueing or steering, then stores the
+returned delivery result for exact caller replay.

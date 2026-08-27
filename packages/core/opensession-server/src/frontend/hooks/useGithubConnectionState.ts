@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useEffectEvent, useState } from "react";
 import { BASE_PATH } from "../lib/base";
 
 export type GithubConnectionState =
@@ -15,7 +15,7 @@ export type GithubConnectionState =
 export function useGithubConnectionState(refreshKey: unknown): GithubConnectionState {
 	const [state, setState] = useState<GithubConnectionState>("loading");
 
-	const refresh = async () => {
+	const refresh = useEffectEvent(async () => {
 		await (async () => {
 const response = await fetch(`${BASE_PATH}/api/connections/github`);
 			if (!response.ok) throw new Error(`GitHub connection check failed: ${response.status}`);
@@ -26,11 +26,11 @@ const response = await fetch(`${BASE_PATH}/api/connections/github`);
 			// older server or a transient request failure cannot answer the check.
 			setState("unknown");
 });
-	};
+	});
 
 	useEffect(() => {
 		void refresh();
-	}, [refresh, refreshKey]);
+	}, [refreshKey]);
 
 	return state;
 }

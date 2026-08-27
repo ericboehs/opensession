@@ -1,5 +1,7 @@
-import React, { useEffect, useRef, useState } from "react";
+import { utilityClassName } from "../ui/cn";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { githubLoginFromInput } from "../lib/github-login";
+import { refreshPeople } from "../lib/people";
 import { Button } from "../ui/button";
 import { Field, FieldGrid, Input } from "../ui/input";
 import { MENU_ICON, Menu } from "../ui/menu";
@@ -60,7 +62,8 @@ export function TeamSection({
 	onChanged,
 	title,
 	addLabel = "Add member",
-	githubOnly = false,
+	onboarding = false,
+	syncGithubOrganization = false,
 	compact = false,
 	showCount = false,
 }: {
@@ -69,8 +72,10 @@ export function TeamSection({
 	title?: React.ReactNode;
 	/** Action copy for the add flow. */
 	addLabel?: string;
-	/** Keep onboarding focused on the GitHub identity used for sign-in. */
-	githubOnly?: boolean;
+	/** Use the roomier, quiet action treatment in first-run onboarding. */
+	onboarding?: boolean;
+	/** Import an organization roster before showing the editable identity table. */
+	syncGithubOrganization?: boolean;
 	compact?: boolean;
 	/** Append the loaded roster size to an explicit title. */
 	showCount?: boolean;
@@ -82,7 +87,8 @@ export function TeamSection({
 	const [githubOrganization, setGithubOrganization] = useState<string | null>(null);
 	const [githubSyncError, setGithubSyncError] = useState<string | null>(null);
 
-	const load = async () => {
+	// Stable identity: only setters and module functions are captured.
+	const load = useCallback(async () => {
 		await (async () => {
 const body = await setupRequest<{ members: TeamMember[] }>("/api/setup/team");
 			setMembers(body.members);
@@ -90,9 +96,9 @@ const body = await setupRequest<{ members: TeamMember[] }>("/api/setup/team");
 })().catch(async () => {
 setLoadFailed(true);
 });
-	};
+	}, []);
 
-	const syncGithubMembers = async () => {
+	const syncGithubMembers = useCallback(async () => {
 		setGithubSyncError(null);
 		await (async () => {
 const body = await setupRequest<{
@@ -110,15 +116,16 @@ const body = await setupRequest<{
 await load();
 			setGithubSyncError("GitHub members weren’t added. Add them manually.");
 });
-	};
+	}, [load]);
 
 	useEffect(() => {
-		if (githubOnly) void syncGithubMembers();
+		if (syncGithubOrganization) void syncGithubMembers();
 		else void load();
-	}, [githubOnly, load, syncGithubMembers]);
+	}, [syncGithubOrganization, load, syncGithubMembers]);
 
 	async function handleMutated() {
 		await load();
+		await refreshPeople();
 		await onChanged();
 	}
 
@@ -129,6 +136,8 @@ await load();
 				actions={
 					<Button
 						size="sm"
+						variant="default"
+						className={onboarding ? utilityClassName("phone:min-h-11") : undefined}
 						icon={<IconPlus size={16} />}
 						onClick={() => {
 							setEditing(null);
@@ -139,8 +148,10 @@ await load();
 					</Button>
 				}
 			>
-				{title ?? "Team members"}
-				{members && (showCount || !title) ? ` · ${members.length}` : ""}
+				{showCount && members
+					? `${members.length} ${members.length === 1 ? "member" : "members"}`
+					: title ?? "Team members"}
+				{members && !showCount && !title ? ` · ${members.length}` : ""}
 			</SettingsGroupLabel>
 			{githubSyncError && (
 				<InlineAlert
@@ -183,33 +194,20 @@ await load();
 				</SettingCard>
 			)}
 			<SettingsHint>
-				{githubOnly
-					? githubOrganization
-						? `Members were imported from the ${githubOrganization} GitHub organization. You can add profile details later in Settings.`
-						: "Members sign in with their GitHub account. You can add profile details later in Settings."
-					: "Names, emails, GitHub logins and Slack ids all resolve through the same identity table, so a session user given as any of them matches the member."}
+				{githubOrganization
+					? `Members were imported from the ${githubOrganization} GitHub organization. Only a name is required when you add someone manually.`
+					: "Only a name is required. Add a GitHub login or other identities when sign-in and attribution should resolve to this member."}
 			</SettingsHint>
-			{githubOnly && !editing ? (
-				<GithubMemberDialog
-					open={dialogOpen}
-					onOpenChange={setDialogOpen}
-					onSaved={async () => {
-						setDialogOpen(false);
-						await handleMutated();
-					}}
-				/>
-			) : (
-				<MemberDialog
-					open={dialogOpen}
-					member={editing}
-					addLabel={addLabel}
-					onOpenChange={setDialogOpen}
-					onSaved={async () => {
-						setDialogOpen(false);
-						await handleMutated();
-					}}
-				/>
-			)}
+			<MemberDialog
+				open={dialogOpen}
+				member={editing}
+				addLabel={addLabel}
+				onOpenChange={setDialogOpen}
+				onSaved={async () => {
+					setDialogOpen(false);
+					await handleMutated();
+				}}
+			/>
 		</>
 	);
 }
@@ -231,7 +229,12 @@ function MemberRow({
 	].filter(Boolean);
 	return (
 		<SettingRow>
-			<UserAvatar name={member.name} login={member.github} size={28} />
+			<UserAvatar
+				name={member.name}
+				login={member.github}
+				size={28}
+				glow={compact}
+			/>
 			<SettingRowText>
 				<SettingRowTitle>{member.name}</SettingRowTitle>
 				{!compact && details.length > 0 && (

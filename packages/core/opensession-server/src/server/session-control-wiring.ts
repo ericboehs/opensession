@@ -17,18 +17,19 @@
 
 import { AUTO_CONTINUE_USER } from "./auto-continue";
 import { personaName } from "./config";
-import { currentAgentRunToken, isAgentSessionBusy, steerAgentRun } from "./agent-runner";
-import { pendingAskAwaitingAnswer } from "./asks";
+import { currentAgentRunToken, isAgentSessionBusy } from "./agent-runner";
+import { pendingAskAwaitingAnswer, pendingAsks, type PendingAsk } from "./asks";
 import { relinkAskThreads } from "./human-asks";
 import { SESSION_EFFORTS, type SessionEffort, providerFor, resolveModel } from "./models";
 import { configuredInteractiveDefaultModel } from "./model-catalog";
-import { deliveryQueueState, durableQueueItem, liftUserStop, promptQueues, acceptQueuedSteer, prepareQueuedSteer, rejectQueuedSteer } from "./queue-state";
+import { deliveryQueueState, durableQueueItem, liftUserStop } from "./queue-state";
+import { prepareAndSteerQueuedPrompt } from "./queued-steer";
 import { drainQueue, enqueuePrompt, requestTurnCancel, runSessionPrompt, sessionMentionsNote, watchExternalRunAndDrain } from "./run-session";
 import { creationAttachmentPath, parseImageDataUrls, prepareCreationAttachmentSources, withUploadsNote } from "./uploads";
 import { type Sandbox } from "./sandbox";
 import { isRemoteSandboxProvider, resolveRequestedSandbox } from "./sandbox/config";
 import { resolveInteractiveSandbox } from "./sandbox/defaults";
-import { findSession, getCachedSessions, invalidateSessionsCache, touchNativeSession } from "./session-cache";
+import { findSession, getCachedSessions, getCachedSessionsAsync, getSessionListSnapshotAsync, invalidateSessionsCache, touchNativeSession } from "./session-cache";
 import { nameKnownSessionReferencesForTitle } from "./session-reference-title";
 import {
 	getSessionControl,
@@ -39,7 +40,7 @@ import {
 } from "./session-control";
 import { type ResolvedCreate, actorCreationSetupPlan, forkHandoffContext, runOpeningCreateOnce, resolveForkContext, resolvePinnedAccountId, waitForCreatedSessionProjection } from "./session-create";
 import { resolveSessionRepoContext, workspaceOwningWorktree } from "./session-repos";
-import { getAllSessions, mergedSessionTranscript } from "./sessions";
+import { mergedSessionTranscriptAsync } from "./sessions";
 import { rebuildIndex } from "./slack-links";
 import { handleSlashCommand } from "./slash-commands";
 import { type UnifiedSession } from "./types";
@@ -49,17 +50,15 @@ import { ensureAskCheckout, ensureScratchDir, getRepo, isRegisteredWorktree, lis
 import { broadcastToSession } from "./ws-hub";
 import { randomUUIDv7 } from "bun";
 import {
-  durableSessionCommand,
-	legacyGatewayEffect,
 	patchCreationSetupPlan,
 	requestCreationAttachment,
 	requestCreationBranch,
 	requestCreationCredential,
 	requestCreationWorkspace,
+	sessionAsk,
+	sessionDelivery,
 	sessionKernel,
-	sessionKernelOwnsCurrentCommand,
   sessionTurn,
-  targetForTurnCancel,
 } from "./session-kernel";
 import {
 	canonicalCommandPayload,
@@ -80,14 +79,15 @@ import { existsSync, watch } from "fs";
 import { branchNameFromPrompt } from "./suggest-branch";
 
 /** Derive the at-a-glance state + control surface for a session (for the MCP). */
-function buildSummary(s: UnifiedSession): SessionSummary {
+function buildSummary(
+	s: UnifiedSession,
+	pending?: PendingAsk,
+	queuedCount = 0,
+): SessionSummary {
 	const busyHere = isAgentSessionBusy(s.claudeSessionId, s.codexThreadId, s.id);
 	// External runs (CLI in tmux, another process) show as running via PID but
 	// aren't in our activeRuns — observe-only, can't steer/cancel them.
 	const runningExternal = !!s.isRunning && !busyHere;
-	const pending = pendingAskAwaitingAnswer(s.id);
-	const queuedCount = promptQueues.get(s.id)?.length || 0;
-
 	let state: SessionState;
 	if (s.archived) state = "archived";
 	else if (pending) state = "waiting_question";
@@ -111,13 +111,68 @@ function buildSummary(s: UnifiedSession): SessionSummary {
 	};
 }
 
+const summaryState: {
+	byId: Map<string, SessionSummary>;
+	refresh?: Promise<void>;
+} = ((globalThis as typeof globalThis & {
+	__opensessionSessionSummaryState?: {
+		byId: Map<string, SessionSummary>;
+		refresh?: Promise<void>;
+	};
+}).__opensessionSessionSummaryState ??= { byId: new Map() });
+
+function refreshSessionSummaries(): Promise<void> {
+	if (summaryState.refresh) return summaryState.refresh;
+	summaryState.refresh = (async () => {
+		const [sessions, askEntries, queueEntries] = await Promise.all([
+			getCachedSessionsAsync("include"),
+			sessionAsk({ op: "entries" }),
+			sessionDelivery({ op: "entries", slot: "queued" }),
+		]);
+		const asks = new Map(
+			(askEntries as Array<[string, PendingAsk]>).filter(
+				([, pending]) => !pending.answerReceived,
+			),
+		);
+		const queued = new Map(
+			(queueEntries as Array<[string, unknown[]]>).map(([id, items]) => [
+				id,
+				items.length,
+			]),
+		);
+		const next = new Map<string, SessionSummary>();
+		for (const session of sessions)
+			next.set(
+				session.id,
+				buildSummary(session, asks.get(session.id), queued.get(session.id) ?? 0),
+			);
+		summaryState.byId = next;
+	})().finally(() => {
+		summaryState.refresh = undefined;
+	});
+	return summaryState.refresh;
+}
+
+function listSessionSummaries(): SessionSummary[] {
+	void refreshSessionSummaries().catch((error) =>
+		console.warn("[sessions] summary refresh failed:", error),
+	);
+	return getCachedSessions().map(
+		(session) => summaryState.byId.get(session.id) ?? buildSummary(session),
+	);
+}
+
 // --- Session control surface (powers the opensession-sessions MCP) ---
 // Wire the Slack thread index (thread replies → owning session). Re-run on
 // every hot reload (cheap) so the index stays fresh.
-rebuildIndex(getAllSessions());
-// rebuildIndex() clears the index, so replay the links the session files don't
-// hold: a human-ask DM thread belongs to the session that raised the ask.
-relinkAskThreads();
+void getSessionListSnapshotAsync()
+	.then((sessions) => {
+		rebuildIndex(sessions);
+		// rebuildIndex() clears the index, so replay the links the session files
+		// don't hold: a human-ask DM thread belongs to the session that raised it.
+		relinkAskThreads();
+	})
+	.catch((error) => console.warn("[slack-links] index rebuild failed:", error));
 
 // Wires the MCP's tools into the same in-process state and helpers the
 // WebSocket handlers use, so a management session steers/answers/creates the
@@ -135,40 +190,52 @@ class SessionDeliveryError extends Error {
 }
 
 registerSessionControl({
-	listSessions: () =>
-		getCachedSessions().map(buildSummary),
+	listSessions: listSessionSummaries,
 
 	getSession: (id) => {
+		void refreshSessionSummaries().catch((error) =>
+			console.warn("[sessions] summary refresh failed:", error),
+		);
 		const s = findSession(id);
-		return s ? buildSummary(s) : undefined;
+		return s ? summaryState.byId.get(s.id) ?? buildSummary(s) : undefined;
 	},
 
-	transcriptTail: (id, n) => {
+	transcriptTail: async (id, n) => {
 		const s = findSession(id);
 		if (!s) return [];
-		// Engine-spanning read (file + pi store) — same as the transcript
-		// route, so get_session works on pi/migrated sessions too.
-		return mergedSessionTranscript(s).slice(-Math.max(0, n));
+		// Engine-spanning read (file + actor store) — same as the transcript
+		// route, so get_session works after shared-store retirement.
+		return (await mergedSessionTranscriptAsync(s)).slice(-Math.max(0, n));
 	},
 
 	answerQuestion: async (id, answers, opts) => {
 		const requestId = opts?.requestId || randomUUIDv7();
-		const questionId = pendingAskAwaitingAnswer(id)?.questionId || null;
-		const accepted = await sessionKernel(id).dispatchLegacy(
-			legacyGatewayEffect("answer_question", {
-				requestId,
-				payload: { questionId, answers },
-				source: "session_control",
-				replaySafe: true,
-			}),
-			() => {
-				const pending = pendingAskAwaitingAnswer(id);
-				if (!pending || pending.questionId !== questionId) return false;
-				pending.resolve(answers && typeof answers === "object" ? answers : null);
-				return true;
-			},
-		);
-		return accepted.result;
+		const questionId = (await pendingAskAwaitingAnswer(id))?.questionId || null;
+		// The actor records the answer durably under the caller's retry
+		// identity; the aggregate makes replay idempotent. The gateway-side
+		// resolver then runs its live side effects (escalation cancel,
+		// broadcast, tool-promise wake) — it owns the answerReceived flag.
+		const settled = await sessionAsk({
+			op: "answer",
+			sessionId: id,
+			questionId,
+			answers,
+			answeredVia: requestId,
+		});
+		if (!settled.matched) return false;
+		// An exact retry must wake the waiter with the already-committed
+		// answers, never the retry call's payload.
+		const effective =
+			settled.answers ?? (answers && typeof answers === "object" ? answers : null);
+		const pending = (await pendingAsks.getAsync(id)) as
+			| { questionId?: string; resolve?: (value: unknown) => void | Promise<void> }
+			| undefined;
+		if (
+			pending?.resolve &&
+			(questionId === null || pending.questionId === questionId)
+		)
+			await pending.resolve(effective);
+		return true;
 	},
 
 	deliverToSession: async (id, content, user, opts) => {
@@ -242,7 +309,7 @@ registerSessionControl({
 			// prior Stop here rather than inside the run the Stop prevents: the busy
 			// branch below only enqueues, and drainQueue parks at the latch, which
 			// would leave the message queued forever.
-			liftUserStop(id);
+			await liftUserStop(id);
 
 			const attributed = user ? `[${user}] ${content}` : content;
 			// Disk-staged files can only be supplied to a fresh turn. Never fold them
@@ -276,34 +343,30 @@ registerSessionControl({
 						...(opts?.hold ? { hold: true } : {}),
 						...(opts?.reviewHandoff ? { reviewHandoff: true } : {}),
 					});
-					if (!prepareQueuedSteer(id, deliveryId, steerItem)) {
-						throw new Error("Delivery changed before steer preparation");
-					}
-					if (
-						steerAgentRun(
-							[session.claudeSessionId, session.codexThreadId, session.id],
-							attributed,
-							opts?.images,
-							deliveryId,
-						)
-					) {
-						if (!acceptQueuedSteer(id, deliveryId))
-							throw new Error("Pending steer changed before runner acceptance");
+					const steerResult = await prepareAndSteerQueuedPrompt({
+						sessionId: id,
+						itemId: deliveryId,
+						item: steerItem,
+						text: attributed,
+						images: opts?.images,
+					});
+					if (steerResult === "steered") {
 						return {
 							status: "steered" as const,
 							message: "Folded into the running turn.",
 							deliveryId,
 						};
 					}
-					rejectQueuedSteer(id, deliveryId);
-					watchExternalRunAndDrain(id);
-					return {
-						status: "queued" as const,
-						message: "Queued behind the current run.",
-						deliveryId,
-					};
+					if (steerResult === "rejected") {
+						watchExternalRunAndDrain(id);
+						return {
+							status: "queued" as const,
+							message: "Queued behind the current run.",
+							deliveryId,
+						};
+					}
 				}
-				enqueuePrompt(id, {
+				await enqueuePrompt(id, {
 					id: deliveryId,
 					content,
 					user,
@@ -337,7 +400,7 @@ registerSessionControl({
 
 			// Every accepted prompt is durable before any engine or workspace wake.
 			// A crash after this write but before dispatch replays the same queue id.
-			enqueuePrompt(id, {
+			await enqueuePrompt(id, {
 				id: deliveryId,
 				content,
 				user,
@@ -355,92 +418,94 @@ registerSessionControl({
 				deliveryId,
 			};
 		};
-		if (sessionKernelOwnsCurrentCommand(id)) return deliverOwned();
+		const plan = await sessionDelivery({
+			op: "request_submit_command",
+			sessionId: id,
+			requestId: deliveryId,
+			identity,
+		});
+		if (plan.status === "completed") {
+			const result = plan.result as Awaited<ReturnType<typeof deliverOwned>>;
+			return { ...result, duplicate: true };
+		}
+		if (plan.status === "in_progress")
+			throw Object.assign(new Error("Prompt delivery is already in progress"), {
+				retryable: true,
+			});
+    let submitPhysicalFinished = false;
 		try {
-			const accepted = await sessionKernel(id).dispatchLegacy(
-				legacyGatewayEffect("submit_prompt", {
-					requestId: deliveryId,
-					payload: identity,
-					source: "session_control",
-					replaySafe: true,
-				}),
-				deliverOwned,
-			);
-			return {
-				...accepted.result,
-				...(accepted.duplicate ? { duplicate: true } : {}),
-			};
+			const result = await deliverOwned();
+      submitPhysicalFinished = true;
+			return await sessionDelivery({
+				op: "complete_submit_command",
+				sessionId: id,
+				requestId: deliveryId,
+				result,
+			}) as typeof result;
 		} catch (error) {
-			if (error instanceof SessionDeliveryError) return error.result;
+			if (error instanceof SessionDeliveryError) {
+        submitPhysicalFinished = true;
+				await sessionDelivery({
+					op: "complete_submit_command",
+					sessionId: id,
+					requestId: deliveryId,
+					result: error.result,
+				});
+				return error.result;
+			}
+      if (!submitPhysicalFinished) await sessionDelivery({
+				op: "fail_submit_command",
+				sessionId: id,
+				requestId: deliveryId,
+				error: error instanceof Error ? error.message : String(error),
+			});
 			throw error;
 		}
 	},
 
 	cancelSession: async (id, opts) => {
 		const requestId = opts?.requestId || randomUUIDv7();
-    const targetRun = sessionKernel(id).runState();
-    const persistedCancel = sessionTurn({ op: "snapshot", sessionId: id }).cancel;
-    const priorCommandPayload = durableSessionCommand(id, requestId)?.payload as
-      | { targetRunId?: string | null; targetRunGeneration?: number }
-      | undefined;
-    const commandTarget =
-      priorCommandPayload?.targetRunId !== undefined &&
-      priorCommandPayload.targetRunGeneration !== undefined
-        ? {
-            runId: priorCommandPayload.targetRunId,
-            generation: priorCommandPayload.targetRunGeneration,
-          }
-        : undefined;
-    const replayedTarget =
-      commandTarget ||
-      targetForTurnCancel(persistedCancel, `stop:${requestId}`);
-    const targetRunId = replayedTarget
-      ? replayedTarget.runId
-      : targetRun.currentRunId ||
-      (targetRun.state === "starting" || targetRun.state === "preparing"
-        ? currentAgentRunToken(id)
-          : undefined) ||
-        null;
-    const targetRunGeneration =
-      replayedTarget?.generation ?? targetRun.generation;
-		const accepted = await sessionKernel(id).dispatchLegacy(
-			legacyGatewayEffect("cancel_session", {
-				requestId,
-        payload: { targetRunId, targetRunGeneration },
+		const plan = await sessionTurn({
+			op: "request_cancel_command",
+			sessionId: id,
+			requestId,
+			fallbackRunId: currentAgentRunToken(id) || null,
+		});
+		if (plan.status === "completed") return plan.result;
+    let cancelPhysicalFinished = false;
+		try {
+			const currentSession = findSession(id);
+			if (!currentSession) {
+        cancelPhysicalFinished = true;
+				return await sessionTurn({
+					op: "complete_cancel_command",
+					sessionId: id,
+					requestId,
+					result: false,
+				});
+			}
+			await requestTurnCancel(id, currentSession, {
+				cancelId: `stop:${requestId}`,
+				expectedRunId: plan.targetRunId,
+				expectedGeneration: plan.targetRunGeneration,
 				source: "session_control",
-				replaySafe: true,
-			}),
-      () => {
-        const current = sessionKernel(id).runState();
-        const currentTargetId =
-          current.currentRunId ||
-          (current.state === "starting" || current.state === "preparing"
-            ? currentAgentRunToken(id)
-            : undefined) ||
-          null;
-        if (
-          currentTargetId !== targetRunId ||
-          current.generation !== targetRunGeneration
-        ) {
-          const replayedCancel = sessionTurn({ op: "snapshot", sessionId: id }).cancel;
-          const cancelReplayMatches =
-            replayedCancel?.cancelId === `stop:${requestId}` &&
-            replayedCancel.runId === targetRunId &&
-            replayedCancel.runGeneration === targetRunGeneration;
-          if (!cancelReplayMatches) throw new Error("The run targeted by this command has already changed");
-        }
-        const session = findSession(id);
-        if (!session || !targetRunId) return false;
-        requestTurnCancel(id, session, {
-          cancelId: `stop:${requestId}`,
-          expectedRunId: targetRunId,
-          expectedGeneration: targetRunGeneration,
-          source: "session_control",
-        });
-        return true;
-      },
-		);
-		return accepted.result;
+			});
+      cancelPhysicalFinished = true;
+			return await sessionTurn({
+				op: "complete_cancel_command",
+				sessionId: id,
+				requestId,
+				result: true,
+			});
+		} catch (error) {
+      if (!cancelPhysicalFinished) await sessionTurn({
+				op: "fail_cancel_command",
+				sessionId: id,
+				requestId,
+				error: error instanceof Error ? error.message : String(error),
+			});
+			throw error;
+		}
 	},
 
 	createSession: async (input: CreateSessionOpts) => {
@@ -482,7 +547,7 @@ registerSessionControl({
 		const createIdentity = new Bun.CryptoHasher("sha256")
 			.update(canonicalCommandPayload(ownedInput))
 			.digest("hex");
-		const durableCreation = sessionKernel(bksId).creationState();
+		const durableCreation = await sessionKernel(bksId).creationState();
 		if (durableCreation && durableCreation.identity !== createIdentity)
 			throw new Error("Create request identity crossed durable session ownership");
 		let completedCreate = findSession(requestedId);
@@ -513,7 +578,7 @@ registerSessionControl({
 					new Date(durableCreation.updatedAt).toISOString(),
 			};
 		}
-		let createPlan = actorCreationSetupPlan(bksId, createIdentity);
+		let createPlan = await actorCreationSetupPlan(bksId, createIdentity);
 		if (
 			completedCreate?.claudeSessionId ||
 			completedCreate?.codexThreadId
@@ -700,7 +765,7 @@ registerSessionControl({
 					else {
 						sessionBranch = await branchNameFromPrompt(prompt);
 						sessionBranch = await resolveUniqueBranch(sessionBranch, repo.id);
-						createPlan = patchCreationSetupPlan(bksId, createIdentity, {
+						createPlan = await patchCreationSetupPlan(bksId, createIdentity, {
 							branch: sessionBranch,
 						});
 					}
@@ -827,7 +892,7 @@ registerSessionControl({
 				const plannedWorkspaceId =
 					createPlan.workspaceId || createPlanWorkspaceId(bksId);
 				if (!createPlan.workspaceId)
-					createPlan = patchCreationSetupPlan(bksId, createIdentity, {
+					createPlan = await patchCreationSetupPlan(bksId, createIdentity, {
 						workspaceId: plannedWorkspaceId,
 					});
 				const branchForWs = wsParent?.branch || sessionBranch;
@@ -876,7 +941,7 @@ registerSessionControl({
 		const attachmentSources =
 			createPlan.attachments ?? prepareCreationAttachmentSources(bksId, rawFiles);
 		if (!createPlan.attachments && attachmentSources.length)
-			createPlan = patchCreationSetupPlan(bksId, createIdentity, {
+			createPlan = await patchCreationSetupPlan(bksId, createIdentity, {
 				attachments: attachmentSources,
 			});
 		for (const attachment of attachmentSources)
@@ -1072,7 +1137,7 @@ ${createMentionsNote}`;
 				}
 			: computedSpec;
 		if (!createPlan.resolved) {
-			createPlan = patchCreationSetupPlan(bksId, createIdentity, {
+			createPlan = await patchCreationSetupPlan(bksId, createIdentity, {
 				resolved: snapshotOpeningCreate(computedSpec),
 			});
 		}
@@ -1080,6 +1145,7 @@ ${createMentionsNote}`;
 		// Run in the background; watchers (web UI) see the live stream, the same
 		// as a UI-created session. The tool returns once the session file exists
 		// (the announce), while engine startup continues behind it.
+		const openingCreationState = await sessionKernel(bksId).creationState();
 		return await new Promise<{ id: string; createdBy: string; createdAt: string }>(
 			(resolve, reject) => {
 				const opening = runOpeningCreateOnce(spec, {
@@ -1101,7 +1167,7 @@ ${createMentionsNote}`;
 						createdAt:
 							existing?.createdAt ||
 							new Date(
-								sessionKernel(bksId).creationState()?.updatedAt ?? Date.now(),
+								openingCreationState?.updatedAt ?? Date.now(),
 							).toISOString(),
 					});
 					return;

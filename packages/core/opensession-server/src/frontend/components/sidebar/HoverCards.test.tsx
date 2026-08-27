@@ -24,7 +24,9 @@ Object.assign(
 const AGO = new Date(Date.now() - 8 * 60_000).toISOString();
 const HOVER_SOURCE = new URL("./HoverCards.tsx", import.meta.url).pathname;
 const hoverSource = readFileSync(HOVER_SOURCE, "utf8");
-const statusSource = readFileSync(new URL("../../lib/sidebar-classes.ts", import.meta.url), "utf8");
+const statusSource =
+	readFileSync(new URL("../../lib/sidebar-classes.ts", import.meta.url), "utf8") +
+	readFileSync(new URL("../../styles/utility-compat.stylex.ts", import.meta.url), "utf8");
 const toneSource = new URL("../../lib/pr-tone-classes.ts", import.meta.url).pathname;
 const toneCollector = newStylexCollector();
 stylexTransform(toneSource, readFileSync(toneSource, "utf8"), toneCollector);
@@ -112,7 +114,7 @@ describe("hover cards drop the repo and the idle timestamp", () => {
 			expect(idle).not.toContain("Running");
 		}
 		for (const running of [sessionRunning, workspaceRunning]) {
-			expect(running).toContain('<span class=""></span>');
+			expect(running).toContain("bg-yellow");
 		}
 		expect(hoverSource).toContain("sx.size2, sx.shrink0, sx.roundedFull");
 	});
@@ -245,7 +247,7 @@ describe("workspace PR status marks", () => {
 				shipsDirectlyToMain
 			/>,
 		);
-		expect(statusSource).toContain('"backgroundColor": "var(--text-faint)"');
+		expect(statusSource).toContain('backgroundColor: "var(--text-faint)"');
 		expect(html).not.toContain("No pull request");
 	});
 });
@@ -269,7 +271,7 @@ describe("workspace run status marks", () => {
 				size={18}
 			/>,
 		);
-		expect(statusSource).toContain('"backgroundColor": "var(--yellow)"');
+		expect(statusSource).toContain('backgroundColor: "var(--yellow)"');
 		expect(html).toContain("width:18px;height:18px");
 	});
 
@@ -287,7 +289,7 @@ describe("workspace run status marks", () => {
 				size={18}
 			/>,
 		);
-		expect(statusSource).toContain('"backgroundColor": "var(--red)"');
+		expect(statusSource).toContain('backgroundColor: "var(--red)"');
 		expect(html).toContain("width:18px;height:18px");
 	});
 });

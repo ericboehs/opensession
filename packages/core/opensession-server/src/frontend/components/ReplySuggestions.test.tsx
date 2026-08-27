@@ -19,12 +19,15 @@ import {
 
 const { ReplySuggestions } = await import("./ReplySuggestions");
 const COMPOSER_SOURCE = new URL("../lib/composer-classes.ts", import.meta.url).pathname;
+const composerSource = readFileSync(COMPOSER_SOURCE, "utf8");
 const composerCollector = newStylexCollector();
 stylexTransform(
 	COMPOSER_SOURCE,
 	readFileSync(COMPOSER_SOURCE, "utf8"),
 	composerCollector,
 );
+const UTILITY_COMPAT = new URL("../styles/utility-compat.stylex.ts", import.meta.url).pathname;
+stylexTransform(UTILITY_COMPAT, readFileSync(UTILITY_COMPAT, "utf8"), composerCollector);
 const composerCss = stylexCss(composerCollector);
 const VIEWER_SOURCE = new URL("../lib/session-viewer-classes.ts", import.meta.url).pathname;
 const viewerSource = readFileSync(VIEWER_SOURCE, "utf8");
@@ -67,36 +70,34 @@ describe("ReplySuggestions", () => {
 	});
 
 	test("the pills start on the composer's own content rail", () => {
-		const insets = [...composerCss.matchAll(/--composer-inset-left:(\d+)px/g)].map(
-			(match) => Number(match[1]),
-		);
-		expect(insets).toEqual(expect.arrayContaining([15, 13]));
-		expect(viewerSource).toContain('"paddingLeft": "19px"');
-		expect(viewerSource).toContain('"paddingLeft": "17px"');
+		expect(composerSource).toContain("[--composer-inset-left:15px]");
+		expect(composerSource).toContain("phone:[--composer-inset-left:13px]");
+		expect(viewerSource).toContain("pl-[19px]");
+		expect(viewerSource).toContain("phone:pl-[17px]");
 	});
 
 	test("the transcript keeps clear of whatever the band is carrying", () => {
 		for (const value of [34, 38, 46, 54, 90]) {
-			expect(viewerSource).toContain(`"--suggestions-under": "${value}px"`);
+			expect(viewerSource).toContain(`[--suggestions-under:${value}px]`);
 		}
 		expect(viewerSource).toContain("phone:[body.kb-open_&]:[--suggestions-under:0px]");
 	});
 
 	test("desktop keeps Next on the input's right edge", () => {
-		expect(viewerSource).toContain("sx.justifyEnd");
+		expect(viewerSource).toContain("justify-end");
 	});
 
 	test("desktop centers the reading action between replies and Next", () => {
-		expect(viewerSource).toContain("sx.desktopGrid");
-		expect(viewerSource).toContain("sx.desktopGridColsMinmax01frAutoMinmax01fr");
+		expect(viewerSource).toContain("desktop:grid");
+		expect(viewerSource).toContain("desktop:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]");
 	});
 
 	test("phone stacks chips above the centered action bar", () => {
-		expect(viewerSource).toContain("sx.phoneFlexCol");
-		expect(viewerSource).toContain("sx.phoneGap2");
-		expect(viewerSource).toContain("sx.phonePr0");
+		expect(viewerSource).toContain("phone:flex-col");
+		expect(viewerSource).toContain("phone:gap-2");
+		expect(viewerSource).toContain("phone:pr-0");
 		expect(viewerSource).toContain("export const VIEWER_SUGGESTIONS_ROW_INLINE");
-		expect(viewerSource).toContain("sx.minW0");
+		expect(viewerSource).toContain("min-w-0");
 	});
 
 	test("renders nothing at all when there is nothing to suggest", () => {

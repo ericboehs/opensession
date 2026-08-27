@@ -141,6 +141,40 @@ export function githubLoginToPersonKey(login?: string | null): string | null {
 }
 
 /**
+ * Whether a GitHub login is explicitly trusted by this Open Session instance.
+ * This is deliberately roster-based, not `author_association`-based: a public
+ * repository's contributors and outside collaborators are not automatically
+ * allowed to command the GitHub agent. Missing login/roster data fails closed.
+ */
+export function isTrustedGithubLogin(login?: string | null): boolean {
+  if (!login) return false;
+  const normalized = login.trim().replace(/^@/, "").toLowerCase();
+  if (!normalized) return false;
+  return identity.team.some((member) => member.github?.trim().toLowerCase() === normalized);
+}
+
+/**
+ * Whether a strong sender identifier resolves to anyone on the configured
+ * team. This intentionally accepts only exact GitHub logins, Slack ids, and
+ * email addresses. Names and aliases are attribution conveniences, not
+ * authentication evidence. Public GitHub webhooks must still use the stricter
+ * `isTrustedGithubLogin` helper above.
+ */
+export function isTrustedUser(ref?: string | null): boolean {
+  if (!ref) return false;
+  const key = ref.trim().replace(/^@/, "");
+  if (!key) return false;
+  const lower = key.toLowerCase();
+  return identity.team.some(
+    (member) =>
+      member.github?.toLowerCase() === lower ||
+      member.slackId === key ||
+      member.email?.toLowerCase() === lower ||
+      member.linearEmails?.some((email) => email.toLowerCase() === lower),
+  );
+}
+
+/**
  * A commit's git author → the same web user-picker key PRs are attributed
  * with, so a repo that ships as commits credits the same face as one that
  * ships as pull requests. The email is the strong signal; the name covers a

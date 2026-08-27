@@ -1,10 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import {
 	classifyQueuedContent,
+	isClientVisibleQueuedContent,
 	mergeTranscriptEntries,
 	normalizeLegacyVoiceToolEntries,
 	orderTranscriptEntries,
 	queueAttribution,
+	summarizeInFlightContent,
 } from "./transcript-state";
 import type { TranscriptEntry } from "./types";
 
@@ -127,10 +129,9 @@ describe("transcript client state", () => {
 	});
 
 	test("classifies a queued workflow result as system traffic", () => {
-		const classified = classifyQueuedContent(
-			'<!--os:workflow-notice:wf-1-->\n✅ Workflow "review" finished',
-			"Kent",
-		);
+		const content =
+			'<!--os:workflow-notice:wf-1-->\n✅ Workflow "review" finished';
+		const classified = classifyQueuedContent(content, "Kent");
 
 		expect(classified.content).toBe('Workflow "review" finished');
 		expect(classified.notice).toMatchObject({
@@ -139,6 +140,14 @@ describe("transcript client state", () => {
 		});
 		expect(classified.sender).toBeUndefined();
 		expect(queueAttribution(classified, "Michiel")).toBeNull();
+		expect(isClientVisibleQueuedContent(content, "Kent")).toBe(false);
+	});
+
+	test("never exposes auto-continues as queued messages", () => {
+		expect(isClientVisibleQueuedContent("(auto-continue)", "auto-continue")).toBe(
+			false,
+		);
+		expect(isClientVisibleQueuedContent("Please continue", "Kent")).toBe(true);
 	});
 
 	test("classifies queued peer-session messages as notices", () => {
@@ -157,6 +166,49 @@ describe("transcript client state", () => {
 				"Message from another session",
 			);
 		}
+	});
+
+	test("classifies server-generated worker failures as worker reports", () => {
+		const id = "bks-01a03a08-8dec-759f-9970-5766bb898909";
+		const body = `Worker task \`${id}\` ended in error without reporting back.`;
+		const current = classifyQueuedContent(
+			`<!--os:worker-report:${id}-->\n${body}`,
+		);
+		const legacy = classifyQueuedContent(`Server notice: ${body}`);
+
+		for (const classified of [current, legacy]) {
+			expect(classified.notice).toMatchObject({
+				kind: "worker-report",
+				title: "Worker report",
+				link: { label: "Open worker", sessionId: id },
+			});
+			expect(classified.content).toBe(body);
+		}
+		expect(summarizeInFlightContent([current, legacy])).toEqual({
+			messages: 0,
+			reviews: 0,
+			workerReports: 2,
+			sessionMessages: 0,
+		});
+	});
+
+	test("keeps steered agent traffic grouped as reports and session messages", () => {
+		const worker = classifyQueuedContent(
+			"<!--os:worker-report-->\nReview complete.",
+			"worker bks-01a03a08-8dec-759f-9970-5766bb898909",
+		);
+		const peer = classifyQueuedContent(
+			"<!--os:session-notice-->\nNo blockers found.",
+			"agent bks-01a03a08-8dec-759f-9970-5766bb898910",
+		);
+		const human = classifyQueuedContent("Please keep going.", "Michiel");
+
+		expect(summarizeInFlightContent([worker, peer, human])).toEqual({
+			messages: 1,
+			reviews: 0,
+			workerReports: 1,
+			sessionMessages: 1,
+		});
 	});
 
 	test("credits a teammate on a queue chip but never the viewer", () => {

@@ -40,13 +40,19 @@ import {
   REPO_ROOT,
   SERVICE_NAME,
   SERVICE_PATH,
+  SESSION_KERNEL_SERVICE_NAME,
+  SESSION_KERNEL_SERVICE_PATH,
+  SESSION_KERNEL_TOKEN_PATH,
   SHIM_PATH,
   STAGED_EXECUTOR_UNIT_PATH,
+  STAGED_SESSION_KERNEL_UNIT_PATH,
   STAGED_UNIT_PATH,
+  USER_SESSION_KERNEL_TOKEN_PATH,
+  USER_SESSION_KERNEL_UNIT_PATH,
   USER_UNIT_PATH,
 } from "./paths";
 import { isCompiledBinary } from "../../packages/core/opensession-server/src/runner-host/exe";
-import { dim, info, ok, run, runInherit, warn } from "./ui";
+import { dim, fail, info, ok, run, runInherit, warn } from "./ui";
 
 export type Supervisor = "systemd" | "launchd" | "none";
 /** Which systemd manager owns the unit. */
@@ -65,6 +71,17 @@ export const LAUNCHD_PLIST = join(
  * `bin/OpenSession` and the `bin/opensession` shim are the same file, so writing
  * the launcher there would follow the shim symlink and clobber the binary. */
 export const LAUNCHD_LAUNCHER = join(OPENSESSION_HOME, "OpenSession");
+export const LAUNCHD_SESSION_KERNEL_LABEL = "dev.opensession.session-kernel";
+export const LAUNCHD_SESSION_KERNEL_PLIST = join(
+  HOME,
+  "Library",
+  "LaunchAgents",
+  `${LAUNCHD_SESSION_KERNEL_LABEL}.plist`,
+);
+export const LAUNCHD_SESSION_KERNEL_LAUNCHER = join(
+  OPENSESSION_HOME,
+  "OpenSessionKernel",
+);
 export const LOG_DIR = join(OPENSESSION_HOME, "logs");
 const RUN_HOST_HELPER = "/usr/local/libexec/opensession-run-host";
 
@@ -86,6 +103,12 @@ function envFileValue(name: string): string | undefined {
   return raw;
 }
 
+function defaultStatePath(base: string): string {
+  const current = join(HOME, ".opensession", base);
+  const legacy = join(HOME, `.opensession-${base}`);
+  return existsSync(current) || !existsSync(legacy) ? current : legacy;
+}
+
 function runHostsRoot(): string {
   const sessionsDir =
     process.env.OPENSESSION_SESSIONS_DIR ||
@@ -96,7 +119,7 @@ function runHostsRoot(): string {
             envFileValue("OPENSESSION_STATE_DIR")!,
           ".opensession-sessions",
         )
-      : join(HOME, ".opensession-sessions"));
+      : defaultStatePath("sessions"));
   return join(sessionsDir, "run-hosts");
 }
 
@@ -338,6 +361,10 @@ export async function renderUnit(
       .replace(
         credentialMarker,
         "LoadCredential=executor-token:/etc/opensession/executor-token\n",
+      )
+      .replace(
+        /^# SESSION_KERNEL_CREDENTIAL$/m,
+        `LoadCredential=session-kernel-token:${SESSION_KERNEL_TOKEN_PATH}`,
       );
   }
   // A user manager cannot consume the root-owned executor credential or launch
@@ -345,10 +372,14 @@ export async function renderUnit(
   // running turns in the gateway process. The system scope retains detached,
   // restart-surviving execution through the independent executor service.
   return unit
+    .replace(
+      /^# SESSION_KERNEL_CREDENTIAL$/m,
+      `LoadCredential=session-kernel-token:${USER_SESSION_KERNEL_TOKEN_PATH}`,
+    )
     .replace(/^Wants=opensession-executor\.service\n/m, "")
     .replace(
-      /^After=network\.target opensession-executor\.service$/m,
-      "After=network.target",
+      /^After=network\.target opensession-session-kernel\.service opensession-executor\.service$/m,
+      "After=network.target opensession-session-kernel.service",
     )
     .replace(
       credentialMarker,
@@ -408,6 +439,40 @@ export async function renderExecutorUnit(): Promise<string> {
     );
 }
 
+/** Render the independently supervised SessionKernel owner. */
+export async function renderSessionKernelUnit(
+  scope: SystemdScope = "system",
+): Promise<string> {
+  const template = join(serviceWorkdir(), "opensession-session-kernel.service");
+  if (!existsSync(template))
+    throw new Error(`missing session kernel unit template at ${template}`);
+  const bun = bunPath();
+  const compiled = isCompiledBinary();
+  const exec = compiled
+    ? `${SHIM_PATH} session-kernel-service`
+    : `${bun} run packages/core/opensession-server/src/session-kernel-service.ts`;
+  const binDir = compiled ? dirname(SHIM_PATH) : bun.replace(/\/bun$/, "");
+  let unit = (await Bun.file(template).text())
+    .replace(/^User=.*$/m, `User=${await resolveUsername()}`)
+    .replace(/^WorkingDirectory=.*$/m, `WorkingDirectory=${serviceWorkdir()}`)
+    .replace(/^# SESSION_KERNEL_PATH_ENV$/m, executorPathEnvironment())
+    .replace(/^ExecStart=.*$/m, `ExecStart=${exec}`)
+    .replace(
+      /^Environment="PATH=.*"$/m,
+      `Environment="PATH=${servicePath(binDir)}"`,
+    );
+  if (scope === "system") return unit;
+  return unit
+    .replace(/^User=.*\n/m, "")
+    .replace(
+      /^LoadCredential=session-kernel-token:.*$/m,
+      `LoadCredential=session-kernel-token:${USER_SESSION_KERNEL_TOKEN_PATH}`,
+    )
+    .replace(/^IPAddressAllow=.*\n/m, "")
+    .replace(/^IPAddressDeny=.*\n/m, "")
+    .replace(/^WantedBy=.*$/m, "WantedBy=default.target");
+}
+
 /**
  * Is a cloud instance-metadata endpoint answering on this box?
  *
@@ -435,6 +500,21 @@ export async function metadataEndpointReachable(): Promise<boolean> {
 }
 
 export const IMDS_OVERRIDE_ENV = "OPENSESSION_ALLOW_IMDS";
+
+/** Important, non-dimmed remediation shown when a user service would expose IMDS. */
+export function metadataInstallBlockGuidance(uid: number): string[] {
+  return [
+    "This host can reach the cloud instance metadata endpoint used by EC2 at 169.254.169.254.",
+    "On EC2, agents could use that endpoint to obtain the instance's IAM role credentials.",
+    "The rootless service cannot reliably block that access itself, so Open Session did not install or start it.",
+    "",
+    "Recommended: block metadata access for this user:",
+    `  sudo iptables -I OUTPUT -d 169.254.169.254 -m owner --uid-owner ${uid} -j REJECT`,
+    "Then rerun the same Open Session installation command.",
+    "",
+    `Only if this instance has no cloud role credentials to protect, rerun with ${IMDS_OVERRIDE_ENV}=1 to explicitly skip this safety check.`,
+  ];
+}
 
 /**
  * Keep the user manager alive without a login session, so the user unit
@@ -504,8 +584,56 @@ export function renderLauncher(): string {
     `# macOS shows this file's name in Login Items & Extensions; hence "OpenSession".\n` +
     `cd ${serviceWorkdir()} || exit 1\n` +
     `set -a; [ -f ${ENV_PATH} ] && . ${ENV_PATH}; set +a\n` +
+    `export OPENSESSION_SESSION_KERNEL_TOKEN_FILE=${USER_SESSION_KERNEL_TOKEN_PATH}\n` +
     `exec ${exec.cmd}\n`
   );
+}
+
+export function renderSessionKernelLauncher(): string {
+  const compiled = isCompiledBinary();
+  const exec = compiled
+    ? `${SHIM_PATH} session-kernel-service`
+    : `${bunPath()} run packages/core/opensession-server/src/session-kernel-service.ts`;
+  return (
+    `#!/bin/bash\n` +
+    `cd ${serviceWorkdir()} || exit 1\n` +
+    `exec ${exec}\n`
+  );
+}
+
+export function renderSessionKernelPlist(): string {
+  const binDir = isCompiledBinary() ? dirname(SHIM_PATH) : bunPath().replace(/\/bun$/, "");
+  const state = process.env.OPENSESSION_STATE_DIR || envFileValue("OPENSESSION_STATE_DIR");
+  const sessions =
+    process.env.OPENSESSION_SESSIONS_DIR || envFileValue("OPENSESSION_SESSIONS_DIR");
+  const optional = [
+    state ? `    <key>OPENSESSION_STATE_DIR</key><string>${xml(state)}</string>` : "",
+    sessions ? `    <key>OPENSESSION_SESSIONS_DIR</key><string>${xml(sessions)}</string>` : "",
+  ].filter(Boolean).join("\n");
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>${LAUNCHD_SESSION_KERNEL_LABEL}</string>
+  <key>ProgramArguments</key>
+  <array><string>${xml(LAUNCHD_SESSION_KERNEL_LAUNCHER)}</string></array>
+  <key>WorkingDirectory</key><string>${xml(serviceWorkdir())}</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key><string>${xml(servicePath(binDir))}</string>
+    <key>HOME</key><string>${xml(HOME)}</string>
+    <key>NODE_ENV</key><string>production</string>
+    <key>OPENSESSION_SESSION_KERNEL_TOKEN_FILE</key><string>${xml(USER_SESSION_KERNEL_TOKEN_PATH)}</string>
+${optional}
+  </dict>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>StandardOutPath</key><string>${xml(join(LOG_DIR, "session-kernel.log"))}</string>
+  <key>StandardErrorPath</key><string>${xml(join(LOG_DIR, "session-kernel.err.log"))}</string>
+  <key>ProcessType</key><string>Interactive</string>
+</dict>
+</plist>
+`;
 }
 
 export function renderPlist(): string {
@@ -543,8 +671,10 @@ export async function install(
       const scope = opts.scope ?? "user";
       const wasActive = installedScope() === scope && (await isActive());
       const unit = await renderUnit(scope);
+      const kernelUnit = await renderSessionKernelUnit(scope);
       const env = userEnv();
       let migratedUserUnit: string | null = null;
+      let migratedUserKernelUnit: string | null = null;
 
       if (scope === "user") {
         if (
@@ -552,24 +682,10 @@ export async function install(
           (await metadataEndpointReachable())
         ) {
           const uid = process.getuid?.() ?? 0;
-          warn(
-            "a cloud metadata endpoint (169.254.169.254) answers on this box; rootless mode runs agents inside the gateway process and cannot reliably block access to it",
+          fail(
+            "service installation blocked: EC2/cloud metadata is reachable",
           );
-          info(
-            dim(
-              "  Install the hardened system service, or block metadata for this uid:",
-            ),
-          );
-          info(
-            dim(
-              `    sudo iptables -I OUTPUT -d 169.254.169.254 -m owner --uid-owner ${uid} -j REJECT`,
-            ),
-          );
-          info(
-            dim(
-              `  If this box has no cloud role worth protecting: ${IMDS_OVERRIDE_ENV}=1 opensession service install`,
-            ),
-          );
+          for (const line of metadataInstallBlockGuidance(uid)) info(line);
           return false;
         }
         if (existsSync(SERVICE_PATH)) {
@@ -580,8 +696,17 @@ export async function install(
           return false;
         }
         mkdirSync(dirname(USER_UNIT_PATH), { recursive: true });
+        if (!existsSync(USER_SESSION_KERNEL_TOKEN_PATH)) {
+          await Bun.write(
+            USER_SESSION_KERNEL_TOKEN_PATH,
+            `${crypto.randomUUID()}${crypto.randomUUID()}\n`,
+          );
+          chmodSync(USER_SESSION_KERNEL_TOKEN_PATH, 0o600);
+        }
         await Bun.write(USER_UNIT_PATH, unit);
+        await Bun.write(USER_SESSION_KERNEL_UNIT_PATH, kernelUnit);
         info(dim(`installed ${USER_UNIT_PATH}`));
+        info(dim(`installed ${USER_SESSION_KERNEL_UNIT_PATH}`));
         await enableLinger();
         const runtimeDir =
           process.env.XDG_RUNTIME_DIR ?? env.XDG_RUNTIME_DIR ?? "";
@@ -596,6 +721,7 @@ export async function install(
         const executorUnit = await renderExecutorUnit();
         await Bun.write(STAGED_UNIT_PATH, unit);
         await Bun.write(STAGED_EXECUTOR_UNIT_PATH, executorUnit);
+        await Bun.write(STAGED_SESSION_KERNEL_UNIT_PATH, kernelUnit);
         const serviceUser = await resolveUsername();
         const compiled = isCompiledBinary();
         const runnerBin = compiled ? SHIM_PATH : bunPath();
@@ -617,6 +743,15 @@ export async function install(
           ],
           [
             "sudo",
+            join(
+              serviceWorkdir(),
+              "deploy",
+              "install-session-kernel-credential.sh",
+            ),
+            SESSION_KERNEL_TOKEN_PATH,
+          ],
+          [
+            "sudo",
             join(serviceWorkdir(), "deploy", "install-run-host-helper.sh"),
             serviceUser,
             serviceWorkdir(),
@@ -626,8 +761,7 @@ export async function install(
             runHostsRoot(),
             pathValue,
             process.env.OPENSESSION_DEPLOY_CHECKOUT || serviceWorkdir(),
-            process.env.OPENSESSION_DEPLOY_STATE ||
-              join(HOME, ".opensession-deploy"),
+            process.env.OPENSESSION_DEPLOY_STATE || defaultStatePath("deploy"),
             process.env.OPENSESSION_DEPLOY_ALLOW_RESET === "1" ? "1" : "0",
             process.env.OPENSESSION_HEALTH_URL ||
               "http://127.0.0.1:3850/api/health",
@@ -637,6 +771,12 @@ export async function install(
           ["sudo", "-n", RUN_HOST_HELPER, "check"],
           ["sudo", "cp", STAGED_UNIT_PATH, SERVICE_PATH],
           ["sudo", "cp", STAGED_EXECUTOR_UNIT_PATH, EXECUTOR_SERVICE_PATH],
+          [
+            "sudo",
+            "cp",
+            STAGED_SESSION_KERNEL_UNIT_PATH,
+            SESSION_KERNEL_SERVICE_PATH,
+          ],
           [
             "sudo",
             "rm",
@@ -657,12 +797,30 @@ export async function install(
             ),
           );
           migratedUserUnit = await Bun.file(USER_UNIT_PATH).text();
+          if (existsSync(USER_SESSION_KERNEL_UNIT_PATH))
+            migratedUserKernelUnit = await Bun.file(
+              USER_SESSION_KERNEL_UNIT_PATH,
+            ).text();
           await runInherit(
             systemctl("user", ["disable", "--now", SERVICE_NAME]),
             undefined,
             env,
           );
-          await run(["rm", "-f", USER_UNIT_PATH]);
+          await runInherit(
+            systemctl("user", [
+              "disable",
+              "--now",
+              SESSION_KERNEL_SERVICE_NAME,
+            ]),
+            undefined,
+            env,
+          );
+          await run([
+            "rm",
+            "-f",
+            USER_UNIT_PATH,
+            USER_SESSION_KERNEL_UNIT_PATH,
+          ]);
           await runInherit(
             systemctl("user", ["daemon-reload"]),
             undefined,
@@ -670,6 +828,9 @@ export async function install(
           );
         }
         const start = [
+          ...(wasActive
+            ? [["sudo", "systemctl", "stop", SERVICE_NAME]]
+            : []),
           ["sudo", "systemctl", "daemon-reload"],
           ["sudo", "systemctl", "enable", EXECUTOR_SERVICE_NAME],
           [
@@ -678,10 +839,9 @@ export async function install(
             executorWasActive ? "restart" : "start",
             EXECUTOR_SERVICE_NAME,
           ],
+          ["sudo", "systemctl", "enable", SESSION_KERNEL_SERVICE_NAME],
+          ["sudo", "systemctl", "restart", SESSION_KERNEL_SERVICE_NAME],
           ["sudo", "systemctl", "enable", "--now", SERVICE_NAME],
-          ...(wasActive
-            ? [["sudo", "systemctl", "restart", SERVICE_NAME]]
-            : []),
         ];
         for (const cmd of start) {
           if ((await runInherit(cmd)) !== 0) {
@@ -690,11 +850,26 @@ export async function install(
               warn("restoring the user service");
               mkdirSync(dirname(USER_UNIT_PATH), { recursive: true });
               await Bun.write(USER_UNIT_PATH, migratedUserUnit);
+              if (migratedUserKernelUnit)
+                await Bun.write(
+                  USER_SESSION_KERNEL_UNIT_PATH,
+                  migratedUserKernelUnit,
+                );
               await runInherit(
                 systemctl("user", ["daemon-reload"]),
                 undefined,
                 env,
               );
+              if (migratedUserKernelUnit)
+                await runInherit(
+                  systemctl("user", [
+                    "enable",
+                    "--now",
+                    SESSION_KERNEL_SERVICE_NAME,
+                  ]),
+                  undefined,
+                  env,
+                );
               await runInherit(
                 systemctl("user", ["enable", "--now", SERVICE_NAME]),
                 undefined,
@@ -713,9 +888,11 @@ export async function install(
       }
 
       for (const cmd of [
+        ...(wasActive ? [systemctl(scope, ["stop", SERVICE_NAME])] : []),
         systemctl(scope, ["daemon-reload"]),
+        systemctl(scope, ["enable", SESSION_KERNEL_SERVICE_NAME]),
+        systemctl(scope, ["restart", SESSION_KERNEL_SERVICE_NAME]),
         systemctl(scope, ["enable", "--now", SERVICE_NAME]),
-        ...(wasActive ? [systemctl(scope, ["restart", SERVICE_NAME])] : []),
       ]) {
         if ((await runInherit(cmd, undefined, env)) !== 0) {
           warn(`failed: ${cmd.join(" ")}`);
@@ -734,10 +911,41 @@ export async function install(
       mkdirSync(join(HOME, "Library", "LaunchAgents"), { recursive: true });
       mkdirSync(LOG_DIR, { recursive: true });
       mkdirSync(dirname(LAUNCHD_LAUNCHER), { recursive: true });
+      if (!existsSync(USER_SESSION_KERNEL_TOKEN_PATH)) {
+        await Bun.write(
+          USER_SESSION_KERNEL_TOKEN_PATH,
+          `${crypto.randomUUID()}${crypto.randomUUID()}\n`,
+        );
+        chmodSync(USER_SESSION_KERNEL_TOKEN_PATH, 0o600);
+      }
       await Bun.write(LAUNCHD_LAUNCHER, renderLauncher());
+      await Bun.write(
+        LAUNCHD_SESSION_KERNEL_LAUNCHER,
+        renderSessionKernelLauncher(),
+      );
       chmodSync(LAUNCHD_LAUNCHER, 0o755);
+      chmodSync(LAUNCHD_SESSION_KERNEL_LAUNCHER, 0o755);
       await Bun.write(LAUNCHD_PLIST, renderPlist());
+      await Bun.write(
+        LAUNCHD_SESSION_KERNEL_PLIST,
+        renderSessionKernelPlist(),
+      );
       await run(["launchctl", "bootout", `${domain()}/${LAUNCHD_LABEL}`]);
+      await run([
+        "launchctl",
+        "bootout",
+        `${domain()}/${LAUNCHD_SESSION_KERNEL_LABEL}`,
+      ]);
+      const kernel = await run([
+        "launchctl",
+        "bootstrap",
+        domain(),
+        LAUNCHD_SESSION_KERNEL_PLIST,
+      ]);
+      if (kernel.code !== 0) {
+        warn(`launchctl actor bootstrap failed: ${kernel.stderr}`);
+        return false;
+      }
       const { code, stderr } = await run([
         "launchctl",
         "bootstrap",
@@ -783,22 +991,68 @@ export async function control(
 
   if (supervisor() === "launchd") {
     const label = `${domain()}/${LAUNCHD_LABEL}`;
+    const kernel = `${domain()}/${LAUNCHD_SESSION_KERNEL_LABEL}`;
     switch (action) {
-      case "start":
-        return await runInherit(["launchctl", "kickstart", label]);
-      case "stop":
-        return await runInherit(["launchctl", "bootout", label]);
-      case "restart":
-        return await runInherit(["launchctl", "kickstart", "-k", label]);
+      case "start": {
+        const actorLoaded = (await run(["launchctl", "print", kernel], { quiet: true })).code === 0;
+        const actor = await runInherit(
+          actorLoaded
+            ? ["launchctl", "kickstart", kernel]
+            : ["launchctl", "bootstrap", domain(), LAUNCHD_SESSION_KERNEL_PLIST],
+        );
+        if (actor !== 0) return actor;
+        const gatewayLoaded = (await run(["launchctl", "print", label], { quiet: true })).code === 0;
+        return await runInherit(
+          gatewayLoaded
+            ? ["launchctl", "kickstart", label]
+            : ["launchctl", "bootstrap", domain(), LAUNCHD_PLIST],
+        );
+      }
+      case "stop": {
+        const gateway = await runInherit(["launchctl", "bootout", label]);
+        const actor = await runInherit(["launchctl", "bootout", kernel]);
+        return gateway || actor;
+      }
+      case "restart": {
+        await runInherit(["launchctl", "bootout", label]);
+        const actor = await runInherit(["launchctl", "kickstart", "-k", kernel]);
+        if (actor !== 0) return actor;
+        return await runInherit([
+          "launchctl",
+          "bootstrap",
+          domain(),
+          LAUNCHD_PLIST,
+        ]);
+      }
     }
   }
 
   const scope = installedScope() ?? "user";
-  return await runInherit(
-    systemctl(scope, [action, SERVICE_NAME]),
+  const env = userEnv();
+  if (action === "start") {
+    const actor = await runInherit(
+      systemctl(scope, ["start", SESSION_KERNEL_SERVICE_NAME]),
+      undefined,
+      env,
+    );
+    return actor === 0
+      ? await runInherit(systemctl(scope, ["start", SERVICE_NAME]), undefined, env)
+      : actor;
+  }
+  const gateway = await runInherit(
+    systemctl(scope, ["stop", SERVICE_NAME]),
     undefined,
-    userEnv(),
+    env,
   );
+  const actor = await runInherit(
+    systemctl(scope, [action === "restart" ? "restart" : "stop", SESSION_KERNEL_SERVICE_NAME]),
+    undefined,
+    env,
+  );
+  if (action === "stop") return gateway || actor;
+  return actor === 0
+    ? await runInherit(systemctl(scope, ["start", SERVICE_NAME]), undefined, env)
+    : actor;
 }
 
 export async function logs(follow: boolean, lines: number): Promise<number> {
@@ -846,7 +1100,18 @@ export async function uninstall(): Promise<boolean> {
         env,
       );
       if (scope === "user") {
-        await run(["rm", "-f", USER_UNIT_PATH]);
+        await runInherit(
+          systemctl(scope, ["disable", "--now", SESSION_KERNEL_SERVICE_NAME]),
+          undefined,
+          env,
+        );
+        await run([
+          "rm",
+          "-f",
+          USER_UNIT_PATH,
+          USER_SESSION_KERNEL_UNIT_PATH,
+          USER_SESSION_KERNEL_TOKEN_PATH,
+        ]);
         await runInherit(systemctl(scope, ["daemon-reload"]), undefined, env);
         ok("user service removed");
         return true;
@@ -858,11 +1123,21 @@ export async function uninstall(): Promise<boolean> {
         "--now",
         EXECUTOR_SERVICE_NAME,
       ]);
+      await runInherit([
+        "sudo",
+        "systemctl",
+        "disable",
+        "--now",
+        SESSION_KERNEL_SERVICE_NAME,
+      ]);
       for (const path of [
         SERVICE_PATH,
         EXECUTOR_SERVICE_PATH,
+        SESSION_KERNEL_SERVICE_PATH,
         "/etc/systemd/system/opensession.service.d/executor-credential.conf",
+        "/etc/systemd/system/opensession.service.d/session-kernel-credential.conf",
         EXECUTOR_TOKEN_PATH,
+        SESSION_KERNEL_TOKEN_PATH,
         "/etc/opensession/run-host.conf",
         "/etc/sudoers.d/opensession-run-host",
         RUN_HOST_HELPER,
@@ -882,7 +1157,20 @@ export async function uninstall(): Promise<boolean> {
     case "launchd": {
       if (!existsSync(LAUNCHD_PLIST)) return true;
       await run(["launchctl", "bootout", `${domain()}/${LAUNCHD_LABEL}`]);
-      await run(["rm", "-f", LAUNCHD_PLIST, LAUNCHD_LAUNCHER]);
+      await run([
+        "launchctl",
+        "bootout",
+        `${domain()}/${LAUNCHD_SESSION_KERNEL_LABEL}`,
+      ]);
+      await run([
+        "rm",
+        "-f",
+        LAUNCHD_PLIST,
+        LAUNCHD_LAUNCHER,
+        LAUNCHD_SESSION_KERNEL_PLIST,
+        LAUNCHD_SESSION_KERNEL_LAUNCHER,
+        USER_SESSION_KERNEL_TOKEN_PATH,
+      ]);
       ok("LaunchAgent removed");
       return true;
     }

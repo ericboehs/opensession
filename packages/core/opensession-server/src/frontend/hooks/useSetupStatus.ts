@@ -1,7 +1,12 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import {
+	useCallback,
+	useEffect,
+	useLayoutEffect,
+	useRef,
+	useState,
+} from "react";
 import {
 	setupRequest,
-	type SetupAccess,
 	type SetupGithub,
 	type SetupIntegration,
 	type SetupRepo,
@@ -28,12 +33,13 @@ export interface SetupController {
 	refetch: () => Promise<void>;
 	restartNeeded: boolean;
 	restartState: RestartState;
+	/** Mark a boot-time setting as saved so its surface offers a restart. */
+	requireRestart: () => void;
 	/** Restart the server, then poll until it answers. `post: false` only
 	 *  polls — the "Check again" path after a timeout. */
 	restartServer: (post?: boolean) => Promise<void>;
 	/** Fold a saved integration back into the cached status. */
 	applyIntegration: (updated: SetupIntegration, restartRequired: boolean) => void;
-	applyAccess: (updated: SetupAccess, restartRequired: boolean) => void;
 	applyGithub: (updated: SetupGithub, restartRequired: boolean) => void;
 	applyRepo: (
 		updated: Pick<SetupRepo, "id"> &
@@ -49,7 +55,10 @@ export function useSetupStatus(): SetupController {
 	const statusRef = useRef<SetupStatus | null>(null);
 	useLayoutEffect(() => {		statusRef.current = status;
 	});
-	const refetch = async () => {
+	// Stable identity: the body only reads refs and calls setters, so the
+	// mount effect can list it without ever refiring, and callers outside
+	// this hook can invoke the same fetch.
+	const refetch = useCallback(async () => {
 		await (async () => {
 const body = await setupRequest<SetupStatus>("/api/setup/status");
 			setStatus(body);
@@ -59,7 +68,7 @@ const body = await setupRequest<SetupStatus>("/api/setup/status");
 			// stale one: better a slightly old page than an empty one.
 			if (!statusRef.current) setFailed(true);
 });
-	};
+	}, []);
 
 	useEffect(() => {
 		refetch();
@@ -75,19 +84,6 @@ const body = await setupRequest<SetupStatus>("/api/setup/status");
 							),
 						}
 					: s,
-			);
-			if (restartRequired) setRestartNeeded(true);
-		};
-
-	const applyAccess = (updated: SetupAccess, restartRequired: boolean) => {
-			setStatus((status) =>
-				status
-					? {
-							...status,
-							publicBaseUrl: updated.publicBaseUrl,
-							access: updated,
-						}
-					: status,
 			);
 			if (restartRequired) setRestartNeeded(true);
 		};
@@ -112,6 +108,8 @@ const body = await setupRequest<SetupStatus>("/api/setup/status");
 					: s,
 			);
 		};
+
+	const requireRestart = () => setRestartNeeded(true);
 
 	const restartServer = async (post = true) => {
 			setRestartState("working");
@@ -161,9 +159,9 @@ const res = await fetch(`${BASE_PATH}/api/health`, {
 		refetch,
 		restartNeeded,
 		restartState,
+		requireRestart,
 		restartServer,
 		applyIntegration,
-		applyAccess,
 		applyGithub,
 		applyRepo,
 	};

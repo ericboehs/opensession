@@ -1,3 +1,4 @@
+import { mergeStylexProps, mergeStylexOverrideClassName } from "../../ui/cn";
 import { useEffect, useState } from "react";
 import { useSetupStatus } from "../../hooks/useSetupStatus";
 import {
@@ -27,18 +28,17 @@ import { IconSparkle } from "../icons";
 import { Radio, RadioGroup } from "../../ui/radio";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../../styles/typography.stylex";
-import { mergeStylexProps, mergeStylexClassName, mergeStylexOverrideClassName } from "../../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
 	mt9: {
-			marginTop: "36px"
+			marginTop: "calc(4px * 9)"
 	},
 	flex: {
 			display: "flex"
 	},
 	minH11: {
-			minHeight: "44px"
+			minHeight: "calc(4px * 11)"
 	},
 	cursorPointer: {
 			cursor: "pointer"
@@ -47,21 +47,21 @@ const sx = stylex.create({
 			alignItems: "flex-start"
 	},
 	gap3: {
-			gap: "12px"
+			gap: "calc(4px * 3)"
 	},
 	px5: {
-			paddingInline: "20px"
+			paddingInline: "calc(4px * 5)"
 	},
 	py4: {
-			paddingBlock: "16px"
+			paddingBlock: "calc(4px * 4)"
 	},
 	transitionBackgroundColor: {
 			transitionProperty: "background-color",
-			transitionTimingFunction: "var(--tw-ease,var(--ease))",
-			transitionDuration: "var(--tw-duration,var(--dur-micro))"
+			transitionTimingFunction: "var(--tw-ease, var(--ease))",
+			transitionDuration: "var(--tw-duration, var(--dur-micro))"
 	},
 	mt05: {
-			marginTop: "2px"
+			marginTop: "calc(4px * 0.5)"
 	},
 	minW0: {
 			minWidth: "0"
@@ -80,14 +80,6 @@ const sx = stylex.create({
 	},
 	textDim: {
 			color: "var(--text-dim)"
-	},
-
-	hoverBgHover: {
-		"@media (hover: hover)": {
-			":hover": {
-				"backgroundColor": "var(--hover)"
-			}
-		}
 	},
 });
 
@@ -127,7 +119,10 @@ function SharedCheckoutSetting() {
 	}
 	if (!settings.repos.length) return null;
 
-	const repoNames = settings.repos.map((repo) => repo.label).join(", ");
+	const repoNames = settings.repos
+		.map((repo) => `"${repo.label}"`)
+		.join(", ");
+	const groupLabel = "How sessions make changes to shared checkouts";
 	async function setMode(mode: SharedCheckoutMode) {
 		const previous = settings;
 		if (!previous || mode === previous.mode) return;
@@ -146,29 +141,29 @@ setSaving(false);
 
 	return (
 		<>
-			<SettingsGroupLabel>How sessions make changes</SettingsGroupLabel>
+			<SettingsGroupLabel>{groupLabel}</SettingsGroupLabel>
 			{error && <InlineAlert onDismiss={() => setError(null)}>{error}</InlineAlert>}
 			<SettingCard>
 				<RadioGroup
-					aria-label="How sessions make changes"
+					aria-label={groupLabel}
 					value={settings.mode}
 					disabled={saving}
 					onValueChange={(mode) => void setMode(mode as SharedCheckoutMode)}
 					className="[&>*+*]:relative [&>*+*]:before:pointer-events-none [&>*+*]:before:absolute [&>*+*]:before:inset-x-5 [&>*+*]:before:top-0 [&>*+*]:before:h-px [&>*+*]:before:bg-line [&>*+*]:before:content-['']"
 				>
-					<label {...mergeStylexProps("", sx.hoverBgHover, sx.flex, sx.minH11, sx.cursorPointer, sx.itemsStart, sx.gap3, sx.px5, sx.py4, sx.transitionBackgroundColor)}>
+					<label {...mergeStylexProps("hover:bg-hover", sx.flex, sx.minH11, sx.cursorPointer, sx.itemsStart, sx.gap3, sx.px5, sx.py4, sx.transitionBackgroundColor)} >
 						<Radio value="shared" className={mergeStylexOverrideClassName("", sx.mt05)} />
 						<span {...stylex.props(sx.minW0)}>
 							<span {...stylex.props(sx.block, sx.fontMedium, sx.textFg, typography.itemTitle)}>
 								Local checkout
 							</span>
 							<span {...stylex.props(sx.mt1, sx.block, sx.textDim, typography.supporting)}>
-								Edit {repoNames} directly. Changes appear there right away, and
-								sessions share the same files.
+								Edit shared checkouts directly. Changes appear there right away,
+								and sessions share the same files.
 							</span>
 						</span>
 					</label>
-					<label {...mergeStylexProps("", sx.hoverBgHover, sx.flex, sx.minH11, sx.cursorPointer, sx.itemsStart, sx.gap3, sx.px5, sx.py4, sx.transitionBackgroundColor)}>
+					<label {...mergeStylexProps("hover:bg-hover", sx.flex, sx.minH11, sx.cursorPointer, sx.itemsStart, sx.gap3, sx.px5, sx.py4, sx.transitionBackgroundColor)} >
 						<Radio value="worktree" className={mergeStylexOverrideClassName("", sx.mt05)} />
 						<span {...stylex.props(sx.minW0)}>
 							<span {...stylex.props(sx.block, sx.fontMedium, sx.textFg, typography.itemTitle)}>
@@ -182,7 +177,7 @@ setSaving(false);
 					</label>
 				</RadioGroup>
 			</SettingCard>
-			<SettingsHint>Only applies to new sessions.</SettingsHint>
+			<SettingsHint>Only affects new sessions in {repoNames}.</SettingsHint>
 		</>
 	);
 }

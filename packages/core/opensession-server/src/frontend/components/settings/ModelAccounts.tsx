@@ -1,5 +1,14 @@
+import { mergeStylexProps, mergeStylexOverrideClassName } from "../../ui/cn";
+import { utilityClassName } from "../../ui/cn";
 import { BASE_PATH } from "../../lib/base";
-import React, { useEffect, useRef, useState, } from "react";
+import React, {
+	useCallback,
+	useEffect,
+	useEffectEvent,
+	useLayoutEffect,
+	useRef,
+	useState,
+} from "react";
 import { usePeople } from "../../lib/people";
 import { providerAccountLabel } from "../../lib/provider-account";
 import { UserAvatar } from "../UserAvatar";
@@ -28,7 +37,7 @@ import {
 	SettingsHint,
 	rowMenuTriggerClasses,
 } from "../../ui/settings";
-import { cn, mergeStylexProps, mergeStylexClassName, mergeStylexOverrideClassName } from "../../ui/cn";
+import { cn } from "../../ui/cn";
 import { toast } from "../../ui/toast";
 import { BrandMark, IconTile } from "../BrandTile";
 import {
@@ -42,7 +51,6 @@ import {
 } from "../icons";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../../styles/typography.stylex";
-import { sharedClassStyles } from "../../styles/shared-class-styles.stylex";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -50,7 +58,7 @@ const sx = stylex.create({
 			display: "flex"
 	},
 	h4: {
-			height: "16px"
+			height: "calc(4px * 4)"
 	},
 	itemsCenter: {
 			alignItems: "center"
@@ -59,11 +67,11 @@ const sx = stylex.create({
 			lineHeight: "1"
 	},
 	mt05: {
-			marginTop: "2px"
+			marginTop: "calc(4px * 0.5)"
 	},
 	size7: {
-			width: "28px",
-			height: "28px"
+			width: "calc(4px * 7)",
+			height: "calc(4px * 7)"
 	},
 	shrink0: {
 			flexShrink: "0"
@@ -75,7 +83,7 @@ const sx = stylex.create({
 			color: "var(--text-faint)"
 	},
 	mt2: {
-			marginTop: "8px"
+			marginTop: "calc(4px * 2)"
 	},
 	grid: {
 			display: "grid"
@@ -84,19 +92,16 @@ const sx = stylex.create({
 			maxWidth: "420px"
 	},
 	gridCols3: {
-			gridTemplateColumns: "repeat(3,minmax(0,1fr))"
+			gridTemplateColumns: "repeat(3, minmax(0, 1fr))"
 	},
 	gap3: {
-			gap: "12px"
+			gap: "calc(4px * 3)"
 	},
 	minW0: {
 			minWidth: "0"
 	},
 	gapX2: {
-			columnGap: "8px"
-	},
-	gapY1: {
-			rowGap: "4px"
+			columnGap: "calc(4px * 2)"
 	},
 	overflowHidden: {
 			overflow: "hidden"
@@ -114,9 +119,9 @@ const sx = stylex.create({
 			height: "4px"
 	},
 	roundedFull: {
-			borderRadius: "calc(infinity * 1px)"
-	,
-		cornerShape: "round"},
+			borderRadius: "calc(infinity * 1px)",
+
+		cornerShape: "round",},
 	bgActive: {
 			backgroundColor: "var(--bg-active)"
 	},
@@ -127,18 +132,18 @@ const sx = stylex.create({
 			alignItems: "flex-start"
 	},
 	gapX3: {
-			columnGap: "12px"
+			columnGap: "calc(4px * 3)"
 	},
 	gap2: {
-			gap: "8px"
+			gap: "calc(4px * 2)"
 	},
 	truncate: {
+			overflow: "hidden",
 			textOverflow: "ellipsis",
-			whiteSpace: "nowrap",
-			overflow: "hidden"
+			whiteSpace: "nowrap"
 	},
 	mt15: {
-			marginTop: "6px"
+			marginTop: "calc(4px * 1.5)"
 	},
 	leadingRelaxed: {
 			lineHeight: "var(--leading-relaxed)"
@@ -147,50 +152,56 @@ const sx = stylex.create({
 			color: "var(--red)"
 	},
 	gap15: {
-			gap: "6px"
+			gap: "calc(4px * 1.5)"
 	},
 	hidden: {
 			display: "none"
 	},
+	inlineFlex: {
+			display: "inline-flex"
+	},
+	flexWrap: {
+			flexWrap: "wrap"
+	},
+	gapY15: {
+			rowGap: "calc(4px * 1.5)"
+	},
 	mb2: {
-			marginBottom: "8px"
+			marginBottom: "calc(4px * 2)"
 	},
 	flexCol: {
 			flexDirection: "column"
 	},
 	gap5: {
-			gap: "20px"
+			gap: "calc(4px * 5)"
 	},
 	roundedMd: {
-			borderRadius: "calc(7px * var(--rf))"
-	,
-		cornerShape: "var(--cs)"},
+			borderRadius: "calc(7px * var(--rf))",
+
+		cornerShape: "var(--cs)",},
 	bgSurface: {
 			backgroundColor: "var(--bg)"
 	},
 	px4: {
-			paddingInline: "16px"
+			paddingInline: "calc(4px * 4)"
 	},
 	py3: {
-			paddingBlock: "12px"
+			paddingBlock: "calc(4px * 3)"
 	},
 	selfStart: {
 			alignSelf: "flex-start"
 	},
-	m0: {
-			margin: "0"
-	},
 	gap35: {
-			gap: "14px"
+			gap: "calc(4px * 3.5)"
 	},
 	bgPanel: {
 			backgroundColor: "var(--bg-panel)"
 	},
 	px5: {
-			paddingInline: "20px"
+			paddingInline: "calc(4px * 5)"
 	},
 	py35: {
-			paddingBlock: "14px"
+			paddingBlock: "calc(4px * 3.5)"
 	},
 	itemsEnd: {
 			alignItems: "flex-end"
@@ -202,7 +213,7 @@ const sx = stylex.create({
 			justifyContent: "flex-end"
 	},
 	gap25: {
-			gap: "10px"
+			gap: "calc(4px * 2.5)"
 	},
 	textLink: {
 			color: "var(--link)"
@@ -211,225 +222,10 @@ const sx = stylex.create({
 			textDecorationLine: "underline"
 	},
 	my2: {
-			marginBlock: "8px"
+			marginBlock: "calc(4px * 2)"
 	},
 	whitespacePreWrap: {
 			whiteSpace: "pre-wrap"
-	},
-	quietOwner: {
-		width: "auto",
-		borderColor: "transparent",
-		backgroundColor: "transparent",
-		paddingInline: "8px",
-		color: "var(--text-dim)",
-		boxShadow: "none",
-		transitionProperty: "color, background-color, border-color, box-shadow",
-		transitionDuration: "var(--dur-micro)",
-		":hover": { "@media (hover: hover)": {
-			borderColor: "transparent",
-			backgroundColor: "var(--hover)",
-			boxShadow: "none",
-		} },
-		":focus": { borderColor: "transparent" },
-		"@media (max-width: 720px)": { minHeight: "44px" },
-	},
-	meterFill: {
-		height: "100%",
-		borderRadius: "calc(infinity * 1px)",
-		transitionProperty: "width",
-		transitionDuration: "300ms",
-	},
-	usageUnknown: { backgroundColor: "var(--border)" },
-	usageHigh: { backgroundColor: "var(--red)" },
-	usageWarn: { backgroundColor: "var(--yellow)" },
-	usageNormal: { backgroundColor: "var(--text-faint)" },
-	accountStatus: {
-		display: "inline-flex",
-		flexShrink: 0,
-		alignItems: "center",
-		gap: "6px",
-		fontWeight: "var(--font-weight-medium)",
-	},
-	statusRed: { color: "var(--red)" },
-	statusYellow: { color: "var(--yellow)" },
-	statusMuted: {
-		borderRadius: "calc(infinity * 1px)",
-		backgroundColor: "var(--yellow-soft)",
-		paddingInline: "8px",
-		paddingBlock: "2px",
-		color: "var(--yellow)",
-	},
-	statusDot: {
-		width: "6px",
-		height: "6px",
-		borderRadius: "calc(infinity * 1px)",
-	},
-	bgRed: { backgroundColor: "var(--red)" },
-	bgYellow: { backgroundColor: "var(--yellow)" },
-	spinning: {
-		animationName: stylex.keyframes({ to: { transform: "rotate(360deg)" } }),
-		animationDuration: "1s",
-		animationTimingFunction: "linear",
-		animationIterationCount: "infinite",
-	},
-
-	phoneInline: {
-		"@media (max-width: 720px)": {
-			"display": "inline"
-		}
-	},
-	desktopHidden: {
-		"@media (min-width: 721px)": {
-			"display": "none"
-		}
-	},
-	phoneMlAuto: {
-		"@media (max-width: 720px)": {
-			"marginLeft": "auto"
-		}
-	},
-	phoneMinH11: {
-		"@media (max-width: 720px)": {
-			"minHeight": "44px"
-		}
-	},
-
-	phoneGridCols1: {
-		"@media (max-width: 720px)": {
-			"gridTemplateColumns": "repeat(1,minmax(0,1fr))"
-		}
-	},
-	phoneGap15: {
-		"@media (max-width: 720px)": {
-			"gap": "6px"
-		}
-	},
-	gridColsMinmax01frAuto: {
-		"gridTemplateColumns": "minmax(0,1fr) auto"
-	},
-	phoneGridColsMinmax01fr72pxMinmax38pxAuto: {
-		"@media (max-width: 720px)": {
-			"gridTemplateColumns": "minmax(0,1fr) 72px minmax(38px,auto)"
-		}
-	},
-	phoneGapX2: {
-		"@media (max-width: 720px)": {
-			"columnGap": "8px"
-		}
-	},
-	phoneGapY0: {
-		"@media (max-width: 720px)": {
-			"rowGap": "0"
-		}
-	},
-	phoneOverflowVisible: {
-		"@media (max-width: 720px)": {
-			"overflow": "visible"
-		}
-	},
-	phoneWhitespaceNormal: {
-		"@media (max-width: 720px)": {
-			"whiteSpace": "normal"
-		}
-	},
-	desktopContents: {
-		"@media (min-width: 721px)": {
-			"display": "contents"
-		}
-	},
-	desktopColStart1: {
-		"@media (min-width: 721px)": {
-			"gridColumnStart": "1"
-		}
-	},
-	desktopRowStart1: {
-		"@media (min-width: 721px)": {
-			"gridRowStart": "1"
-		}
-	},
-	desktopColSpan2: {
-		"@media (min-width: 721px)": {
-			"gridColumn": "span 2/span 2"
-		}
-	},
-	desktopRowStart3: {
-		"@media (min-width: 721px)": {
-			"gridRowStart": "3"
-		}
-	},
-	desktopRowStart2: {
-		"@media (min-width: 721px)": {
-			"gridRowStart": "2"
-		}
-	},
-	phoneColStart2: {
-		"@media (max-width: 720px)": {
-			"gridColumnStart": "2"
-		}
-	},
-	phoneRowStart1: {
-		"@media (max-width: 720px)": {
-			"gridRowStart": "1"
-		}
-	},
-	tabularNums: {
-		"--tw-numeric-spacing": "tabular-nums",
-		"fontVariantNumeric": "var(--tw-ordinal,) var(--tw-slashed-zero,) var(--tw-numeric-figure,) var(--tw-numeric-spacing,) var(--tw-numeric-fraction,)"
-	},
-	desktopColStart2: {
-		"@media (min-width: 721px)": {
-			"gridColumnStart": "2"
-		}
-	},
-	phoneColStart3: {
-		"@media (max-width: 720px)": {
-			"gridColumnStart": "3"
-		}
-	},
-	phonePx4: {
-		"@media (max-width: 720px)": {
-			"paddingInline": "16px"
-		}
-	},
-	phoneMt1: {
-		"@media (max-width: 720px)": {
-			"marginTop": "4px"
-		}
-	},
-	phoneMl0: {
-		"@media (max-width: 720px)": {
-			"marginLeft": "0"
-		}
-	},
-	phoneWFull: {
-		"@media (max-width: 720px)": {
-			"width": "100%"
-		}
-	},
-	phoneBasisFull: {
-		"@media (max-width: 720px)": {
-			"flexBasis": "100%"
-		}
-	},
-	phoneGap25: {
-		"@media (max-width: 720px)": {
-			"gap": "10px"
-		}
-	},
-	phonePl10: {
-		"@media (max-width: 720px)": {
-			"paddingLeft": "40px"
-		}
-	},
-	phoneFlexCol: {
-		"@media (max-width: 720px)": {
-			"flexDirection": "column"
-		}
-	},
-	phoneItemsStretch: {
-		"@media (max-width: 720px)": {
-			"alignItems": "stretch"
-		}
 	},
 });
 
@@ -498,6 +294,18 @@ interface CodexUsageBucket {
 
 /** Who an account belongs to: the shared pool, or one person's own
  *  subscription. Both account lists render this same row control. */
+/** Cancel an in-flight OAuth login when its effect tears down. Reads the
+ * latest pending id at teardown time, which is the point. */
+function abortPendingOAuth(pending: { current: { id?: string; done: boolean } }) {
+	const { id, done } = pending.current;
+	if (!done && id) {
+		fetch(
+			`${BASE_PATH}/api/claude-accounts/oauth-login/${encodeURIComponent(id)}`,
+			{ method: "DELETE" },
+		).catch(() => {});
+	}
+}
+
 function OwnerSelect({
 	value,
 	onChange,
@@ -545,8 +353,8 @@ function OwnerSelect({
 					quiet ? <span {...stylex.props(sx.flex, sx.h4, sx.itemsCenter, sx.leadingNone)}>{value || "Shared pool"}</span> : undefined
 				}
 				className={cn(
-					quiet && stylex.props(sx.quietOwner).className,
-					quiet && "data-[popup-open]:border-transparent data-[popup-open]:bg-hover [&>svg]:size-4",
+					quiet &&
+						utilityClassName("w-auto border-transparent bg-transparent px-2 text-dim shadow-none transition-colors hover:border-transparent hover:bg-hover enabled:hover:shadow-none focus:border-transparent data-[popup-open]:border-transparent data-[popup-open]:bg-hover phone:min-h-11 [&>svg]:size-4"),
 					className,
 				)}
 			/>
@@ -578,39 +386,39 @@ function AccountProviderMark({ name }: { name: "claude" | "codex" }) {
  * to look at. Colour here means "this one is running out" — so the two
  * accounts near a limit are the only things that catch the eye.
  */
-const usageToneStyles = {
-	unknown: sx.usageUnknown,
-	high: sx.usageHigh,
-	warn: sx.usageWarn,
-	normal: sx.usageNormal,
+const usageToneClasses = {
+	unknown: "bg-line",
+	high: "bg-red",
+	warn: "bg-yellow",
+	normal: "bg-faint",
 } as const;
 
 /** Utilization → tone. Shared so a meter and its neighbours can't drift. */
-function usageTone(pct: number | null): keyof typeof usageToneStyles {
+function usageTone(pct: number | null): keyof typeof usageToneClasses {
 	return pct === null ? "unknown" : pct >= 90 ? "high" : pct >= 70 ? "warn" : "normal";
 }
 
-const statusToneStyles = {
-	red: { dot: sx.bgRed, text: sx.statusRed },
-	yellow: { dot: sx.bgYellow, text: sx.statusYellow },
-	muted: { dot: null, text: sx.statusMuted },
+const statusToneClasses = {
+	red: { dot: "bg-red", text: "text-red" },
+	yellow: { dot: "bg-yellow", text: "text-yellow" },
+	muted: { dot: null, text: "rounded-full bg-yellow-soft px-2 py-[2px] text-yellow" },
 } as const;
 
 function AccountStatus({
 	tone,
 	children,
 	...props
-}: React.ComponentPropsWithoutRef<"span"> & { tone: keyof typeof statusToneStyles }) {
+}: React.ComponentPropsWithoutRef<"span"> & { tone: keyof typeof statusToneClasses }) {
 	return (
 		<span
-			{...props}
 			className={cn(
-				stylex.props(sx.accountStatus, typography.meta, statusToneStyles[tone].text).className,
-				props.className,
+				utilityClassName("inline-flex shrink-0 items-center gap-1.5 text-meta font-medium"),
+				statusToneClasses[tone].text,
 			)}
+			{...props}
 		>
-			{statusToneStyles[tone].dot && (
-				<span aria-hidden {...stylex.props(sx.statusDot, statusToneStyles[tone].dot)} />
+			{statusToneClasses[tone].dot && (
+				<span aria-hidden className={cn(utilityClassName("size-1.5 rounded-full"), statusToneClasses[tone].dot)} />
 			)}
 			{children}
 		</span>
@@ -650,7 +458,7 @@ function absoluteReset(resetsAt: string | null): string | undefined {
  */
 function MeterGroup({ children }: { children: React.ReactNode }) {
 	return (
-		<div {...mergeStylexProps("", sx.phoneGridCols1, sx.phoneGap15, sx.mt2, sx.grid, sx.maxW420px, sx.gridCols3, sx.gap3, typography.meta)}>
+		<div {...mergeStylexProps("phone:grid-cols-1 phone:gap-1.5", sx.mt2, sx.grid, sx.maxW420px, sx.gridCols3, sx.gap3, typography.meta)} >
 			{children}
 		</div>
 	);
@@ -674,31 +482,36 @@ function Meter({
 	noteTitle?: string;
 }) {
 	return (
-		<div {...mergeStylexProps("", sx.gridColsMinmax01frAuto, sx.phoneGridColsMinmax01fr72pxMinmax38pxAuto, sx.phoneGapX2, sx.phoneGapY0, sx.grid, sx.minW0, sx.itemsCenter, sx.gapX2, sx.gapY1)}>
+		<div {...mergeStylexProps("grid-cols-[minmax(0,1fr)_auto] gap-y-1 phone:grid-cols-[minmax(0,1fr)_72px_minmax(38px,auto)] phone:gap-x-2 phone:gap-y-0", sx.grid, sx.minW0, sx.itemsCenter, sx.gapX2)} >
 			{/* `contents` gives the desktop label and reset time separate rows.
 			    On phones they become one cell beside the track and value. */}
-			<span {...mergeStylexProps("", sx.phoneOverflowVisible, sx.phoneWhitespaceNormal, sx.desktopContents, sx.minW0)}>
-				<span {...mergeStylexProps("", sx.desktopColStart1, sx.desktopRowStart1, sx.overflowHidden, sx.textEllipsis, sx.whitespaceNowrap, sx.textDim)}
+			<span {...mergeStylexProps("phone:overflow-visible phone:whitespace-normal desktop:contents", sx.minW0)} >
+				<span
+					{...mergeStylexProps("desktop:col-start-1 desktop:row-start-1", sx.overflowHidden, sx.textEllipsis, sx.whitespaceNowrap, sx.textDim)}
 					title={labelTitle}
 				>
 					{label}
 				</span>
 				{note ? (
-					<span {...mergeStylexProps("", sx.desktopColSpan2, sx.desktopRowStart3, sx.overflowHidden, sx.textEllipsis, sx.whitespaceNowrap, sx.textFaint)}
+					<span
+						{...mergeStylexProps("desktop:col-span-2 desktop:row-start-3", sx.overflowHidden, sx.textEllipsis, sx.whitespaceNowrap, sx.textFaint)}
 						title={noteTitle}
 					>
-						<span className={mergeStylexClassName("", sx.phoneInline, sx.desktopHidden)}> · </span>
+						<span className={utilityClassName("phone:inline desktop:hidden")}> · </span>
 						{note}
 					</span>
 				) : null}
 			</span>
-			<div {...mergeStylexProps("", sx.desktopColSpan2, sx.desktopRowStart2, sx.phoneColStart2, sx.phoneRowStart1, sx.h1, sx.overflowHidden, sx.roundedFull, sx.bgActive)}>
+			<div {...mergeStylexProps("desktop:col-span-2 desktop:row-start-2 phone:col-start-2 phone:row-start-1", sx.h1, sx.overflowHidden, sx.roundedFull, sx.bgActive)} >
 				<div
-					{...stylex.props(sx.meterFill, usageToneStyles[usageTone(pct)])}
+					className={cn(
+						utilityClassName("h-full rounded-full transition-[width] duration-300"),
+						usageToneClasses[usageTone(pct)],
+					)}
 					style={{ width: `${Math.min(100, Math.max(0, pct ?? 0))}%` }}
 				/>
 			</div>
-			<span {...mergeStylexProps("", sx.tabularNums, sx.desktopColStart2, sx.desktopRowStart1, sx.phoneColStart3, sx.phoneRowStart1, sx.textRight, sx.textDim)}>
+			<span {...mergeStylexProps("tabular-nums desktop:col-start-2 desktop:row-start-1 phone:col-start-3 phone:row-start-1", sx.textRight, sx.textDim)} >
 				{value}
 			</span>
 		</div>
@@ -802,7 +615,9 @@ function useClaudeAccounts() {
 	const [refreshing, setRefreshing] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 
-	const load = async (forceUsage = false) => {
+	// Stable identity: only setters are captured, so the polling effect can
+	// list `load` without ever refiring from re-renders.
+	const load = useCallback(async (forceUsage = false) => {
 		if (forceUsage) setRefreshing(true);
 		await (async () => {
 const res = forceUsage
@@ -815,7 +630,7 @@ setError(cause.message || "Could not load Anthropic accounts");
 			setAccounts((current) => current ?? []);
 });
 		setRefreshing(false);
-	};
+	}, []);
 
 	useEffect(() => {
 		void load();
@@ -910,7 +725,7 @@ function ClaudeAccountRows({ state }: { state: ClaudeAccountsState }) {
 				)
 				.map((account) => (
 					<React.Fragment key={account.id}>
-						<SettingRow {...mergeStylexProps("", sx.phonePx4, sx.itemsStart, sx.gapX3)}>
+						<SettingRow className={mergeStylexOverrideClassName("phone:px-4", sx.itemsStart, sx.gapX3)} >
 							<AccountProviderMark name="claude" />
 							<SettingRowText>
 								<div {...stylex.props(sx.flex, sx.minW0, sx.itemsCenter, sx.gap2)}>
@@ -950,14 +765,14 @@ function ClaudeAccountRows({ state }: { state: ClaudeAccountsState }) {
 									</>
 								)}
 							</SettingRowText>
-							<SettingRowControl {...mergeStylexProps("", sx.phoneMt1, sx.phoneMl0, sx.phoneWFull, sx.phoneBasisFull, sx.phoneGap25, sx.phonePl10, sx.flex, sx.itemsCenter, sx.gap15)}>
-								<span {...mergeStylexProps("", sx.phoneInline, sx.hidden, sx.shrink0, sx.textFaint, typography.meta)}>Used by</span>
+							<SettingRowControl className={mergeStylexOverrideClassName("phone:mt-1 phone:ml-0 phone:w-full phone:basis-full phone:gap-2.5 phone:pl-10", sx.flex, sx.itemsCenter, sx.gap15)} >
+								<span {...mergeStylexProps("phone:inline", sx.hidden, sx.shrink0, sx.textFaint, typography.meta)} >Used by</span>
 								<OwnerSelect
 									value={account.owner || ""}
 									onChange={(owner) => state.setOwner(account, owner)}
 									label={`Owner of ${providerAccountLabel(account)}`}
 									quiet
-									className={mergeStylexOverrideClassName("", sx.phoneMlAuto)}
+									className={utilityClassName("phone:ml-auto")}
 									title={
 										account.owner
 											? `${account.owner}'s personal subscription. Their runs use it first, everyone else never does.`
@@ -983,7 +798,8 @@ function ClaudeAccountRows({ state }: { state: ClaudeAccountsState }) {
 											</Menu.Item>
 										)}
 										<Menu.Item
-											onClick={() => state.remove(account)} {...mergeStylexProps("data-[highlighted]:bg-red-soft", sx.textRed)}
+											onClick={() => state.remove(account)}
+											className={mergeStylexOverrideClassName("data-[highlighted]:bg-red-soft", sx.textRed)}
 										>
 											<IconTrash size={16} />
 											Remove account
@@ -1032,7 +848,7 @@ export function ClaudeAccountsSection({
 				Claude
 			</SettingsGroupLabel>
 			<Modal.Root open={showAdd} onOpenChange={setShowAdd}>
-				<Modal.Content widthClassName={mergeStylexClassName("", sharedClassStyles.maxW32rem)}>
+				<Modal.Content widthClassName={utilityClassName("max-w-[32rem]")}>
 					<AddClaudeAccountForm
 						onAccountAdded={() => {
 							void state.load();
@@ -1150,7 +966,7 @@ function useCodexAccounts() {
 	const [refreshing, setRefreshing] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 
-	const load = async (forceUsage = false) => {
+	const load = useCallback(async (forceUsage = false) => {
 		if (forceUsage) setRefreshing(true);
 		await (async () => {
 const res = forceUsage
@@ -1163,7 +979,7 @@ setError(cause.message || "Could not load OpenAI accounts");
 			setAccounts((current) => current ?? []);
 });
 		setRefreshing(false);
-	};
+	}, []);
 
 	useEffect(() => {
 		void load();
@@ -1220,7 +1036,7 @@ function CodexAccountRows({ state }: { state: CodexAccountsState }) {
 						left.id.localeCompare(right.id),
 				)
 				.map((account) => (
-					<SettingRow key={account.id} {...mergeStylexProps("", sx.phonePx4, sx.itemsStart, sx.gapX3)}>
+					<SettingRow key={account.id} className={mergeStylexOverrideClassName("phone:px-4", sx.itemsStart, sx.gapX3)} >
 						<AccountProviderMark name="codex" />
 						<SettingRowText>
 							<div {...stylex.props(sx.flex, sx.minW0, sx.itemsCenter, sx.gap2)}>
@@ -1238,14 +1054,14 @@ function CodexAccountRows({ state }: { state: CodexAccountsState }) {
 							</SettingRowDescription>
 							<CodexUsageMeters account={account} />
 						</SettingRowText>
-						<SettingRowControl {...mergeStylexProps("", sx.phoneMt1, sx.phoneMl0, sx.phoneWFull, sx.phoneBasisFull, sx.phoneGap25, sx.phonePl10, sx.flex, sx.itemsCenter, sx.gap15)}>
-							<span {...mergeStylexProps("", sx.phoneInline, sx.hidden, sx.shrink0, sx.textFaint, typography.meta)}>Used by</span>
+						<SettingRowControl className={mergeStylexOverrideClassName("phone:mt-1 phone:ml-0 phone:w-full phone:basis-full phone:gap-2.5 phone:pl-10", sx.flex, sx.itemsCenter, sx.gap15)} >
+							<span {...mergeStylexProps("phone:inline", sx.hidden, sx.shrink0, sx.textFaint, typography.meta)} >Used by</span>
 							<OwnerSelect
 								value={account.owner || ""}
 								onChange={(owner) => state.setOwner(account, owner)}
 								label={`Owner of ${providerAccountLabel(account)}`}
 								quiet
-								className={mergeStylexOverrideClassName("", sx.phoneMlAuto)}
+								className={utilityClassName("phone:ml-auto")}
 								title={
 									account.owner
 										? `${account.owner}'s personal subscription. Their runs use it first, everyone else never does.`
@@ -1261,7 +1077,8 @@ function CodexAccountRows({ state }: { state: CodexAccountsState }) {
 								</Menu.Trigger>
 								<Menu.Popup align="end" sideOffset={4}>
 									<Menu.Item
-										onClick={() => state.remove(account)} {...mergeStylexProps("data-[highlighted]:bg-red-soft", sx.textRed)}
+										onClick={() => state.remove(account)}
+										className={mergeStylexOverrideClassName("data-[highlighted]:bg-red-soft", sx.textRed)}
 									>
 										<IconTrash size={16} />
 										Remove account
@@ -1375,7 +1192,7 @@ function ProviderSummaryRow({
 						<Button
 							size="sm"
 							variant="ghost"
-							className={mergeStylexOverrideClassName("", sx.phoneMinH11)}
+							className={utilityClassName("phone:min-h-11")}
 							aria-expanded={expanded}
 							onClick={onToggle}
 						>
@@ -1385,7 +1202,7 @@ function ProviderSummaryRow({
 					<Button
 						size="sm"
 						variant="ghost"
-						className={mergeStylexOverrideClassName("", sx.phoneMinH11)}
+						className={utilityClassName("phone:min-h-11")}
 						icon={<IconPlus size={16} />}
 						onClick={onAdd}
 					>
@@ -1404,8 +1221,8 @@ function ProviderSummaryRow({
  *
  * It opens collapsed — one row per provider with its account count — because
  * the full list is a page of usage meters and the question people arrive with
- * is "do we have capacity here". "All accounts" restores the flat list. The
- * same view switch and inline foldout are used during onboarding. */
+ * is "do we have capacity here". "All accounts" restores the flat list in
+ * Settings; onboarding keeps the simpler provider summary. */
 export function ProviderAccountsSection({
 	onboarding = false,
 	onChanged,
@@ -1429,24 +1246,18 @@ export function ProviderAccountsSection({
 	return (
 		<>
 			<SettingsGroupLabel
-				className="phone:[&>span]:w-full phone:[&>div]:w-full phone:[&>div]:flex-wrap"
+				className={cn(
+					"phone:[&>span]:w-full phone:[&>div]:w-full phone:[&>div]:flex-wrap",
+					onboarding && utilityClassName("px-6"),
+				)}
 				actions={
 				<>
-					<Segmented
-						label="Account view"
-						size="sm"
-						value={view}
-						onValueChange={(next) => setView(next as "providers" | "accounts")}
-					>
-						<SegmentedOption value="providers">Providers</SegmentedOption>
-						<SegmentedOption value="accounts">All accounts</SegmentedOption>
-					</Segmented>
 					{!onboarding && (
 						<Button
 							size="sm"
 							variant="ghost"
-							className={mergeStylexOverrideClassName("", sx.phoneMinH11)}
-							icon={<IconHistory size={16} className={mergeStylexOverrideClassName("", refreshing && sx.spinning)} />}
+							className={utilityClassName("phone:min-h-11")}
+							icon={<IconHistory size={16} className={refreshing ? utilityClassName("animate-spin") : ""} />}
 							onClick={refreshUsage}
 							disabled={refreshing}
 						>
@@ -1458,7 +1269,8 @@ export function ProviderAccountsSection({
 							render={
 								<Button
 									size="sm"
-									className={mergeStylexOverrideClassName("", sx.phoneMinH11)}
+									variant="default"
+									className={utilityClassName("phone:min-h-11")}
 									icon={<IconPlus size={16} />}
 									caret
 								>
@@ -1480,7 +1292,20 @@ export function ProviderAccountsSection({
 				</>
 			}
 			>
-				Subscriptions
+				<span {...stylex.props(sx.inlineFlex, sx.flexWrap, sx.itemsCenter, sx.gapX3, sx.gapY15)}>
+					Subscriptions
+					{!onboarding && (
+						<Segmented
+							label="Account view"
+							size="sm"
+							value={view}
+							onValueChange={(next) => setView(next as "providers" | "accounts")}
+						>
+							<SegmentedOption value="providers">Providers</SegmentedOption>
+							<SegmentedOption value="accounts">All accounts</SegmentedOption>
+						</Segmented>
+					)}
+				</span>
 			</SettingsGroupLabel>
 
 			{claude.error && (
@@ -1495,7 +1320,7 @@ export function ProviderAccountsSection({
 			)}
 
 			<Modal.Root open={adding === "claude"} onOpenChange={(open) => !open && setAdding(null)}>
-				<Modal.Content widthClassName={mergeStylexClassName("", sharedClassStyles.maxW32rem)}>
+				<Modal.Content widthClassName={utilityClassName("max-w-[32rem]")}>
 					<AddClaudeAccountForm
 						onAccountAdded={() => {
 							void claude.load();
@@ -1517,7 +1342,7 @@ export function ProviderAccountsSection({
 				</Modal.Content>
 			</Modal.Root>
 
-			<SettingCard>
+			<SettingCard className={onboarding ? utilityClassName("p-1") : undefined}>
 				{loading ? (
 					<LoadingState placement="row">Loading accounts…</LoadingState>
 				) : empty ? (
@@ -1556,7 +1381,7 @@ export function ProviderAccountsSection({
 					</>
 				)}
 			</SettingCard>
-			<SettingsHint>
+			<SettingsHint className={onboarding ? utilityClassName("mt-4 px-6") : undefined}>
 				Runs rotate through shared accounts for the selected model. Personal accounts
 				are used only for their owner's runs.
 			</SettingsHint>
@@ -1582,7 +1407,9 @@ function AddClaudeAccountForm({
 	const [saving, setSaving] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 	const pending = useRef<{ id?: string; done: boolean }>({ done: false });
-	pending.current.id = login?.id;
+	useLayoutEffect(() => {
+		pending.current.id = login?.id;
+	});
 
 	useEffect(() => {
 		if (!account) return;
@@ -1603,12 +1430,7 @@ if (!cancelled) setError(cause.message);
 		})();
 		return () => {
 			cancelled = true;
-			const { id, done } = pending.current;
-			if (!done && id) {
-				fetch(`${BASE_PATH}/api/claude-accounts/oauth-login/${encodeURIComponent(id)}`, {
-					method: "DELETE",
-				}).catch(() => {});
-			}
+			abortPendingOAuth(pending);
 		};
 	}, [account]);
 
@@ -1706,7 +1528,7 @@ setError(cause.message);
 								spellCheck={false}
 							/>
 						</Field>
-						<p {...stylex.props(sx.m0, sx.leadingRelaxed, sx.textFaint, typography.meta)}>
+						<p {...mergeStylexProps("m-0", sx.leadingRelaxed, sx.textFaint, typography.meta)} >
 							You can finish later. Runs can use this account without usage tracking.
 						</p>
 					</div>
@@ -1763,7 +1585,7 @@ setError(cause.message);
 							placeholder="sk-ant-oat01-…"
 						/>
 					</Field>
-					<p {...stylex.props(sx.m0, sx.leadingRelaxed, sx.textFaint, typography.meta)}>
+					<p {...mergeStylexProps("m-0", sx.leadingRelaxed, sx.textFaint, typography.meta)} >
 						Run <code>claude setup-token</code> while signed into this Claude account. The
 						token powers model runs for about one year.
 					</p>
@@ -1874,7 +1696,7 @@ setError(e.message);
 			</SettingRowDescription>
 
 			{login ? (
-				<div {...mergeStylexProps("", sx.phoneFlexCol, sx.phoneItemsStretch, sx.flex, sx.itemsEnd, sx.gap35)}>
+				<div {...mergeStylexProps("phone:flex-col phone:items-stretch", sx.flex, sx.itemsEnd, sx.gap35)} >
 					<a {...stylex.props(sx.shrink0)} href={login.url} target="_blank" rel="noreferrer">
 						<Button icon={<IconPlug size={16} />}>Open Claude sign-in</Button>
 					</a>
@@ -1941,28 +1763,54 @@ function AddCodexAccountForm({ onAdded }: { onAdded: () => void }) {
 	// sign-in: open the URL anywhere, paste back the localhost redirect.
 	const [oauth, setOauth] = useState<{ id: string; url: string } | null>(null);
 	const [oauthCode, setOauthCode] = useState("");
+	const [pendingDone, setPendingDone] = useState(false);
 
-	// Poll an in-flight device sign-in until it lands (or fails).
-	useEffect(() => {
-		if (!login || login.state === "done" || login.state === "error") return;
-		const t = setInterval(async () => {
-			await (async () => {
+	// Abandoning a half-finished sign-in has to release it server-side, and the
+	// dialog can now be dismissed by Escape or the backdrop as well as by
+	// Cancel. The Effect Event gives unmount cleanup the latest committed login.
+	const cleanupPendingLogin = useEffectEvent(() => {
+		if (pendingDone) return;
+		const loginId =
+			login && (login.state === "starting" || login.state === "awaiting_code")
+				? login.id
+				: undefined;
+		if (loginId)
+			fetch(`${BASE_PATH}/api/codex-accounts/device-login/${encodeURIComponent(loginId)}`, {
+				method: "DELETE",
+			}).catch(() => {});
+		if (oauth?.id)
+			fetch(`${BASE_PATH}/api/codex-accounts/oauth-login/${encodeURIComponent(oauth.id)}`, {
+				method: "DELETE",
+			}).catch(() => {});
+	});
+	useEffect(() => () => cleanupPendingLogin(), []);
+
+	// Poll an in-flight device sign-in until it lands (or fails). The tick
+	// reads the live login/onAdded through an effect event; the effect only
+	// re-arms when the login identity or its phase changes.
+	const pollDeviceLoginTick = useEffectEvent(async () => {
+		await (async () => {
 const res = await fetch(
-					`${BASE_PATH}/api/codex-accounts/device-login/${encodeURIComponent(login.id)}`
-				);
-				if (!res.ok) return;
-				const next: CodexDeviceLogin = await res.json();
-				setLogin(next);
-				if (next.state === "done") {
-					pending.current.done = true;
-					onAdded();
-				}
+				`${BASE_PATH}/api/codex-accounts/device-login/${encodeURIComponent(login?.id ?? "")}`
+			);
+			if (!res.ok) return;
+			const next: CodexDeviceLogin = await res.json();
+			setLogin(next);
+			if (next.state === "done") {
+				setPendingDone(true);
+				onAdded();
+			}
 })().catch(async () => {
 
 });
-		}, 2000);
+	});
+	const loginId = login?.id;
+	const loginState = login?.state;
+	useEffect(() => {
+		if (!loginId || loginState === "done" || loginState === "error") return;
+		const t = setInterval(() => void pollDeviceLoginTick(), 2000);
 		return () => clearInterval(t);
-	}, [login?.id, login?.state]);
+	}, [loginId, loginState]);
 
 	async function handleStartDeviceLogin() {
 		setSaving(true);
@@ -1983,31 +1831,6 @@ setError(e.message);
 });
 		setSaving(false);
 	}
-
-	// Abandoning a half-finished sign-in has to release it server-side, and the
-	// dialog can now be dismissed by Escape or the backdrop as well as by
-	// Cancel. So the cleanup hangs off unmount, which every one of those paths
-	// goes through, rather than off the Cancel handler alone the way it used to
-	// (dismissing any other way leaked the pending login).
-	const pending = useRef<{ login?: string; oauth?: string; done: boolean }>({ done: false });
-	pending.current.login =
-		login && (login.state === "starting" || login.state === "awaiting_code") ? login.id : undefined;
-	pending.current.oauth = oauth?.id;
-	useEffect(
-		() => () => {
-			const { login: loginId, oauth: oauthId, done } = pending.current;
-			if (done) return;
-			if (loginId)
-				fetch(`${BASE_PATH}/api/codex-accounts/device-login/${encodeURIComponent(loginId)}`, {
-					method: "DELETE",
-				}).catch(() => {});
-			if (oauthId)
-				fetch(`${BASE_PATH}/api/codex-accounts/oauth-login/${encodeURIComponent(oauthId)}`, {
-					method: "DELETE",
-				}).catch(() => {});
-		},
-		[],
-	);
 
 	async function handleStartOauth() {
 		setSaving(true);
@@ -2033,32 +1856,32 @@ setError(e.message);
 		if (!oauth) return;
 		setSaving(true);
 		setError(null);
-		try {
-			const res = await fetch(
-				`${BASE_PATH}/api/codex-accounts/oauth-login/${encodeURIComponent(oauth.id)}`,
-				{
-					method: "POST",
-					headers: { "Content-Type": "application/json" },
-					body: JSON.stringify({ code: oauthCode }),
-				},
-			);
-			const body = await res.json();
-			if (!res.ok) throw new Error(body.error || `Failed: ${res.status}`);
-			toast(`Codex account ${providerAccountLabel(body.account)} added to the pool`);
-			pending.current.done = true;
-			onAdded();
-			return;
-		} catch (e: any) {
-			setError(e.message);
-		}
-		setSaving(false);
+		await fetch(
+			`${BASE_PATH}/api/codex-accounts/oauth-login/${encodeURIComponent(oauth.id)}`,
+			{
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ code: oauthCode }),
+			},
+		)
+			.then(async (res) => {
+				const body = await res.json();
+				if (!res.ok) throw new Error(body.error || `Failed: ${res.status}`);
+				toast(`Codex account ${providerAccountLabel(body.account)} added to the pool`);
+				setPendingDone(true);
+				onAdded();
+			})
+			.catch((error: any) => {
+				setError(error.message);
+				setSaving(false);
+			});
 	}
 
 	async function handleAdd() {
 		setSaving(true);
 		setError(null);
 		await (async () => {
-const res = await fetch(`${BASE_PATH}/api/codex-accounts`, {
+			const res = await fetch(`${BASE_PATH}/api/codex-accounts`, {
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
 				body: JSON.stringify({
@@ -2070,12 +1893,12 @@ const res = await fetch(`${BASE_PATH}/api/codex-accounts`, {
 			});
 			const body = await res.json();
 			if (!res.ok) throw new Error(body.error || `Failed: ${res.status}`);
-			pending.current.done = true;
+			setPendingDone(true);
 			onAdded();
-})().catch(async (e: any) => {
-setError(e.message);
+		})().catch((error: any) => {
+			setError(error.message);
 			setSaving(false);
-});
+		});
 	}
 
 	const loginPending = login && (login.state === "starting" || login.state === "awaiting_code");

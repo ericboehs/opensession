@@ -1,3 +1,10 @@
+/** Read through the live-edge ref without making React Compiler treat
+ * `.current` as a memo dependency. SessionViewer's callbacks deliberately
+ * depend on the stable ref object; the value itself is read when they run. */
+export function readFollowingLive(ref: { readonly current: boolean }): boolean {
+	return ref.current;
+}
+
 // The element whose position the history hold keeps stable: the first
 // entry-level node ([data-eid]: bubbles, tool rows, turn notes — turn-block
 // roots too) at or straddling the transcript viewport's top edge, preferring
@@ -34,6 +41,7 @@ export function holdTranscriptAnchor(
 	bottomGap: number,
 	onFound: () => void,
 	onStop?: () => void,
+	settleMs = 2500,
 ): () => void {
 	let raf = 0;
 	let stopped = false;
@@ -79,7 +87,7 @@ export function holdTranscriptAnchor(
 			);
 		}
 		if (
-			(foundAt !== null && now - foundAt >= 2500) ||
+			(foundAt !== null && now - foundAt >= settleMs) ||
 			(foundAt === null && now - startedAt >= 6000)
 		) {
 			stop();

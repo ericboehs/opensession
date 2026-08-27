@@ -5,16 +5,27 @@ that needs a particular platform, toolchain, or GPU. It is not an isolated
 Sandbox.
 
 Workspace administrators pair a Runner from **Settings → Runners**. The
-pairing code is one-time and expires after ten minutes. On the target machine:
+pairing code is one-time and expires after ten minutes. On a new macOS or Linux
+Runner, install the command without onboarding a server or model engine:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/tellahq/opensession/main/install.sh | bash -s -- --no-onboard --no-engine
+```
+
+Follow any PATH refresh instruction from the installer, then pair the machine:
 
 ```sh
 opensession runner connect --server https://your-opensession-host --code CODE
 ```
 
 Connect installs a per-user LaunchAgent, systemd user service or Windows
-scheduled task when one is available. It reconnects after restart. If it does
-not install one it says why, and `opensession runner service install` retries
-it once the cause is fixed.
+scheduled task when one is available. The service recovers from process
+failures, and the Runner reconnects after connection failures. After a machine
+reboot, macOS starts the LaunchAgent when that user logs into a GUI session.
+Linux starts the user service at login unless lingering is enabled separately
+with `sudo loginctl enable-linger "$USER"`. Windows starts the task at sign-in. If
+Connect cannot install a service, it says why;
+`opensession runner service install` retries after the cause is fixed.
 The Runner connects outbound over the tailnet. Open Session never dials into
 the machine.
 
@@ -61,12 +72,12 @@ There is nothing to configure first on Windows, and the task itself needs no
 administrator rights: it is per-user and installs from an ordinary PowerShell
 window. Machine-wide setup does need elevation, which is its own subject below.
 
-A damaged PATH does not need repairing by hand. The Runner resolves PowerShell
-and `schtasks.exe` at their known location under `%SystemRoot%\System32`, and
-puts the core System32 directories back on the PATH it hands to every command
-it runs, so `git`, `where` and `Get-CimInstance` resolve inside a delegated
-command even on a machine whose own PATH lost them. The machine's PATH is left
-as it is.
+The Runner resolves PowerShell and `schtasks.exe` from
+`%SystemRoot%\System32` and restores the core System32, Windows PowerShell, and
+WMI directories in each delegated command's PATH. This repairs Windows inbox
+tools such as `where.exe` and PowerShell/WMI components without changing the
+machine PATH. Third-party tools such as Git must still be installed and present
+on the inherited PATH.
 
 Two behaviours of the task decide how an always-on box has to be set up:
 
@@ -104,8 +115,9 @@ instance holds the channel:
 
 ```powershell
 schtasks /End /TN OpenSessionRunner
-Get-CimInstance Win32_Process -Filter "Name='bun.exe'" |
-  ForEach-Object { Stop-Process -Id $_.ProcessId -Force }
+$runnerProcesses = Get-CimInstance Win32_Process -Filter "Name='bun.exe'" |
+  Where-Object { $_.CommandLine -match '(?i)[\\/]scripts[\\/]cli\.ts"?\s+runner\s+run(?:\s|$)' }
+$runnerProcesses | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }
 opensession runner run
 ```
 
@@ -121,12 +133,16 @@ going. Two live Runners share one identity and take turns owning the control
 connection, each knocking the other off. The symptom is distinctive rather than
 obvious: the Runner reads `online` with a `lastSeenAt` that keeps advancing,
 while commands fail immediately with `[Runner disconnected]`, occasionally
-interleaved with ones that succeed. Count the processes, expect exactly one,
-and kill the rest:
+interleaved with ones that succeed. Count the Runner processes and expect
+exactly one:
 
 ```powershell
-(Get-CimInstance Win32_Process -Filter "Name='bun.exe'").Count
+$runnerProcesses = Get-CimInstance Win32_Process -Filter "Name='bun.exe'" |
+  Where-Object { $_.CommandLine -match '(?i)[\\/]scripts[\\/]cli\.ts"?\s+runner\s+run(?:\s|$)' }
+@($runnerProcesses).Count
 ```
+
+Do not stop or count unrelated Bun processes.
 
 ### Keeping the machine awake
 
@@ -174,27 +190,37 @@ console session. That logs out the interactive desktop the task's LogonTrigger
 depends on, so a box built around autologon should use VNC and not also be
 reached over RDP.
 
-Administrators choose its permissions, eligible people and repositories,
-managed workspace roots, maintenance state, and revocation. Revoking a Runner
-invalidates its credential and closes its control connection immediately.
+Administrators configure the Runner's label and tags, user and repository
+allowlists for command delegation, command access, and maintenance state.
+Revoking a Runner invalidates its credential and closes its control connection
+immediately. Runner-backed full sessions, managed workspace roots, terminals,
+and Portals are not currently available.
 
-Interactive sessions can use the `opensession-runners` MCP tools for scoped,
-audited command delegation. Automation sessions never receive Runner tools.
-Runners run work as their local service user, so only attach machines the
+Interactive sessions can use the `opensession-runners` MCP tools for audited
+command delegation subject to those allowlists. Delegated commands are time-
+and output-bounded, but they are not filesystem-sandboxed or confined to a
+managed root. They can access anything available to the Runner's service user.
+Automation sessions never receive Runner tools. Only attach machines the
 workspace intends to trust.
 
 ## Operator-managed migration
 
+The target must already contain a compatible Open Session Runner client.
+`runnerCommand` defaults to `/usr/local/bin/opensession`; SSH bootstrap does not
+install or upgrade it, and the Kubernetes manifest must provide it in the
+selected container.
+
 Workspace administrators can also migrate a named SSH machine or a named
-Kubernetes Runner workload from Settings. These choices appear only when the
-operator has configured `integrations.runnersBootstrap` in the protected
-instance configuration. SSH entries require both a pinned `SHA256:` host
-fingerprint and a dedicated known-hosts file. Kubernetes entries name one
-context, namespace, deployment, and optional container, plus a reviewed
-manifest path for that dedicated deployment and its persistent workspace
-volume. Bootstrap applies the manifest with a fixed field manager, waits for
-rollout, and returns bounded pod scheduling diagnostics if it cannot become
-ready.
+Kubernetes Runner workload from Settings. The SSH and Kubernetes choices are
+always shown to workspace administrators, but targets are available only when
+the operator has configured `integrations.runnersBootstrap` in the protected
+instance configuration. Otherwise the selected path reports that no targets
+are configured. SSH entries require both a pinned `SHA256:` host fingerprint
+and a dedicated known-hosts file. Kubernetes entries name one context,
+namespace, deployment, and optional container, plus a reviewed manifest path
+for that dedicated deployment and its persistent workspace volume. Bootstrap
+applies the manifest with a fixed field manager, waits for rollout, and returns
+bounded pod scheduling diagnostics if it cannot become ready.
 
 The migration performs only the reviewed `opensession runner connect` action,
 then the component installs its reconnecting service and dials out normally.

@@ -12,7 +12,6 @@ import {
 	configuredRepos,
 	configuredSelfDev,
 	getConfig,
-	organizationDomain,
 	organizationName,
 	personaName,
 	productName,
@@ -84,7 +83,6 @@ function generalDto(publicPrefix: string) {
 	const revision = organizationIconRevision();
 	return {
 		organizationName: organizationName(),
-		organizationDomain: organizationDomain(),
 		organizationIconUrl:
 			revision === null
 				? null
@@ -105,7 +103,7 @@ function worktreeSettingsDto() {
 
 /**
  * The connected GitHub organization's public profile, so the onboarding
- * organization step can fill itself in rather than ask for three things the
+ * organization step can fill itself in rather than ask for two things the
  * connection already knows.
  *
  * Server-side because the token lives here: the browser never sees it, and an
@@ -142,21 +140,12 @@ async function githubOrganizationProfile(
 	if (!response?.ok || !body) {
 		// A missing or unreadable organization is not an error worth stopping
 		// onboarding for: the fields simply stay empty and editable.
-		return Response.json({ login, name: "", domain: "", avatarUrl: "" });
+		return Response.json({ login, name: "", avatarUrl: "" });
 	}
 	const str = (value: unknown) => (typeof value === "string" ? value.trim() : "");
-	// The website first, then the public contact address: an org that has set
-	// neither has no domain we could infer without guessing.
-	let domain = "";
-	try {
-		domain = domainField(str(body.blog) || str(body.email)) || "";
-	} catch {
-		domain = "";
-	}
 	return Response.json({
 		login,
 		name: str(body.name) || login,
-		domain,
 		avatarUrl: str(body.avatar_url),
 	});
 }
@@ -260,31 +249,6 @@ function nameField(v: unknown, label: string): string | undefined {
 	return v;
 }
 
-/** The team's email domain. Accepts what a person actually types — a bare
- *  domain, a URL, or their own address — and stores the host alone, so the
- *  people step can compare an invite against it without parsing again. */
-function domainField(v: unknown): string | undefined {
-	if (v === undefined) return undefined;
-	if (typeof v !== "string") throw new Error("organizationDomain must be a string");
-	const raw = v.trim().toLowerCase();
-	if (!raw) return "";
-	const host = raw
-		.replace(/^[a-z]+:\/\//, "")
-		.replace(/^.*@/, "")
-		.replace(/^www\./, "")
-		.split("/")[0]!
-		.split("?")[0]!;
-	if (host.length > MAX_NAME_LENGTH) {
-		throw new Error(
-			`organizationDomain must be at most ${MAX_NAME_LENGTH} characters`,
-		);
-	}
-	if (!/^[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(host)) {
-		throw new Error("That does not look like a domain, e.g. acme.com");
-	}
-	return host;
-}
-
 function setOrDelete(
 	config: Record<string, unknown>,
 	section: string,
@@ -368,11 +332,9 @@ export async function handleInstanceSettingsRoutes(
 		}
 		try {
 			const name = nameField(body.organizationName, "organizationName");
-			const domain = domainField(body.organizationDomain);
 			await withConfigMutationLock(async () => {
 				const config = rawConfig();
 				setOrDelete(config, "organization", "name", name);
-				setOrDelete(config, "organization", "domain", domain);
 				persistRawConfig(config);
 			});
 		} catch (error: any) {

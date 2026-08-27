@@ -7,15 +7,18 @@
     "selfDev controls sessions on the self-hosted Open Session repo itself: 'shared' (default) = all sessions edit the live shared checkout on the default branch; 'worktree' = self-sessions get isolated worktrees + the normal branch/PR flow like every other repo.",
     "Repos are GitHub-hosted by default. To host one on code.storage instead, set host: 'codestorage' and csRepo (the repo id/path) on the repo entry \u2014 see the 'widget-cs' example \u2014 and configure integrations.codestorage (org + PKCS8 private key that signs the customer-issued JWTs)."
   ],
+  "onboardingCompleted": true,
   "selfDev": "shared",
   "server": {
     "host": "127.0.0.1",
     "port": 3850,
-    "webhookPort": 3848,
     "publicBaseUrl": "https://sessions.example.com",
-    "webhookBaseUrl": "https://ingress.example.com",
     "previewHost": "preview.example.com",
     "caddyAdmin": "http://localhost:2019"
+  },
+  "ingress": {
+    "publicBaseUrl": "https://ingress.example.com",
+    "exposure": "custom"
   },
   "paths": {
     "claudeBin": "claude",
@@ -106,9 +109,6 @@
   "policy": {
     "githubWriteOwners": [
       "acme"
-    ],
-    "githubBotLogins": [
-      "acme-automation"
     ]
   },
   "integrations": {
@@ -116,11 +116,9 @@
       "enabled": false,
       "userPrAuth": false,
       "oauthClientId": "",
+      "oauthClientSecret": "",
       "appSlug": "",
-      "mentionHandles": [
-        "assistant",
-        "acme-automation"
-      ],
+      "installationOwner": "acme",
       "previewEnvironment": "Preview",
       "shippedChangesChannel": "C0123456789"
     },

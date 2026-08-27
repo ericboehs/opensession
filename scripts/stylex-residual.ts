@@ -44,7 +44,8 @@ const looksResidual = (token: string) =>
 	/^(?:phone|desktop):\[/.test(token) ||
 	/(?:^|:)(?:data-\[|data-active|aria-|group(?:$|[/:-])|peer(?:$|[/:-])|has-|supports-\[|enabled:|empty:|shadow-\[)/.test(token) ||
 	/(?:^|:)phone:[^\s]+!$/.test(token) ||
-	/^(?:selection:|first:|last:|-space-|space-y-|divide-|md:group-|phone:\*|smooth-shadow|plate-sheen)/.test(token);
+	/^(?:selection:|first:|last:|-space-|space-y-|divide-|md:group-|phone:\*|smooth-shadow|plate-sheen)/.test(token) ||
+	/^(?:@max-|backdrop-(?:blur|saturate)-|bg-gradient-|from-|to-|focus-ring$|focus-visible:(?:outline|ring)-|outline(?:-|$)|ring-|shadow-(?:none$|\(|\[)|snap-|tabular-nums$|touch-pan-y$|hover:brightness-|repo-tile$|ws-summary-(?:pr|review)-group$)/.test(token);
 
 let valueDeclarations = new Map<string, ts.Expression>();
 let functionReturns = new Map<string, ts.Expression[]>();
@@ -172,7 +173,7 @@ for (const f of walkFiles(FRONTEND)) {
 		function collectSharedClassLiterals(node: ts.Node) {
 			if (
 				ts.isCallExpression(node) &&
-				node.expression.getText(file) === "stylex.create"
+				(node.expression.getText(file) === "stylex.create" || node.expression.getText(file) === "utilityClassName")
 			) return;
 			if (ts.isStringLiteralLike(node)) add(node.text);
 			ts.forEachChild(node, collectSharedClassLiterals);
@@ -190,6 +191,7 @@ for (const f of walkFiles(FRONTEND)) {
 			node.initializer
 		) {
 			function collect(node: ts.Node) {
+				if (ts.isCallExpression(node) && node.expression.getText(file) === "utilityClassName") return;
 				if (ts.isStringLiteralLike(node)) add(node.text);
 				ts.forEachChild(node, collect);
 			}
@@ -247,6 +249,8 @@ const semanticHooks = new Set([
 	"detail-pane",
 	"mobile-detail",
 	"panel-pr-plate",
+	"repo-tile",
+	"ring-panel",
 	"settings-sheet",
 	"sidebar-collapsed",
 	"session-info-status",
@@ -270,15 +274,25 @@ const semanticHooks = new Set([
 	"viewer-panel",
 	"workspace-info-panel",
 	"ws-summary-band",
+	"ws-summary-pr-group",
+	"ws-summary-review-group",
 ]);
+const compatibilityStyles = new Set(
+	[...readFileSync(join(FRONTEND, "styles/utility-compat.stylex.ts"), "utf8").matchAll(/^\s*"([^"]+)": (?:sx|typography)\./gm)]
+		.map((match) => match[1]),
+);
 const isPermittedResidual = (token: string) =>
 	looksResidual(token) || semanticHooks.has(token);
-const convertible = [...tokens].filter((token) => !isPermittedResidual(token));
+const convertible = [...tokens].filter(
+	(token) => !isPermittedResidual(token) && !compatibilityStyles.has(token),
+);
 if (convertible.length > 0) {
 	throw new Error(
 		`StyleX-expressible classes remain outside StyleX:\n${convertible.sort().join("\n")}`,
 	);
 }
+// Mapped utilities ship through StyleX, never duplicate through residual CSS.
+for (const token of compatibilityStyles) tokens.delete(token);
 const kept: string[] = [];
 let matchedTokens = new Set<string>();
 

@@ -1,12 +1,11 @@
 /** Discovery and generated Caddy configuration for sandbox ingress. */
 
-import { configuredServer } from "../config";
-import { sandboxConfig } from "./config";
+import { configuredIngress, configuredServer } from "../config";
 
 export interface SandboxIngressStatus {
   configuredUrl?: string;
   proposedUrl?: string;
-  source: "sandbox_config" | "caddy_webhook" | "public_ui" | "none";
+  source: "config" | "caddy" | "none";
   health: "ready" | "unreachable" | "not_configured";
   caddyAdminReachable: boolean;
   generatedSnippet: string;
@@ -24,7 +23,7 @@ function normalizeOrigin(value: string | undefined): string | undefined {
   }
 }
 
-export function webhookHostsFromCaddy(config: unknown): string[] {
+export function ingressHostsFromCaddy(config: unknown): string[] {
   const found = new Set<string>();
   function walk(value: unknown, inheritedHosts: string[] = []): void {
     if (!value || typeof value !== "object") return;
@@ -41,10 +40,10 @@ export function webhookHostsFromCaddy(config: unknown): string[] {
       if (matched.length) hosts = matched;
     }
     if (object.handler === "reverse_proxy" && Array.isArray(object.upstreams)) {
-      const webhook = object.upstreams.some((upstream: any) =>
-        /(^|:)3848$/.test(String(upstream?.dial || "")),
+      const ingress = object.upstreams.some((upstream: any) =>
+        /(^|:)3860$/.test(String(upstream?.dial || "")),
       );
-      if (webhook) for (const host of hosts) found.add(host);
+      if (ingress) for (const host of hosts) found.add(host);
     }
     for (const child of Object.values(object)) walk(child, hosts);
   }
@@ -55,21 +54,10 @@ export function webhookHostsFromCaddy(config: unknown): string[] {
 const MANAGED_START = "# BEGIN OPENSESSION SANDBOX INGRESS";
 const MANAGED_END = "# END OPENSESSION SANDBOX INGRESS";
 
-function managedRoutes(indent = "    "): string {
+function managedRoutes(indent = "    ", bindAddress?: string): string {
+  const bind = bindAddress ? `${indent}bind ${bindAddress}\n` : "";
   return `${indent}${MANAGED_START}
-${indent}handle /run-ws/* {
-${indent}    reverse_proxy 127.0.0.1:3860
-${indent}}
-${indent}handle /rpc-ws {
-${indent}    reverse_proxy 127.0.0.1:3860
-${indent}}
-${indent}handle /sandbox-portal-ws {
-${indent}    reverse_proxy 127.0.0.1:3860
-${indent}}
-${indent}handle /ingress-health {
-${indent}    reverse_proxy 127.0.0.1:3860
-${indent}}
-${indent}handle /workload-identity/* {
+${bind}${indent}handle {
 ${indent}    reverse_proxy 127.0.0.1:3860
 ${indent}}
 ${indent}${MANAGED_END}`;
@@ -138,14 +126,23 @@ function stripKnownSandboxRoutes(site: string): string {
       "",
     );
   }
-  return site;
+  // Remove the retired webhook listener fallback. The unified gateway on 3860
+  // now owns those exact registered routes too.
+  return site.replace(
+    /^[ \t]*handle\s*\{\s*reverse_proxy (?:localhost|127\.0\.0\.1):3848\s*\}\s*/gm,
+    "",
+  );
 }
 
 /**
  * Own the sandbox route section in an existing webhook host, or create a new
  * public webhook host when it is absent. The markers make reruns idempotent.
  */
-export function upsertCaddyIngress(caddyfile: string, origin: string): string {
+export function upsertCaddyIngress(
+  caddyfile: string,
+  origin: string,
+  bindAddress?: string,
+): string {
   const host = new URL(origin).host;
   const managed = new RegExp(
     `^[ \\t]*${MANAGED_START}[\\s\\S]*?^[ \\t]*${MANAGED_END}[ \\t]*(?:\\r?\\n)?`,
@@ -157,16 +154,16 @@ export function upsertCaddyIngress(caddyfile: string, origin: string): string {
     throw new Error(`Caddyfile defines ${host} more than once; consolidate it before setup`);
   }
   if (!matches.length) {
-    return `${next.trimEnd()}\n\n${caddyIngressSnippet(origin)}\n`;
+    return `${next.trimEnd()}\n\n${caddyIngressSnippet(origin, bindAddress)}\n`;
   }
   const range = matches[0]!;
   const site = stripKnownSandboxRoutes(next.slice(range.opening + 1, range.closing));
-  return `${next.slice(0, range.opening + 1)}\n${managedRoutes()}\n${site.replace(/^\s*\n/, "")}${next.slice(range.closing)}`;
+  return `${next.slice(0, range.opening + 1)}\n${managedRoutes("    ", bindAddress)}\n${site.replace(/^\s*\n/, "")}${next.slice(range.closing)}`;
 }
 
-export function caddyIngressSnippet(origin: string): string {
+export function caddyIngressSnippet(origin: string, bindAddress?: string): string {
   const host = new URL(origin).host;
-  return `${host} {\n${managedRoutes()}\n    handle {\n        reverse_proxy 127.0.0.1:3848\n    }\n}`;
+  return `${host} {\n${managedRoutes("    ", bindAddress)}\n}`;
 }
 
 async function health(origin: string | undefined): Promise<"ready" | "unreachable" | "not_configured"> {
@@ -182,9 +179,7 @@ async function health(origin: string | undefined): Promise<"ready" | "unreachabl
 }
 
 export async function sandboxIngressStatus(): Promise<SandboxIngressStatus> {
-  const configured = normalizeOrigin(
-    sandboxConfig().publicIngress?.publicBaseUrl || sandboxConfig().callbackBaseUrl,
-  );
+  const configured = normalizeOrigin(configuredIngress().publicBaseUrl);
   let caddyAdminReachable = false;
   let caddyHosts: string[] = [];
   try {
@@ -193,19 +188,16 @@ export async function sandboxIngressStatus(): Promise<SandboxIngressStatus> {
     });
     if (response.ok) {
       caddyAdminReachable = true;
-      caddyHosts = webhookHostsFromCaddy(await response.json());
+      caddyHosts = ingressHostsFromCaddy(await response.json());
     }
   } catch {}
   const caddyOrigin = caddyHosts.length === 1 ? `https://${caddyHosts[0]}` : undefined;
-  const publicUi = normalizeOrigin(configuredServer().publicBaseUrl);
-  const proposed = configured || caddyOrigin || publicUi;
+  const proposed = configured || caddyOrigin;
   const source: SandboxIngressStatus["source"] = configured
-    ? "sandbox_config"
+    ? "config"
     : caddyOrigin
-      ? "caddy_webhook"
-      : publicUi
-        ? "public_ui"
-        : "none";
+      ? "caddy"
+      : "none";
   return {
     ...(configured ? { configuredUrl: configured } : {}),
     ...(proposed ? { proposedUrl: proposed } : {}),

@@ -220,7 +220,8 @@ const sx = stylex.create({
 			borderColor: "var(--border-strong)",
 			color: "var(--text)",
 		} },
-	},
+
+		cornerShape: "var(--cs)",},
 	mt2: { marginTop: "8px" },
 	h25: { height: "10px" },
 	w23pct: { width: "23%" },

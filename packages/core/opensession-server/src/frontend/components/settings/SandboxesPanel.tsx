@@ -1,7 +1,8 @@
+import { mergeStylexProps, mergeStylexOverrideClassName } from "../../ui/cn";
+import { utilityClassName } from "../../ui/cn";
 import { useEffect, useRef, useState } from "react";
 import type {
 	SandboxConnectionInfo,
-	SandboxIngressInfo,
 	SandboxOperationInfo,
 } from "../../lib/api";
 import type { SandboxConnectionsResponse } from "../../lib/api/sandboxes";
@@ -19,6 +20,7 @@ import {
 	updateSandboxConnection,
 } from "../../lib/api/sandboxes";
 import { Button } from "../../ui/button";
+import { cn } from "../../ui/cn";
 import { Field, Input, Select } from "../../ui/input";
 import { Modal } from "../../ui/modal";
 import {
@@ -36,8 +38,6 @@ import { WorkspaceSandboxDefaults } from "./SandboxDefaults";
 import { SandboxProviderLogo } from "./SandboxProviderLogo";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../../styles/typography.stylex";
-import { mergeStylexProps, mergeStylexClassName, mergeStylexOverrideClassName } from "../../ui/cn";
-import { sharedClassStyles } from "../../styles/shared-class-styles.stylex";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -45,17 +45,17 @@ const sx = stylex.create({
 			display: "grid"
 	},
 	gap3: {
-			gap: "12px"
+			gap: "calc(4px * 3)"
 	},
 	roundedLg: {
-			borderRadius: "calc(14px * var(--rf))"
-	,
-		cornerShape: "var(--cs)"},
+			borderRadius: "calc(14px * var(--rf))",
+
+		cornerShape: "var(--cs)",},
 	bgSurface: {
 			backgroundColor: "var(--bg)"
 	},
 	p3: {
-			padding: "12px"
+			padding: "calc(4px * 3)"
 	},
 	mb1: {
 			marginBottom: "4px"
@@ -74,39 +74,16 @@ const sx = stylex.create({
 	},
 	textSm: {
 			fontSize: "var(--type-label)",
-			lineHeight: "var(--tw-leading,var(--text-sm--line-height))"
+			lineHeight: "var(--tw-leading, var(--text-sm--line-height))"
 	},
 	textFg: {
 			color: "var(--text)"
 	},
-	m0: {
-			margin: "0"
-	},
 	cursorPointer: {
 			cursor: "pointer"
 	},
-	mt2: {
-			marginTop: "8px"
-	},
-	roundedMd: {
-			borderRadius: "calc(7px * var(--rf))"
-	,
-		cornerShape: "var(--cs)"},
-	bgPanel: {
-			backgroundColor: "var(--bg-panel)"
-	},
-	p2: {
-			padding: "8px"
-	},
-	textXs: {
-			fontSize: "var(--type-label)",
-			lineHeight: "var(--tw-leading,var(--text-xs--line-height))"
-	},
-	whitespacePreWrap: {
-			whiteSpace: "pre-wrap"
-	},
 	mt3: {
-			marginTop: "12px"
+			marginTop: "calc(4px * 3)"
 	},
 	mt1: {
 			marginTop: "4px"
@@ -115,16 +92,16 @@ const sx = stylex.create({
 			flex: "1"
 	},
 	gapX4: {
-			columnGap: "16px"
+			columnGap: "calc(4px * 4)"
 	},
 	gapY3: {
-			rowGap: "12px"
+			rowGap: "calc(4px * 3)"
 	},
 	px5: {
-			paddingInline: "20px"
+			paddingInline: "calc(4px * 5)"
 	},
 	py4: {
-			paddingBlock: "16px"
+			paddingBlock: "calc(4px * 4)"
 	},
 	colStart1: {
 			gridColumnStart: "1"
@@ -148,7 +125,7 @@ const sx = stylex.create({
 			alignItems: "center"
 	},
 	gap2: {
-			gap: "8px"
+			gap: "calc(4px * 2)"
 	},
 	fontSemibold: {
 			fontWeight: "var(--font-weight-semibold)"
@@ -166,7 +143,7 @@ const sx = stylex.create({
 			alignSelf: "flex-start"
 	},
 	colSpan2: {
-			gridColumn: "span 2/span 2"
+			gridColumn: "span 2 / span 2"
 	},
 	rowStart2: {
 			gridRowStart: "2"
@@ -178,10 +155,10 @@ const sx = stylex.create({
 			justifyContent: "space-between"
 	},
 	gap4: {
-			gap: "16px"
+			gap: "calc(4px * 4)"
 	},
 	ml10: {
-			marginLeft: "40px"
+			marginLeft: "calc(4px * 10)"
 	},
 	textFaint: {
 			color: "var(--text-faint)"
@@ -196,10 +173,10 @@ const sx = stylex.create({
 			lineHeight: "26px"
 	},
 	gap05: {
-			gap: "2px"
+			gap: "calc(4px * 0.5)"
 	},
 	pl3: {
-			paddingLeft: "12px"
+			paddingLeft: "calc(4px * 3)"
 	},
 	mlAuto: {
 			marginLeft: "auto"
@@ -208,7 +185,7 @@ const sx = stylex.create({
 			flexShrink: "0"
 	},
 	py5: {
-			paddingBlock: "20px"
+			paddingBlock: "calc(4px * 5)"
 	},
 	textCenter: {
 			textAlign: "center"
@@ -223,7 +200,10 @@ const sx = stylex.create({
 			maxWidth: "30rem"
 	},
 	py35: {
-			paddingBlock: "14px"
+			paddingBlock: "calc(4px * 3.5)"
+	},
+	mt2: {
+			marginTop: "calc(4px * 2)"
 	},
 	maxW24rem: {
 			maxWidth: "24rem"
@@ -235,9 +215,9 @@ const sx = stylex.create({
 			overflow: "hidden"
 	},
 	roundedFull: {
-			borderRadius: "calc(infinity * 1px)"
-	,
-		cornerShape: "round"},
+			borderRadius: "calc(infinity * 1px)",
+
+		cornerShape: "round",},
 	bgHover: {
 			backgroundColor: "var(--hover)"
 	},
@@ -249,71 +229,11 @@ const sx = stylex.create({
 	},
 	transitionWidth: {
 			transitionProperty: "width",
-			transitionTimingFunction: "var(--tw-ease,var(--ease))",
-			transitionDuration: "var(--tw-duration,var(--dur-micro))"
+			transitionTimingFunction: "var(--tw-ease, var(--ease))",
+			transitionDuration: "var(--tw-duration, var(--dur-micro))"
 	},
 	durationVarDur: {
 			transitionDuration: "var(--dur)"
-	},
-	statusChip: {
-		borderRadius: "calc(infinity * 1px)",
-		paddingInline: "8px",
-		paddingBlock: "2px",
-		fontWeight: "var(--font-weight-medium)",
-	},
-	statusReady: {
-		backgroundColor: "var(--green-soft)",
-		color: "var(--green)",
-	},
-	statusNeedsAttention: {
-		backgroundColor: "var(--red-soft)",
-		color: "var(--red)",
-	},
-	statusChecking: {
-		backgroundColor: "var(--accent-soft)",
-		color: "var(--accent)",
-	},
-	statusNeutral: {
-		backgroundColor: "var(--hover)",
-		color: "var(--text-dim)",
-	},
-	textRed: {
-		color: "var(--red)",
-	},
-	mt05: {
-		marginTop: "2px",
-	},
-
-	smGridCols2: {
-		"@media (min-width: 40rem)": {
-			"gridTemplateColumns": "repeat(2,minmax(0,1fr))"
-		}
-	},
-	selectAll: {
-		"WebkitUserSelect": "all",
-		"userSelect": "all"
-	},
-	gridColsMinmax01fr575rem: {
-		"gridTemplateColumns": "minmax(0,1fr) 5.75rem"
-	},
-	desktopGridColsMinmax01fr13rem: {
-		"@media (min-width: 721px)": {
-			"gridTemplateColumns": "minmax(0,1fr) 13rem"
-		}
-	},
-	selectNone: {
-		"WebkitUserSelect": "none",
-		"userSelect": "none"
-	},
-	hoverTextFg: {
-		"@media (hover: hover)": {
-			":hover": {
-				"color": "var(--text)"
-			}
-		}
-	},
-	gridColsMinmax01frAuto: {
-		"gridTemplateColumns": "minmax(0,1fr) auto"
 	},
 });
 
@@ -363,11 +283,11 @@ const STATE_LABEL: Record<SandboxConnectionInfo["state"], string> = {
 	disabled: "Disabled",
 };
 
-function statusStyle(state: SandboxConnectionInfo["state"]) {
-	if (state === "ready") return sx.statusReady;
-	if (state === "needs_attention") return sx.statusNeedsAttention;
-	if (state === "checking") return sx.statusChecking;
-	return sx.statusNeutral;
+function statusClasses(state: SandboxConnectionInfo["state"]): string {
+	if (state === "ready") return utilityClassName("bg-green-soft text-green");
+	if (state === "needs_attention") return utilityClassName("bg-red-soft text-red");
+	if (state === "checking") return utilityClassName("bg-accent-soft text-accent");
+	return utilityClassName("bg-hover text-dim");
 }
 
 function latestOperation(
@@ -467,21 +387,16 @@ function ConnectDialog({
 	open,
 	onOpenChange,
 	onChanged,
-	ingress,
 }: {
 	connection: SandboxConnectionInfo;
 	open: boolean;
 	onOpenChange: (open: boolean) => void;
 	onChanged: (response: SandboxConnectionsResponse) => void;
-	ingress: SandboxIngressInfo;
 }) {
 	const provider = PROVIDERS.find((candidate) => candidate.id === connection.provider)!;
 	const [apiKey, setApiKey] = useState("");
 	const [tokenId, setTokenId] = useState("");
 	const [tokenSecret, setTokenSecret] = useState("");
-	const [publicBaseUrl, setPublicBaseUrl] = useState(
-		ingress.configuredUrl || ingress.proposedUrl || "",
-	);
 	const [region, setRegion] = useState(String(connection.settings.region || ""));
 	const [snapshot, setSnapshot] = useState(String(connection.settings.snapshot || ""));
 	const [app, setApp] = useState(String(connection.settings.app || ""));
@@ -503,7 +418,6 @@ const response = await connectSandbox(connection.provider, {
 				...(apiKey ? { apiKey } : {}),
 				...(tokenId ? { tokenId } : {}),
 				...(tokenSecret ? { tokenSecret } : {}),
-				...(remote && publicBaseUrl ? { publicBaseUrl } : {}),
 				settings: {
 					...(region ? { region } : {}),
 					...(snapshot ? { snapshot } : {}),
@@ -551,7 +465,7 @@ setSaving(false);
 				onOpenChange(next);
 			}}
 		>
-			<Modal.Content widthClassName={mergeStylexClassName("", sharedClassStyles.maxW31rem)} initialFocus={firstFieldRef}>
+			<Modal.Content widthClassName={utilityClassName("max-w-[31rem]")} initialFocus={firstFieldRef}>
 				<Modal.Header
 					title={`${exists ? "Configure" : "Connect"} ${provider.label}`}
 					description={
@@ -577,7 +491,7 @@ setSaving(false);
 				)}
 
 				{connection.provider === "modal" && (
-					<div {...mergeStylexProps("", sx.smGridCols2, sx.grid, sx.gap3)}>
+					<div {...mergeStylexProps("sm:grid-cols-2", sx.grid, sx.gap3)} >
 						<Field label="Modal token ID">
 							<Input
 								ref={firstFieldRef}
@@ -603,7 +517,7 @@ setSaving(false);
 				{!remote && (
 					<div {...stylex.props(sx.roundedLg, sx.bgSurface, sx.p3)}>
 						<div {...stylex.props(sx.mb1, sx.fontMedium, sx.textDim, typography.label)}>Setup command</div>
-						<code {...mergeStylexProps("", sx.selectAll, sx.block, sx.overflowXAuto, sx.textSm, sx.textFg)}>
+						<code {...mergeStylexProps("select-all", sx.block, sx.overflowXAuto, sx.textSm, sx.textFg)} >
 							{provider.command}
 						</code>
 					</div>
@@ -611,30 +525,13 @@ setSaving(false);
 
 				{remote && (
 					<>
-						<Field label="Public callback URL">
-							<Input
-								type="url"
-								placeholder="https://ingress.example.com"
-								value={publicBaseUrl}
-								onChange={(event) => setPublicBaseUrl(event.target.value)}
-							/>
-						</Field>
-						{ingress.note && <p {...stylex.props(sx.m0, sx.textDim, typography.supporting)}>{ingress.note}</p>}
-						{ingress.health !== "ready" && (
-							<details {...stylex.props(sx.roundedLg, sx.bgSurface, sx.p3, sx.textDim, typography.meta)}>
-								<summary {...stylex.props(sx.cursorPointer, sx.fontMedium, sx.textFg)}>Generated Caddy routes</summary>
-								{ingress.proposedUrl && (
-									<code {...mergeStylexProps("", sx.selectAll, sx.mt2, sx.block, sx.overflowXAuto, sx.roundedMd, sx.bgPanel, sx.p2, sx.textXs, sx.textFg)}>
-										opensession sandbox ingress install {ingress.proposedUrl}
-									</code>
-								)}
-								<pre {...stylex.props(sx.mt2, sx.overflowXAuto, sx.whitespacePreWrap, sx.textXs, sx.textDim)}>{ingress.generatedSnippet}</pre>
-							</details>
-						)}
+						<p {...mergeStylexProps("m-0", sx.textDim, typography.supporting)} >
+							Remote providers use Public callbacks under Domains and ingress for callbacks and workload identity.
+						</p>
 						{connection.provider !== "box" && (
 							<details {...stylex.props(sx.roundedLg, sx.bgSurface, sx.p3, sx.textDim, typography.supporting)}>
 								<summary {...stylex.props(sx.cursorPointer, sx.fontMedium, sx.textFg)}>Provider settings</summary>
-								<div {...mergeStylexProps("", sx.smGridCols2, sx.mt3, sx.grid, sx.gap3)}>
+								<div {...mergeStylexProps("sm:grid-cols-2", sx.mt3, sx.grid, sx.gap3)} >
 									<Field label="Region">
 										<Input value={region} onChange={(event) => setRegion(event.target.value)} placeholder="Provider default" />
 									</Field>
@@ -695,13 +592,11 @@ function ConnectionCard({
 	connection,
 	operations,
 	onChanged,
-	ingress,
 	canManage,
 }: {
 	connection: SandboxConnectionInfo;
 	operations: SandboxOperationInfo[];
 	onChanged: (response: SandboxConnectionsResponse) => void;
-	ingress: SandboxIngressInfo;
 	canManage: boolean;
 }) {
 	const provider = PROVIDERS.find((candidate) => candidate.id === connection.provider)!;
@@ -743,19 +638,19 @@ setBusy(false);
 	return (
 		<>
 			<SettingCard>
-				<div {...mergeStylexProps("", sx.gridColsMinmax01fr575rem, sx.desktopGridColsMinmax01fr13rem, sx.grid, sx.gapX4, sx.gapY3, sx.px5, sx.py4)}>
+				<div {...mergeStylexProps("grid-cols-[minmax(0,1fr)_5.75rem] desktop:grid-cols-[minmax(0,1fr)_13rem]", sx.grid, sx.gapX4, sx.gapY3, sx.px5, sx.py4)} >
 					<div {...stylex.props(sx.colStart1, sx.rowStart1, sx.flex, sx.minW0, sx.itemsStart, sx.gap3)}>
 						<SandboxProviderLogo provider={connection.provider} />
 						<div {...stylex.props(sx.minW0, sx.flex1)}>
 							<div {...stylex.props(sx.flex, sx.flexWrap, sx.itemsCenter, sx.gap2)}>
 								<div {...stylex.props(sx.fontSemibold, sx.textFg, typography.itemTitle)}>{provider.label}</div>
-								<span {...stylex.props(sx.statusChip, typography.meta, statusStyle(checking ? "checking" : connection.state))}>
+								<span className={cn(utilityClassName("rounded-full px-2 py-0.5 text-meta font-medium"), statusClasses(checking ? "checking" : connection.state))}>
 									{checking ? "Checking" : STATE_LABEL[connection.state]}
 								</span>
 							</div>
-							<p {...stylex.props(sx.m0, sx.mt1, sx.leadingRelaxed, sx.textDim, typography.supporting)}>{provider.description}</p>
+							<p {...mergeStylexProps("m-0", sx.mt1, sx.leadingRelaxed, sx.textDim, typography.supporting)} >{provider.description}</p>
 							{summary && (
-								<p {...stylex.props(sx.m0, sx.mt2, typography.supporting, connection.state === "needs_attention" ? sx.textRed : sx.textDim)}>
+								<p className={cn(utilityClassName("m-0 mt-2 text-supporting"), connection.state === "needs_attention" ? utilityClassName("text-red") : utilityClassName("text-dim"))}>
 									{summary}
 								</p>
 							)}
@@ -779,7 +674,7 @@ setBusy(false);
 						<div {...stylex.props(sx.colSpan2, sx.rowStart2, sx.flex, sx.itemsBaseline, sx.justifyBetween, sx.gap4)}>
 							{connection.qualification && (
 								<details {...stylex.props(sx.ml10, sx.minW0, sx.textFaint, typography.meta)}>
-									<summary {...mergeStylexProps("", sx.selectNone, sx.hoverTextFg, sx.h26px, sx.wFit, sx.cursorPointer, sx.leading26px)}>Diagnostics</summary>
+									<summary {...mergeStylexProps("select-none hover:text-fg", sx.h26px, sx.wFit, sx.cursorPointer, sx.leading26px)} >Diagnostics</summary>
 									<div {...stylex.props(sx.mt1, sx.grid, sx.gap05, sx.pl3)}>
 										<span>Connection {connection.id}</span>
 										<span>Adapter {connection.qualification.adapterSignature}</span>
@@ -809,7 +704,6 @@ setBusy(false);
 				open={dialogOpen}
 				onOpenChange={setDialogOpen}
 				onChanged={onChanged}
-				ingress={ingress}
 			/>
 		</>
 	);
@@ -888,13 +782,13 @@ setSaving(false);
 
 	return (
 		<Modal.Root open={open} onOpenChange={onOpenChange}>
-			<Modal.Content widthClassName={mergeStylexClassName("", sharedClassStyles.maxW32rem)}>
+			<Modal.Content widthClassName={utilityClassName("max-w-[32rem]")}>
 				<Modal.Header
 					title={target ? `Configure ${target.repo} snapshot` : "Create a project snapshot"}
 					description="Open Session builds a reusable, credential-free project snapshot only when you opt in here. Each new session still gets its own isolated sandbox."
 				/>
 				{!target ? (
-					<div {...mergeStylexProps("", sx.smGridCols2, sx.grid, sx.gap3)}>
+					<div {...mergeStylexProps("sm:grid-cols-2", sx.grid, sx.gap3)} >
 						<Field label="Provider">
 							<Select
 								value={provider}
@@ -967,12 +861,6 @@ setSaving(false);
 export function SandboxesPanel() {
 	const [connections, setConnections] = useState<SandboxConnectionInfo[]>([]);
 	const [operations, setOperations] = useState<SandboxOperationInfo[]>([]);
-	const [ingress, setIngress] = useState<SandboxIngressInfo>({
-		source: "none",
-		health: "not_configured",
-		caddyAdminReachable: false,
-		generatedSnippet: "",
-	});
 	const [environments, setEnvironments] = useState<SandboxEnvironmentInfo[]>([]);
 	const [canManage, setCanManage] = useState(false);
 	const [loading, setLoading] = useState(true);
@@ -982,10 +870,12 @@ export function SandboxesPanel() {
 	function apply(response: SandboxConnectionsResponse) {
 		setConnections(response.connections);
 		setOperations(response.operations);
-		setIngress(response.ingress);
 		setCanManage(response.canManage);
 	}
 
+	const hasRunningValue = operations.some(
+		(operation) => operation.status === "running",
+	);
 	useEffect(() => {
 		let active = true;
 		const load = () => {
@@ -1003,13 +893,13 @@ export function SandboxesPanel() {
 		};
 		void load();
 		const interval = setInterval(() => {
-			if (operations.some((operation) => operation.status === "running")) void load();
+			if (hasRunningValue) void load();
 		}, 2_000);
 		return () => {
 			active = false;
 			clearInterval(interval);
 		};
-	}, [operations.some((operation) => operation.status === "running")]);
+	}, [hasRunningValue]);
 
 	function environmentStarted(
 		operation: SandboxOperationInfo,
@@ -1069,7 +959,6 @@ export function SandboxesPanel() {
 						connection={connection}
 						operations={operations}
 						onChanged={apply}
-						ingress={ingress}
 						canManage={canManage}
 					/>
 				))}
@@ -1128,16 +1017,15 @@ export function SandboxesPanel() {
 											: "Snapshot is stale";
 								return (
 									<SettingCard key={`${environment.repo}:${environment.provider}`}>
-										<div {...mergeStylexProps("", sx.gridColsMinmax01frAuto, sx.grid, sx.gapX4, sx.gapY3, sx.px5, sx.py35)}>
+										<div {...mergeStylexProps("grid-cols-[minmax(0,1fr)_auto]", sx.grid, sx.gapX4, sx.gapY3, sx.px5, sx.py35)} >
 											<div {...stylex.props(sx.colSpan2, sx.rowStart1, sx.flex, sx.minW0, sx.itemsStart, sx.gap3)}>
 												<SandboxProviderLogo provider={environment.provider} />
 												<div {...stylex.props(sx.minW0, sx.flex1)}>
 													<div {...stylex.props(sx.fontMedium, sx.textFg, typography.itemTitle)}>{environment.repo}</div>
 													<div
-														{...stylex.props(
-															sx.mt05,
-															typography.supporting,
-															environment.state === "failed" && !running ? sx.textRed : sx.textDim,
+														className={cn(
+															utilityClassName("mt-0.5 text-supporting"),
+															environment.state === "failed" && !running ? utilityClassName("text-red") : utilityClassName("text-dim"),
 														)}
 													>
 														{provider.label} · {status}
@@ -1161,7 +1049,7 @@ export function SandboxesPanel() {
 											<div {...stylex.props(sx.colSpan2, sx.rowStart2, sx.flex, sx.itemsBaseline, sx.justifyBetween, sx.gap4)}>
 												{(operation || environment.failureCode) && (
 													<details {...stylex.props(sx.ml10, sx.minW0, sx.textFaint, typography.meta)}>
-														<summary {...mergeStylexProps("", sx.selectNone, sx.hoverTextFg, sx.h26px, sx.wFit, sx.cursorPointer, sx.leading26px)}>Details</summary>
+														<summary {...mergeStylexProps("select-none hover:text-fg", sx.h26px, sx.wFit, sx.cursorPointer, sx.leading26px)} >Details</summary>
 														<div {...stylex.props(sx.mt1, sx.grid, sx.gap05, sx.pl3)}>
 															{operation && <span>{operation.stage} · updated {new Date(operation.updatedAt).toLocaleString()}</span>}
 															{(environment.failureCode || operation?.failureCode) && <span>Code {environment.failureCode || operation?.failureCode}</span>}

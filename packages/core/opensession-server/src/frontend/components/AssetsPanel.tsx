@@ -9,7 +9,7 @@
  * best fits each surface.
  */
 
-import React, { useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { FileTree, useFileTree } from "@pierre/trees/react";
 import type { SessionAssetFile } from "../lib/api";
 import { useSessionAssetsResource } from "../hooks/useApiResources";
@@ -121,9 +121,9 @@ export function useSessionAssets(
 	addHandler: (h: (msg: WSServerMessage) => void) => () => void,
 ) {
 	const { data: files = [], mutate } = useSessionAssetsResource(sessionId);
-	const refresh = () => {
+	const refresh = useCallback(() => {
 		void mutate();
-	};
+	}, [mutate]);
 	useEffect(
 		() =>
 			addHandler((msg) => {
@@ -156,7 +156,9 @@ function AssetsTree({
 	onSelect: (path: string) => void;
 }) {
 	const onSelectRef = useRef(onSelect);
-	onSelectRef.current = onSelect;
+	useLayoutEffect(() => {
+		onSelectRef.current = onSelect;
+	});
 	const { model } = useFileTree({
 		paths,
 		initialExpandedPaths: allDirs(paths),

@@ -1,13 +1,11 @@
 import { useSetupStatus } from "../../hooks/useSetupStatus";
 import {
 	SettingCardSkeleton,
-	SettingsGroupLabel,
 	SettingsHeader,
-	SettingsHint,
 	SettingsPanel,
 } from "../../ui/settings";
 import { InlineAlert } from "../../ui/state";
-import { GithubAuthCard, IntegrationsList } from "../SetupIntegrations";
+import { IntegrationsList } from "../SetupIntegrations";
 import { SetupRestart } from "../SetupRestart";
 import * as stylex from "@stylexjs/stylex";
 import { mergeStylexClassName, mergeStylexOverrideClassName } from "../../ui/cn";
@@ -19,10 +17,8 @@ const sx = stylex.create({
 	},
 });
 
-// Workspace → Integrations: the credentials the agent reaches other tools
-// with, plus GitHub sign-in. Same cards the Setup wizard shows, including its
-// restart banner — a credential saved here needs the same reboot to take
-// effect as one saved there.
+// Organization → Integrations: credentials used by tools and automation.
+// Workspace authentication lives on its own page beside Members.
 
 export function IntegrationsPanel() {
 	const setup = useSetupStatus();
@@ -44,18 +40,12 @@ export function IntegrationsPanel() {
 					<SettingCardSkeleton rows={3} icon={40} label="Loading integrations" />
 				)
 			) : (
-				<>
-					<IntegrationsList
-						integrations={status.integrations}
-						onSaved={setup.applyIntegration}
-					/>
-
-					<SettingsGroupLabel>GitHub sign-in</SettingsGroupLabel>
-					<GithubAuthCard github={status.github} onSaved={setup.applyGithub} />
-					<SettingsHint>
-						After setup, teammates connect their own accounts under Team → Account.
-					</SettingsHint>
-				</>
+				<IntegrationsList
+					integrations={status.integrations}
+					onSaved={setup.applyIntegration}
+					github={status.github}
+					onGithubSaved={setup.applyGithub}
+				/>
 			)}
 			<SetupRestart setup={setup} />
 		</SettingsPanel>

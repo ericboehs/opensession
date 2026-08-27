@@ -1,3 +1,5 @@
+import { mergeStylexProps, mergeStylexOverrideClassName } from "../ui/cn";
+import { utilityClassName } from "../ui/cn";
 import { useEffect, useState, type ReactNode } from "react";
 import { Button } from "../ui/button";
 import { Disclosure } from "../ui/disclosure";
@@ -16,6 +18,9 @@ import {
 	type SlackTransport,
 } from "../lib/slack-setup";
 import { IconTile } from "./BrandTile";
+import { CodeStorageConfiguration } from "./CodeStorageConfiguration";
+import { GithubAppFields } from "./GithubAppFields";
+import { PlainRouterConfiguration } from "./PlainRouterConfiguration";
 import { SlackManifestGuide } from "./SlackManifestGuide";
 import {
 	Code,
@@ -26,18 +31,17 @@ import {
 	SecretField,
 	SetupSteps,
 	setupRequest,
+	type SetupGithub,
 	type SetupIntegration,
 	type SetupScopeGroup,
 } from "./setup-shared";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
-import { mergeStylexProps, mergeStylexClassName, mergeStylexOverrideClassName } from "../ui/cn";
-import { sharedClassStyles } from "../styles/shared-class-styles.stylex";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
 	mt15: {
-			marginTop: "6px"
+			marginTop: "calc(4px * 1.5)"
 	},
 	block: {
 			display: "block"
@@ -45,17 +49,48 @@ const sx = stylex.create({
 	flex: {
 			display: "flex"
 	},
+	flexCol: {
+			flexDirection: "column"
+	},
+	gap2: {
+			gap: "calc(4px * 2)"
+	},
+	px1: {
+			paddingInline: "4px"
+	},
+	fontSemibold: {
+			fontWeight: "var(--font-weight-semibold)"
+	},
+	textFg: {
+			color: "var(--text)"
+	},
+	mt05: {
+			marginTop: "calc(4px * 0.5)"
+	},
+	leadingRelaxed: {
+			lineHeight: "var(--leading-relaxed)"
+	},
+	textDim: {
+			color: "var(--text-dim)"
+	},
+	border0: {
+			borderStyle: "solid",
+			borderWidth: "0px"
+	},
+	bgPanel: {
+			backgroundColor: "var(--bg-panel)"
+	},
+	p4: {
+			padding: "calc(4px * 4)"
+	},
 	itemsCenter: {
 			alignItems: "center"
 	},
 	gap25: {
-			gap: "10px"
-	},
-	p4: {
-			padding: "16px"
+			gap: "calc(4px * 2.5)"
 	},
 	gap4: {
-			gap: "16px"
+			gap: "calc(4px * 4)"
 	},
 	minW0: {
 			minWidth: "0"
@@ -65,15 +100,6 @@ const sx = stylex.create({
 	},
 	fontMedium: {
 			fontWeight: "var(--font-weight-medium)"
-	},
-	textFg: {
-			color: "var(--text)"
-	},
-	mt05: {
-			marginTop: "2px"
-	},
-	textDim: {
-			color: "var(--text-dim)"
 	},
 	flexWrap: {
 			flexWrap: "wrap"
@@ -85,75 +111,29 @@ const sx = stylex.create({
 			marginLeft: "auto"
 	},
 	mt3: {
-			marginTop: "12px"
-	},
-	m0: {
-			margin: "0"
-	},
-	textFaint: {
-			color: "var(--text-faint)"
+			marginTop: "calc(4px * 3)"
 	},
 	mt0: {
 			marginTop: "0"
 	},
-	flexCol: {
-			flexDirection: "column"
-	},
 	mt25: {
-			marginTop: "10px"
+			marginTop: "calc(4px * 2.5)"
 	},
 	gap15: {
-			gap: "6px"
+			gap: "calc(4px * 1.5)"
 	},
 	pl5: {
-			paddingLeft: "20px"
-	},
-	leadingRelaxed: {
-			lineHeight: "var(--leading-relaxed)"
+			paddingLeft: "calc(4px * 5)"
 	},
 	roundedLg: {
-			borderRadius: "calc(14px * var(--rf))"
-	,
-		cornerShape: "var(--cs)"},
+			borderRadius: "calc(14px * var(--rf))",
+
+		cornerShape: "var(--cs)",},
 	bgSurface: {
 			backgroundColor: "var(--bg)"
 	},
 	p3: {
-			padding: "12px"
-	},
-	withDivider: {
-		marginTop: "16px",
-		borderTopStyle: "solid",
-		borderTopWidth: "1px",
-		borderColor: "var(--border)",
-		paddingTop: "16px",
-	},
-	envFields: {
-		display: "flex",
-		flexDirection: "column",
-		gap: "16px",
-	},
-
-	phoneMinH11: {
-		"@media (max-width: 720px)": {
-			"minHeight": "44px"
-		}
-	},
-	phoneFlex1: {
-		"@media (max-width: 720px)": {
-			"flex": "1"
-		}
-	},
-
-	phoneMl0: {
-		"@media (max-width: 720px)": {
-			"marginLeft": "0"
-		}
-	},
-	phoneWFull: {
-		"@media (max-width: 720px)": {
-			"width": "100%"
-		}
+			padding: "calc(4px * 3)"
 	},
 });
 
@@ -169,6 +149,30 @@ function Value({ value }: { value: string }) {
 		<span {...stylex.props(sx.mt15, sx.block)}>
 			<CopyableCode value={value} />
 		</span>
+	);
+}
+
+function ConfigurationSection({
+	title,
+	description,
+	children,
+}: {
+	title: string;
+	description?: string;
+	children: ReactNode;
+}) {
+	return (
+		<section {...stylex.props(sx.flex, sx.flexCol, sx.gap2)}>
+			<header {...stylex.props(sx.px1)}>
+				<h3 {...mergeStylexProps("m-0", sx.fontSemibold, sx.textFg, typography.itemTitle)} >{title}</h3>
+				{description && (
+					<p {...mergeStylexProps("m-0", sx.mt05, sx.leadingRelaxed, sx.textDim, typography.supporting)} >
+						{description}
+					</p>
+				)}
+			</header>
+			<SettingsSection className={mergeStylexOverrideClassName("", sx.border0, sx.bgPanel, sx.p4)}>{children}</SettingsSection>
+		</section>
 	);
 }
 
@@ -307,21 +311,21 @@ function guideFor(
 
 		case "github":
 			return {
-				description: "Connect the machine user that handles PR comments, reviews, webhooks, and fallback PR authorship.",
+				description: "Connect the GitHub App that handles PR comments, reviews, clones, and pushes.",
 				steps: [
-					<>Create a dedicated GitHub machine user and give it access to the repositories Open Session works in.</>,
-					<>Create a fine-grained personal access token for that user and paste it into the fields above.</>,
-					<>On the Open Session host, sign the GitHub CLI into the same machine user with <strong>gh auth login</strong>. CLI authentication is separate from the token above.</>,
+					<>Create an organization-owned GitHub App and turn on <strong>Device Flow</strong>.</>,
+					<>Grant the repository and organization permissions shown below, then install the App only on the repositories Open Session should reach.</>,
+					<>Enter the client id, app slug, installation owner, and client secret above, then upload the generated private key.</>,
 					<>
-						Add a repository or organization webhook with content type <strong>application/json</strong> and this payload URL:
+						Add an organization webhook with content type <strong>application/json</strong> and this payload URL:
 						<Value value={url("/github/webhook")} />
 					</>,
-					<>Create a webhook secret, paste it both into GitHub and into the fields above, then enter the bot login and any @handles that should wake the PR agent.</>,
+					<>Create a webhook secret, paste it both into GitHub and above, then add any additional @handles that should wake the PR agent.</>,
 					<>Enable GitHub, save, restart Open Session, and send a webhook test delivery.</>,
 				],
 				permissions: [
-					<>Fine-grained token: <strong>Pull requests: read and write</strong> and <strong>Issues: read and write</strong> for only the target repositories.</>,
-					<>The machine user and gh CLI need repository write access; add merge permission only if you use the UI&rsquo;s merge flows.</>,
+					<>Repository: <strong>Actions, Checks, Commit statuses, Deployments</strong> read; <strong>Contents, Issues, Pull requests</strong> read and write; Metadata read.</>,
+					<>Organization: <strong>Members</strong> read.</>,
 					<>Webhook events: issue comments, pull requests, pull-request reviews and review comments, and workflow runs.</>,
 				],
 			};
@@ -332,7 +336,7 @@ function guideFor(
 				steps: [
 					<>Create or choose your organization in code.storage.</>,
 					<>Generate a PKCS8 ES256 or RS256 keypair. Register the public key with the organization and keep the private key on this Open Session host.</>,
-					<>Open <strong>Workspace → Connections</strong>, choose Code Storage, enter the organization id, and paste the private key. Open Session stores it with mode 0600 and verifies the connection.</>,
+					<>Enter the organization id and private key above. Open Session stores the key with mode 0600 and verifies the connection.</>,
 					<>Register or clone a code.storage repository from the Repositories setup page.</>,
 				],
 				permissions: [
@@ -358,11 +362,17 @@ export function IntegrationSetupDialog({
 	open,
 	onOpenChange,
 	onSaved,
+	github,
+	onGithubSaved,
+	githubManifestSetup,
 }: {
 	integration: SetupIntegration;
 	open: boolean;
 	onOpenChange: (open: boolean) => void;
 	onSaved: (updated: SetupIntegration, restartRequired: boolean) => void;
+	github?: SetupGithub;
+	onGithubSaved?: (updated: SetupGithub, restartRequired: boolean) => void;
+	githubManifestSetup?: ReactNode;
 }) {
 	const [enabled, setEnabled] = useState(integration.enabled);
 	const [typed, setTyped] = useState<Record<string, string>>({});
@@ -372,6 +382,15 @@ export function IntegrationSetupDialog({
 	const [transport, setTransport] = useState<SlackTransport>(() =>
 		savedSlackTransport(integration.env),
 	);
+	const [clientId, setClientId] = useState("");
+	const [appSlug, setAppSlug] = useState(github?.appSlug ?? "");
+	const [installationOwner, setInstallationOwner] = useState(
+		github?.installationOwner ?? github?.appOrg ?? "",
+	);
+	const [clientSecret, setClientSecret] = useState("");
+	const [privateKey, setPrivateKey] = useState("");
+	const [clearClientId, setClearClientId] = useState(false);
+	const [clearClientSecret, setClearClientSecret] = useState(false);
 	const guide = guideFor(integration, WEBHOOK_BASE_URL, transport);
 	const httpAvailable = publicWebhookAvailable(WEBHOOK_BASE_URL);
 
@@ -383,7 +402,14 @@ export function IntegrationSetupDialog({
 		setCleared({});
 		setError(null);
 		setTransport(savedSlackTransport(integration.env));
-	}, [open, integration]);
+		setClientId("");
+		setAppSlug(github?.appSlug ?? "");
+		setInstallationOwner(github?.installationOwner ?? github?.appOrg ?? "");
+		setClientSecret("");
+		setPrivateKey("");
+		setClearClientId(false);
+		setClearClientSecret(false);
+	}, [open, integration, github]);
 
 	function pickTransport(next: SlackTransport) {
 		setTransport(next);
@@ -410,62 +436,172 @@ export function IntegrationSetupDialog({
 				envVar.present && cleared[envVar.name] && !(typed[envVar.name] ?? "").trim(),
 		)
 		.map((envVar) => envVar.name);
-	const dirty =
+	const integrationDirty =
 		enabled !== integration.enabled || typedKeys.length > 0 || clearedKeys.length > 0;
+	const clientIdCleared =
+		Boolean(github?.clientIdConfigured) && clearClientId && !clientId.trim();
+	const clientSecretCleared =
+		Boolean(github?.clientSecretConfigured) &&
+		clearClientSecret &&
+		!clientSecret.trim();
+	const githubDirty =
+		Boolean(github) &&
+		(clientId.trim() !== "" ||
+			appSlug.trim() !== (github?.appSlug ?? "") ||
+			installationOwner.trim() !==
+				(github?.installationOwner ?? github?.appOrg ?? "") ||
+			clientSecret.trim() !== "" ||
+			privateKey.trim() !== "" ||
+			clientIdCleared ||
+			clientSecretCleared);
+	const dirty = integrationDirty || githubDirty;
 
-	// Code Storage is configured under Workspace → Connections, so this dialog
-	// documents it rather than switching it on — the same carve-out the
-	// integration card makes.
+	// code.storage owns its enabled state through the organization connection
+	// below rather than the registry's generic switch.
 	const canToggle = integration.id !== "codestorage";
-	const configured = integration.env.some((envVar) => envVar.present);
+	const configured =
+		integration.env.some((envVar) => envVar.present) ||
+		Boolean(github?.appCredentialConfigured);
+	const setupLinks = github
+		? [{ label: "Create GitHub App", url: github.appCreateUrl }, ...integration.links]
+		: integration.links;
+
+	async function refreshIntegration() {
+		const body = await setupRequest<{ integrations: SetupIntegration[] }>(
+			"/api/setup/status",
+		);
+		const updated = body.integrations.find((item) => item.id === integration.id);
+		if (updated) onSaved(updated, false);
+	}
 
 	async function save() {
 		if (!dirty || saving) return;
 		setSaving(true);
 		setError(null);
 		await (async () => {
-const env: Record<string, string> = {};
-			for (const name of typedKeys) env[name] = (typed[name] ?? "").replace(/\s+/g, "");
-			for (const name of clearedKeys) env[name] = "";
-			const body = await setupRequest<{
+			let githubResult: { github: SetupGithub; restartRequired: boolean } | null = null;
+			if (githubDirty && github) {
+				githubResult = await setupRequest<{
+					github: SetupGithub;
+					restartRequired: boolean;
+				}>("/api/setup/github", {
+					method: "PUT",
+					json: {
+						...(clientId.trim()
+							? { oauthClientId: clientId.trim() }
+							: clientIdCleared
+								? { oauthClientId: "" }
+								: {}),
+						...(appSlug.trim() !== (github.appSlug ?? "")
+							? { appSlug: appSlug.trim() }
+							: {}),
+						...(installationOwner.trim() !==
+							(github.installationOwner ?? github.appOrg ?? "")
+							? { installationOwner: installationOwner.trim() }
+							: {}),
+						...(clientSecret.trim()
+							? { oauthClientSecret: clientSecret.replace(/\s+/g, "") }
+							: clientSecretCleared
+								? { oauthClientSecret: "" }
+								: {}),
+						...(privateKey.trim() ? { privateKey: privateKey.trim() } : {}),
+					},
+				});
+			}
+
+			let integrationResult: {
 				integration: SetupIntegration;
 				restartRequired: boolean;
-			}>(`/api/setup/integrations/${encodeURIComponent(integration.id)}`, {
-				method: "PUT",
-				json: {
-					...(enabled !== integration.enabled ? { enabled } : {}),
-					...(Object.keys(env).length > 0 ? { env } : {}),
-				},
-			});
+			} | null = null;
+			if (integrationDirty) {
+				const env: Record<string, string> = {};
+				for (const name of typedKeys)
+					env[name] = (typed[name] ?? "").replace(/\s+/g, "");
+				for (const name of clearedKeys) env[name] = "";
+				integrationResult = await setupRequest<{
+					integration: SetupIntegration;
+					restartRequired: boolean;
+				}>(`/api/setup/integrations/${encodeURIComponent(integration.id)}`, {
+					method: "PUT",
+					json: {
+						...(enabled !== integration.enabled ? { enabled } : {}),
+						...(Object.keys(env).length > 0 ? { env } : {}),
+					},
+				});
+			}
+
 			setTyped({});
 			setCleared({});
+			setClientId("");
+			setClientSecret("");
+			setPrivateKey("");
+			setClearClientId(false);
+			setClearClientSecret(false);
+			if (githubResult)
+				onGithubSaved?.(githubResult.github, githubResult.restartRequired === true);
+			if (integrationResult)
+				onSaved(
+					integrationResult.integration,
+					integrationResult.restartRequired !== false,
+				);
 			toast(`${integration.label} saved`);
-			onSaved(body.integration, body.restartRequired !== false);
 			onOpenChange(false);
-})().catch(async (cause) => {
-setError(cause instanceof Error ? cause.message : `Could not save ${integration.label}`);
-}).finally(async () => {
-setSaving(false);
-});
+		})().catch((cause) => {
+			setError(
+				cause instanceof Error ? cause.message : `Could not save ${integration.label}`,
+			);
+		});
+		setSaving(false);
+	}
+
+	if (integration.id === "github" && githubManifestSetup) {
+		return (
+			<Modal.Root open={open} onOpenChange={onOpenChange}>
+				<Modal.Content widthClassName={utilityClassName("max-w-[34rem]")}>
+					<Modal.Header
+						title={
+							<span {...stylex.props(sx.flex, sx.itemsCenter, sx.gap25)}>
+								<IconTile name="github" size={28} />
+								GitHub App
+							</span>
+						}
+						description="Create and install the App that connects GitHub to Open Session."
+					/>
+					<SettingsSection className={mergeStylexOverrideClassName("", sx.flex, sx.flexCol, sx.gap4, sx.border0, sx.bgPanel, sx.p4)}>
+						{githubManifestSetup}
+					</SettingsSection>
+					<Modal.Footer>
+						<Modal.Close render={<Button variant="primary">Done</Button>} />
+					</Modal.Footer>
+				</Modal.Content>
+			</Modal.Root>
+		);
 	}
 
 	return (
 		<Modal.Root open={open} onOpenChange={onOpenChange}>
-			<Modal.Content widthClassName={mergeStylexClassName("", sharedClassStyles.maxW34rem)}>
+			<Modal.Content widthClassName={utilityClassName("max-w-[40rem]")}>
 				<Modal.Header
 					title={
-						<span {...stylex.props(sx.flex, sx.itemsCenter, sx.gap25)}>
-							<IconTile name={integration.id} size={28} />
-							{integration.label}
-						</span>
+						integration.id === "github" ? (
+							integration.label
+						) : (
+							<span {...stylex.props(sx.flex, sx.itemsCenter, sx.gap25)}>
+								<IconTile name={integration.id} size={28} />
+								{integration.label}
+							</span>
+						)
 					}
 					description={guide.description}
 				/>
 
 				{(canToggle || integration.env.length > 0) && (
-					<SettingsSection className={mergeStylexOverrideClassName("", sx.p4)}>
+					<div {...stylex.props(sx.flex, sx.flexCol, sx.gap4)}>
 						{canToggle && (
-							<div {...stylex.props(sx.flex, sx.itemsCenter, sx.gap4)}>
+							<SettingsSection className={mergeStylexOverrideClassName("", sx.flex, sx.itemsCenter, sx.gap4, sx.border0, sx.bgPanel, sx.p4)}>
+								{integration.id === "github" && (
+									<IconTile name="github" size={40} />
+								)}
 								<div {...stylex.props(sx.minW0, sx.flex1)}>
 									<div {...stylex.props(sx.fontMedium, sx.textFg, typography.itemTitle)}>
 										Enable {integration.label}
@@ -480,28 +616,63 @@ setSaving(false);
 									disabled={saving}
 									aria-label={`Enable ${integration.label}`}
 								/>
-							</div>
+							</SettingsSection>
+						)}
+						{github && (
+							<ConfigurationSection
+								title="App credentials"
+								description="Used for bot work and teammate GitHub connections."
+							>
+								<GithubAppFields
+									github={github}
+									saving={saving}
+									clientId={clientId}
+									appSlug={appSlug}
+									installationOwner={installationOwner}
+									clientSecret={clientSecret}
+									privateKey={privateKey}
+									clientIdCleared={clientIdCleared}
+									clientSecretCleared={clientSecretCleared}
+									onClientIdChange={(value) => {
+										setClientId(value);
+										if (value.trim()) setClearClientId(false);
+									}}
+									onToggleClientIdClear={() => {
+										setClearClientId((current) => !current);
+										setClientId("");
+									}}
+									onAppSlugChange={setAppSlug}
+									onInstallationOwnerChange={setInstallationOwner}
+									onClientSecretChange={(value) => {
+										setClientSecret(value);
+										if (value.trim()) setClearClientSecret(false);
+									}}
+									onToggleClientSecretClear={() => {
+										setClearClientSecret((current) => !current);
+										setClientSecret("");
+									}}
+									onPrivateKeyChange={setPrivateKey}
+								/>
+							</ConfigurationSection>
 						)}
 						{integration.id === "slack" && (
-							<div {...stylex.props(canToggle && sx.withDivider)}>
+							<ConfigurationSection title="Event delivery">
 								<div {...stylex.props(sx.flex, sx.flexWrap, sx.itemsCenter, sx.gap4)}>
-									<div {...stylex.props(sx.minW12rem, sx.flex1)}>
-										<div {...stylex.props(sx.fontMedium, sx.textFg, typography.itemTitle)}>Event delivery</div>
-										<div {...stylex.props(sx.mt05, sx.textDim, typography.supporting)}>
-											{transport === "socket"
-												? "Uses an outbound connection and needs no public webhook URL."
-												: "Slack posts events to this instance's public webhook URL."}
-										</div>
+									<div {...stylex.props(sx.minW12rem, sx.flex1, sx.textDim, typography.supporting)}>
+										{transport === "socket"
+											? "Uses an outbound connection and needs no public webhook URL."
+											: "Slack posts events to this instance's public webhook URL."}
 									</div>
 									<Segmented
 										label="Slack event delivery"
 										value={transport}
-										onValueChange={(next) => pickTransport(next as SlackTransport)} {...mergeStylexProps("", sx.phoneMl0, sx.phoneWFull, sx.mlAuto)}
+										onValueChange={(next) => pickTransport(next as SlackTransport)}
+										className={mergeStylexOverrideClassName("phone:ml-0 phone:w-full", sx.mlAuto)}
 									>
-										<SegmentedOption value="socket" disabled={saving} className={mergeStylexOverrideClassName("", sx.phoneMinH11, sx.phoneFlex1)}>
+										<SegmentedOption value="socket" disabled={saving} className={utilityClassName("phone:min-h-11 phone:flex-1")}>
 											Socket Mode
 										</SegmentedOption>
-										<SegmentedOption value="http" disabled={saving || !httpAvailable} className={mergeStylexOverrideClassName("", sx.phoneMinH11, sx.phoneFlex1)}>
+										<SegmentedOption value="http" disabled={saving || !httpAvailable} className={utilityClassName("phone:min-h-11 phone:flex-1")}>
 											HTTP
 										</SegmentedOption>
 									</Segmented>
@@ -511,58 +682,69 @@ setSaving(false);
 										This instance has no public webhook URL. Choose Socket Mode or configure a public URL first.
 									</InlineAlert>
 								)}
-							</div>
+							</ConfigurationSection>
 						)}
 						{visibleEnv.length > 0 && (
-							<div {...stylex.props(sx.envFields, canToggle && sx.withDivider)}>
-								{visibleEnv.map((envVar) => (
-									<SecretField
-										key={envVar.name}
-										name={envVar.name}
-										label={<Code>{envVar.name}</Code>}
-										description={envVar.description}
-										present={envVar.present}
-										required={
-											integration.id === "slack"
-												? slackCredentialRequired(envVar.name, envVar.required, transport)
-												: envVar.required
-										}
-										disabled={saving}
-										cleared={Boolean(
-											envVar.present &&
-												cleared[envVar.name] &&
-												!(typed[envVar.name] ?? "").trim(),
-										)}
-										value={typed[envVar.name] ?? ""}
-										onChange={(value) => {
-											setTyped((current) => ({ ...current, [envVar.name]: value }));
-											if (value.trim() && cleared[envVar.name]) {
-												setCleared((current) => ({ ...current, [envVar.name]: false }));
+							<ConfigurationSection
+								title={integration.id === "github" ? "Webhooks and mentions" : "Credentials"}
+								description={
+									integration.id === "github"
+										? "Verify inbound events and choose extra handles that wake the PR agent."
+										: "Credentials stay on this server and are never shown back."
+								}
+							>
+								<div {...stylex.props(sx.flex, sx.flexCol, sx.gap4)}>
+									{visibleEnv.map((envVar) => (
+										<SecretField
+											key={envVar.name}
+											name={envVar.name}
+											label={<Code>{envVar.name}</Code>}
+											description={envVar.description}
+											present={envVar.present}
+											required={
+												integration.id === "slack"
+													? slackCredentialRequired(envVar.name, envVar.required, transport)
+													: envVar.required
 											}
-										}}
-										onToggleClear={() => {
-											setCleared((current) => ({
-												...current,
-												[envVar.name]: !current[envVar.name],
-											}));
-											setTyped((current) => ({ ...current, [envVar.name]: "" }));
-										}}
-									/>
-								))}
-								<p {...stylex.props(sx.m0, sx.textFaint, typography.supporting)}>
-									Credentials stay on this server and are never shown back.
-								</p>
-							</div>
+											disabled={saving}
+											cleared={Boolean(
+												envVar.present &&
+													cleared[envVar.name] &&
+													!(typed[envVar.name] ?? "").trim(),
+											)}
+											value={typed[envVar.name] ?? ""}
+											onChange={(value) => {
+												setTyped((current) => ({ ...current, [envVar.name]: value }));
+												if (value.trim() && cleared[envVar.name]) {
+													setCleared((current) => ({ ...current, [envVar.name]: false }));
+												}
+											}}
+											onToggleClear={() => {
+												setCleared((current) => ({
+													...current,
+													[envVar.name]: !current[envVar.name],
+												}));
+												setTyped((current) => ({ ...current, [envVar.name]: "" }));
+											}}
+										/>
+									))}
+								</div>
+							</ConfigurationSection>
 						)}
-					</SettingsSection>
+					</div>
 				)}
+
+				{integration.id === "codestorage" && (
+					<CodeStorageConfiguration onChanged={refreshIntegration} />
+				)}
+				{integration.id === "plain" && <PlainRouterConfiguration />}
 
 				{/* Open on a first setup, closed once there are credentials to keep:
 				    the recipe is a one-time read, the fields are not. */}
 				<Disclosure
 					title="Setup guide"
 					defaultOpen={!configured}
-					actions={<LinkChips links={integration.links} className={mergeStylexOverrideClassName("", sx.mt0)} />}
+					actions={<LinkChips links={setupLinks} className={mergeStylexOverrideClassName("", sx.mt0)} />}
 				>
 					<div {...stylex.props(sx.flex, sx.flexCol, sx.gap4)}>
 						{guide.intro}
@@ -571,13 +753,13 @@ setSaving(false);
 							<GuideBlock title="Bot scopes">
 								<ScopeGroups groups={guide.scopes} />
 								{guide.scopesNote && (
-									<p {...stylex.props(sx.m0, sx.mt25, sx.textDim, typography.supporting)}>{guide.scopesNote}</p>
+									<p {...mergeStylexProps("m-0", sx.mt25, sx.textDim, typography.supporting)} >{guide.scopesNote}</p>
 								)}
 							</GuideBlock>
 						)}
 						{guide.permissions && (
 							<GuideBlock title="Permissions">
-								<ul {...stylex.props(sx.m0, sx.flex, sx.flexCol, sx.gap15, sx.pl5, sx.leadingRelaxed, sx.textDim, typography.supporting)}>
+								<ul {...mergeStylexProps("m-0", sx.flex, sx.flexCol, sx.gap15, sx.pl5, sx.leadingRelaxed, sx.textDim, typography.supporting)} >
 									{guide.permissions.map((permission, index) => (
 										<li key={index}>{permission}</li>
 									))}

@@ -1,7 +1,7 @@
 import { AGENT_NAME, GITHUB_BOT_NAME } from "../lib/brand";
 import { BASE_PATH } from "../lib/base";
 import { commitPrompt } from "../lib/commit-prompt";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useEffectEvent, useState, type ReactNode } from "react";
 import { parsePatchFiles } from "@pierre/diffs";
 import type { FileDiffMetadata } from "@pierre/diffs";
 import { FileDiff } from "@pierre/diffs/react";
@@ -424,7 +424,8 @@ const sx = stylex.create({
     borderRadius: "calc(7px * var(--rf))",
     fontWeight: "var(--font-weight-bold)",
     lineHeight: 1,
-  },
+
+		cornerShape: "var(--cs)",},
   bgGreenSoftMark: {
     backgroundColor: "var(--green-soft)",
     color: "var(--green)",
@@ -434,7 +435,8 @@ const sx = stylex.create({
     backgroundColor: "var(--yellow-soft)",
     color: "var(--yellow)",
   },
-  rowRound: { borderRadius: "calc(7px * var(--rf))", paddingBlock: "8px" },
+  rowRound: { borderRadius: "calc(7px * var(--rf))", paddingBlock: "8px",
+		cornerShape: "var(--cs)",},
   reviewTrigger: {
     display: "flex",
     minWidth: 0,
@@ -461,7 +463,8 @@ const sx = stylex.create({
     color: "var(--text-faint)",
     transitionProperty: "color, background-color",
     ":hover": { "@media (hover: hover)": { backgroundColor: "var(--hover)", color: "var(--text)" } },
-  },
+
+		cornerShape: "var(--cs)",},
   mediaFrame: {
     display: "flex",
     flexShrink: 0,
@@ -470,7 +473,8 @@ const sx = stylex.create({
     gap: "4px",
     borderRadius: "calc(14px * var(--rf) - 12px)",
     textAlign: "left",
-  },
+
+		cornerShape: "var(--cs)",},
   mediaOne: { width: "100%" },
   mediaTwo: { width: "calc((100% - 8px) / 2)" },
   mediaMany: { width: "calc((100% - 30px) / 2)" },
@@ -492,7 +496,8 @@ const sx = stylex.create({
     color: "var(--text)",
     transitionProperty: "color, background-color",
     ":hover": { "@media (hover: hover)": { backgroundColor: "var(--hover)" } },
-  },
+
+		cornerShape: "var(--cs)",},
   itemsStartLocal: { alignItems: "flex-start" },
   assetThumb: {
     width: "14px",
@@ -503,7 +508,8 @@ const sx = stylex.create({
     borderWidth: "1px",
     borderColor: "var(--border-strong)",
     objectFit: "cover",
-  },
+
+		cornerShape: "var(--cs)",},
   assetIcon: { flexShrink: 0, color: "var(--text-faint)" },
 
 	tabularNums: {
@@ -1679,10 +1685,20 @@ function ReviewerChip({
 	const [error, setError] = useState<string | null>(null);
 	// Follow the polled session as it refreshes (another viewer may re-assign or
 	// sign off). Track accepted's timestamp too so the sign-off lands live.
-	useEffect(() => {
+	const reqKey = [
+		reviewRequest?.to,
+		reviewRequest?.at,
+		reviewRequest?.accepted?.at,
+	].join("\0");
+	// Content-keyed resync: the trigger is the request's identity fields; the
+	// copy lands through an effect event so the object itself stays out of deps.
+	const syncRequest = useEffectEvent(() => {
 		setReq(reviewRequest ?? null);
 		setError(null);
-	}, [reviewRequest?.to, reviewRequest?.at, reviewRequest?.accepted?.at]);
+	});
+	useEffect(() => {
+		syncRequest();
+	}, [reqKey]);
 
 	// The session that owns an existing request; a brand-new one anchors to the open session.
 	const owner = (req && requestSessionId) || sessionId;
@@ -1694,9 +1710,13 @@ function ReviewerChip({
 	const me = personKey(currentUser);
 	// Local so clearing them lands immediately; the polled session confirms.
 	const [ghRequested, setGhRequested] = useState(prReviewRequested || []);
-	useEffect(() => {
+	const ghRequestedKey = (prReviewRequested || []).join("\n");
+	const syncGhRequested = useEffectEvent(() => {
 		setGhRequested(prReviewRequested || []);
-	}, [(prReviewRequested || []).join("\n")]);
+	});
+	useEffect(() => {
+		syncGhRequested();
+	}, [ghRequestedKey]);
 	const githubRequested = ghRequested.map((person) => person.toLowerCase());
 	const githubRequestsMe = githubRequested.some((person) => person === me);
 	const needsMyReview =

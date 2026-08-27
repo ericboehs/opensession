@@ -297,6 +297,9 @@ describe("notifyParentOfFailedRun", () => {
 		const b = beacon({ parentSessionId: "bks-parent", reportBack: true });
 		expect(await notifyParentOfFailedRun("bks-child", "Usage limit reached", b.deps)).toBe("sent");
 		expect(b.delivered[0]!.to).toBe("bks-parent");
+		expect(b.delivered[0]!.content).toStartWith(
+			"<!--os:worker-report:bks-child-->",
+		);
 		expect(b.delivered[0]!.content).toContain("ended in error without reporting back");
 		expect(b.delivered[0]!.content).toContain("Usage limit reached");
 		expect(b.stamped).toEqual(["bks-child"]);

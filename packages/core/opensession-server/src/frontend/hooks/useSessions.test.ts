@@ -1,10 +1,16 @@
 import { describe, expect, test } from "bun:test";
 import type { UnifiedSession } from "../lib/types";
 import {
+  LIVE_POLL_FALLBACK_MS,
+  liveSnapshotMatchesQuery,
   reconcilePendingSessionPatches,
   sessionPatchNeedsAcknowledgement,
   sidebarSessionsQuery,
 } from "./useSessions";
+
+test("uses a slow safety poll behind WebSocket invalidations", () => {
+  expect(LIVE_POLL_FALLBACK_MS).toBe(60_000);
+});
 
 function session(archived: boolean): UnifiedSession {
   return { id: "session-1", archived } as UnifiedSession;
@@ -23,6 +29,28 @@ describe("sidebarSessionsQuery", () => {
     ).toBe(
       "?archived=exclude&view=sidebar&user=Ada+Lovelace&person=me&repo=tella+fusion&autoCreated=hide&session=os-1",
     );
+  });
+});
+
+describe("liveSnapshotMatchesQuery", () => {
+  test("fences a response scoped to the previously selected session", () => {
+    const archivedRoute = sidebarSessionsQuery({
+      user: "Ada Lovelace",
+      person: "me",
+      repo: "all",
+      autoCreated: "hide",
+      selectedSessionId: "archived-session",
+    });
+    const nextRoute = sidebarSessionsQuery({
+      user: "Ada Lovelace",
+      person: "me",
+      repo: "all",
+      autoCreated: "hide",
+      selectedSessionId: "next-session",
+    });
+
+    expect(liveSnapshotMatchesQuery(archivedRoute, nextRoute)).toBe(false);
+    expect(liveSnapshotMatchesQuery(nextRoute, nextRoute)).toBe(true);
   });
 });
 

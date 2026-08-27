@@ -3,6 +3,13 @@ export type AskActorRequest =
   | { op: "entries" }
   | { op: "set"; sessionId: string; value: unknown }
   | { op: "delete"; sessionId: string }
+  | {
+      op: "answer";
+      sessionId: string;
+      questionId: string | null;
+      answers: Record<string, string> | null;
+      answeredVia: string;
+    }
   | { op: "clear" };
 
 export type AskActorResult<T extends AskActorRequest> = T extends {
@@ -13,4 +20,6 @@ export type AskActorResult<T extends AskActorRequest> = T extends {
     ? Array<[string, unknown]>
     : T extends { op: "delete" }
       ? boolean
-      : void;
+      : T extends { op: "answer" }
+        ? { matched: boolean; answers?: Record<string, string> | null }
+        : void;

@@ -8,8 +8,9 @@ import {
 } from "./paths";
 
 /**
- * The store has been ~/.backstage-chats, then ~/.opensession-chats, and is now
- * ~/.opensession-sessions. Absolute paths under it were persisted verbatim
+ * The store has been ~/.backstage-chats, ~/.opensession-chats, and
+ * ~/.opensession-sessions. It now lives at ~/.opensession/sessions. Absolute
+ * paths under it were persisted verbatim
  * (walkthrough stills, staged uploads, media links already spliced into PR
  * bodies), so a rename orphans records that are otherwise perfectly intact.
  */
@@ -21,7 +22,7 @@ describe("resolveLegacySessionsPath", () => {
 
   beforeAll(() => {
     home = mkdtempSync(`${tmpdir()}/os-paths-`);
-    sessions = `${home}/.opensession-sessions`;
+    sessions = `${home}/.opensession/sessions`;
     mkdirSync(`${sessions}/uploads/walkthrough/os-1`, { recursive: true });
     writeFileSync(`${sessions}/uploads/walkthrough/os-1/after.png`, "png");
     prevHome = process.env.HOME;
@@ -34,6 +35,13 @@ describe("resolveLegacySessionsPath", () => {
     if (prevHome === undefined) delete process.env.HOME;
     else process.env.HOME = prevHome;
     rmSync(home, { recursive: true, force: true });
+  });
+
+  it("remaps the previous Open Session path onto the active store", () => {
+    const stored = `${home}/.opensession-sessions/uploads/walkthrough/os-1/after.png`;
+    expect(resolveLegacySessionsPath(stored)).toBe(
+      `${sessions}/uploads/walkthrough/os-1/after.png`,
+    );
   });
 
   it("remaps a path under a former store name onto the active store", () => {

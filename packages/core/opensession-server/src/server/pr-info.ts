@@ -18,8 +18,9 @@ import {
   serviceGithubCredential,
   type GithubCredential,
 } from "./github-auth";
-import { githubBotCredentialMode, githubToken } from "./github-app";
+import { githubToken } from "./github-app";
 import { reviewRequestRemovalSpecs } from "./github-review-requests";
+import { noteGithubGraphqlCall } from "./github-budget";
 import { getPrStack, unmergedLayersBelow } from "./pr-stack";
 import type {
   MergeMethod,
@@ -51,6 +52,100 @@ export type {
   PrReviewer,
   PrStaging,
 } from "./pr-contract";
+
+export type PrAutomationDetails = PrDetails;
+
+/**
+ * Minimum PR metadata needed to acknowledge and queue event-driven work.
+ * REST on purpose: review and @mention intake must remain available when the
+ * installation's independently-metered GraphQL bucket is empty.
+ */
+export async function getPrAutomationDetails(
+  selector: string,
+  repo: string = DEFAULT_REPO(),
+): Promise<PrAutomationDetails | null> {
+  if (ghRateLimited("rest")) throw new Error(GH_REST_RATE_LIMIT_MESSAGE);
+  const token = await githubToken();
+  if (!token) throw new Error("The selected GitHub bot credential is unavailable");
+  const numeric = /^\d+$/.test(selector);
+  const path = numeric
+    ? `/repos/${repo}/pulls/${selector}`
+    : `/repos/${repo}/pulls?state=all&head=${encodeURIComponent(`${repo.split("/")[0]}:${selector}`)}&per_page=1`;
+  const started = Date.now();
+  const response = await fetch(`https://api.github.com${path}`, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+      Accept: "application/vnd.github+json",
+      "X-GitHub-Api-Version": "2022-11-28",
+      "User-Agent": "opensession",
+    },
+    signal: AbortSignal.timeout(10_000),
+  });
+  const body = await response.json().catch(() => null) as any;
+  console.log(
+    `[github-budget] lane=rest consumer=pr-automation status=${response.status} durationMs=${Date.now() - started} remaining=${response.headers.get("x-ratelimit-remaining") || "unknown"}`,
+  );
+  if (response.status === 404) return null;
+  if (!response.ok) {
+    const message = String(body?.message || `GitHub REST ${response.status}`);
+    if (
+      (response.status === 403 || response.status === 429) &&
+      (response.headers.get("x-ratelimit-remaining") === "0" || isGhRateLimitMsg(message))
+    ) {
+      const reset = Number(response.headers.get("x-ratelimit-reset")) * 1000;
+      noteGhRateLimited("pr-automation", Number.isFinite(reset) ? reset : undefined, "rest");
+    }
+    throw new Error(prApiErrorMessage(message));
+  }
+  const pr = Array.isArray(body) ? body[0] : body;
+  if (!pr) return null;
+  const key = cacheKey(repo, pr.head?.ref || selector);
+  const cached = cache.get(key)?.data;
+  const state: PrDetails["state"] = pr.merged_at
+    ? "MERGED"
+    : pr.state === "open"
+      ? "OPEN"
+      : "CLOSED";
+  return {
+    ...(cached || {
+      number: pr.number,
+      title: "",
+      url: "",
+      state,
+      isDraft: false,
+      baseRefName: "",
+      headRefName: "",
+      additions: 0,
+      deletions: 0,
+      changedFiles: 0,
+      reviewDecision: "",
+      author: "",
+      body: "",
+      checks: [],
+      comments: [],
+      commits: [],
+      files: [],
+      reviewers: [],
+      mergeable: "UNKNOWN",
+      mergeStateStatus: "",
+      staging: null,
+    }),
+    number: pr.number,
+    title: pr.title || `PR #${pr.number}`,
+    url: pr.html_url || "",
+    state,
+    isDraft: !!pr.draft,
+    baseRefName: pr.base?.ref || "",
+    headRefName: pr.head?.ref || "",
+    headRefOid: pr.head?.sha || "",
+    additions: Number(pr.additions) || cached?.additions || 0,
+    deletions: Number(pr.deletions) || cached?.deletions || 0,
+    changedFiles: Number(pr.changed_files) || cached?.changedFiles || 0,
+    author: pr.user?.login || "",
+    body: typeof pr.body === "string" ? pr.body : cached?.body || "",
+    mergeable: pr.mergeable === true ? "MERGEABLE" : pr.mergeable === false ? "CONFLICTING" : cached?.mergeable || "UNKNOWN",
+  };
+}
 
 export function latestWorkflowChecks(checks: PrCheck[]): PrCheck[] {
   const latest = new Map<string, PrCheck>();
@@ -255,6 +350,21 @@ const cache = new Map<string, { data: PrDetails | null; ts: number }>();
 // GraphQL budget (2026-07-23). Action gates that must not act on stale data
 // use getPrDetailsFresh, which bypasses this cache entirely.
 const TTL = 5 * 60_000;
+// A durable snapshot is deliberately allowed to stay stale during the first
+// ten minutes of a process. Webhooks and the bulk REST/ETag cache keep
+// open/merge state coherent; delaying rich GraphQL revalidation prevents a
+// restart loop from replaying one expensive detail query per open UI/session.
+const RESTART_REFRESH_GRACE_MS = 10 * 60_000;
+const detailsSnapshotLoadedAt = Date.now();
+
+export function shouldRefreshPrDetails(
+  entryTs: number,
+  now = Date.now(),
+  loadedAt = detailsSnapshotLoadedAt,
+): boolean {
+  if (now - entryTs < TTL) return false;
+  return now - loadedAt >= RESTART_REFRESH_GRACE_MS;
+}
 
 // The details cache is snapshotted to disk (debounced) and seeded on boot —
 // without this, a restart during a GitHub outage or rate-limit window boots
@@ -447,38 +557,64 @@ export async function getPrDiff(
   if (running) return running;
   // Known backoff window: stale answer if we have one, fast friendly failure
   // if we don't — never a doomed gh spawn.
-  if (ghRateLimited()) {
+  if (ghRateLimited("rest")) {
     if (hit) return hit.data;
-    throw new Error(GH_RATE_LIMIT_MESSAGE);
+    throw new Error(GH_REST_RATE_LIMIT_MESSAGE);
   }
 
   const refresh = (async () => {
     try {
-      const ghEnv = await selectedGhEnv();
-      const readMeta = async () => JSON.parse(
-        await $`gh pr view ${branch} --repo ${repo} --json number,headRefOid,baseRefName,baseRefOid`
-          .env({ ...process.env, ...ghEnv })
-          .quiet()
-          .text(),
-      );
+      const token = await githubToken();
+      if (!token) throw new Error("The selected GitHub bot credential is unavailable");
+      const headers = {
+        Authorization: `Bearer ${token}`,
+        "X-GitHub-Api-Version": "2022-11-28",
+        "User-Agent": "opensession",
+      };
+      const readMeta = async (): Promise<{
+        number: number;
+        headRefOid: string;
+        baseRefName: string;
+        baseRefOid: string;
+      }> => {
+        const numeric = /^\d+$/.test(branch);
+        const path = numeric
+          ? `/repos/${repo}/pulls/${branch}`
+          : `/repos/${repo}/pulls?state=all&head=${encodeURIComponent(`${repo.split("/")[0]}:${branch}`)}&per_page=1`;
+        const response = await fetch(`https://api.github.com${path}`, {
+          headers: { ...headers, Accept: "application/vnd.github+json" },
+          signal: AbortSignal.timeout(10_000),
+        });
+        const body = await response.json().catch(() => null) as any;
+        if (!response.ok) throw new Error(String(body?.message || `GitHub REST ${response.status}`));
+        const pr = Array.isArray(body) ? body[0] : body;
+        if (!pr) throw new Error("no pull requests found");
+        return {
+          number: pr.number,
+          headRefOid: pr.head?.sha || "",
+          baseRefName: pr.base?.ref || "",
+          baseRefOid: pr.base?.sha || "",
+        };
+      };
       for (let attempt = 0; attempt < 2; attempt++) {
         const meta = await readMeta();
         let patch: string;
         let skippedFiles = 0;
         try {
+          const controller = new AbortController();
+          const response = await fetch(`https://api.github.com/repos/${repo}/pulls/${meta.number}`, {
+            headers: { ...headers, Accept: "application/vnd.github.v3.diff" },
+            signal: AbortSignal.any([controller.signal, AbortSignal.timeout(30_000)]),
+          });
+          if (!response.ok) throw new Error(await response.text().catch(() => `GitHub REST ${response.status}`));
+          if (!response.body) throw new Error("GitHub returned an empty PR diff");
           if (maxPatchBytes) {
-            const bounded = await boundedCommandPatch(
-              ["gh", "pr", "diff", String(meta.number), "--repo", repo],
-              maxPatchBytes,
-              ghEnv,
-            );
-            patch = bounded.patch;
-            skippedFiles = bounded.skippedFiles;
+            const bounded = await processPrefix(response.body, maxPatchBytes, () => controller.abort());
+            const complete = completePatchPrefix(bounded.text, bounded.truncated);
+            patch = complete.patch;
+            skippedFiles = complete.skippedFiles;
           } else {
-            patch = await $`gh pr diff ${meta.number} --repo ${repo}`
-              .env({ ...process.env, ...ghEnv })
-              .quiet()
-              .text();
+            patch = await response.text();
           }
         } catch (diffErr: any) {
           // GitHub refuses API diffs over 300 files; reconstruct from the same
@@ -516,7 +652,7 @@ export async function getPrDiff(
     } catch (e: any) {
       const msg = String(e?.stderr || e?.message || e).slice(0, 300);
       if (!isNoPrError(msg)) {
-        if (isGhRateLimitMsg(msg)) noteGhRateLimited("pr-info");
+        if (isGhRateLimitMsg(msg)) noteGhRateLimited("pr-diff", undefined, "rest");
         console.warn(`[pr-info] gh pr diff ${branch} (${repo}) failed: ${msg}`);
         if (hit) return hit.data; // stale beats an error
         throw new Error(prApiErrorMessage(msg));
@@ -881,7 +1017,7 @@ export async function prReviewerSpecs(
  * live body first (never a cached one: humans edit descriptions) and writes
  * via REST (PATCH pulls/{n} with an --input file so markdown/quotes/newlines
  * survive shell-free). NOT `gh pr edit`: its GraphQL preamble resolves org
- * teams and needs read:org, which neither the bot PAT nor the device-flow
+ * teams and needs read:org, which the installation and device-flow
  * OAuth tokens carry: it fails unconditionally on private org repos (verified
  * live on a private org repo; same class as the label-edit
  * gotcha).
@@ -950,7 +1086,7 @@ export async function getPrDetails(
 ): Promise<PrDetails | null> {
   const key = cacheKey(repo, branch);
   const hit = cache.get(key);
-  if (hit && Date.now() - hit.ts < TTL) return hit.data;
+  if (hit && !shouldRefreshPrDetails(hit.ts)) return hit.data;
   // Known backoff window: serve any cached answer, and with nothing cached
   // fail fast with the friendly message rather than spawning a doomed gh call.
   if (ghRateLimited()) {
@@ -1000,13 +1136,15 @@ export function isNoPrError(msg: string): boolean {
 
 export const GH_RATE_LIMIT_MESSAGE =
   "GitHub's API rate limit has been reached. Try again after it resets.";
+export const GH_REST_RATE_LIMIT_MESSAGE =
+  "GitHub REST is rate-limited. This pull request action will retry after it resets.";
 
 export function prApiErrorMessage(msg: string): string {
   if (/rate limit/i.test(msg)) return GH_RATE_LIMIT_MESSAGE;
   if (/authentication|bad credentials|requires authentication/i.test(msg))
     return "GitHub authentication failed. Check the GitHub connection.";
   if (/resource not accessible/i.test(msg))
-    return "The GitHub token is missing a permission for this API. Check the PAT's fine-grained permissions.";
+    return "The GitHub App is missing a permission for this API. Check its installation permissions.";
   return "GitHub's pull request API is unavailable right now.";
 }
 
@@ -1066,15 +1204,8 @@ function isPermanentPrApiError(msg: string): boolean {
   return /rate limit|authentication|bad credentials|requires authentication|resource not accessible/i.test(msg);
 }
 
-// Fine-grained PATs can't be granted the Checks permission (GitHub App-only),
-// so statusCheckRollup fails with "Resource not accessible by personal access
-// token" under an org-scoped bot PAT. Preferred path: run the PR query
-// on a GitHub App installation token (github-app.ts), which has checks:read.
-// Fallback when no app key is configured: once the error is seen, skip the
-// field process-wide (checks render empty) instead of failing every PR fetch —
-// the flag resets on restart.
-let skipStatusCheckRollup = false;
-
+// The App permission set includes Checks: read, so every PR details query asks
+// for the rollup and fails visibly if the installation is misconfigured.
 async function fetchPrDetails(
   branch: string,
   repo: string
@@ -1087,30 +1218,21 @@ async function fetchPrDetails(
     // failures; a genuine "no pull requests found" stays a fast null.
     let raw = "";
     const selectedEnv = await selectedGhEnv();
-    const appSelected = githubBotCredentialMode() === "app";
     for (let attempt = 1; ; attempt++) {
       const baseFields =
         "number,title,url,state,isDraft,baseRefName,headRefName,headRefOid,additions,deletions,changedFiles,reviewDecision,author,body,mergeable,mergeStateStatus,comments,commits,files,latestReviews,reviewRequests";
-      const includeRollup = appSelected || !skipStatusCheckRollup;
-      const fields = includeRollup ? `${baseFields},statusCheckRollup` : baseFields;
+      const fields = `${baseFields},statusCheckRollup`;
+      const queryStarted = Date.now();
       try {
         raw = await $`gh pr view ${branch} --repo ${repo} --json ${fields}`
           .env({ ...process.env, ...selectedEnv })
           .quiet()
           .text();
+        noteGithubGraphqlCall("pr-info:details", Date.now() - queryStarted, true);
         break;
       } catch (e: any) {
+        noteGithubGraphqlCall("pr-info:details", Date.now() - queryStarted, false);
         const msg = String(e?.stderr || e?.message || e).slice(0, 300);
-        // Keyed on THIS call's field list, not the global flag — a concurrent
-        // fetch may trip the flag while our rollup-carrying request is in
-        // flight, and that must not turn our retry into a hard failure.
-        if (includeRollup && /resource not accessible/i.test(msg) && /statusCheckRollup/.test(msg)) {
-          if (!skipStatusCheckRollup) {
-            skipStatusCheckRollup = true;
-            console.warn(`[pr-info] token can't read statusCheckRollup — dropping checks from PR queries until restart`);
-          }
-          continue;
-        }
         if (isNoPrError(msg) || isPermanentPrApiError(msg) || attempt >= 3) throw e;
         console.warn(`[pr-info] gh pr view ${branch} (${repo}) attempt ${attempt} failed, retrying: ${msg}`);
         await new Promise((r) => setTimeout(r, attempt * 2000));

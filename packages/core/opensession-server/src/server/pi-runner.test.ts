@@ -31,9 +31,11 @@ import {
   makePiBashTool,
   parsePiModel,
   PI_STATE_DIR,
+  PI_STEER_TOOL_SKIP,
   piDialOracleAgent,
   piGateReason,
   piStreamEventBlocksAccountRotation,
+  piSteeringBoundaryTools,
   piToolNames,
   resolvePiPresetWiring,
   resolvePiRoutedModel,
@@ -59,6 +61,57 @@ describe("acceptSteerOnce", () => {
     expect(acceptSteerOnce(accepted, "one", () => { calls += 1; })).toBe(true);
     expect(acceptSteerOnce(accepted, "one", () => { calls += 1; })).toBe(true);
     expect(calls).toBe(1);
+  });
+});
+
+describe("piSteeringBoundaryTools", () => {
+  test("runs calls sequentially and skips work that has not started after a steer", async () => {
+    const executed: string[] = [];
+    let steeringPending = false;
+    const tools = piSteeringBoundaryTools(
+      [
+        {
+          name: "first",
+          label: "first",
+          description: "first",
+          parameters: {} as any,
+          async execute() {
+            executed.push("first");
+            return { content: [{ type: "text", text: "first result" }], details: {} };
+          },
+        },
+        {
+          name: "second",
+          label: "second",
+          description: "second",
+          parameters: {} as any,
+          async execute() {
+            executed.push("second");
+            return { content: [{ type: "text", text: "second result" }], details: {} };
+          },
+        },
+      ],
+      () => steeringPending,
+    );
+
+    expect(tools.map((tool) => tool.executionMode)).toEqual([
+      "sequential",
+      "sequential",
+    ]);
+    await tools[0].execute("call-1", {}, undefined, undefined, {} as any);
+    steeringPending = true;
+    const skipped = await tools[1].execute(
+      "call-2",
+      {},
+      undefined,
+      undefined,
+      {} as any,
+    );
+
+    expect(executed).toEqual(["first"]);
+    expect(skipped.content).toEqual([
+      { type: "text", text: PI_STEER_TOOL_SKIP },
+    ]);
   });
 });
 
@@ -586,7 +639,7 @@ describe("runPi pi/openai account wiring (fake engine, no network)", () => {
             id: "k1",
             name: "org-key",
             kind: "api_key",
-            value: "sk-test-remote-runtime",
+            value: "test-remote-runtime-key",
             createdAt: new Date().toISOString(),
           },
         ],
@@ -662,7 +715,7 @@ describe("runPi pi/openai account wiring (fake engine, no network)", () => {
         accountStrict: true,
         disableLocalWorkspaceTools: true,
       });
-      expect(runtimeKeys).toEqual([["openai", "sk-test-remote-runtime"]]);
+      expect(runtimeKeys).toEqual([["openai", "test-remote-runtime-key"]]);
       const errors = events.filter((event) => event.type === "error");
       expect(errors, JSON.stringify(errors)).toHaveLength(0);
       expect(events.find((event) => event.type === "done")).toMatchObject({ result: "ok" });
@@ -784,6 +837,7 @@ describe("runPi pi/openai account wiring (fake engine, no network)", () => {
     );
 
     const usedProviderAccounts: string[] = [];
+    const transportSettings: Array<Record<string, unknown>> = [];
     const fakeSdk = {
       ModelRuntime: {
         create: async ({ credentials }: any) => {
@@ -801,7 +855,12 @@ describe("runPi pi/openai account wiring (fake engine, no network)", () => {
           return runtime;
         },
       },
-      SettingsManager: { inMemory: () => ({}) },
+      SettingsManager: {
+        inMemory: (settings: Record<string, unknown>) => {
+          transportSettings.push(settings);
+          return {};
+        },
+      },
       DefaultResourceLoader: class {
         async reload() {}
         getSkills() {
@@ -870,6 +929,10 @@ describe("runPi pi/openai account wiring (fake engine, no network)", () => {
         disableLocalWorkspaceTools: true,
       });
       expect(usedProviderAccounts).toEqual(["provider-a", "provider-b"]);
+      // Subscription traffic skips the experimental ChatGPT WebSocket, whose
+      // mid-stream 1006 failures otherwise force a visible whole-step retry.
+      // The API-key rotation still uses Pi's ordinary provider defaults.
+      expect(transportSettings).toEqual([{ transport: "sse" }, {}]);
       expect(events.filter((event) => event.type === "init")).toHaveLength(2);
       expect(events.filter((event) => event.type === "error")).toHaveLength(0);
       expect(events.find((event) => event.type === "done")).toMatchObject({
@@ -1059,6 +1122,23 @@ describe("makePiBashTool exit-gated completion", () => {
     const started = Date.now();
     await expect(
       (tool as any).execute("t3", { command: "sleep 60" }, ac.signal, undefined)
+    ).rejects.toThrow(/aborted/i);
+    expect(Date.now() - started).toBeLessThan(8_000);
+  });
+
+  test("run cancellation kills bash even when Pi keeps its tool signal live", async () => {
+    const runAbort = new AbortController();
+    const runBoundTool = makePiBashTool({
+      cwd: tmpdir(),
+      env,
+      gated: false,
+      unattended: false,
+      runSignal: runAbort.signal,
+    });
+    setTimeout(() => runAbort.abort(), 200);
+    const started = Date.now();
+    await expect(
+      (runBoundTool as any).execute("run-cancel", { command: "sleep 60" }, undefined),
     ).rejects.toThrow(/aborted/i);
     expect(Date.now() - started).toBeLessThan(8_000);
   });

@@ -34,8 +34,8 @@
 import { audit } from "./audit";
 import { oneShot } from "./one-shot";
 import { getRunState } from "./run-state";
-import { promptQueues } from "./queue-state";
 import { findSession } from "./session-cache";
+import { sessionDelivery } from "./session-kernel";
 import { formatExcerpt, transcriptExcerpt } from "./transcript-excerpt";
 import { broadcastToSession, sessionWatchers } from "./ws-hub";
 
@@ -377,7 +377,8 @@ async function generate(sessionId: string, user?: string): Promise<void> {
 	// Idle with an empty queue is the only state where a reply is the next
 	// thing that happens. A queued prompt already answers the turn.
 	if (ACTIVE_STATES.has(getRunState(sessionId))) return;
-	if (promptQueues.get(sessionId)?.length) return;
+	if ((await sessionDelivery({ op: "snapshot", sessionId })).queued.length)
+		return;
 
 	inFlight.add(sessionId);
 	try {
@@ -420,7 +421,8 @@ async function generate(sessionId: string, user?: string): Promise<void> {
 		// The viewer may have replied while we generated; chips answering a turn
 		// that has already been answered would paste a stale instruction.
 		if (ACTIVE_STATES.has(getRunState(sessionId))) return;
-		if (promptQueues.get(sessionId)?.length) return;
+		if ((await sessionDelivery({ op: "snapshot", sessionId })).queued.length)
+			return;
 		store(sessionId, items);
 		broadcastToSession(sessionId, {
 			type: "reply_suggestions",

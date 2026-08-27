@@ -6,16 +6,18 @@
  * next handler (see routes/index.ts for the dispatch order).
  */
 
+import { executeSessionProjection } from "../session-projection-executor";
+import { transcriptSearchWorkerArgv } from "../../runner-host/exe";
 import { requestUser, type RouteContext } from "./context";
 import {
 	cancelAgentRunAndWait,
   currentAgentRunToken,
 	isAgentSessionBusy,
 } from "../agent-runner";
-import { archiveOlderThan, setArchived, unpinArchivedSessions, } from "../archive";
+import { archiveOlderThan, isArchivedId, setArchived, unpinArchivedSessions, } from "../archive";
 import { audit } from "../audit";
 import {
-	pendingAskAwaitingAnswer,
+	pendingAskAwaitingAnswerSync,
 	pendingAskIdsAwaitingAnswer,
 } from "../asks";
 import { transcriptMatchSnippet } from "../jsonl-parser";
@@ -29,7 +31,10 @@ import {
 	type WorkspaceGroup,
 } from "@tellahq/opensession-protocol/workspace-group";
 import { withToolPresentations } from "@tellahq/opensession-protocol/tool-presentation";
-import { transcriptDbPath, transcriptStore } from "../transcript-store";
+import {
+  deleteSessionTranscript,
+  transcript,
+} from "../actor-transcript";
 import { clearSessionFileArchive } from "../plain-archive";
 import {
 	editPrReviewers,
@@ -47,11 +52,16 @@ import { markPrReviewNotified } from "../pr-review-notifications";
 import { getPrsByRepo } from "../pr-cache";
 import { getReviewRequest, setReviewAccepted, setReviewRequest, } from "../review-requests";
 import { getSessionControl, type SandboxRequest } from "../session-control";
-import { requestTurnCancel } from "../run-session";
+import {
+	requestTurnCancel,
+	sessionQueueOwnerActive,
+	watchExternalRunAndDrain,
+} from "../run-session";
 import {
 	enrichSessionRuntime,
 	findSessionAsync,
 	getCachedSessionsAsync,
+	getSessionListSnapshotAsync,
 	invalidateSessionsCache,
 	maybePersistEffort,
 	maybePersistFastMode,
@@ -64,11 +74,16 @@ import { notifyMentions } from "../mentions";
 import { reviewTeamFor } from "../people";
 import { sendPushToUser } from "../push";
 import {
-	legacyGatewayEffect,
+  sessionChangesSince,
+  sessionGatewayCommand,
 	sessionKernel,
-	sessionKernelStore,
+	sessionQuarantines,
+	sessionRunStateProjection,
+	sessionTombstoneState,
+	sessionProjectionOr,
 	tombstoneSessionKernel,
 } from "../session-kernel";
+import { withSessionMutationLock } from "../session-mutation-lock";
 import {
 	sessionIdForRequest,
 } from "../session-request-id";
@@ -81,12 +96,13 @@ import { dropRunnerPortalRoutes } from "../runner-portals";
 import { cleanupRunnerWorkspace } from "../runner-ws";
 import {
 	deleteSession,
-	getAllSessions,
 	markCachedPrReviewRequestsCleared,
 	mergedSessionTranscriptAsync,
 	removeTombstonedSessionArtifacts,
 } from "../sessions";
 import { githubLoginFor } from "../shared/user-mappings";
+import { publicSessionSafety } from "../session-safety";
+import type { DurableSessionQuarantine } from "../session-kernel/store";
 import { getStatusOverride, isManualStatus, setStatusOverride } from "../status-overrides";
 import { getSubagentTranscript, listSubagents } from "../subagents";
 import { getTitleOverride, setTitleOverride } from "../title-overrides";
@@ -257,9 +273,26 @@ function readDiskLiveList(): SessionsResponseSnapshot | null {
 		if (!existsSync(LIVE_LIST_DISK_PATH)) return null;
 		const sourceMtime = statSync(LIVE_LIST_DISK_PATH).mtimeMs;
 		if (Date.now() - sourceMtime > LIVE_LIST_DISK_MAX_AGE_MS) return null;
-		const text = readFileSync(LIVE_LIST_DISK_PATH, "utf8");
+		let text = readFileSync(LIVE_LIST_DISK_PATH, "utf8");
 		if (!text.startsWith("[")) return null;
+		// The snapshot can predate an archive whose refresh never ran — e.g. the
+		// archive landed in the previous process's shutdown window, or between
+		// its last persist and SIGKILL. Installing it as-is would put
+		// just-archived sessions back in the live sidebar until the cold scan
+		// finishes (up to LIVE_LIST_DISK_SERVE_MS plus refresh delay), which
+		// reads to the person as "I archived this and it came back". The
+		// registry is the durable truth, so drop archived rows before serving.
+		let rewrote = false;
+		try {
+			const rows = JSON.parse(text) as Array<{ id?: string }>;
+			const live = rows.filter((row) => !row.id || !isArchivedId(row.id));
+			if (live.length !== rows.length) {
+				text = JSON.stringify(live);
+				rewrote = true;
+			}
+		} catch {}
 		const haveMatchingGzip =
+			!rewrote &&
 			existsSync(LIVE_LIST_DISK_GZIP_PATH) &&
 			statSync(LIVE_LIST_DISK_GZIP_PATH).mtimeMs >= sourceMtime;
 		return {
@@ -336,13 +369,29 @@ async function sessionsListResponse(
 type SessionListRuntimeSignals = {
 	waitingForInput: Set<string>;
 	queuedCounts: Map<string, number>;
+	quarantines: Map<string, DurableSessionQuarantine>;
 	runtime: SessionRuntimeSnapshot;
 };
 
-function sessionListRuntimeSignals(): SessionListRuntimeSignals {
+async function sessionListRuntimeSignals(): Promise<SessionListRuntimeSignals> {
+	const [waitingForInput, queuedCounts, quarantines] = await Promise.all([
+		pendingAskIdsAwaitingAnswer(),
+		clientVisibleQueuedCounts(),
+		sessionQuarantines(),
+	]);
+	const quarantineBySession = new Map(
+		quarantines.map((entry) => [entry.sessionId, entry]),
+	);
+	// Every visible queued prompt has a process owner. Boot restoration and
+	// enqueue normally arm it; list reconciliation closes the last crash window.
+	for (const [sessionId, count] of queuedCounts) {
+		if (count > 0 && !quarantineBySession.has(sessionId))
+			watchExternalRunAndDrain(sessionId);
+	}
 	return {
-		waitingForInput: pendingAskIdsAwaitingAnswer(),
-		queuedCounts: clientVisibleQueuedCounts(),
+		waitingForInput,
+		queuedCounts,
+		quarantines: quarantineBySession,
 		runtime: sessionRuntimeSnapshot(),
 	};
 }
@@ -369,8 +418,18 @@ function enrichSession(
 	const currentPr = s.branch
 		? getPrsByRepo().get(s.repo || defaultRepo().id)?.get(s.branch)
 		: undefined;
+	const quarantine = signals?.quarantines.get(s.id);
+	const safety = quarantine ? publicSessionSafety(quarantine) : undefined;
 	return {
 		...s,
+		...(safety
+			? {
+					isRunning: false,
+					runStartedAt: undefined,
+					runState: "paused_for_safety",
+					safety,
+				}
+			: {}),
 		...(generatedTitle ? { title: generatedTitle } : {}),
 		...(titleOverride ? { title: titleOverride, titleOverridden: true } : {}),
 		...(manualStatus ? { manualStatus } : {}),
@@ -405,10 +464,16 @@ function enrichSession(
 			: {}),
 		waitingForInput: signals
 			? signals.waitingForInput.has(s.id)
-			: !!pendingAskAwaitingAnswer(s.id),
+			: !!sessionProjectionOr(
+					() => pendingAskAwaitingAnswerSync(s.id),
+					undefined,
+				),
 		queuedCount: signals
 			? signals.queuedCounts.get(s.id) || 0
-			: clientVisibleQueuedCount(s.id),
+			: sessionProjectionOr(() => clientVisibleQueuedCount(s.id), 0),
+		...(signals && (signals.queuedCounts.get(s.id) || 0) > 0
+			? { queueOwnerActive: sessionQueueOwnerActive(s.id) }
+			: {}),
 		// Present on the list AND on the detail response, so one rule reads the
 		// same either side of a hydrate. `undefined` rather than `false`: it is
 		// dropped by JSON.stringify, and a session object a client builds
@@ -619,68 +684,86 @@ export function archivedIndexRow(
  * when nothing matches, which we treat as "no hits", not an error. Chunked so a
  * very long file list can't overflow the argv limit.
  */
+type StoredTranscriptSearchExhaustion =
+	| "sessions"
+	| "rows"
+	| "time"
+	| "matches"
+	| "error"
+	| null;
+
 interface StoredTranscriptSearchResult {
 	matches: Array<{ id: string; snippet: string }>;
 	searchedSessions: number;
+	candidateRows: number;
+	exhausted: StoredTranscriptSearchExhaustion;
 }
 
-/**
- * Search transcript v2 on a read-only child process. Bun's SQLite API is
- * synchronous, so doing this in the coordinator would pause sockets and every
- * other request for the duration of a rare-query scan.
- */
+/** Global search uses bounded read-only handles in a child process. It never
+ * queues synchronous SQLite scans through authoritative actor mailboxes. */
 async function searchStoredTranscripts(
 	query: string,
 	sessionIds: string[],
 	signal?: AbortSignal,
 ): Promise<StoredTranscriptSearchResult> {
-	if (!sessionIds.length || !existsSync(transcriptDbPath()))
-		return { matches: [], searchedSessions: 0 };
+	if (sessionIds.length === 0)
+		return { matches: [], searchedSessions: 0, candidateRows: 0, exhausted: null };
 	const proc = Bun.spawn(
-		[process.execPath, `${import.meta.dir}/../transcript-search-worker.ts`],
-		{
-			stdin: "pipe",
-			stdout: "pipe",
-			stderr: "pipe",
-			timeout: 10_000,
-		},
+		transcriptSearchWorkerArgv(
+			process.execPath,
+			`${import.meta.dir}/../transcript-search-worker.ts`,
+		),
+		{ stdin: "pipe", stdout: "pipe", stderr: "pipe", timeout: 6_000 },
 	);
 	const abort = () => proc.kill();
-	if (signal?.aborted) {
-		abort();
-		await proc.exited;
-		return { matches: [], searchedSessions: 0 };
-	}
+	if (signal?.aborted) abort();
 	signal?.addEventListener("abort", abort, { once: true });
-	proc.stdin.write(
-		JSON.stringify({ dbPath: transcriptDbPath(), query, sessionIds, maxMatches: 50, }),
-	);
+	proc.stdin.write(JSON.stringify({
+		query,
+		sessionIds,
+		maxMatches: 50,
+		maxSessions: 250,
+		maxRows: 6_000,
+		maxMs: 5_000,
+	}));
 	proc.stdin.end();
-	let output = "";
-	let error = "";
-	let code = -1;
 	try {
-		[output, error, code] = await Promise.all([
+		const [output, error, code] = await Promise.all([
 			new Response(proc.stdout).text(),
 			new Response(proc.stderr).text(),
 			proc.exited,
 		]);
-	} finally {
-		signal?.removeEventListener("abort", abort);
-	}
-	if (code !== 0) {
-		if (!signal?.aborted)
-			console.warn(`[transcript-search] store worker failed: ${error.trim().slice(0, 300)}`,);
-		return { matches: [], searchedSessions: 0 };
-	}
-	try {
+		if (code !== 0 || signal?.aborted) {
+			if (!signal?.aborted)
+				console.warn(`[transcript-search] worker failed: ${error.trim().slice(0, 300)}`);
+			return {
+				matches: [],
+				searchedSessions: 0,
+				candidateRows: 0,
+				exhausted: "error",
+			};
+		}
 		const parsed = JSON.parse(output) as StoredTranscriptSearchResult;
+		const exhausted = ["sessions", "rows", "time", "matches"].includes(
+			String(parsed.exhausted),
+		)
+			? parsed.exhausted
+			: null;
 		return {
-			matches: Array.isArray(parsed.matches) ? parsed.matches : [],
+			matches: Array.isArray(parsed.matches) ? parsed.matches.slice(0, 50) : [],
 			searchedSessions: Number(parsed.searchedSessions) || 0,
+			candidateRows: Number(parsed.candidateRows) || 0,
+			exhausted,
 		};
 	} catch {
-		return { matches: [], searchedSessions: 0 };
+		return {
+			matches: [],
+			searchedSessions: 0,
+			candidateRows: 0,
+			exhausted: "error",
+		};
+	} finally {
+		signal?.removeEventListener("abort", abort);
 	}
 }
 
@@ -713,7 +796,7 @@ function refreshSidebarSessionsResponse(
 	const current = sessionsResponseRefreshes.get(key);
 	if (current) return current;
 	const refresh = (async () => {
-		const signals = sessionListRuntimeSignals();
+		const signals = await sessionListRuntimeSignals();
 		const indexed = indexedSidebarSessions(scope.selectedSessionId);
 		const sliced = (
 			indexed ?? (await getCachedSessionsAsync("exclude"))
@@ -746,7 +829,7 @@ function refreshSessionsResponse(
 	const current = sessionsResponseRefreshes.get(variant);
 	if (current) return current;
 	const refresh = (async () => {
-		const signals = sessionListRuntimeSignals();
+		const signals = await sessionListRuntimeSignals();
 		const slice =
 			variant === "exclude"
 				? "exclude"
@@ -852,7 +935,7 @@ export async function handleSessionsRoutes(
 			const requestId = suppliedRequestId || crypto.randomUUID();
 			const actorScope = ctx.authUser?.login || actor || "anonymous";
 			const targetId = sessionIdForRequest(actorScope, requestId);
-			const duplicate = !!sessionKernel(targetId).creationState();
+			const duplicate = !!await sessionKernel(targetId).creationState();
 			const created = await getSessionControl().createSession({
 						id: targetId,
 						requestId,
@@ -937,7 +1020,7 @@ export async function handleSessionsRoutes(
 				(await getCachedSessionsAsync("only")).filter((session) =>
 					inWorkspaceGroup(session, scope),
 				);
-			const signals = sessionListRuntimeSignals();
+			const signals = await sessionListRuntimeSignals();
 			const rows = selected.map((session) => enrichSession(session, signals));
 			shareWorkspacePrRefs(rows);
 			const text = JSON.stringify(
@@ -1130,11 +1213,11 @@ export async function handleSessionsRoutes(
 				500,
 				Math.max(1, Number(url.searchParams.get("limit") || 200) || 200),
 			);
-			const store = sessionKernelStore();
+			const runState = sessionRunStateProjection(sessionId);
 			return Response.json({
 				sessionId,
-				changeSeq: store.runState(sessionId).changeSeq,
-				changes: store.changesSince(sessionId, after, limit),
+				changeSeq: runState.changeSeq,
+				changes: await sessionChangesSince(sessionId, after, limit),
 			});
 		}
 	}
@@ -1180,7 +1263,7 @@ export async function handleSessionsRoutes(
 			// consult it first; unknown ids and store failures fall through to
 			// the legacy merged-transcript scan unchanged.
 			try {
-				const full = transcriptStore().getFullEntry(session.id, entryId);
+				const full = await transcript.getFullEntry(session.id, entryId);
 				// content keeps its exact legacy shape; toolInput/images are
 				// additive (existing clients ignore them) — they carry the
 				// unstripped fields the bounded store row summarized away.
@@ -1273,9 +1356,9 @@ export async function handleSessionsRoutes(
 			// mirror can't resolve the image, decode it from there. Guarded on the
 			// DB file existing — not the flag — so images keep serving through
 			// kill-switch windows.
-			if (!img && existsSync(transcriptDbPath())) {
+			if (!img) {
 				try {
-					const src = transcriptStore().getFullEntry(session.id, entryId)
+					const src = (await transcript.getFullEntry(session.id, entryId))
 						?.images?.[idx];
 					if (typeof src === "string") {
 						if (!src.startsWith("data:")) {
@@ -1360,7 +1443,10 @@ export async function handleSessionsRoutes(
 		}
 		return Response.json({
 			matches,
-			truncated: sessions.length > recentIds.length && matches.length < 50,
+			truncated:
+				stored.exhausted !== null ||
+				stored.searchedSessions < recentIds.length ||
+				(sessions.length > recentIds.length && matches.length < 50),
 		});
 	}
 
@@ -1416,7 +1502,7 @@ export async function handleSessionsRoutes(
 	) {
 		const body = await req.json().catch(() => ({}));
 		const days = Math.max(1, parseInt(body.days) || 7);
-		const count = archiveOlderThan(getAllSessions(), days);
+		const count = archiveOlderThan(await getSessionListSnapshotAsync(), days);
 		invalidateSessionsCache();
 		return Response.json({ archived: count });
 	}
@@ -1448,28 +1534,35 @@ export async function handleSessionsRoutes(
         session.id,
       )
     ) {
-      const target = sessionKernel(session.id).runState();
+      const target = sessionKernel(session.id).runStateProjection();
       const targetRunId =
         target.currentRunId ||
         (target.state === "starting" || target.state === "preparing"
           ? currentAgentRunToken(session.id)
           : undefined);
       if (targetRunId) {
-        requestTurnCancel(session.id, session, {
-          cancelId: `archive-stop:${session.id}:${targetRunId}:${target.generation}`,
-          expectedRunId: targetRunId,
-          expectedGeneration: target.generation,
-          source: "archive",
-        });
-        audit({
-          msg: "run_cancelled",
-          session_id: session.id,
-          source: "archive",
-        });
-        stoppedRun = true;
+        try {
+          await requestTurnCancel(session.id, session, {
+            cancelId: `archive-stop:${session.id}:${targetRunId}:${target.generation}`,
+            expectedRunId: targetRunId,
+            expectedGeneration: target.generation,
+            source: "archive",
+          });
+          audit({
+            msg: "run_cancelled",
+            session_id: session.id,
+            source: "archive",
+          });
+          stoppedRun = true;
+        } catch {
+          // The actor fences cancels by run id + generation; losing the race
+          // (the run settled between our busy check and prepare) throws out
+          // of requestTurnCancel. That must not fail the archive — the usual
+          // case is the run having finished anyway.
+        }
       }
     }
-		sessionKernel(sessionId).applySync("archive_override", () =>
+		await executeSessionProjection(sessionId, "archive_override", () =>
 			setArchived(sessionId, archived),
 		);
 		// Plain done-tickets are archived via a file-level flag, not the
@@ -1482,7 +1575,7 @@ export async function handleSessionsRoutes(
 			// setArchived drops the plain id pin; also drop legacy alias-id pins,
 			// and the workspace pin once its last live session is archived (else the
 			// row resurfaces in Pinned when a new session joins the workspace).
-			unpinArchivedSessions([session], getAllSessions());
+			unpinArchivedSessions([session], await getSessionListSnapshotAsync());
 		}
 		return Response.json({ ok: true, stoppedRun });
 	}
@@ -1500,7 +1593,7 @@ export async function handleSessionsRoutes(
 		const body = await req.json().catch(() => ({}));
 		const title =
 			typeof body?.title === "string" ? body.title.trim().slice(0, 80) : "";
-		sessionKernel(sessionId).applySync("title_override", () =>
+		await executeSessionProjection(sessionId, "title_override", () =>
 			setTitleOverride(sessionId, title || null),
 		);
 		invalidateSessionsCache();
@@ -1520,7 +1613,7 @@ export async function handleSessionsRoutes(
 			return Response.json({ error: "Session not found" }, { status: 404 });
 		const body = await req.json().catch(() => ({}));
 		const status = isManualStatus(body?.status) ? body.status : null;
-		sessionKernel(sessionId).applySync("status_override", () =>
+		await executeSessionProjection(sessionId, "status_override", () =>
 			setStatusOverride(sessionId, status),
 		);
 		invalidateSessionsCache();
@@ -1657,7 +1750,7 @@ export async function handleSessionsRoutes(
 				} else mirroredToGithub = true;
 			}
 		}
-		sessionKernel(sessionId).applySync("review_request", () =>
+		await executeSessionProjection(sessionId, "review_request", () =>
 			setReviewRequest(
 				sessionId,
 				reviewer
@@ -1721,7 +1814,8 @@ export async function handleSessionsRoutes(
 			const session = await findSessionAsync(sessionId);
 			if (!session)
 				return Response.json({ error: "Session not found" }, { status: 404 });
-			return Response.json(enrichSession(session), {
+			const signals = await sessionListRuntimeSignals();
+			return Response.json(enrichSession(session, signals), {
 				headers: { "Cache-Control": "private, no-cache" },
 			});
 		}
@@ -1744,10 +1838,9 @@ export async function handleSessionsRoutes(
 		// the DB file existing — NOT the flag — so a kill-switch window can't
 		// leave resurrectable rows behind for deterministic session ids
 		// (bks-ghpr-*). Best-effort: a store hiccup must never block deletion.
-		const purgeTranscriptRows = (id: string) => {
+		const purgeTranscriptRows = async (id: string) => {
 			try {
-				if (existsSync(transcriptDbPath()))
-					transcriptStore().deleteSessionTranscript(id);
+				await deleteSessionTranscript(id);
 			} catch {}
 			try {
 				searchIndex().remove(`session:${id}`);
@@ -1761,7 +1854,7 @@ export async function handleSessionsRoutes(
 					console.warn(`[runners] Workspace retained after deleting ${session.id}:`, error,),
 				);
 			}
-			purgeTranscriptRows(session.id);
+			await purgeTranscriptRows(session.id);
 			invalidateSessionsCache();
 			// Tear down the session's sandbox (container + engine-state volumes,
 			// and in volume-workspace mode the workspace volume itself; that data
@@ -1774,8 +1867,8 @@ export async function handleSessionsRoutes(
 			// sessions for the same PR.
 			if (session.workspaceId) {
 				const ws = getWorkspace(session.workspaceId);
-				const members = getAllSessions().filter(
-					(s) => s.workspaceId === session.workspaceId,
+				const members = (await getSessionListSnapshotAsync()).filter(
+					(s) => s.id !== session.id && s.workspaceId === session.workspaceId,
 				);
 				if (ws && !ws.key && members.length === 0)
 					deleteWorkspace(ws.id);
@@ -1807,13 +1900,30 @@ export async function handleSessionsRoutes(
 				return Response.json({ error: e.message }, { status: 500 });
 			}
 		};
-		if (sessionKernelStore().isTombstoned(session.id))
+		if (await sessionTombstoneState(session.id))
 			return recoverTombstonedDeletion();
 
+    const deleteRequestId = `delete:${session.id}`;
+    let deleteExecuting = false;
+    let deletePhysicalFinished = false;
 		try {
-			const result = await sessionKernel(session.id).runExclusive(
-				"delete_session",
-			async () => {
+      const plan = await sessionGatewayCommand({
+        op: "request",
+        sessionId: session.id,
+        requestId: deleteRequestId,
+        operation: "delete_session",
+        identity: { cleanWorktree },
+      });
+      if (plan.status === "in_progress")
+        throw Object.assign(new Error("Session deletion is already in progress"), {
+          retryable: true,
+        });
+      if (plan.status === "completed") {
+        const replay = plan.result as { status: number; body: unknown };
+        return Response.json(replay.body, { status: replay.status });
+      }
+      deleteExecuting = true;
+			const result = await withSessionMutationLock(session.id, async () => {
 		try {
 			const runIds = [
 				session.claudeSessionId,
@@ -1839,23 +1949,37 @@ export async function handleSessionsRoutes(
 			// Tombstoning first drops this active kernel from the map, so deleteSession's
 			// nested compatibility write re-enters through a fresh kernel and is fenced
 			// as a late writer, leaving a visible but immutable ghost session behind.
-			deleteSession(session);
-			tombstoneSessionKernel(session.id);
+			await deleteSession(session);
+			await tombstoneSessionKernel(session.id);
 			await finishDeletion();
 			return { status: 200, body: { ok: true } };
 		} catch (e: any) {
 			return { status: 500, body: { error: e.message } };
 		}
-			},
-			);
-			// Actor commands cross a Worker boundary. Keep their result cloneable and
-			// construct the Response only after the mailbox has settled.
+			});
+      deletePhysicalFinished = true;
+      await sessionGatewayCommand({
+        op: "complete",
+        sessionId: session.id,
+        requestId: deleteRequestId,
+        operation: "delete_session",
+        result,
+      });
 			return Response.json(result.body, { status: result.status });
 		} catch (error) {
+      if (deleteExecuting && !deletePhysicalFinished)
+        await sessionGatewayCommand({
+          op: "fail",
+          sessionId: session.id,
+          requestId: deleteRequestId,
+          operation: "delete_session",
+          error: error instanceof Error ? error.message : String(error),
+          retryable: true,
+        });
 			// A concurrent delete can write the tombstone after the check above but
 			// before this request reaches the mailbox. Treat that race as the same
 			// idempotent recovery instead of surfacing a false failure.
-			if (sessionKernelStore().isTombstoned(session.id))
+			if (await sessionTombstoneState(session.id))
 				return recoverTombstonedDeletion();
 			throw error;
 		}

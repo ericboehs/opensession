@@ -259,6 +259,93 @@ final class SessionViewModelTests: XCTestCase {
         XCTAssertEqual(viewModel.slackComposeReceipt, current)
     }
 
+    func testSlackReceiptUndoSendsItsTargetOnceAndClearsOnlyAfterSuccess() async {
+        var calls: [(session: String, channel: String, ts: String)] = []
+        var release: CheckedContinuation<Void, Error>?
+        let viewModel = SessionViewModel(
+            session: Session(id: "bks-1"),
+            slackComposerUndoer: { session, channel, ts in
+                calls.append((session, channel, ts))
+                try await withCheckedThrowingContinuation {
+                    release = $0
+                }
+            }
+        )
+        let receipt = SlackComposeReceipt(
+            requestId: "slack-undo",
+            status: .sent,
+            channel: .init(id: "C123", name: "shipping"),
+            permalink: nil,
+            ts: "1700000000.000000"
+        )
+        viewModel.resolveSlackComposer(receipt)
+
+        let firstTap = Task { await viewModel.undoSlackComposeReceipt() }
+        await Task.yield()
+        XCTAssertEqual(viewModel.undoingSlackComposeReceiptId, receipt.id)
+        XCTAssertEqual(calls.count, 1)
+
+        await viewModel.undoSlackComposeReceipt()
+        XCTAssertEqual(calls.count, 1, "a second tap must not issue another delete")
+        XCTAssertEqual(viewModel.slackComposeReceipt, receipt)
+
+        release?.resume()
+        await firstTap.value
+        XCTAssertNil(viewModel.slackComposeReceipt)
+        XCTAssertNil(viewModel.undoingSlackComposeReceiptId)
+        XCTAssertEqual(viewModel.notice, "Removed from Slack")
+        XCTAssertEqual(calls.first?.session, "bks-1")
+        XCTAssertEqual(calls.first?.channel, "C123")
+        XCTAssertEqual(calls.first?.ts, "1700000000.000000")
+    }
+
+    func testFailedSlackReceiptUndoKeepsReceiptAndReportsTheError() async {
+        let viewModel = SessionViewModel(
+            session: Session(id: "bks-1"),
+            slackComposerUndoer: { _, _, _ in
+                throw NSError(
+                    domain: "SlackUndoTests",
+                    code: 1,
+                    userInfo: [NSLocalizedDescriptionKey: "Slack refused the delete"]
+                )
+            }
+        )
+        let receipt = SlackComposeReceipt(
+            requestId: "slack-undo",
+            status: .sent,
+            channel: .init(id: "C123", name: "shipping"),
+            permalink: nil,
+            ts: "1700000000.000000"
+        )
+        viewModel.resolveSlackComposer(receipt)
+
+        await viewModel.undoSlackComposeReceipt()
+
+        XCTAssertEqual(viewModel.slackComposeReceipt, receipt)
+        XCTAssertNil(viewModel.undoingSlackComposeReceiptId)
+        XCTAssertEqual(viewModel.notice, "Slack refused the delete")
+    }
+
+    func testSlackReceiptWithoutTimestampCannotBeUndone() async {
+        var called = false
+        let viewModel = SessionViewModel(
+            session: Session(id: "bks-1"),
+            slackComposerUndoer: { _, _, _ in called = true }
+        )
+        let receipt = SlackComposeReceipt(
+            requestId: "slack-old",
+            status: .sent,
+            channel: .init(id: "C123", name: "shipping"),
+            permalink: nil
+        )
+        viewModel.resolveSlackComposer(receipt)
+
+        await viewModel.undoSlackComposeReceipt()
+
+        XCTAssertFalse(called)
+        XCTAssertEqual(viewModel.slackComposeReceipt, receipt)
+    }
+
     func testResyncDropsCachedPartialPrefixOfOffscreenCompletion() {
         let viewModel = makeViewModel()
         viewModel.handle(.sessionStatus(sessionId: "bks-1", isRunning: true))
@@ -1510,6 +1597,21 @@ final class SendDraftTests: XCTestCase {
         XCTAssertEqual(viewModel.entries.map(\.text), ["nope"])
     }
 
+    /// A terminal attachment/refusal belongs to that message. Keeping it for
+    /// Edit/Delete/Retry must not make every later follow-up look queued forever.
+    func testRefusedMessageDoesNotBlockLaterFollowUp() async {
+        stubbedOutcome = .rejected("An attached image could not be prepared.")
+        await send("broken attachment")
+        let failedId = unsent.first?.id
+
+        stubbedOutcome = nil
+        await send("follow up")
+
+        XCTAssertEqual(deliveries.map(\.item.content), ["broken attachment", "follow up"])
+        XCTAssertEqual(unsent.map(\.id), [failedId].compactMap { $0 })
+        XCTAssertTrue(unsent[0].failed)
+    }
+
     func testFailureContinuationUsesWebPromptWithoutChangingDraft() async {
         stubbedOutcome = .unavailable("offline")
         viewModel.draft = "Keep this draft"
@@ -1724,6 +1826,15 @@ final class SendDraftTests: XCTestCase {
         XCTAssertTrue(viewModel.attachedImages.isEmpty)
         XCTAssertEqual(deliveries.count, 1)
         XCTAssertEqual(deliveries[0].images.count, 1)
+    }
+
+    func testServerImagePreparationKeepsSupportedBytesAndConvertsOtherImages() throws {
+        let png = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
+        XCTAssertEqual(AttachedImage.serverDataURL(png), png)
+
+        let olderHEIC = png.replacingOccurrences(of: "image/png", with: "image/heic")
+        let converted = try XCTUnwrap(AttachedImage.serverDataURL(olderHEIC))
+        XCTAssertTrue(converted.hasPrefix("data:image/jpeg;base64,"))
     }
 
     /// Images have to survive the wait too — they're kept beside the queue on

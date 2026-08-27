@@ -20,10 +20,10 @@ final class SupportLocationTests: XCTestCase {
         )
     }
 
-    func testLegacyBothVisibleStateResolvesToTheSidebar() {
+    func testBothVisibleStateResolvesToTheTool() {
         XCTAssertEqual(
             SupportLocation.current(hiddenTools: "[]", hiddenFeeds: "[]"),
-            .sidebar
+            .page
         )
     }
 

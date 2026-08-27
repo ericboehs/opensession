@@ -15,15 +15,19 @@ const minutesAgo = (minutes: number) =>
 	new Date(Date.now() - minutes * 60_000).toISOString();
 const now = minutesAgo(0);
 const activeSessionId = "bks-demo-presence";
+const deskSessionId = "bks-demo-desk";
+/** Optional capture-only state used by scripts/capture-announcement-features.ts.
+ *  The ordinary landing demo has no query string and keeps its current state. */
+const featureShot = new URLSearchParams(location.search).get("feature");
 
 const sessions: UnifiedSession[] = [
 	{
 		id: activeSessionId,
 		claudeSessionId: "demo-presence",
 		source: "opensession",
-		branch: "alex/workspace-presence",
+		branch: "kent/workspace-presence",
 		worktreeDir: "/workspace/opensession",
-		startedBy: "Alex",
+		startedBy: "Grant",
 		title: "Add multiplayer workspace presence",
 		lastActivity: minutesAgo(4),
 		createdAt: minutesAgo(38),
@@ -34,6 +38,24 @@ const sessions: UnifiedSession[] = [
 		workspaceId: "project-presence",
 		model: "anthropic/claude-fable-5",
 		effort: "medium",
+		...(featureShot === "walkthroughs"
+			? {
+					walkthrough: {
+						summary:
+							"## What changed\n\nWorkspace presence is now visible at a glance. The sidebar rolls everyone viewing a session into a compact facepile, while the session header shows who is collaborating with you.",
+						shots: [
+							{
+								before: "/demo/workspace-presence-before.webp",
+								after: "/demo/workspace-presence-after.webp",
+								caption: "Workspace presence in the sidebar and session header",
+							},
+						],
+						publishedAt: minutesAgo(3),
+						publishedBy: "Kent",
+						publishedEntryId: "entry-14",
+					},
+			}
+			: {}),
 		usage: {
 			costUsd: 0.6,
 			inputTokens: 18420,
@@ -50,9 +72,9 @@ const sessions: UnifiedSession[] = [
 		id: "bks-demo-checkout",
 		claudeSessionId: "demo-checkout",
 		source: "opensession",
-		branch: "alex/checkout-recovery",
+		branch: "kent/checkout-recovery",
 		worktreeDir: "/workspace/checkout",
-		startedBy: "Alex",
+		startedBy: "Grant",
 		title: "Review checkout recovery",
 		lastActivity: minutesAgo(1),
 		createdAt: minutesAgo(52),
@@ -68,9 +90,9 @@ const sessions: UnifiedSession[] = [
 		id: "bks-demo-mobile",
 		claudeSessionId: "demo-mobile",
 		source: "opensession",
-		branch: "alex/mobile-navigation",
+		branch: "kent/mobile-navigation",
 		worktreeDir: "/workspace/mobile",
-		startedBy: "Alex",
+		startedBy: "Grant",
 		title: "Improve mobile navigation",
 		lastActivity: minutesAgo(9),
 		createdAt: minutesAgo(74),
@@ -86,9 +108,9 @@ const sessions: UnifiedSession[] = [
 		id: "bks-demo-shortcuts",
 		claudeSessionId: "demo-shortcuts",
 		source: "opensession",
-		branch: "alex/keyboard-shortcuts",
+		branch: "kent/keyboard-shortcuts",
 		worktreeDir: "/workspace/shortcuts",
-		startedBy: "Alex",
+		startedBy: "Grant",
 		title: "Ship keyboard shortcuts",
 		lastActivity: minutesAgo(21),
 		createdAt: minutesAgo(96),
@@ -109,9 +131,9 @@ const sessions: UnifiedSession[] = [
 		id: "bks-demo-search",
 		claudeSessionId: "demo-search",
 		source: "opensession",
-		branch: "alex/faster-session-search",
+		branch: "kent/faster-session-search",
 		worktreeDir: "/workspace/search",
-		startedBy: "Alex",
+		startedBy: "Grant",
 		title: "Make session search instant",
 		lastActivity: minutesAgo(1),
 		createdAt: minutesAgo(129),
@@ -127,9 +149,9 @@ const sessions: UnifiedSession[] = [
 		id: "bks-demo-release",
 		claudeSessionId: "demo-release",
 		source: "opensession",
-		branch: "alex/release-notes",
+		branch: "kent/release-notes",
 		worktreeDir: "/workspace/release",
-		startedBy: "Alex",
+		startedBy: "Grant",
 		title: "Draft the weekly release notes",
 		lastActivity: minutesAgo(47),
 		createdAt: minutesAgo(163),
@@ -161,9 +183,9 @@ const sessions: UnifiedSession[] = [
 		id: `bks-demo-${slug}`,
 		claudeSessionId: `demo-${slug}`,
 		source: "opensession" as const,
-		branch: `alex/${slug}`,
+		branch: `kent/${slug}`,
 		worktreeDir: `/workspace/${slug}`,
-		startedBy: "Alex",
+		startedBy: "Grant",
 		title,
 		lastActivity: minutesAgo(activeMinutes),
 		createdAt: minutesAgo(createdMinutes),
@@ -190,18 +212,18 @@ const shippedCommits = (
 	[
 		["louise", "Louise de Sadeleer", "Keep the composer draft when a session switches", 96, 31, 25],
 		["jaap", "Jaap Frolich", "Batch transcript writes behind one flush", 240, 118, 96],
-		["alex", "Alex Rivera", "Cache repo icons so the sidebar stops flashing", 58, 12, 187],
-		["kent", "Kent de Bruin", "Give the run banner a real elapsed clock", 64, 22, 291],
+		["kent", "Kent de Bruin", "Cache repo icons so the sidebar stops flashing", 58, 12, 187],
+		["michiel", "Michiel Westerbeek", "Give the run banner a real elapsed clock", 64, 22, 291],
 		["grant", "Grant Shaddick", "Sign preview links with a short-lived token", 148, 57, 448],
-		["kent", "Kent de Bruin", "Round the session rows to match the panel", 41, 38, 1495],
+		["michiel", "Michiel Westerbeek", "Round the session rows to match the panel", 41, 38, 1495],
 		["louise", "Louise de Sadeleer", "Show who else is reading a session", 203, 64, 1602],
-		["alex", "Alex Rivera", "Stop the sidebar jumping to the top on rename", 27, 9, 1744],
+		["kent", "Kent de Bruin", "Stop the sidebar jumping to the top on rename", 27, 9, 1744],
 		["jaap", "Jaap Frolich", "Move the diff parser off the main thread", 312, 140, 1860],
 		["grant", "Grant Shaddick", "Add a health check to the deploy workflow", 72, 5, 1938],
 		["louise", "Louise de Sadeleer", "Name the model in the composer footer", 33, 11, 2905],
 		["jaap", "Jaap Frolich", "Drop the duplicate presence broadcast", 18, 96, 3050],
-		["alex", "Alex Rivera", "Write the archive filter into the URL", 88, 26, 3180],
-		["kent", "Kent de Bruin", "Tighten the empty state on the reviews page", 52, 18, 3295],
+		["kent", "Kent de Bruin", "Write the archive filter into the URL", 88, 26, 3180],
+		["michiel", "Michiel Westerbeek", "Tighten the empty state on the reviews page", 52, 18, 3295],
 	] as const
 ).map(([person, author, title, additions, deletions, minutes], index) => ({
 	repo: "opensession",
@@ -228,11 +250,132 @@ const unreadSessionIds = new Set([
 
 const demoPresence = [
 	{ user: "Kent", sessionId: activeSessionId },
+	{ user: "Michiel", sessionId: activeSessionId },
 	{ user: "Jaap", sessionId: activeSessionId },
 	{ user: "Louise", sessionId: "bks-demo-checkout" },
 ];
 
+const automations = [
+	{
+		id: "review-stale-prs",
+		name: "Review stale pull requests",
+		prompt:
+			"Review pull requests with no activity for three days. Summarize blockers, request the right reviewer, and publish a report with anything that needs attention.",
+		schedule: "0 9 * * 1-5",
+		mode: "ask",
+		enabled: true,
+		createdBy: "Kent",
+		createdAt: minutesAgo(18_400),
+		lastRunAt: minutesAgo(42),
+		lastRunSessionId: "bks-demo-release",
+		lastRunStatus: "ok",
+		lastTrigger: "cron",
+		nextRunAt: minutesAgo(-1_080),
+		model: "anthropic/claude-fable-5",
+		runs: [1, 2, 3, 4, 5, 7, 8].map((days) => ({
+			at: minutesAgo(days * 1_440),
+			sessionId: `demo-pr-review-${days}`,
+			trigger: "cron",
+			status: "ok",
+			durationMs: 184_000,
+		})),
+	},
+	{
+		id: "support-patterns",
+		name: "Find patterns in support",
+		prompt:
+			"Analyze this week's support conversations. Group recurring requests, note changes in sentiment, and publish the strongest product signals.",
+		schedule: "0 8 * * 1",
+		mode: "ask",
+		enabled: true,
+		createdBy: "Louise",
+		createdAt: minutesAgo(42_000),
+		lastRunAt: minutesAgo(1_520),
+		lastRunSessionId: "bks-demo-search",
+		lastRunStatus: "ok",
+		lastTrigger: "cron",
+		nextRunAt: minutesAgo(-8_640),
+		model: "anthropic/claude-opus-5",
+		runs: [2, 9, 16, 23].map((days) => ({
+			at: minutesAgo(days * 1_440),
+			sessionId: `demo-support-patterns-${days}`,
+			trigger: "cron",
+			status: "ok",
+			durationMs: 312_000,
+		})),
+	},
+	{
+		id: "security-monitor",
+		name: "Monitor security advisories",
+		prompt:
+			"Check our dependencies and infrastructure providers for new security advisories. Open a code session for actionable fixes.",
+		schedule: "0 */6 * * *",
+		mode: "code",
+		enabled: true,
+		createdBy: "Grant",
+		createdAt: minutesAgo(61_000),
+		lastRunAt: minutesAgo(96),
+		lastRunSessionId: "bks-demo-audit-log",
+		lastRunStatus: "running",
+		lastTrigger: "cron",
+		nextRunAt: minutesAgo(-264),
+		isRunning: true,
+		model: "anthropic/claude-fable-5",
+		runs: [1, 3, 4, 6, 7].map((days, index) => ({
+			at: minutesAgo(days * 1_440),
+			sessionId: `demo-security-${days}`,
+			trigger: "cron",
+			status: index === 0 ? "running" : "ok",
+			durationMs: 228_000,
+		})),
+	},
+	{
+		id: "product-docs",
+		name: "Keep product docs current",
+		prompt:
+			"Compare recently shipped changes with product documentation. Update anything stale and open a pull request with the edits.",
+		schedule: "0 16 * * 5",
+		mode: "code",
+		enabled: true,
+		createdBy: "Michiel",
+		createdAt: minutesAgo(72_000),
+		lastRunAt: minutesAgo(4_380),
+		lastRunSessionId: "bks-demo-webhook-docs",
+		lastRunStatus: "ok",
+		lastTrigger: "cron",
+		nextRunAt: minutesAgo(-4_260),
+		model: "anthropic/claude-opus-5",
+		runs: [3, 10, 17, 24].map((days) => ({
+			at: minutesAgo(days * 1_440),
+			sessionId: `demo-product-docs-${days}`,
+			trigger: "cron",
+			status: "ok",
+			durationMs: 402_000,
+		})),
+	},
+];
+
 const transcripts: Record<string, TranscriptEntry[]> = {
+	[deskSessionId]: [
+		{
+			id: "desk-entry-1",
+			type: "user",
+			content: "What’s being worked on right now?",
+			timestamp: minutesAgo(8),
+			seq: 1,
+			changeSeq: 1,
+		},
+		{
+			id: "desk-entry-2",
+			type: "assistant",
+			content:
+				"Three things need your attention:\n\n- **Review checkout recovery** is still running.\n- **Improve mobile navigation** is waiting for your input.\n- **Ship keyboard shortcuts** passed every check and is ready to review.\n\nI can follow up on any of these or start a new session for you.",
+			timestamp: minutesAgo(7),
+			model: "anthropic/claude-fable-5",
+			seq: 2,
+			changeSeq: 2,
+		},
+	],
 	[activeSessionId]: [
 		{
 			id: "entry-1",
@@ -379,7 +522,7 @@ const transcripts: Record<string, TranscriptEntry[]> = {
 			id: "entry-14",
 			type: "assistant",
 			content:
-				"Presence now appears in every shared workspace, and the pull request is up.\n\n- **Sidebar** rolls each session's viewers into the workspace row, deduplicated\n- **Faces overlap** with a ring in the row's colour, so a stack stays legible on hover and selection\n- **Tests** cover the roll-up and the self-suppression rule\n\nPull request #1842 is ready for review.",
+				"Presence now appears in every shared workspace, and the pull request is up.\n\n- **Sidebar** rolls each session's viewers into the workspace row, deduplicated\n- **Faces overlap** with a ring in the row's colour, so a stack stays legible on hover and selection\n- **Tests** cover the roll-up and the self-suppression rule\n\nThe phone layout uses the same facepile, with a separate touch target so every teammate stays easy to open.\n\nPull request #1842 is ready for review.",
 			timestamp: minutesAgo(4),
 			model: "anthropic/claude-fable-5",
 			seq: 14,
@@ -415,7 +558,7 @@ const projects = sessions.map((session, index) => ({
 	id: session.workspaceId!,
 	name: session.title.replace(/^(Add|Review|Improve|Ship) /, ""),
 	repo: "opensession",
-	createdBy: session.startedBy || "Alex",
+	createdBy: session.startedBy || "Grant",
 	createdAt: session.createdAt,
 	order: index,
 }));
@@ -430,13 +573,19 @@ const json = (body: unknown, init: ResponseInit = {}) =>
 const responseFor = (url: URL, method: string): Response => {
 	const path = url.pathname.replace(/^\/(opensession|backstage)/, "");
 	if (path === "/api/sessions") return json(sessions, { headers: { ETag: '"demo-v1"' } });
+	if (path === "/api/desk/ensure" && method === "POST")
+		return json({
+			sessionId: deskSessionId,
+			clearedAt: null,
+			session: { model: "anthropic/claude-fable-5", effort: "low" },
+		});
 	if (path === "/api/auth/status")
-		return json({ required: false, authenticated: true, local: true, name: "Alex Rivera" });
+		return json({ required: false, authenticated: true, local: true, name: "Grant Shaddick" });
 	if (path === "/api/people")
 		return json({
 			people: [
-				{ name: "Alex", fullName: "Alex Rivera", github: "happylinks" },
 				{ name: "Kent", fullName: "Kent de Bruin", github: "kentdebruin" },
+				{ name: "Michiel", fullName: "Michiel Westerbeek", github: "happylinks" },
 				{ name: "Jaap", fullName: "Jaap Frolich", github: "jfrolich" },
 				{ name: "Grant", fullName: "Grant Shaddick", github: "9ranty" },
 				{ name: "Louise", fullName: "Louise de Sadeleer", github: "louisedesadeleer" },
@@ -505,6 +654,7 @@ const responseFor = (url: URL, method: string): Response => {
 	if (path === "/api/ui-prefs") return json({ prefs: {} });
 	if (path === "/api/lanes") return json({ lanes: {} });
 	if (path === "/api/reads") return json({ reads: {} });
+	if (path === "/api/automations") return json(automations);
 	if (path === "/api/claude-accounts" || path === "/api/codex-accounts")
 		return json({ accounts: [] });
 	if (/^\/api\/sessions\/[^/]+\/assets$/.test(path))
@@ -590,17 +740,19 @@ class DemoWebSocket extends EventTarget {
 		}
 		if (message.type === "watch") {
 			const entries = transcripts[message.sessionId] || [];
+			// The fixture serves one complete, in-memory transcript. Legacy mode is
+			// intentional here: seq mode also requires a separately paged transcript
+			// index, which would add machinery without making this small demo richer.
 			this.emit({
 				type: "transcript_init",
 				sessionId: message.sessionId,
 				entries,
 				truncated: false,
-				v2: true,
-				firstSeq: entries[0]?.seq || 0,
-				lastSeq: entries.at(-1)?.seq || 0,
-				lastChangeSeq: entries.at(-1)?.changeSeq || 0,
 			});
-			this.emit({ type: "presence", sessionId: message.sessionId, viewers: ["Kent", "Jaap"] }, 80);
+			this.emit(
+				{ type: "presence", sessionId: message.sessionId, viewers: ["Kent", "Michiel", "Jaap"] },
+				80,
+			);
 			return;
 		}
 		if (message.type === "prompt") {
@@ -621,7 +773,7 @@ class DemoWebSocket extends EventTarget {
 			};
 			this.emit({ type: "transcript_append", sessionId: message.sessionId, entries: [userEntry] });
 			this.emit({ type: "session_status", sessionId: message.sessionId, isRunning: true }, 60);
-			this.emit({ type: "stream_start", sessionId: message.sessionId, by: "Alex" }, 120);
+			this.emit({ type: "stream_start", sessionId: message.sessionId, by: "Grant" }, 120);
 			this.emit({ type: "stream_text", sessionId: message.sessionId, text: assistantEntry.content }, 260);
 			this.emit({ type: "transcript_append", sessionId: message.sessionId, entries: [assistantEntry] }, 900);
 			this.emit({ type: "stream_done", sessionId: message.sessionId }, 920);
@@ -676,11 +828,11 @@ Object.assign(window, {
 document.documentElement.dataset.platform = "mac";
 document.documentElement.classList.add("wco");
 
-localStorage.setItem("opensession-user", "Alex");
+localStorage.setItem("opensession-user", "Grant");
 localStorage.setItem("opensession-last-session", activeSessionId);
 // The restore is per-user: without the matching owner the demo opens Home
 // instead of the session it was written to show.
-localStorage.setItem("opensession-last-session-user", "Alex");
+localStorage.setItem("opensession-last-session-user", "Grant");
 localStorage.setItem("opensession-panel-open", "false");
 // The workspace summary card is open by default in the product, and it paints
 // over the transcript for the frames before the header is measured. That flash
@@ -689,6 +841,11 @@ localStorage.setItem("opensession-workspace-summary-open", "false");
 localStorage.setItem("opensession-panel-tab", "workflows");
 localStorage.setItem("opensession-sidebar-collapsed", "0");
 localStorage.setItem("opensession-sidebar-w", "300");
+if (featureShot === "automations") {
+	// The capture route is state inside the fixture app. Keeping the query string
+	// lets a screenshot identify why it differs from the ordinary landing demo.
+	history.replaceState(null, "", "/automations?feature=automations");
+}
 // One repo, so the sidebar resolves its "auto" grouping to the plain inbox
 // straight away instead of painting repo bands until /api/repos answers.
 localStorage.setItem("opensession-repo-count", "1");
@@ -696,7 +853,7 @@ localStorage.setItem("opensession-repo-count", "1");
 // unread once it HAS a mark that its activity has since passed, so every other
 // session is marked at its own last activity rather than left unmarked.
 localStorage.setItem(
-	"opensession-reads:alex",
+	"opensession-reads:grant",
 	JSON.stringify(
 		Object.fromEntries(
 			sessions.map((session) => [

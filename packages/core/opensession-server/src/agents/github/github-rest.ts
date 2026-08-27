@@ -4,14 +4,14 @@
  * calls the review/fix/simplify behaviors need: the single updating summary
  * comment, formal reviews with inline comments, and label removal.
  *
- * Auth: the App installation token (write-scoped) when an App is configured,
- * else the `GITHUB_API_TOKEN` PAT — resolved per call by `githubToken` because
- * an installation token is short-lived and refreshes, unlike a static PAT.
+ * Auth: a short-lived App installation token, resolved per call so expiry
+ * refresh is transparent and missing authority fails closed.
  */
 import { fetchWithTimeout } from "../../server/shared/fetch-with-timeout";
 import { defaultRepo, githubBotLogins, isGithubBotLogin, personaName } from "../../server/config";
 import { githubConfiguredCredential, githubToken } from "../../server/github-app";
 import { ghRateLimited, isGhRateLimitMsg, noteGhRateLimited } from "../../server/github-limit";
+import { noteGithubGraphqlCall } from "../../server/github-budget";
 /** The PR agent's target — the instance's default repo (config-driven). */
 export const GITHUB_REPO = defaultRepo().ghRepo;
 /** The bot account our token posts as — used to recognise our own comments/events. */
@@ -59,7 +59,7 @@ export async function githubRequest<T = any>(
   body?: unknown
 ): Promise<GithubResult<T>> {
   const token = await githubToken({ write: true });
-  if (!token) return { ok: false, status: 0, data: null, error: "no GitHub credential (App or GITHUB_API_TOKEN)" };
+  if (!token) return { ok: false, status: 0, data: null, error: "GitHub App credential unavailable" };
   try {
     // Timeout matters here: these calls run while holding a per-PR lock with
     // no TTL — a hung fetch would block that PR until the next restart.
@@ -90,8 +90,8 @@ export async function githubRequest<T = any>(
         (resp.headers.get("x-ratelimit-remaining") === "0" || isGhRateLimitMsg(String(error)))
       ) {
         const resetHeader = resp.headers.get("x-ratelimit-reset");
-        if (resetHeader) noteGhRateLimited("github-rest", Number(resetHeader) * 1000);
-        else noteGhRateLimited("github-rest");
+        if (resetHeader) noteGhRateLimited("github-rest", Number(resetHeader) * 1000, "rest");
+        else noteGhRateLimited("github-rest", undefined, "rest");
       }
       return { ok: false, status: resp.status, data, error };
     }
@@ -103,7 +103,7 @@ export async function githubRequest<T = any>(
 }
 
 /**
- * GraphQL request (the REST API can't resolve review threads). Same PAT/auth as
+ * GraphQL request (the REST API can't resolve review threads). Same App auth as
  * the REST helper. Returns the `data` object, or null on any error.
  */
 async function githubGraphQL<T = any>(
@@ -113,6 +113,7 @@ async function githubGraphQL<T = any>(
   const token = await githubToken({ write: true });
   if (!token) return null;
   if (ghRateLimited()) return null;
+  const started = Date.now();
   try {
     const resp = await fetchWithTimeout("https://api.github.com/graphql", {
       method: "POST",
@@ -124,6 +125,7 @@ async function githubGraphQL<T = any>(
     });
     const json: any = await resp.json().catch(() => null);
     if (!resp.ok || !json || json.errors) {
+      noteGithubGraphqlCall("github-agent:review-threads", Date.now() - started, false);
       const msg = json?.errors?.map((e: any) => e.message).join("; ") || `GitHub GraphQL ${resp.status}`;
       console.warn(`[github] graphql → ${resp.status}: ${msg}`);
       if (json?.errors?.some((e: any) => e.type === "RATE_LIMITED") || isGhRateLimitMsg(msg)) {
@@ -131,8 +133,10 @@ async function githubGraphQL<T = any>(
       }
       return null;
     }
+    noteGithubGraphqlCall("github-agent:review-threads", Date.now() - started, true);
     return json.data as T;
   } catch (e: any) {
+    noteGithubGraphqlCall("github-agent:review-threads", Date.now() - started, false);
     console.warn(`[github] graphql error:`, e);
     return null;
   }

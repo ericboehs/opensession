@@ -126,39 +126,102 @@ function splitSelector(raw: string): {
 	return { variants, token: cur, pseudo };
 }
 
+function splitSourceToken(token: string): NonNullable<ReturnType<typeof splitSelector>> | null {
+	let escaped = "";
+	let depth = 0;
+	for (const ch of token) {
+		if (ch === "[") depth++;
+		if (ch === "]") depth--;
+		escaped += ch === ":" && depth === 0 ? "\\:" : ch;
+	}
+	return splitSelector("." + escaped);
+}
+
+function splitSelectorList(selector: string): string[] {
+	const out: string[] = [];
+	let current = "";
+	let depth = 0;
+	for (let i = 0; i < selector.length; i++) {
+		const ch = selector[i];
+		if ((ch === "[" || ch === "(") && selector[i - 1] !== "\\") depth++;
+		if ((ch === "]" || ch === ")") && selector[i - 1] !== "\\") depth--;
+		if (ch === "," && selector[i - 1] !== "\\" && depth === 0) {
+			out.push(current);
+			current = "";
+		} else current += ch;
+	}
+	if (current) out.push(current);
+	return out;
+}
+
+function balancedClose(chunk: string, open: number): number {
+	let depth = 1;
+	for (let i = open + 1; i < chunk.length; i++) {
+		if (chunk[i] === "{") depth++;
+		else if (chunk[i] === "}" && --depth === 0) return i;
+	}
+	return chunk.length;
+}
+
+function nestedBlocks(body: string): Array<{ header: string; start: number; end: number; body: string }> {
+	const blocks: Array<{ header: string; start: number; end: number; body: string }> = [];
+	let cursor = 0;
+	while (cursor < body.length) {
+		const open = body.indexOf("{", cursor);
+		if (open < 0) break;
+		const boundary = Math.max(body.lastIndexOf(";", open), body.lastIndexOf("}", open));
+		const header = body.slice(boundary + 1, open).trim();
+		const close = balancedClose(body, open);
+		blocks.push({ header, start: boundary + 1, end: close + 1, body: body.slice(open + 1, close) });
+		cursor = close + 1;
+	}
+	return blocks;
+}
+
+function directDeclarations(body: string, blocks: ReturnType<typeof nestedBlocks>): Decl[] {
+	let plain = "";
+	let cursor = 0;
+	for (const block of blocks) {
+		plain += body.slice(cursor, block.start);
+		cursor = block.end;
+	}
+	plain += body.slice(cursor);
+	return parseDecls(plain);
+}
+
+function collectClassBody(
+	parts: NonNullable<ReturnType<typeof splitSelector>>,
+	body: string,
+	at?: string,
+	pseudo = parts.pseudo,
+): void {
+	const blocks = nestedBlocks(body);
+	const decls = directDeclarations(body, blocks);
+	if (decls.length > 0) rules.push({ token: parts.token, variants: parts.variants, pseudo, at, decls });
+	for (const block of blocks) {
+		if (block.header.startsWith("@media")) collectClassBody(parts, block.body, block.header, pseudo);
+		else if (block.header.startsWith("@supports")) collectClassBody(parts, block.body, at, pseudo);
+		else if (block.header.startsWith("&:")) collectClassBody(parts, block.body, at, block.header.slice(1));
+		else rules.push({ token: parts.token, variants: parts.variants, pseudo: "__unsupported", at, decls: [] });
+	}
+}
+
 function walk(chunk: string, at?: string) {
 	let i = 0;
 	while (i < chunk.length) {
 		const open = chunk.indexOf("{", i);
 		if (open < 0) break;
-		const selRaw = chunk.slice(i, open).trim();
-		if (selRaw.startsWith("@")) {
-			let depth = 1;
-			let j = open + 1;
-			while (j < chunk.length && depth > 0) {
-				if (chunk[j] === "{") depth++;
-				else if (chunk[j] === "}") depth--;
-				j++;
-			}
-			if (selRaw.startsWith("@media")) {
-				walk(chunk.slice(open + 1, j - 1), selRaw);
-			}
-			i = j;
-			continue;
-		}
-		const close = chunk.indexOf("}", open);
-		if (close < 0) break;
+		const boundary = Math.max(chunk.lastIndexOf(";", open), chunk.lastIndexOf("}", open));
+		const selRaw = chunk.slice(boundary + 1, open).trim();
+		const close = balancedClose(chunk, open);
 		const body = chunk.slice(open + 1, close);
-		for (const selPart of selRaw.split(",")) {
-			const parts = splitSelector(selPart.trim());
-			if (!parts) continue;
-			rules.push({
-				token: parts.token,
-				variants: parts.variants,
-				pseudo: parts.pseudo,
-				at,
-				decls: parseDecls(body),
-			});
+		if (selRaw.startsWith("@")) {
+			walk(body, selRaw.startsWith("@media") ? selRaw : at);
+		} else {
+			for (const selPart of splitSelectorList(selRaw)) {
+				const parts = splitSelector(selPart.trim());
+				if (parts) collectClassBody(parts, body, at);
+			}
 		}
 		i = close + 1;
 	}
@@ -197,6 +260,8 @@ const TW_VAR_DEFAULTS: Record<string, string> = {
 
 function camel(prop: string): string | null {
 	if (prop.startsWith("--")) return null; // custom property set → not expressible
+	if (/^-webkit-[a-z0-9-]+$/.test(prop)) return "Webkit" + prop.slice(8).replace(/(^|-)([a-z])/g, (_m, _dash, ch: string) => ch.toUpperCase());
+	if (/^-moz-[a-z0-9-]+$/.test(prop)) return "Moz" + prop.slice(5).replace(/(^|-)([a-z])/g, (_m, _dash, ch: string) => ch.toUpperCase());
 	if (!/^[a-z][a-z0-9-]*$/.test(prop)) return null;
 	return prop.replace(/-([a-z])/g, (_m, ch: string) => ch.toUpperCase());
 }
@@ -270,6 +335,7 @@ const MEDIA_VARIANTS: Record<string, string> = {
 	sm: "(min-width: 40rem)",
 	md: "(min-width: 48rem)",
 	lg: "(min-width: 64rem)",
+	"max-sm": "(max-width: 39.999rem)",
 };
 
 const MEDIA_CANONICAL: Record<string, string> = {
@@ -279,6 +345,13 @@ const MEDIA_CANONICAL: Record<string, string> = {
 
 function normalizeQuery(qRaw: string): string | null {
 	const q = qRaw.replace(/^@media\s*/, "").replace(/\s+/g, "");
+	if (q === "(hover:hover)") return "(hover: hover)";
+	if (q === "(prefers-reduced-motion:no-preference)") return "(prefers-reduced-motion: no-preference)";
+	if (q === "(width<40rem)") return "(max-width: 39.999rem)";
+	const widthBelow = /^\(width<(\d+)px\)$/.exec(q);
+	if (widthBelow) return `(max-width: ${Number(widthBelow[1]) - 1}px)`;
+	if (q === "(width>=40rem)") return "(min-width: 40rem)";
+	if (q === "(width>=48rem)") return "(min-width: 48rem)";
 	const canon = MEDIA_CANONICAL[q];
 	if (canon) return canon.slice(0, -1) === canon ? canon : canon;
 	if (/^\(max-width:[0-9.]+(px|rem)\)$/.test(q) || /^\(min-width:[0-9.]+(px|rem)\)$/.test(q) ||
@@ -329,14 +402,19 @@ function tokenToStyle(token: string, variants: string[]): TokenStyle | null | "r
 	// anything else about this token (e.g. a data-[…] rule) makes it residual.
 	const wanted = JSON.stringify(variants);
 	const matching = list.filter(
-		(r) => r.at === undefined && JSON.stringify(r.variants) === wanted,
+		(r) => JSON.stringify(r.variants) === wanted,
 	);
 	const others = list.filter((r) => !matching.includes(r));
 	if (matching.length === 0) return "residual";
 	void others;
 	const obj: StyleObj = {};
 	for (const r of matching) {
-		const path: Array<VariantKey> = [];
+		const path: Array<VariantKey> = keys.filter((key): key is VariantKey => key?.kind === "media");
+		if (r.at) {
+			const query = normalizeQuery(r.at);
+			if (!query) return "residual";
+			if (!path.some((key) => key.kind === "media" && key.query === query)) path.push({ kind: "media", query });
+		}
 		if (r.pseudo) {
 			const pk = pseudoKey(r.pseudo);
 			if (!pk) return "residual";
@@ -347,12 +425,13 @@ function tokenToStyle(token: string, variants: string[]): TokenStyle | null | "r
 		mergeInto(obj, path, ok);
 	}
 	injectPseudoContent(obj);
-	return { name: token, obj };
+	injectCornerShape(obj, token.includes("rounded-full"));
+	return Object.keys(obj).length > 0 ? { name: token, obj } : "residual";
 }
 
 /** A trailing pseudo on the SELECTOR (`.x:hover` behind `hover:` variants). */
 function pseudoKey(chain: string): VariantKey | null {
-	const k = PSEUDO_VARIANTS[chain.replace(/^:/, "")];
+	const k = PSEUDO_VARIANTS[chain.replace(/^:+/, "")];
 	if (k) return { kind: "pseudo", key: chain };
 	return chain === ":hover" || chain === ":active" || chain === ":disabled" ||
 		chain === ":focus" || chain === ":focus-visible" || chain === "::before" ||
@@ -374,11 +453,74 @@ function injectPseudoContent(obj: StyleObj) {
 	}
 }
 
+function injectCornerShape(obj: StyleObj, round: boolean): void {
+	if (Object.keys(obj).some((key) => /border.*radius/i.test(key)) && obj.cornerShape === undefined) {
+		obj.cornerShape = round ? "round" : "var(--cs)";
+	}
+	for (const value of Object.values(obj)) {
+		if (value && typeof value === "object") injectCornerShape(value as StyleObj, round);
+	}
+}
+
 function camelName(token: string): string {
 	const n = token
 		.replace(/[^a-zA-Z0-9]+(.)/g, (_m, c: string) => c.toUpperCase())
 		.replace(/[^a-zA-Z0-9]/g, "");
 	return /^[0-9]/.test(n) ? "u" + n : n;
+}
+
+// Generate a checked StyleX compatibility map for utility strings that arrive
+// from a merged branch. This keeps merge migrations fail-closed: only tokens
+// translated from the current compiled Tailwind sheet enter the map; selectors
+// StyleX cannot represent remain residual and unknown tokens are refused.
+const compatTokensPath = (() => {
+	const i = process.argv.indexOf("--generate-compat");
+	return i >= 0 ? process.argv[i + 1] : undefined;
+})();
+if (compatTokensPath) {
+	const outputIndex = process.argv.indexOf("--output");
+	const output = outputIndex >= 0 ? process.argv[outputIndex + 1] : undefined;
+	if (!output) throw new Error("--generate-compat requires --output <path>");
+	const requested = readFileSync(compatTokensPath, "utf8").split(/\s+/).filter(Boolean);
+	const converted = new Map<string, StyleObj>();
+	const typeRoles = new Map<string, string>();
+	const refused: string[] = [];
+	for (const token of requested) {
+		const parts = splitSourceToken(token);
+		if (!parts) { refused.push(token); continue; }
+		if (parts.variants.length === 0 && TYPE_ROLES[parts.token]) {
+			typeRoles.set(token, TYPE_ROLES[parts.token]);
+			continue;
+		}
+		const result = tokenToStyle(parts.token, parts.variants);
+		if (!result || result === "residual") refused.push(token);
+		else converted.set(token, result.obj);
+	}
+	if (refused.length > 0) {
+		throw new Error(`Compatibility map refused non-StyleX tokens:\n${refused.join("\n")}`);
+	}
+	const names = new Map<string, string>();
+	const seen = new Set<string>();
+	for (const token of converted.keys()) {
+		const base = camelName(token) || "utility";
+		let name = base;
+		let suffix = 2;
+		while (seen.has(name)) name = `${base}${suffix++}`;
+		seen.add(name);
+		names.set(token, name);
+	}
+	const entries = [...converted.entries()].map(([token, obj]) => {
+		const json = JSON.stringify(obj, null, "\t\t").replace(/\n/g, "\n\t");
+		const body = json.replace(/"([a-zA-Z][a-zA-Z0-9]*)":/g, "$1:");
+		return `\t${names.get(token)}: ${body},`;
+	}).join("\n");
+	const mapping = [
+		...[...converted.keys()].map((token) => `\t${JSON.stringify(token)}: sx.${names.get(token)},`),
+		...[...typeRoles.entries()].map(([token, role]) => `\t${JSON.stringify(token)}: typography.${role},`),
+	].join("\n");
+	writeFileSync(output, `/** Generated by scripts/stylex-codemod.ts from the compiled utility sheet. */\nimport * as stylex from "@stylexjs/stylex";\nimport { type as typography } from "./typography.stylex";\n\nconst sx = stylex.create({\n${entries}\n});\n\nexport const utilityStyles = {\n${mapping}\n} as const;\nexport type UtilityClass = keyof typeof utilityStyles;\n`);
+	console.log(`generated ${converted.size + typeRoles.size} compatibility styles in ${output}`);
+	process.exit(0);
 }
 
 // ── JSX rewriting ───────────────────────────────────────────────────────────
@@ -444,7 +586,7 @@ for (const file of files) {
 				fileKept.includes(token)
 			)
 				continue;
-			const parts = splitSelector("." + token);
+			const parts = splitSourceToken(token);
 			if (!parts) {
 				fileUnknown.push(token);
 				continue;

@@ -131,6 +131,55 @@ export function classifyQueuedContent(
 	});
 }
 
+export type InFlightContentSummary = {
+	messages: number;
+	reviews: number;
+	workerReports: number;
+	sessionMessages: number;
+};
+
+/** Group in-flight rows by what the person sees, independently of whether the
+ * transport currently owns them as queued or steered receipts. Agent traffic
+ * must stay agent traffic while it waits instead of becoming a human steer. */
+export function summarizeInFlightContent(
+	entries: TranscriptEntry[],
+): InFlightContentSummary {
+	const summary: InFlightContentSummary = {
+		messages: 0,
+		reviews: 0,
+		workerReports: 0,
+		sessionMessages: 0,
+	};
+	for (const entry of entries) {
+		switch (entry.notice?.kind) {
+			case "review-handoff":
+				summary.reviews++;
+				break;
+			case "worker-report":
+				summary.workerReports++;
+				break;
+			case "session-notice":
+				summary.sessionMessages++;
+				break;
+			default:
+				summary.messages++;
+		}
+	}
+	return summary;
+}
+
+/** Model-routing messages can briefly arrive from an older server during a
+ * rolling deploy. They drive turns but never belong in the composer queue. */
+export function isClientVisibleQueuedContent(
+	content?: string,
+	user?: string,
+): boolean {
+	return (
+		user !== "auto-continue" &&
+		classifyQueuedContent(content, user).notice?.kind !== "workflow"
+	);
+}
+
 /**
  * Who to credit on a queue chip: a teammate who sent into this session, or a
  * notice's label when that label isn't the whole body.

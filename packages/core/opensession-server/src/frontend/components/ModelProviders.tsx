@@ -1,5 +1,5 @@
 import { BASE_PATH } from "../lib/base";
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { toast } from "../ui/toast";
 import { Button } from "../ui/button";
 import { EmptyState, InlineAlert, LoadingState } from "../ui/state";
@@ -124,14 +124,14 @@ export function ModelProvidersPanel() {
 	const [providers, setProviders] = useState<ProviderInfo[] | null>(null);
 	const [showAdd, setShowAdd] = useState(false);
 
-	const load = async () => {
+	const load = useCallback(async () => {
 		await (async () => {
 const res = await fetch(`${BASE_PATH}/api/settings/model-providers`);
 			if (res.ok) setProviders((await res.json()).providers);
 })().catch(async () => {
 
 });
-	};
+	}, []);
 
 	useEffect(() => {
 		load();

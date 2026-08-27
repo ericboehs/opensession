@@ -6,6 +6,7 @@ const globalResolvers = globalThis as typeof globalThis & {
 };
 const runtimeFields = (globalResolvers.__opensessionAskRuntimeFields ??=
   new Map());
+const durableProjection = new Map<string, unknown>();
 
 function splitValue(value: unknown): {
   durable: unknown;
@@ -23,21 +24,32 @@ function splitValue(value: unknown): {
 }
 
 /** Durable ask facts in the actor, merged with gateway-only resolver closures. */
-export class AskOwnedMap<V> implements Map<string, V> {
+export class AskOwnedMap<V> {
   readonly [Symbol.toStringTag] = "AskOwnedMap";
   get size(): number {
-    return sessionAsk({ op: "entries" }).length;
+    return durableProjection.size;
   }
-  clear(): void {
-    sessionAsk({ op: "clear" });
+  async clear(): Promise<void> {
+    await sessionAsk({ op: "clear" });
+    durableProjection.clear();
     runtimeFields.clear();
   }
-  delete(sessionId: string): boolean {
+  async delete(sessionId: string): Promise<boolean> {
+    const deleted = await sessionAsk({ op: "delete", sessionId });
+    durableProjection.delete(sessionId);
     runtimeFields.delete(sessionId);
-    return sessionAsk({ op: "delete", sessionId });
+    return deleted;
   }
   get(sessionId: string): V | undefined {
-    const durable = sessionAsk({ op: "snapshot", sessionId });
+    return this.mergeRuntimeFields(sessionId, durableProjection.get(sessionId));
+  }
+  async getAsync(sessionId: string): Promise<V | undefined> {
+    const durable = await sessionAsk({ op: "snapshot", sessionId });
+    if (durable === undefined) durableProjection.delete(sessionId);
+    else durableProjection.set(sessionId, durable);
+    return this.mergeRuntimeFields(sessionId, durable);
+  }
+  private mergeRuntimeFields(sessionId: string, durable: unknown): V | undefined {
     if (durable === undefined) return undefined;
     return immutableCopy({
       ...(durable as Record<string, unknown>),
@@ -45,17 +57,18 @@ export class AskOwnedMap<V> implements Map<string, V> {
     } as V);
   }
   has(sessionId: string): boolean {
-    return sessionAsk({ op: "snapshot", sessionId }) !== undefined;
+    return durableProjection.has(sessionId);
   }
-  set(sessionId: string, value: V): this {
+  async set(sessionId: string, value: V): Promise<this> {
     const { durable, ephemeral } = splitValue(value);
+    await sessionAsk({ op: "set", sessionId, value: durable });
+    durableProjection.set(sessionId, durable);
     if (Object.keys(ephemeral).length) runtimeFields.set(sessionId, ephemeral);
     else runtimeFields.delete(sessionId);
-    sessionAsk({ op: "set", sessionId, value: durable });
     return this;
   }
   private list(): Array<[string, V]> {
-    return sessionAsk({ op: "entries" }).map(([sessionId]) => [
+    return [...durableProjection].map(([sessionId]) => [
       sessionId,
       this.get(sessionId)!,
     ]);
@@ -64,17 +77,13 @@ export class AskOwnedMap<V> implements Map<string, V> {
     return this.list()[Symbol.iterator]();
   }
   keys(): MapIterator<string> {
-    return this.list()
-      .map(([key]) => key)
-      [Symbol.iterator]();
+    return this.list().map(([key]) => key)[Symbol.iterator]();
   }
   values(): MapIterator<V> {
-    return this.list()
-      .map(([, value]) => value)
-      [Symbol.iterator]();
+    return this.list().map(([, value]) => value)[Symbol.iterator]();
   }
   forEach(
-    callbackfn: (value: V, key: string, map: Map<string, V>) => void,
+    callbackfn: (value: V, key: string, map: AskOwnedMap<V>) => void,
     thisArg?: unknown,
   ): void {
     for (const [key, value] of this.list())

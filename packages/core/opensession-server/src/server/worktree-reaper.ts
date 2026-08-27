@@ -64,7 +64,7 @@ import { $ } from "bun";
 import { githubRequest } from "../agents/github/github-rest";
 import { audit } from "./audit";
 import type { Repo } from "./config";
-import { configuredPaths, configuredServer } from "./config";
+import { configuredPaths } from "./config";
 import { stateDir } from "./paths";
 import { stopPreview } from "./preview";
 import { type ScratchSweepSession, sweepSessionScratch } from "./session-scratch";
@@ -304,7 +304,7 @@ async function archiveSlackChannel(slug: string): Promise<void> {
 	if (!secret) return;
 	try {
 		await fetch(
-			`http://127.0.0.1:${configuredServer().webhookPort}/worktree/archive-channel`,
+			"http://127.0.0.1:3860/worktree/archive-channel",
 			{
 				method: "POST",
 				headers: {

@@ -178,12 +178,10 @@
 	   page — it is the one thing you touch — so it sits a step above the
 	   panels around it instead of matching them. */
 	--composer-radius: calc(28px * var(--rf));
-	/* The sign-in card's edge. Behind it is the charcoal cut of the silk loop,
-	   so a cast has nothing to fall on: black ink on a near-black picture lands
-	   as a grey smudge under the card rather than a lift beneath it, and the
-	   card's own fill is only a shade off the video, so the cast is not drawing
-	   the shape either. A hairline draws it instead, and nothing darkens the
-	   backdrop. Light keeps the cast: see the light block. */
+	/* The sign-in card's edge. On the dark marketing artwork, a cast has
+	   nothing to fall on: black ink on a near-black picture becomes a grey
+	   smudge rather than a lift. A hairline holds the glass shape instead, and
+	   nothing darkens the backdrop. Light keeps the cast: see the light block. */
 	--auth-card-edge: 0 0 0 1px var(--smooth-ring-color);
 	--bg-panel: #262626;
 	--bg-hover: #2e2e2e;
@@ -229,6 +227,16 @@
 	   The sidebar's hover is a layer over this, so pointing at the selected row
 	   still lifts it. */
 	--selected: rgba(255, 255, 255, 0.08);
+	/* Opaque equivalents of the sidebar row's translucent washes. Avatar rings
+	   cannot inherit the pixels behind them, so these reproduce the exact sRGB
+	   composites for resting selection, hover, and both layers together. */
+	--sidebar-row-hover: color-mix(in srgb, #ffffff 7%, var(--sidebar-bg));
+	--sidebar-row-selected: color-mix(in srgb, #ffffff 8%, var(--sidebar-bg));
+	--sidebar-row-selected-hover: color-mix(
+		in srgb,
+		#ffffff 14.44%,
+		var(--sidebar-bg)
+	);
 	/* The one interaction fill that is NOT a wash: an action chip floating over
 	   a row (the pin/archive cluster). A chip is a LID, not a tint — what is
 	   behind it is the row it covers, so a translucent one shows that row's own
@@ -596,9 +604,9 @@ html[data-theme="light"] {
 	   own — the palette already did, and the two shells are one surface. */
 	--dialog-ring: var(--popup-ring);
 	--composer-shadow: 0 2px 6px rgba(0, 0, 0, 0.04), 0 14px 36px rgba(0, 0, 0, 0.08);
-	/* See :root. Here the backdrop is silver and the card is white on top of
-	   it, so the cast is what says the card is in front. It is the scale's `lg`
-	   step (smooth-shadow.css), written out because only one theme takes it. */
+	/* See :root. The light artwork has enough value range for a quiet cast to
+	   lift the glass card from it. This is the scale's `lg` step
+	   (smooth-shadow.css), written out because only one theme takes it. */
 	--auth-card-edge:
 		0 4px 12px -4px color-mix(in srgb, black 5%, transparent),
 		0 18px 48px -14px color-mix(in srgb, black 11%, transparent);
@@ -626,6 +634,13 @@ html[data-theme="light"] {
 	--hover: rgba(0, 0, 0, 0.055);
 	--hover-strong: rgba(0, 0, 0, 0.095);
 	--selected: rgba(0, 0, 0, 0.065);
+	--sidebar-row-hover: color-mix(in srgb, #000000 5.5%, var(--sidebar-bg));
+	--sidebar-row-selected: color-mix(in srgb, #000000 6.5%, var(--sidebar-bg));
+	--sidebar-row-selected-hover: color-mix(
+		in srgb,
+		#000000 11.6425%,
+		var(--sidebar-bg)
+	);
 	--row-chip: color-mix(in srgb, #000000 9.5%, var(--sidebar-bg));
 	--row-chip-hover: color-mix(in srgb, #000000 5.5%, var(--row-chip));
 	--border: #e2e2e2;
@@ -1168,12 +1183,14 @@ body {
 }
 
 
-/* Text the user may legitimately want to select and copy: message rows and
-   their prose, names, system text, code, diffs, inputs. The row wrapper is
-   included on purpose — a drag has to be able to start in a bubble's padding
-   or the gutter beside it (see the transcript rule below) — and the highlight
-   still hugs the words because .msg and .msg-body are flex columns, which is
-   what stopped WebKit painting full-width bands across the gaps. */
+/* Text the user may legitimately want to select and copy: supporting copy,
+   message rows and their prose, names, system text, code, diffs, inputs. The
+   row wrapper is included on purpose — a drag has to be able to start in a
+   bubble's padding or the gutter beside it (see the transcript rule below) —
+   and the highlight still hugs the words because .msg and .msg-body are flex
+   columns, which is what stopped WebKit painting full-width bands across the
+   gaps. */
+.text-supporting,
 input,
 textarea,
 select,
@@ -1308,10 +1325,9 @@ a {
 		border-color: color-mix(in srgb, var(--composer-border) 35%, transparent);
 	}
 
-	/* Keep the installed phone composer focused on drafting and sending. The
-	   add menu remains available for images and session options; only model
-	   selection and dictation stay in the browser view. */
-	.app .pwa-composer-auxiliary {
+	/* Keep dictation in the browser view, where its recording APIs are reliable.
+	   The installed phone composer still shows model selection after it expands. */
+	.app .pwa-composer-dictation {
 		display: none;
 	}
 
@@ -3008,6 +3024,24 @@ html[data-theme="light"] span.commit-ref:hover {
    a media-scoped keyframe whose consumer is not scoped the same way animates
    nothing, silently. */
 @keyframes session-info-in {
+	from {
+		opacity: 0;
+		transform: translateY(8px);
+	}
+	to {
+		opacity: 1;
+		transform: translateY(0);
+	}
+}
+
+/* A transcript block arriving at the live edge fades up into place instead of
+   popping. Applied one-shot via VirtualTranscriptList's `enter` flag (see
+   newTailBlockKeys): only blocks whose key was not mounted by the previous
+   build play it, so opening a session, hydrating history, and virtualizer
+   remounts never re-run it. Travel matches session-info-in; duration --dur
+   because a whole block arriving is anchored movement, not an in-place
+   change. prefers-reduced-motion freezes it in the global block above. */
+@keyframes transcript-enter {
 	from {
 		opacity: 0;
 		transform: translateY(8px);

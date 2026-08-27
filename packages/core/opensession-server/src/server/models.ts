@@ -537,14 +537,19 @@ export function refreshPickerModels(): void {
     // entries. Surface their Pi ids whenever Pi is enabled; the models route
     // filters them to the account providers actually configured on this server.
     const bridgeModels = piEngineEnabled() ? DEFAULT_BRIDGE_PICKER_MODELS : [];
-    const ids = new Set([
+    const configuredModels = [
       ...bridgeModels,
       ...piPickerModels(),
       ...configuredPickerModels(),
-    ]);
-    for (const configured of ids) {
+    ];
+    // Deduplicate after routing: the seeded native id `gpt-5.6-sol` and a
+    // retained compatibility id `pi/openai/gpt-5.6-sol` are different input
+    // strings, but both become the same picker row.
+    const ids = new Set<string>();
+    for (const configured of configuredModels) {
       const id = toPiModel(configured);
-      if (!id || !usable(id)) continue;
+      if (!id || !usable(id) || ids.has(id)) continue;
+      ids.add(id);
       KNOWN_MODELS.push({ id, provider: "pi", label: piModelLabel(id), aliases: [] });
     }
   } catch {}
@@ -740,6 +745,29 @@ export const DEFAULT_FALLBACK_MODEL: string | undefined = (() => {
   return v || "claude-opus-5";
 })();
 
+/** Haiku is primarily used for fast/cheap work. When its Claude pool is dry,
+ * keep that work automatic and cross providers to the matching OpenAI tier. */
+export const DEFAULT_HAIKU_FALLBACK_MODEL = "gpt-5.6-luna";
+
+export function configuredHaikuFallbackModel(): string | undefined {
+  const configured = (
+    process.env.OPENSESSION_HAIKU_FALLBACK_MODEL || DEFAULT_HAIKU_FALLBACK_MODEL
+  ).trim();
+  if (!configured || configured.toLowerCase() === "none") return undefined;
+  const routed = toPiModel(configured);
+  return routed?.startsWith("pi/openai/") ? routed : undefined;
+}
+
+/** Default provider failover for any run kind. Explicit per-run fallbacks may
+ * still override this, but an otherwise-default Haiku run always crosses to
+ * OpenAI instead of spending another attempt in the exhausted Claude pool. */
+export function automaticFallbackModel(primaryModel?: string): string | undefined {
+  if (toPiModel(primaryModel)?.startsWith("pi/anthropic/claude-haiku-")) {
+    return configuredHaikuFallbackModel();
+  }
+  return DEFAULT_FALLBACK_MODEL;
+}
+
 /**
  * Whether interactive sessions auto-switch when they have an explicit fallback
  * model. On (the default) = use that configured fallback; off ("manual") = stop
@@ -790,13 +818,11 @@ export function resolveConcreteModel(
   return DEFAULT_CODEX_MODEL;
 }
 
-/**
- * Fallback model for an interactive session, or undefined when no fallback is
- * explicitly configured. This no longer invents a Claude → Codex fallback.
- */
-export function interactiveFallbackModel(_primaryModel?: string): string | undefined {
+/** Fallback model for an interactive session. Haiku crosses to its explicit
+ * OpenAI peer; other models retain the configured global preference. */
+export function interactiveFallbackModel(primaryModel?: string): string | undefined {
   if (!getModelFallbackAuto()) return undefined;
-  return DEFAULT_FALLBACK_MODEL;
+  return automaticFallbackModel(primaryModel);
 }
 
 /** Retired OpenAI slugs map onto their 5.6 equivalents. */
@@ -1031,6 +1057,17 @@ export function resolveModel(input: string): ModelInfo | null {
         : model;
     }
   }
+  // Provider-backed picker ids can carry extra routing segments that are not
+  // part of the model's human name (`pi/openrouter/stealth/ox-alpha`). Agents
+  // naturally pass the visible final slug (`ox-alpha`) to create_session. Let
+  // that shorthand resolve when it names exactly one selectable Pi model;
+  // collisions stay rejected rather than silently choosing a provider.
+  const pickerAlias = value.replace(/\s+/g, "-");
+  const pickerMatches = KNOWN_MODELS.filter(
+    (model) =>
+      model.provider === "pi" && model.id.split("/").at(-1) === pickerAlias,
+  );
+  if (pickerMatches.length === 1) return pickerMatches[0];
   if (value.startsWith("dial/") || value.startsWith("orchestrator/")) {
     const preset = modelPreset(value);
     return preset

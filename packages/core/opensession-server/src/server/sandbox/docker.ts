@@ -1080,7 +1080,7 @@ async function* withRunJournal(
   events: AsyncGenerator<StreamEvent>,
   record: ActiveRunRecord,
 ): AsyncGenerator<StreamEvent> {
-  journalSet(record);
+  await journalSet(record);
   touchStateActivity(record.sandboxId!);
   let sawDone = false;
   let sawTerminal = false;
@@ -1089,13 +1089,13 @@ async function* withRunJournal(
     for await (const ev of events) {
       if (ev.type === "init" && ev.sessionId && ev.sessionId !== record.claudeSessionId) {
         record.claudeSessionId = ev.sessionId;
-        journalSet(record);
+        await journalSet(record);
       }
       if (ev.type === "model_switch" && ev.toModel) {
         record.model = ev.toModel;
         record.transientFallback = ev.temporaryFallback === true;
         if (shouldPersistModelSwitch(ev)) record.selectedModel = ev.toModel;
-        journalSet(record);
+        await journalSet(record);
       }
       if (ev.type === "done") sawDone = true;
       if (ev.type === "done" || ev.type === "error") sawTerminal = true;
@@ -1104,7 +1104,7 @@ async function* withRunJournal(
     sourceCompleted = true;
   } finally {
     if (sourceCompleted && sawTerminal) journalClear(record.runKey);
-    else if (sourceCompleted) journalRecordAbnormalCompletion(record);
+    else if (sourceCompleted) await journalRecordAbnormalCompletion(record);
     touchStateActivity(record.sandboxId!);
     if (sawDone) schedulePostRunSnapshot(record.sandboxId!);
   }
@@ -1187,7 +1187,7 @@ function makeDockerSandbox(
       writeJsonAtomic(`${dir}/${HOST_SPEC_NAME}`, spec);
       // The complete recovery spec must exist before the journal listener can
       // acknowledge the create dispatch, but ownership must precede launch.
-      journalSet(record);
+      await journalSet(record);
       let handle: HostHandle | undefined;
       let uncertainLaunch = false;
       // Per-step marks: a stalled await in this chain is otherwise silent
@@ -1201,12 +1201,12 @@ function makeDockerSandbox(
         // hostRunBusy(token) during the launch await, and cancelHost's stop
         // backstop plus the cancelled startup marker fence the dispatch race.
         handle = new HostHandle(dir, spec, callbacks, launcher);
-        await launcher.launch(spec.hostId, dir, () => {
+        await launcher.launch(spec.hostId, dir, async () => {
           record.launchPhase = "launching";
-          journalSet(record);
+          await journalSet(record);
         });
         record.launchPhase = "started";
-        journalSet(record);
+        await journalSet(record);
         mark("host exec dispatched");
         if (handle.cancelled)
           throw new HostLaunchNotDispatchedError(

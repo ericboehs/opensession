@@ -4,6 +4,7 @@ import type {
 	UnifiedSession,
 } from "../types";
 import { resolveAnonymousUserPath } from "../auth-ready";
+import { preparePromptImages } from "../images";
 
 /**
  * One slice of the session list.
@@ -98,9 +99,10 @@ export async function deliverSessionPrompt(
 		clientId: string;
 	},
 ): Promise<PromptDelivery> {
+	const images = await preparePromptImages(body.images);
 	return request<PromptDelivery>(`/sessions/${encodeURIComponent(sessionId)}/prompt`, {
 		method: "POST",
-		body,
+		body: { ...body, ...(images ? { images } : {}) },
 		label: "Failed to deliver prompt",
 	});
 }

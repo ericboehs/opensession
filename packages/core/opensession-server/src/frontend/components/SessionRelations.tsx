@@ -51,9 +51,11 @@ const sx = stylex.create({
     color: "var(--text-dim)",
     transitionProperty: "color, background-color",
     ":hover": { "@media (hover: hover)": { backgroundColor: "var(--hover)", color: "var(--text)" } },
-	},
+
+		cornerShape: "var(--cs)",},
   tabularNums: { fontVariantNumeric: "tabular-nums" },
-  dot: { width: "6px", height: "6px", flexShrink: 0, borderRadius: "50%" },
+  dot: { width: "6px", height: "6px", flexShrink: 0, borderRadius: "50%",
+		cornerShape: "var(--cs)",},
   bgYellow: { backgroundColor: "var(--yellow)" },
   bgLineStrong: { backgroundColor: "var(--border-strong)" },
 });

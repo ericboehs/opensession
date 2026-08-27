@@ -170,7 +170,8 @@ const sx = stylex.create({
 		color: "var(--color-white)",
 		transitionProperty: "opacity",
 		transitionDuration: "150ms",
-	},
+
+		cornerShape: "var(--cs)",},
 	opacity100: {
 		opacity: 1,
 	},

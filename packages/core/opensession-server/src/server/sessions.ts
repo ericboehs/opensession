@@ -1,3 +1,4 @@
+import { executeSessionProjection } from "./session-projection-executor";
 import { readdirSync, readFileSync, statSync, unlinkSync, writeFileSync } from "fs";
 import { opendir } from "fs/promises";
 import { OPENSESSION_SESSIONS_DIR } from "./paths";
@@ -7,7 +8,6 @@ import { slackIdToFirstName } from "./shared/user-mappings";
 import { isArchivedId, getArchiveReason } from "./archive";
 import { purgeDraftsForSessions } from "./drafts";
 import { removeSessionScratch } from "./session-scratch";
-import { sessionKernel } from "./session-kernel";
 import { getTitleOverride } from "./title-overrides";
 import { getStatusOverride } from "./status-overrides";
 import { getReviewRequest } from "./review-requests";
@@ -17,7 +17,11 @@ import { warmWorkspaceNamesAsync } from "./workspaces";
 import { findCodexRollout } from "./codex-accounts";
 import { providerFor } from "./models";
 import { parseTranscript, parseTranscriptAsync } from "./jsonl-parser";
-import { type SeqEntry, type TranscriptStore, transcriptStore } from "./transcript-store";
+import type { SeqEntry } from "./transcript-store";
+import {
+  importLegacyTranscript,
+  transcript,
+} from "./actor-transcript";
 import {
   isTranscriptStoreDegraded,
   clearTranscriptStoreDegraded,
@@ -160,9 +164,26 @@ export async function readEngineTranscriptAsync(
   engineSessionId: string,
   provider: "claude" | "codex" | "pi"
 ): Promise<TranscriptEntry[]> {
-  if (provider === "pi") return engineStoreTranscript(engineSessionId);
+  if (provider === "pi") return engineStoreTranscriptAsync(engineSessionId);
   const path = getEngineTranscriptPath(worktreeDir, engineSessionId, provider);
-  if (!path || !existsSync(path)) return engineStoreTranscript(engineSessionId);
+  if (!path || !existsSync(path)) return engineStoreTranscriptAsync(engineSessionId);
+  return parseTranscriptAsync(path);
+}
+
+/** Recent engine history for a bounded context handoff. Store-only engines
+ * must not hydrate their complete transcript here: the note consumes at most
+ * 180 KB, while a long-running session can hold tens of thousands of rows and
+ * gigabytes of full tool-result blobs. Engine-native files still parse
+ * cooperatively; their parser does not block the gateway thread. */
+export async function readEngineHandoffTranscriptAsync(
+  worktreeDir: string,
+  engineSessionId: string,
+  provider: "claude" | "codex" | "pi"
+): Promise<TranscriptEntry[]> {
+  if (provider === "pi") return engineStoreHandoffTranscriptAsync(engineSessionId);
+  const path = getEngineTranscriptPath(worktreeDir, engineSessionId, provider);
+  if (!path || !existsSync(path))
+    return engineStoreHandoffTranscriptAsync(engineSessionId);
   return parseTranscriptAsync(path);
 }
 
@@ -194,8 +215,8 @@ export async function readEngineTranscriptAsync(
  *     the uuid can only mean this engine session; ses_/claude ids of other
  *     sessions never collide with one of these uuids).
  */
-function engineStoreTranscript(engineSessionId: string): TranscriptEntry[] {
-  if (!engineSessionId) return [];
+function engineStoreOwner(engineSessionId: string): UnifiedSession | undefined {
+  if (!engineSessionId) return undefined;
   try {
     // Call-time require, not a static import: session-cache imports this
     // module (getAllSessions), so the static edge must stay one-directional.
@@ -213,7 +234,7 @@ function engineStoreTranscript(engineSessionId: string): TranscriptEntry[] {
     const journaled = activeRunRecords().find(
       (r) => r.claudeSessionId === engineSessionId && r.osSessionId
     );
-    const owner =
+    return (
       byUnifiedId(journaled?.osSessionId) ??
       byUnifiedId(sessionForEngineId(engineSessionId)) ??
       sessions.find(
@@ -221,11 +242,40 @@ function engineStoreTranscript(engineSessionId: string): TranscriptEntry[] {
           s.piSessionId === engineSessionId ||
           s.codexThreadId === engineSessionId ||
           s.claudeSessionId === engineSessionId
-      );
-    return owner ? mergedSessionTranscript(owner) : [];
+      )
+    );
   } catch (e) {
     console.warn(
-      `[sessions] engine store transcript read failed for ${engineSessionId}:`,
+      `[sessions] engine store owner resolution failed for ${engineSessionId}:`,
+      e instanceof Error ? e.message : e
+    );
+    return undefined;
+  }
+}
+
+function engineStoreTranscript(engineSessionId: string): TranscriptEntry[] {
+  const owner = engineStoreOwner(engineSessionId);
+  return owner ? mergedSessionTranscript(owner) : [];
+}
+
+async function engineStoreTranscriptAsync(engineSessionId: string): Promise<TranscriptEntry[]> {
+  const owner = engineStoreOwner(engineSessionId);
+  return owner ? mergedSessionTranscriptAsync(owner) : [];
+}
+
+/** The handoff renderer clips each conversational row to 8 KB and the whole
+ * note to 180 KB. Read a bounded actor page and never resolve full_ref blobs
+ * for history the renderer will discard. */
+async function engineStoreHandoffTranscriptAsync(
+  engineSessionId: string,
+): Promise<TranscriptEntry[]> {
+  const owner = engineStoreOwner(engineSessionId);
+  if (!owner || owner.id.startsWith("plain-")) return [];
+  try {
+    return (await transcript.readHandoffTail(owner.id)).entries;
+  } catch (e) {
+    console.warn(
+      `[sessions] engine handoff transcript read failed for ${engineSessionId}:`,
       e instanceof Error ? e.message : e
     );
     return [];
@@ -241,17 +291,6 @@ type TranscriptSessionRef = Pick<UnifiedSession, "transcriptPath"> & {
 export function mergedSessionTranscript(
   session: TranscriptSessionRef,
 ): TranscriptEntry[] {
-  if (session.id && !session.id.startsWith("plain-")) {
-    try {
-      const served = v2StoreTranscript(session.id, session);
-      if (served) return served;
-    } catch (error) {
-      console.warn(
-        `[sessions] transcript store read failed for ${session.id}:`,
-        error instanceof Error ? error.message : error,
-      );
-    }
-  }
   return session.transcriptPath ? parseTranscript(session.transcriptPath) : [];
 }
 
@@ -260,7 +299,7 @@ export async function mergedSessionTranscriptAsync(
 ): Promise<TranscriptEntry[]> {
   if (session.id && !session.id.startsWith("plain-")) {
     try {
-      const served = v2StoreTranscript(session.id, session);
+      const served = await v2StoreTranscript(session.id, session);
       if (served) return served;
     } catch (error) {
       console.warn(
@@ -290,27 +329,22 @@ export function v2MirrorFiles(
 
 /**
  * Every stored entry for the session, ascending seq (paged readSince),
- * hydrated to FULL forms: rows whose 32KB-bounded `data` is a stripped wire
- * form resolve their original entry from transcript_blobs via getFullEntry
- * (which falls back to the row's own data, so non-stripped entries round-trip
- * unchanged). This feeds FTS distill / get_session / the HTTP transcript
- * route — not the WS hot path — and legacy served those consumers unstripped
- * content; wire-level clamping stays the serializers' job
- * (clampEntriesForWire at the send sites).
+ * hydrated to FULL forms in bounded actor pages. Blob joins and byte accounting
+ * happen inside the read-only actor operation, avoiding one RPC per entry.
+ * This feeds FTS distill / get_session / the HTTP transcript route — not the WS
+ * hot path — and legacy served those consumers unstripped content; wire-level
+ * clamping stays the serializers' job (clampEntriesForWire at send sites).
  */
-function v2ReadAll(store: TranscriptStore, sessionId: string): TranscriptEntry[] {
-  const PAGE = 2000;
+async function v2ReadAll(sessionId: string): Promise<TranscriptEntry[]> {
   const out: SeqEntry[] = [];
   let since = 0;
   for (;;) {
-    const page = store.readSince(sessionId, since, PAGE);
-    if (!page.entries.length) break;
-    for (const e of page.entries) {
-      const full = store.getFullEntry(sessionId, e.id);
-      out.push(full ? { ...full, seq: e.seq, changeSeq: e.changeSeq } : e);
-    }
-    since = page.entries[page.entries.length - 1].seq;
-    if (page.entries.length < PAGE) break;
+    const page = await transcript.readHydratedSince(sessionId, since);
+    out.push(...page.entries);
+    if (page.complete) break;
+    if (page.coveredThroughSeq <= since)
+      throw new Error(`Hydrated transcript page made no progress for ${sessionId}`);
+    since = page.coveredThroughSeq;
   }
   return out;
 }
@@ -330,11 +364,11 @@ function v2ReadAll(store: TranscriptStore, sessionId: string): TranscriptEntry[]
  * so growth costs once per burst, not per read. Callers react to drift with a
  * full re-import + clearTranscriptStoreDegraded.
  */
-export function v2TranscriptHasDrift(
-  store: TranscriptStore,
+export async function v2TranscriptHasDrift(
+  store: Pick<typeof transcript, "getImportInfo">,
   sessionId: string,
   session: TranscriptSessionRef
-): boolean {
+): Promise<boolean> {
   if (
     isTranscriptStoreDegraded(sessionId)
   )
@@ -343,7 +377,7 @@ export function v2TranscriptHasDrift(
   // No legacy files at all (every post-retirement session) → nothing to
   // drift against; the store is the only source.
   if (!files.length) return false;
-  const info = store.getImportInfo(sessionId);
+  const info = await store.getImportInfo(sessionId);
   const totalSize = files.reduce((sum, f) => sum + f.size, 0);
   return !(info?.watermark != null && totalSize <= info.watermark);
 }
@@ -353,36 +387,35 @@ export function v2TranscriptHasDrift(
  * drift-free; null → caller falls back to legacy; on drift this re-imports
  * (idempotent upserts) and returns the legacy merge for this call directly.
  */
-function v2StoreTranscript(
+async function v2StoreTranscript(
   sessionId: string,
   session: TranscriptSessionRef
-): TranscriptEntry[] | null {
-  const store = transcriptStore();
-  if (!store.hasImported(sessionId)) return null;
-  if (!v2TranscriptHasDrift(store, sessionId, session))
-    return v2ReadAll(store, sessionId);
+): Promise<TranscriptEntry[] | null> {
+  if (await transcript.needsImport(sessionId)) return null;
+  if (!await v2TranscriptHasDrift(transcript, sessionId, session))
+    return v2ReadAll(sessionId);
   // Drift (§8): re-import (upserts keep original seqs, making this safe to
   // repeat) and serve legacy for THIS call. Watermark = candidate-set size
   // measured BEFORE the legacy parse — lines appended during the parse then
   // read as growth next time instead of being silently covered.
   const totalSize = v2MirrorFiles(session).reduce((sum, f) => sum + f.size, 0);
   const legacy = session.transcriptPath ? parseTranscript(session.transcriptPath) : [];
-  try {
-    store.importLegacyTranscript(
-      sessionId,
-      legacy,
-      store.getImportInfo(sessionId)?.src || "merged",
-      totalSize
-    );
-    // The full re-import restored every entry the store had missed — release
-    // the failure-side marker (no-op for ids that never carried it).
+  const importInfo = await transcript.getImportInfo(sessionId);
+  void importLegacyTranscript(
+    sessionId,
+    legacy,
+    importInfo?.src || "merged",
+    totalSize
+  ).then(() => {
+    // The full re-import restored every entry the store had missed. Release
+    // the failure marker only after actor completion.
     clearTranscriptStoreDegraded(sessionId);
-  } catch (e) {
+  }).catch((error) => {
     console.warn(
       `[sessions] transcript v2 drift re-import failed for ${sessionId}:`,
-      e instanceof Error ? e.message : e
+      error instanceof Error ? error.message : error
     );
-  }
+  });
   return legacy;
 }
 
@@ -401,16 +434,16 @@ function v2StoreTranscript(
  * stays optional so old callers (and runner closures pre-restart) keep
  * working unchanged.
  */
-export function engineUserTexts(session: {
+export async function engineUserTexts(session: {
 	id?: string;
 	transcriptPath?: string | null;
 	claudeSessionId?: string | null;
-}): string[] {
+}): Promise<string[]> {
 	try {
-		return mergedSessionTranscript({
+		return (await mergedSessionTranscriptAsync({
 			id: session.id,
 			transcriptPath: session.transcriptPath ?? null,
-		})
+		}))
 			.filter((e) => e.type === "user")
 			.map((e) => e.content.trim());
 	} catch {
@@ -427,13 +460,13 @@ export function engineUserTexts(session: {
  * don't count as a response: the run-failure notice lands after the stranded
  * message and would otherwise mask it.
  */
-export function trailingUserTexts(session: {
+export async function trailingUserTexts(session: {
 	id?: string;
 	transcriptPath?: string | null;
 	claudeSessionId?: string | null;
-}): string[] {
+}): Promise<string[]> {
 	try {
-		const entries = mergedSessionTranscript({
+		const entries = await mergedSessionTranscriptAsync({
 			id: session.id,
 			transcriptPath: session.transcriptPath ?? null,
 		});
@@ -509,98 +542,80 @@ function findTranscriptPath(
   return findTranscriptBySessionId(sessionId);
 }
 
-// Reverse index of every Claude transcript: session id → its .jsonl path,
-// built by walking each project dir ONCE. Without it, the last-resort lookup
-// below did an uncached readdir of ~1200 project dirs + an existsSync per dir
-// FOR EVERY session that missed the direct path (e.g. the ~575 slack sessions
-// with no worktreeDir) — ~600k stat() calls, ~1.4s, on every sessions rebuild.
-// That rebuild runs on every cache miss (and every "+ new tab", which nulls the
-// cache), so it was the dominant cost of a slow new-tab. Building the index is
-// ~16ms and turns each miss into an O(1) map hit. Memoized with a short TTL so a
-// burst of rebuilds shares one index while newly-written transcripts still show
-// up within a couple seconds.
+// Reverse index of every Claude transcript: session id → its .jsonl path.
+// This is only the last resort after the current worktree and home-directory
+// paths miss, so an absent or stale snapshot is safe. Production has enough
+// historical project directories that rebuilding it synchronously can hold the
+// gateway for seconds. Serve the last completed snapshot immediately and
+// refresh cooperatively in the background instead. Current transcripts still
+// resolve through their direct path without waiting for this index.
 let transcriptIndexCache: { map: Map<string, string>; ts: number } | null = null;
 let transcriptIndexRefresh: Promise<void> | null = null;
-let transcriptIndexGeneration = 0;
-const TRANSCRIPT_INDEX_TTL = 2000;
+const EMPTY_TRANSCRIPT_INDEX = new Map<string, string>();
+const TRANSCRIPT_INDEX_TTL = 5 * 60_000;
 function transcriptIndex(): Map<string, string> {
-  if (transcriptIndexCache && Date.now() - transcriptIndexCache.ts < TRANSCRIPT_INDEX_TTL)
-    return transcriptIndexCache.map;
-  transcriptIndexGeneration++;
-  const map = new Map<string, string>();
-  let projectDirs: string[];
-  try {
-    projectDirs = readdirSync(CLAUDE_PROJECTS_DIR);
-  } catch {
-    projectDirs = [];
-  }
-  for (const dir of projectDirs) {
-    let entries: string[];
-    try {
-      entries = readdirSync(`${CLAUDE_PROJECTS_DIR}/${dir}`);
-    } catch {
-      continue;
-    }
-    for (const e of entries) {
-      if (!e.endsWith(".jsonl")) continue;
-      const id = e.slice(0, -".jsonl".length);
-      // First dir wins — matches the old top-down readdir scan order.
-      if (!map.has(id)) map.set(id, `${CLAUDE_PROJECTS_DIR}/${dir}/${e}`);
-    }
-  }
-  transcriptIndexCache = { map, ts: Date.now() };
-  return map;
-}
-
-async function warmTranscriptIndexAsync(): Promise<void> {
-  while (
+  if (
     !transcriptIndexCache ||
     Date.now() - transcriptIndexCache.ts >= TRANSCRIPT_INDEX_TTL
   ) {
-    if (!transcriptIndexRefresh) {
-      const generation = ++transcriptIndexGeneration;
-      transcriptIndexRefresh = (async () => {
-        const map = new Map<string, string>();
-        let projects;
-        try {
-          projects = await opendir(CLAUDE_PROJECTS_DIR);
-        } catch {
-          projects = null;
-        }
-        try {
-          if (projects) for await (const project of projects) {
-            if (!project.isDirectory()) continue;
-            let entries;
-            try {
-              entries = await opendir(`${CLAUDE_PROJECTS_DIR}/${project.name}`);
-            } catch {
-              continue;
-            }
-            let indexed = 0;
-            for await (const entry of entries) {
-              if (!entry.isFile() || !entry.name.endsWith(".jsonl")) continue;
-              const id = entry.name.slice(0, -".jsonl".length);
-              if (!map.has(id))
-                map.set(id, `${CLAUDE_PROJECTS_DIR}/${project.name}/${entry.name}`);
-              if (++indexed % 256 === 0) await Bun.sleep(0);
-            }
-            // One project directory can hold thousands of transcripts. Yield
-            // after each directory so a cold reverse-index build never delays a
-            // WebSocket handshake behind a batch of large readdir calls.
-            await Bun.sleep(0);
-          }
-        } catch {
-          // The state root can change under tests and dev tooling. A partial
-          // reverse index is safe; direct transcript paths still resolve.
-        }
-        if (transcriptIndexGeneration === generation)
-          transcriptIndexCache = { map, ts: Date.now() };
-      })().finally(() => {
-        transcriptIndexRefresh = null;
-      });
-    }
-    await transcriptIndexRefresh;
+    void warmTranscriptIndexAsync().catch((error) => {
+      console.warn(
+        "[sessions] transcript index refresh failed:",
+        error instanceof Error ? error.message : error,
+      );
+    });
   }
+  return transcriptIndexCache?.map ?? EMPTY_TRANSCRIPT_INDEX;
+}
+
+async function warmTranscriptIndexAsync(): Promise<void> {
+  if (
+    transcriptIndexCache &&
+    Date.now() - transcriptIndexCache.ts < TRANSCRIPT_INDEX_TTL
+  ) {
+    return;
+  }
+  if (!transcriptIndexRefresh) {
+    transcriptIndexRefresh = (async () => {
+      const map = new Map<string, string>();
+      let projects;
+      try {
+        projects = await opendir(CLAUDE_PROJECTS_DIR);
+      } catch {
+        projects = null;
+      }
+      try {
+        if (projects) for await (const project of projects) {
+          if (!project.isDirectory()) continue;
+          let entries;
+          try {
+            entries = await opendir(`${CLAUDE_PROJECTS_DIR}/${project.name}`);
+          } catch {
+            continue;
+          }
+          let indexed = 0;
+          for await (const entry of entries) {
+            if (!entry.isFile() || !entry.name.endsWith(".jsonl")) continue;
+            const id = entry.name.slice(0, -".jsonl".length);
+            if (!map.has(id))
+              map.set(id, `${CLAUDE_PROJECTS_DIR}/${project.name}/${entry.name}`);
+            if (++indexed % 256 === 0) await Bun.sleep(0);
+          }
+          // One project directory can hold thousands of transcripts. Yield
+          // after each directory so a cold reverse-index build never delays a
+          // WebSocket handshake behind a batch of large readdir calls.
+          await Bun.sleep(0);
+        }
+      } catch {
+        // The state root can change under tests and dev tooling. A partial
+        // reverse index is safe; direct transcript paths still resolve.
+      }
+      transcriptIndexCache = { map, ts: Date.now() };
+    })().finally(() => {
+      transcriptIndexRefresh = null;
+    });
+  }
+  await transcriptIndexRefresh;
 }
 
 function findTranscriptBySessionId(sessionId: string): string | null {
@@ -1389,8 +1404,8 @@ function removeSessionArtifacts(session: UnifiedSession): void {
     void removeSessionScratch(id);
 }
 
-export function deleteSession(session: UnifiedSession): void {
-  sessionKernel(session.id).applySync("session_delete", () => {
+export async function deleteSession(session: UnifiedSession): Promise<void> {
+  await executeSessionProjection(session.id, "session_delete", () => {
     removeSessionArtifacts(session);
   });
 }

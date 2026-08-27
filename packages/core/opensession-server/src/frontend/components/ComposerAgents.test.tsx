@@ -26,9 +26,9 @@ describe("PlanChecklist", () => {
 	test("uses a consistent dot marker for each status", () => {
 		const html = renderToStaticMarkup(<PlanChecklist items={plan} />);
 
-		expect(html).toContain("width:8px;height:8px;flex:none;border-radius:50%;background-color:var(--green)");
-		expect(html).toContain("width:8px;height:8px;flex:none;border-radius:50%;background-color:var(--yellow)");
-		expect(html).toContain("width:8px;height:8px;flex:none;border-radius:50%;border-color:var(--border);border-style:solid;border-width:1px");
+		expect(html).toContain("width:8px;height:8px;flex:none;border-radius:50%;corner-shape:var(--cs);background-color:var(--green)");
+		expect(html).toContain("width:8px;height:8px;flex:none;border-radius:50%;corner-shape:var(--cs);background-color:var(--yellow)");
+		expect(html).toContain("width:8px;height:8px;flex:none;border-radius:50%;corner-shape:var(--cs);border-color:var(--border);border-style:solid;border-width:1px");
 		expect(html).not.toContain("composer-agents-pulse");
 		expect(html).not.toContain("<svg");
 	});

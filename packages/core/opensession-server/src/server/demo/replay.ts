@@ -30,7 +30,7 @@ import {
   recordEngineSessionOwner,
 } from "../transcript-persistence";
 import { parseJsonlLines } from "../jsonl-parser";
-import { transcriptStore } from "../transcript-store";
+import { importLegacyTranscript, replaceTranscriptEvents, transcript } from "../actor-transcript";
 import { touchNativeSession } from "../session-cache";
 import {
   DEMO_LIVE_ENGINE_SESSION_ID,
@@ -50,7 +50,7 @@ interface DemoReplayState {
 
 const g = globalThis as { __osDemoReplay?: DemoReplayState };
 
-export function startDemoReplayer(): void {
+export async function startDemoReplayer(): Promise<void> {
   const state: DemoReplayState = (g.__osDemoReplay ??= {
     timer: null,
     running: false,
@@ -64,42 +64,42 @@ export function startDemoReplayer(): void {
   // Fresh session: skip the legacy-import gate up front so the first append
   // never tries to merge nonexistent history.
   recordEngineSessionOwner(ocId, sessionId);
-  if (transcriptStore().needsImport(sessionId)) {
-    transcriptStore().importLegacyTranscript(sessionId, [], "live-only", null);
+  if (await transcript.needsImport(sessionId)) {
+    await importLegacyTranscript(sessionId, [], "live-only", null);
   }
 
   // Busy-mark + FSM: prompt → starting, run_registered → running.
-  markSessionStarting(sessionId);
-  transitionRunState(sessionId, "run_registered", { demo: true });
+  await markSessionStarting(sessionId);
+  await transitionRunState(sessionId, "run_registered", { demo: true });
 
   const script = demoReplayScript();
   let step = 0;
 
-  const tick = () => {
+  const tick = async () => {
     if (!state.running) return;
     try {
       if (step >= script.length) {
         step = 0;
-        state.timer = setTimeout(tick, LOOP_REST_MS);
+        state.timer = setTimeout(() => void tick(), LOOP_REST_MS);
         return;
       }
       const lines = script[step]();
       if (step === 0) {
         // Loop restart: authoritatively replace (reset:true on the bus) so
         // watchers drop the previous loop instead of merging into it.
-        transcriptStore().replaceTranscriptEvents(
+        await replaceTranscriptEvents(
           sessionId,
           parseJsonlLines(lines.map((l) => JSON.stringify(l))),
         );
       } else {
-        appendTranscriptEntries(ocId, lines);
+        await appendTranscriptEntries(ocId, lines);
       }
       touchNativeSession(sessionId, {});
       step++;
     } catch (e) {
       console.error("[demo] replay step failed:", e);
     }
-    state.timer = setTimeout(tick, STEP_MS);
+    state.timer = setTimeout(() => void tick(), STEP_MS);
   };
-  tick();
+  void tick();
 }

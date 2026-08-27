@@ -7,68 +7,69 @@ Six files, each optional:
 
 | File          | When it runs                              | Job                                       |
 | ------------- | ----------------------------------------- | ----------------------------------------- |
-| `setup`       | once per workspace materialization, before the post-setup snapshot | install deps, fetch prebuilt assets |
-| `resume`      | after a paused/snapshotted workspace wakes | idempotent post-wake repair               |
+| `setup`       | once per workspace preparation, and as a first-host-preview safety net | install deps, fetch prebuilt assets |
+| `resume`      | after an actual durable Local MicroVM wake | idempotent post-wake repair               |
 | `start.sh`    | when a preview starts                     | bring the dev server up in the foreground |
-| `preview.json`| warm-pool / warm-template refreshes       | declare which routes to pre-compile       |
-| `portals.json`| session Portals panel                     | declare skill-backed service starters     |
+| `preview.json`| warm preview-pool preparation             | declare which routes to pre-compile       |
+| `portals.json`| session Portals panel                     | declare supervised service starters       |
 | `environment.json` | when a private remote workspace is adopted | legacy migration path for local env files |
 
 Why commit them rather than configure the host: the boot recipe travels with
-the code. Every worktree of every session starts provisioned, the Preview
-button works identically on the host, in sandboxes and from the warm pool,
-and — the real payoff — an agent can bring your app up **headlessly** in its
+the code. Each session workspace can provision itself, and the Preview button
+uses the same repo script on the host, in Sandboxes, and from the warm pool.
+The real payoff is that an agent can bring your app up **headlessly** in its
 own worktree and verify its changes in a real browser (screenshots, DOM
 checks, CDP) without a human bootstrapping anything. See
 [Letting the agent test the app itself](#letting-the-agent-test-the-app-itself).
 
-`setup` is always taken from the same directory as the resolved
-`start.sh` — the pair ships together.
+For repo-script previews, `setup` is taken from the same directory as the
+resolved `start.sh`; the pair ships together.
 
 ## setup — one-shot provisioning
 
-Runs once per workspace materialization, `cwd` = repo root, no arguments —
-everything arrives by environment:
+Runs during workspace preparation and as a first-host-preview safety net,
+`cwd` = repo root, no arguments. Everything arrives by environment:
 
-- **Worktree creation.** Every new session worktree runs the repo's
-  `setup` hook when present (it beats the instance-level `worktreeSetup`
-  command); afterwards the configured `depsInstall` — or a plain
-  `bun install` when there is a root `package.json` — still runs, so
-  `setup` only needs to cover what that default doesn't.
-  See [worktrees.md](worktrees.md).
-- **Sandbox workspace setup.** Once per sandbox workspace, skipped on
-  post-setup template restores (the restored layer already carries its
-  effects), never retried once settled. A sandbox setup failure is loud and
-  blocks materialization; its retained log is available in the sandbox panel.
-  See
+- **Host worktree creation.** Every new session worktree runs the repo's
+  `setup` hook when present; it replaces the instance-level `worktreeSetup`
+  command. If setup succeeds, the same invocation then runs the configured
+  `depsInstall`, or plain `bun install` when the repo has a root
+  `package.json`. These steps share one best-effort operation: a failed setup
+  does not block the session, but it skips that invocation's later dependency
+  install. See [worktrees.md](worktrees.md).
+- **Docker Sandbox workspace setup.** Runs once per workspace and is skipped
+  after a post-setup snapshot restore. Failure is logged, treated as settled,
+  and does not block the session. The retained log is available in the
+  sandbox panel. See
   [deploy/sandbox/README.md](../deploy/sandbox/README.md).
-- **First host preview start**, as a safety net — there is no
-  workspace-materialization moment on the host, so it runs (and settles,
-  success or not) as part of the first repo-script preview boot, stamped per
-  worktree.
+- **Remote-clone Sandbox workspace setup, including Local MicroVM.** A present
+  hook must be executable. Failure blocks workspace preparation and leaves no
+  success stamp, so a later preparation attempt can retry it. During remote
+  setup, a PATH shim makes `bun install` use `--frozen-lockfile`; commit
+  lockfile changes before preparing the workspace.
+- **First host preview start**, as a safety net. It runs during the first
+  repo-script preview boot and is stamped per worktree whether it succeeds or
+  fails. Failure does not block the preview.
 
-Because it can fire from more than one of these paths, it must be
-**idempotent** — cheap when there is nothing to do. Failure is deliberately
-non-fatal everywhere (a session with missing deps is still useful; a blocked
-session is not), so when something important fails, print a loud, actionable
-message rather than exiting quietly.
+Because it can fire from more than one path, it must be **idempotent** and
+cheap when there is nothing to do. Print a loud, actionable error before
+exiting non-zero. For portability, commit both `setup` and `resume` with their
+executable bits set.
 
 Keep it scoped to what the dev server needs: dependency install, prebuilt
 artifact fetch, codegen. Slow extras belong behind an existence check.
 
 ## resume — idempotent post-wake repair
 
-Sandboxed workspaces get paused and snapshotted aggressively; `resume` runs
-after a workspace wakes from a pause, a snapshot restore, or a host-reboot
-re-clone — the place to repair anything wall-clock- or environment-sensitive
-that a frozen filesystem image gets wrong (stale pid/lock files, expired
-short-lived tokens the repo's tooling caches, clock-skewed build caches).
-Same conventions as `setup`: `cwd` = repo root, no arguments, **idempotent**
-(it can run many times over a workspace's life). Sandbox failures are loud and
-actionable because continuing with a half-repaired workspace is unsafe.
+Currently `.agents/resume` runs only after an actual durable Local MicroVM
+wake. Other Sandbox providers and host worktrees do not run it. Use it to
+repair wall-clock- or environment-sensitive state such as stale pid files,
+expired cached tokens, and clock-skewed build caches.
 
-No host runs it yet — the reader lands with the sandbox plan's Phase 1
-(docs/self-hosting-sandboxes.md); committing one today is forward-compatible.
+The hook runs with `cwd` = repo root, no arguments, and
+`OPENSESSION_BOOT_MODE=resume`. It must be idempotent because it can run many
+times over a workspace's life. Failure blocks the wake rather than continuing
+with a half-repaired workspace.
 
 ## start.sh — boot the dev server
 
@@ -82,9 +83,9 @@ repo root, no arguments. Two rules make it work:
 
    | Variable | Meaning |
    | --- | --- |
-   | `WEBAPP_PORT` | The port the app must listen on. On the host it's allocated and seeded into `.ports.conf`; in a sandbox it's a pre-published container port — honoring it is what makes the preview reachable. |
-   | `PREVIEW_URL` | The public HTTPS origin fronting that port (e.g. `https://host.ts.net:9301`). Add its hostname to your framework's allowed dev origins so pages served through it actually hydrate. |
-   | `OPENSESSION_BOOT_MODE` | `fresh` \| `resume` \| `snapshot-restore`, informational. Host previews always say `fresh`. |
+   | `WEBAPP_PORT` | The port the app must listen on. For `.agents/start.sh`, the host allocates and seeds it into `.ports.conf`; in a Sandbox it is a published container port. |
+   | `PREVIEW_URL` | When supplied, the public HTTPS origin fronting that port (e.g. `https://host.ts.net:9301`). Add its hostname to your framework's allowed dev origins so pages served through it actually hydrate. |
+   | `OPENSESSION_BOOT_MODE` | `fresh` or `snapshot-restore`, informational. Host previews use `fresh`; restored Docker and preview-pool images can use `snapshot-restore`. The separate `resume` hook receives `resume`. |
 
 Beyond that it should be just a script: a developer with a normal setup can
 run `./.agents/start.sh` by hand and get the usual dev server with sane
@@ -99,20 +100,22 @@ for repos you can't commit to). One chain, shared by host and sandbox
 previews (`resolvePreviewBoot` in packages/core/opensession-server/src/server/preview.ts); no rung resolves →
 the Preview button is disabled with a hint about what to add.
 
-**`.ports.conf`.** The host seeds `WEBAPP_PORT=<port>` into
-`<worktree>/.ports.conf` before booting. If your dev tooling allocates its
-own ports, have it source `.ports.conf` and keep any value that is free —
-that's how the app comes up exactly where the caller published it. Extra
-`*_PORT` keys your tooling writes there show up as additional services on the
-session's preview card. Sandboxed previews additionally write
-`<worktree>/.tunnels.env` with `PREVIEW_URL` / `PREVIEW_URL_<port>` entries
-(see [deploy/sandbox/README.md](../deploy/sandbox/README.md)).
+**`.ports.conf`.** For `.agents/start.sh`, the host allocates and seeds
+`WEBAPP_PORT` in `<worktree>/.ports.conf` and exports `WEBAPP_PORT` and
+`PREVIEW_URL`. A configured `previewCommand` receives the worktree path and
+must create or maintain its own `.ports.conf`. Extra `*_PORT` keys show up as
+additional services on the session's preview card. Once services are
+reachable, both host and Sandbox previews write `<worktree>/.tunnels.env`
+with their authenticated URLs (see
+[deploy/sandbox/README.md](../deploy/sandbox/README.md)).
 
-Previews receive a short-lived workload-identity exchange lease, never the
-instance's cloud credentials. A repository asks for an audience approved by
-the instance operator, then the cloud or service it targets exchanges the OIDC
-token under its own policy. The lease is not persisted in the workspace or a
-reusable snapshot.
+For cloud access, a Sandbox preview with a matching
+`OPENSESSION_WORKLOAD_IDENTITY_GRANTS` entry receives an exchange lease rather
+than injected AWS credentials. Without a matching grant, the compatibility
+path injects the configured short-lived AWS credentials. Host previews receive
+the configured agent AWS environment when it is enabled. Migrate repositories
+to workload identity before relying on the no-cloud-credentials property. The
+lease is not persisted in the workspace or a reusable snapshot.
 
 ## Workload identity from a sandbox
 
@@ -162,17 +165,16 @@ the fields it declares:
 Use separate audiences for setup artifacts, read-only previews, and any
 write-capable workflow. Do not grant the `run` lifecycle a cloud audience
 unless agent code genuinely needs it. The exchange lease is passed only to the
-hook process, is not written to the workspace, and is absent from reusable
-prewarm snapshots. A session restored from a snapshot receives a fresh lease.
-Do not enable shell tracing around the command or save a token in the
-repository.
+sandbox process for that lifecycle, is not written to the workspace, and is
+absent from reusable prewarm snapshots. A session restored from a snapshot
+receives a fresh lease. Do not enable shell tracing around the command or save
+a token in the repository.
 
 ## preview.json — warm routes
 
 Frameworks with on-demand compilers (Next dev, Vite with heavy transforms)
-serve a route slowly the first time it's requested. The warm preview pool and
-warm-template refresh counter that by requesting a set of routes right after
-boot, so the first human or agent visit is fast:
+serve a route slowly the first time it is requested. Warm preview-pool
+preparation can request a small set of routes after boot:
 
 ```json
 {
@@ -180,9 +182,14 @@ boot, so the first human or agent visit is fast:
 }
 ```
 
-Keep it to the handful of routes people actually open first from a preview.
-Precedence: explicit instance Settings → the repo's committed
-`.agents/preview.json` → built-in defaults.
+Keep it to the handful of routes people open first. Preview-pool preparation
+reads `.agents/preview.json` directly and uses its non-empty `warmRoutes`
+array. If the file cannot be parsed or `warmRoutes` is not a non-empty array,
+it requests `/`.
+
+Host warm-template refresh does not boot a dev server or warm routes. Its
+legacy Settings `warmRoutes` value remains in the API for compatibility but
+currently has no effect.
 
 ## Portals and `portals.json`
 
@@ -200,30 +207,33 @@ into a host Portal by fallback.
 
 Repositories can declare reusable recipes in `.agents/portals.json`:
 
-Repositories can add skill-backed starters to the session's Portals tab:
-
 ```json
 {
   "portals": [
     {
+      "id": "local-webapp",
       "name": "Local webapp",
-      "description": "Authenticated app and its local dependencies",
-      "skill": "app-local",
-      "serviceKey": "WEBAPP_PORT"
+      "description": "Authenticated app and local dependencies",
+      "command": "./.agents/start.sh",
+      "serviceKey": "WEBAPP_PORT",
+      "readyTimeoutSeconds": 180
     }
   ]
 }
 ```
 
-The UI never runs a repository-provided command. Clicking **Ask agent to start**
-sends a fixed prompt naming the validated user-invocable skill. `serviceKey`
-connects the recipe to its generated `*_PORT` entry. Agents can also create an
-ad-hoc Portal without changing repository configuration: create the service,
+For a command recipe, the UI asks the server to reread the recipe from the
+session workspace and run its declared command under the Portal supervisor;
+browser input cannot replace the command. `serviceKey` connects the recipe to
+its generated `*_PORT` entry. New recipes should use `command`. Legacy recipes
+containing only `skill` send a fixed prompt naming the validated skill instead.
+Agents can also create an ad-hoc Portal without changing repository
+configuration: create the service,
 call `start_portal`, verify it with `list_portals`, then tell the user which
 Portal is ready.
 
-On wake, `.agents/resume` repairs the workspace first. Open Session then
-rechecks every registered Portal and reports whether it restored or stopped.
+After a durable Local MicroVM wake, `.agents/resume` repairs the workspace
+before the wake completes.
 
 ## Environment sources for sandboxes
 
@@ -266,10 +276,11 @@ prewarm or provider snapshot. New repositories should use an external
 environment source instead.
 
 Every declared source is required, must be a regular gitignored text file
-inside the registered checkout, and is written mode `0600`. Individual files
-are capped at 1 MiB and the manifest at 4 MiB total. The manifest itself is
-read from the operator-controlled checkout, not from an agent branch, so a PR
-cannot ask Open Session to upload a different host file.
+inside the registered checkout, and is written mode `0600`. Each seed file is
+capped at 1 MiB, and the aggregate contents of all declared seed files are
+capped at 4 MiB. The manifest itself is read from the operator-controlled
+checkout, not from an agent branch, so a PR cannot ask Open Session to upload
+a different host file.
 
 ## A minimal pair
 

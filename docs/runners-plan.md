@@ -2,14 +2,15 @@
 
 ## Goal
 
-Formalize persistent, user-owned machines as **Runners** in Open Session.
+Document the shipped Runner command-delegation foundation and the target design
+for persistent, user-owned machines as full execution targets in Open Session.
 
 A Runner is a machine the workspace deliberately attaches and trusts to run
 work: a Mac mini with Xcode, a GPU development box, a Windows builder, or a
 dedicated Linux machine. It is not an ephemeral Sandbox and it is not merely a
 remote terminal.
 
-Runners give Open Session a third execution shape:
+The target design adds a third execution shape:
 
 | Execution target | Best for | Lifecycle |
 | --- | --- | --- |
@@ -17,32 +18,34 @@ Runners give Open Session a third execution shape:
 | **Sandbox** | Isolated, reproducible, resumable remote work | Per-session, provider-backed compute. |
 | **Runner** | Persistent hardware, platform/toolchain/GPU-specific work | A workspace-owned machine attached on purpose. |
 
+**Current product status:** Runners support scoped, audited command delegation
+from interactive sessions. They cannot yet be selected as a session execution
+target. Full Runner sessions, Runner terminals, and Runner Portals are not
+shipped.
+
 The product should not automatically treat a Runner as a safer Sandbox. A
 Runner is normally *more trusted* and less isolated: it runs as its owner's
 local user and may hold local credentials, caches, and hardware access.
 
 ## Existing foundation
 
-The current `execution node` feature is the foundation, not throwaway work:
+The current Runner feature is the foundation. Workspace administrators manage
+Runners in **Settings → Runners**. A machine pairs with a one-time, ten-minute
+code and connects outbound over the tailnet through an authenticated WebSocket.
+Interactive sessions receive the `opensession-runners` tools for inventory,
+status, reservations, and audited command delegation. Automation-owned sessions
+do not receive those tools. Revocation removes the credential and closes the
+live connection immediately.
 
-- a machine is explicitly paired with a one-time, ten-minute code;
-- it must connect from the tailnet and holds an authenticated dial-back
-  WebSocket;
-- capabilities such as `xcode`, `swift`, `docker`, and `bun` are detected;
-- interactive sessions receive `opensession-nodes` MCP tools to list machines
-  and execute an individual command on one;
-- automations never receive these tools;
-- revocation deletes the credential and closes a live connection immediately.
-
-Today this is command delegation only. A session's agent still runs on the
-Open Session host, then asks the node to perform a command. It does not yet
-materialize and run an entire session on that machine.
+A session's agent remains on its standard This machine or Sandbox runtime and
+delegates individual commands to the Runner. It does not materialize or run the
+full session there. For current setup and operation, see [Runners](runners.md).
 
 ### SSH-to-Runner migration
 
 The currently reachable Mac mini may start as an SSH-managed machine rather
-than an already attached execution node. Treat SSH as a **bootstrap and
-migration path**, not as the permanent Runner transport:
+than an already attached Runner. Treat SSH as a **bootstrap and migration
+path**, not as the permanent Runner transport:
 
 1. A workspace admin selects an existing, explicitly configured SSH host for
    the Mac mini and verifies its host fingerprint.
@@ -87,15 +90,13 @@ bootstrap credential is not consulted again.
 
 ## Naming and model
 
-Use **Runner** as the product and API concept. A Runner is the machine; a
-**run host** remains the internal process that executes one agent turn. Do not
-conflate the two.
+**Runner** is already the product and API concept across the current routes,
+CLI, settings UI, registry, and `opensession-runners` MCP server. A Runner is
+the machine; a **run host** remains the internal process that executes one
+agent turn. Do not conflate the two or reintroduce user-facing compatibility
+aliases for the old name.
 
-Migrate the current user-facing `node` terminology, docs, routes, CLI, UI, and
-MCP names to Runner in one change. Do not keep user-facing compatibility
-aliases. The old name is only useful while reading historical records.
-
-Each Runner has:
+In the target model, each Runner has:
 
 - a stable id and display name;
 - owner/label and optional location note;
@@ -127,16 +128,18 @@ security permission.
 
 ## 1. Workspace Runner settings
 
-Add **Workspace → Runners**. This is workspace configuration, not a personal
-provider setting.
+**Settings → Runners** is workspace configuration, not a personal provider
+setting. The shipped page provides inventory, pairing and operator-configured
+bootstrap, access policy, maintenance, command permission, and revocation.
 
-The page contains:
+The target page contains:
 
 - a Runner inventory with status, capabilities, resource summary, workload,
   last seen, and label;
-- an **Add Runner** flow with two deliberate paths: copy the pairing command on
-  the target machine, or bootstrap a preconfigured SSH-reachable machine such
-  as the existing Mac mini; both end in the same one-time Runner pairing;
+- an **Add Runner** flow with three deliberate paths: copy the pairing command
+  on the target machine, bootstrap a preconfigured SSH-reachable machine, or
+  bootstrap a preconfigured Kubernetes Runner workload; all end in the same
+  one-time Runner pairing;
 - Runner details for label, tags, supported repositories/workspace roots,
   allowed users, and execution permissions;
 - a maintenance switch that makes a Runner unavailable for new work without
@@ -170,9 +173,10 @@ use.
 The page is workspace-admin managed. Ordinary members may see only Runners
 they can choose or use.
 
-The connection agent runs as a launchd/systemd/Windows service so a dedicated
-Mac mini or devbox reconnects after reboot. The settings flow must make this
-operational expectation explicit.
+The Runner client installs a per-user LaunchAgent, systemd user service, or
+Windows scheduled task so a dedicated machine reconnects after restart or
+sign-in, as appropriate. The settings flow must make this operational
+expectation explicit.
 
 The SSH bootstrap screen may select a named host from the Open Session host's
 protected SSH configuration, but must never accept or store a raw private key
@@ -182,11 +186,12 @@ operator concern outside the workspace record.
 
 ## 2. Runner control protocol
 
-Evolve the current command-only dial-back socket into a versioned Runner
-control protocol. SSH or `kubectl` can bootstrap that component, but once
-attached the server still never dials into the Runner; the Runner always
-connects outbound over the tailnet. There are no SSH or Kubernetes runtime
-transport variants.
+Keep the versioned outbound Runner control protocol as the single transport.
+Only command delegation is currently exposed in the product, although the
+channel has typed support for future full-session, terminal, and Portal paths.
+SSH or `kubectl` can bootstrap the Runner, but once attached the server never
+dials into it; the Runner always connects outbound over the tailnet. There are
+no SSH or Kubernetes runtime transport variants.
 
 The protocol needs separate message families for:
 
@@ -206,11 +211,11 @@ network proxy.
 
 ## 3. Internal MCP: `opensession-runners`
 
-Replace the user-facing `opensession-nodes` MCP server with
-`opensession-runners`. It is interactive-only, absent from automations and from
-interactive resumes of automation-owned sessions.
+The current MCP server is `opensession-runners`. It is interactive-only,
+absent from automations and from interactive resumes of automation-owned
+sessions.
 
-Initial tools:
+Current tools:
 
 - `list_runners({ capability?, tag?, online? })` — inventory, suitability, and
   availability;
@@ -237,7 +242,8 @@ it exists in the inventory.
 Keep automatic routing conservative.
 
 - Do not silently send an ordinary session to a Runner.
-- A user may explicitly choose an eligible Runner when creating a session.
+- Once full-session execution ships, a user may explicitly choose an eligible
+  Runner when creating a session.
 - An agent may recommend or use a Runner for a focused delegated command when
   the task explicitly needs a capability, such as Xcode, Windows, CUDA, or a
   local model endpoint.
@@ -249,8 +255,9 @@ the named Runner choice only under an explicit “Other machines” affordance w
 eligible Runners exist. This avoids making every ordinary session choose among
 infrastructure.
 
-A Runner-backed session displays the Runner's name in its Runtime details. It
-is not labelled Sandbox and never claims Sandbox isolation.
+Once full-session execution ships, a Runner-backed session will display the
+Runner's name in its Runtime details. It will not be labelled Sandbox or claim
+Sandbox isolation.
 
 ## 5. Full-session Runners
 
@@ -353,39 +360,43 @@ security design establishes an isolated Runner profile.
 
 ## 9. Rollout phases
 
-### Phase A — formalize the existing feature
+### Phase A — shipped product foundation
 
-- Rename Nodes to Runners across product/API/MCP/docs.
-- Migrate the SSH-reachable Mac mini through the bootstrap flow into the
-  launchd-managed outbound Runner channel; verify reconnection after reboot.
-- Migrate the `kubectl`-managed GPU devbox into a persistent Kubernetes Runner
-  workload with a restricted namespace, PVC, and outbound Runner channel.
-- Add Workspace → Runners inventory, pairing, labels, tags, maintenance,
-  status, and revocation.
-- Enrich capability/resource detection, including GPU metadata.
-- Ship `opensession-runners` command delegation with auditing and policy.
+- Use Runner terminology across the product, API, CLI, settings, and MCP.
+- Provide **Settings → Runners** inventory, pairing, operator-configured SSH and
+  Kubernetes bootstrap, labels, tags, access policy, maintenance, command
+  permission, status, and revocation.
+- Install a reconnecting outbound Runner service and detect capabilities and
+  resources, including GPU metadata.
+- Provide `opensession-runners` command delegation, status, reservations,
+  auditing, and policy enforcement.
 
-### Phase B — scheduling and reservations
+Migrating specific operator-managed machines, including the SSH-reachable Mac
+mini and Kubernetes GPU devbox described above, remains an operational rollout
+step rather than a separate execution protocol.
 
-- Add Runner workload tracking, reservations, capacity, and clear busy/offline
-  UX.
-- Add Runner eligibility checks for users, repositories, and capabilities.
+### Phase B — future full-session admission and selection
+
+- Extend current workload and reservation primitives with capacity-aware,
+  clearly visible busy/offline UX.
+- Expose full-session eligibility checks for users, repositories, and
+  capabilities.
 - Let session creation present eligible named Runners under Other machines.
 
-### Phase C — full-session execution
+### Phase C — future full-session execution
 
 - Materialize session-owned workspaces on Runners.
 - Reuse remote run-host transport, durable queues, terminal, diff, and file
   APIs.
 - Add Runner-backed session lifecycle and workspace cleanup/retention.
 
-### Phase D — Portal and GPU integrations
+### Phase D — future Portal and GPU integrations
 
 - Add Runner support to the authenticated reverse Portal relay.
 - Add opt-in local inference/model endpoint registration and routing policy.
 - Add GPU capacity/reservation-aware work dispatch.
 
-## Acceptance criteria
+## Target acceptance criteria
 
 - A workspace admin can migrate the existing SSH-reachable Mac mini into a
   launchd-managed Runner without storing its private key in workspace settings.

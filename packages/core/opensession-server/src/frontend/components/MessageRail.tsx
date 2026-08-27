@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { SentMessage } from "../lib/sent-messages";
 import { RAIL_EDGE, RAIL_GUTTER, RAIL_W } from "../lib/message-rail";
 import { relativeTime } from "../lib/api";
@@ -263,7 +263,8 @@ export function MessageRail({ messages, containerRef, leaveLatest }: Props) {
 
 	/* -- where the rail can sit ---------------------------------------- */
 
-	const measure = () => {
+	// Stable identity: only the container ref and setters are captured.
+	const measure = useCallback(() => {
 		const el = containerRef.current;
 		if (!el) return;
 		const rect = el.getBoundingClientRect();
@@ -283,7 +284,7 @@ export function MessageRail({ messages, containerRef, leaveLatest }: Props) {
 			prev && next && prev.height === next.height ? prev : next,
 		);
 		setScrollable(el.scrollHeight > el.clientHeight + STICK_SLACK);
-	};
+	}, [containerRef]);
 
 	// After every render, because both answers depend on laid-out content: the
 	// transcript's first rows land a commit or two after the rail mounts, and a
@@ -339,7 +340,9 @@ export function MessageRail({ messages, containerRef, leaveLatest }: Props) {
 
 	/* -- which message the reader is on -------------------------------- */
 
-	const trackCurrent = () => {
+	// Stable identity: only refs and setters are captured; `count` in the
+	// scroll effect below re-runs it when history prepends.
+	const trackCurrent = useCallback(() => {
 		const el = containerRef.current;
 		if (!el) return;
 		const order = new Map(latest.current.map((m, i) => [m.id, i]));
@@ -355,7 +358,7 @@ export function MessageRail({ messages, containerRef, leaveLatest }: Props) {
 			index = order.get(node.dataset.eid ?? "") ?? index;
 		}
 		setCurrent((prev) => (prev === index ? prev : index));
-	};
+	}, [containerRef, latest]);
 
 	// Tracked here rather than in the transcript's own scroll handler: that one
 	// is the hot path the scroll-FPS counter watches, and this is a decoration
@@ -419,7 +422,8 @@ export function MessageRail({ messages, containerRef, leaveLatest }: Props) {
 		let settled = 0;
 		const correct = () => {
 			settled = settle() ? settled + 1 : 0;
-			if (settled >= 2 || ++frames >= SETTLE_FRAMES) return;
+			frames += 1;
+			if (settled >= 2 || frames >= SETTLE_FRAMES) return;
 			requestAnimationFrame(correct);
 		};
 		correct();

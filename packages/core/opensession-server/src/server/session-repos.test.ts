@@ -1,4 +1,7 @@
-import { describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { mkdtempSync, rmSync, writeFileSync } from "fs";
+import { tmpdir } from "os";
+import { join } from "path";
 import {
 	planCreateAttachRepos,
 	resolvePrTarget,
@@ -7,6 +10,31 @@ import {
 } from "./session-repos";
 import type { UnifiedSession } from "./types";
 import { getRepo } from "./worktree";
+
+const previousConfig = process.env.OPENSESSION_CONFIG;
+let configDir = "";
+
+beforeAll(() => {
+	configDir = mkdtempSync(join(tmpdir(), "session-repos-config-"));
+	const configPath = join(configDir, "config.json");
+	process.env.OPENSESSION_CONFIG = configPath;
+	writeFileSync(
+		configPath,
+		JSON.stringify({
+			repos: {
+				opensession: { repo: process.cwd(), sharedCheckout: true, default: true },
+				"tella-fusion": { repo: join(configDir, "attached") },
+				infra: { repo: join(configDir, "infra") },
+			},
+		}),
+	);
+});
+
+afterAll(() => {
+	if (previousConfig === undefined) delete process.env.OPENSESSION_CONFIG;
+	else process.env.OPENSESSION_CONFIG = previousConfig;
+	rmSync(configDir, { recursive: true, force: true });
+});
 
 const session = {
 	repo: "opensession",

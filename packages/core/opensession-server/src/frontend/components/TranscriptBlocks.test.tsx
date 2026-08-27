@@ -853,7 +853,7 @@ describe("TranscriptBlocks indexed ranges", () => {
 		...extra,
 	});
 
-	test("renders the complete outline while unloaded ranges stay placeholders", () => {
+	test("keeps unloaded history out of the transcript until it hydrates", () => {
 		const html = renderToStaticMarkup(
 			<TranscriptBlocks
 				transcriptIndex={[
@@ -873,7 +873,7 @@ describe("TranscriptBlocks indexed ranges", () => {
 				]}
 			/>,
 		);
-		expect(html).toContain("Loading messages");
+		expect(html).not.toContain("Loading messages");
 		expect(html).toContain("Newest prompt");
 	});
 
@@ -1123,7 +1123,7 @@ describe("TranscriptBlocks indexed ranges", () => {
 		);
 	});
 
-	test("renders a review shell from index metadata before its payload loads", () => {
+	test("drops an unloaded review loop until its payload hydrates", () => {
 		const html = renderToStaticMarkup(
 			<TranscriptBlocks
 				transcriptIndex={[
@@ -1133,7 +1133,68 @@ describe("TranscriptBlocks indexed ranges", () => {
 				entries={[]}
 			/>,
 		);
-		expect(html).toContain("Review loop");
-		expect(html).toContain("PR #42");
+		expect(html).not.toContain("PR #42");
+
+		const hydrated = renderToStaticMarkup(
+			<TranscriptBlocks
+				transcriptIndex={[
+					indexRow(1, "review_handoff", { reviewPrNumber: 42 }),
+					indexRow(2, "assistant"),
+				]}
+				entries={[
+					{
+						id: "indexed-1",
+						seq: 1,
+						changeSeq: 1,
+						type: "system",
+						content: "Starting review of PR #42",
+						timestamp: "2026-08-12T12:00:01Z",
+						notice: {
+							kind: "review-handoff",
+							title: "Reviewing PR #42",
+							tone: "info",
+						},
+					},
+				]}
+			/>,
+		);
+		expect(hydrated).toContain("PR #42");
+	});
+
+	test("grows around unloaded middle history while loaded neighbors keep order", () => {
+		const html = renderToStaticMarkup(
+			<TranscriptBlocks
+				transcriptIndex={[
+					indexRow(1, "user"),
+					indexRow(2, "assistant"),
+					indexRow(3, "user"),
+					indexRow(4, "assistant"),
+					indexRow(5, "user"),
+					indexRow(6, "assistant"),
+				]}
+				entries={[
+					{
+						id: "indexed-2",
+						seq: 2,
+						changeSeq: 2,
+						type: "assistant",
+						content: "Early answer",
+						timestamp: "2026-08-12T12:00:02Z",
+					},
+					{
+						id: "indexed-6",
+						seq: 6,
+						changeSeq: 6,
+						type: "assistant",
+						content: "Late answer",
+						timestamp: "2026-08-12T12:00:06Z",
+					},
+				]}
+			/>,
+		);
+		expect(html).not.toContain("Loading messages");
+		expect(html.indexOf("Early answer")).toBeLessThan(
+			html.indexOf("Late answer"),
+		);
 	});
 });

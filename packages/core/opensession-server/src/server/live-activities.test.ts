@@ -155,8 +155,8 @@ describe("liveActivityRegistrationMatches", () => {
   test("legacy display names match only when neither side has a login", () => {
     expect(
       liveActivityRegistrationMatches(
-        { user: "Kent de Bruin" },
-        { user: "Kent" },
+        { user: "Alex" },
+        { user: "Alex" },
       ),
     ).toBe(true);
   });

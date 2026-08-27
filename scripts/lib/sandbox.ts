@@ -18,7 +18,7 @@ import {
 } from "../../packages/core/opensession-server/src/server/sandbox/connections";
 import { qualifySandboxConnection } from "../../packages/core/opensession-server/src/server/sandbox/qualification";
 import { upsertCaddyIngress } from "../../packages/core/opensession-server/src/server/sandbox/caddy-ingress";
-import { setSandboxPublicIngressUrl } from "../../packages/core/opensession-server/src/server/sandbox/config";
+import { savePublicIngress } from "../../packages/core/opensession-server/src/server/ingress-settings";
 import { configuredServer } from "../../packages/core/opensession-server/src/server/config";
 import { stateDir } from "../../packages/core/opensession-server/src/server/paths";
 import { writeJsonAtomic } from "../../packages/core/opensession-server/src/server/shared/atomic-write";
@@ -516,7 +516,7 @@ async function installCaddyIngress(originValue: string | undefined): Promise<num
       fail("the public ingress check failed; the prior Caddyfile was restored");
       return 1;
     }
-    setSandboxPublicIngressUrl(origin);
+    await savePublicIngress({ publicBaseUrl: origin, exposure: "custom" });
     ok("sandbox ingress is Ready", origin);
     return 0;
   } finally {

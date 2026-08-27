@@ -29,10 +29,8 @@ export const SIDEBAR_TOOL_LABELS: Record<SidebarToolId, string> = {
 	feed: "Feed",
 	prs: "Pull requests",
 	tasks: "Tasks",
-	// The Plain queue as a destination. It is the second way into the same
-	// tickets the Plain band at the bottom of the sidebar already lists: the
-	// band opens a ticket's workspace, this opens the ticket. Both are on
-	// while we decide which one people reach for.
+	// The Plain queue as a destination. The alternate sidebar band opens a
+	// ticket's workspace; this tool opens the ticket directly.
 	plain: "Support",
 	catchup: "Catch up",
 	supporttinder: "Support Tinder",
@@ -76,18 +74,22 @@ const ORDER_PREF_KEY = "sidebar-tool-order";
 const TOOLS_CHANGED_EVENT = "opensession-sidebar-tools-changed";
 const USER_CHANGE_EVENT = "opensession-user-changed";
 
-// A new account starts with the tools that need nothing set up: Feed, Pull
-// requests, and Catch up, which is built from unread work every account
-// already has. The rest are either empty until something else exists (Tasks
-// needs todos, Reports needs automations) or need an integration (Support
-// Tinder, Analytics), so shipping them on makes the sidebar look busy and
-// broken at once. They are one click away in the Tools band's ••• menu and in
-// Settings.
+// A new account starts with the primary destinations: Feed, Pull requests,
+// Support, and Catch up. The rest are either empty until something else exists
+// (Tasks needs todos, Reports needs automations) or need an integration
+// (Support Tinder, Analytics), so shipping them on makes the sidebar look busy
+// and broken at once. They are one click away in the Tools band's ••• menu and
+// in Settings.
 //
 // This list is the whole agreement between clients when nobody has chosen:
 // absent means these defaults, on the web and in the native app alike. Keep it
 // in step with DEFAULT_VISIBLE in packages/clients/ios/OS1/SidebarTools.swift.
-const DEFAULT_VISIBLE_TOOLS: SidebarToolId[] = ["feed", "prs", "catchup"];
+const DEFAULT_VISIBLE_TOOLS: SidebarToolId[] = [
+	"feed",
+	"prs",
+	"plain",
+	"catchup",
+];
 // Derived from the visible list so a tool added later defaults to hidden
 // rather than silently showing up for everyone.
 const DEFAULT_HIDDEN_TOOLS: SidebarToolId[] = SIDEBAR_TOOL_IDS.filter(

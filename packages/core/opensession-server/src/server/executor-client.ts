@@ -47,32 +47,53 @@ export function executorClientHealth(): Record<string, unknown> {
 }
 
 let readinessCache: { at: number; ready: boolean; error?: string } | undefined;
+let readinessRefresh: Promise<{ ready: boolean; error?: string }> | undefined;
+
+function refreshExecutorReadiness(): Promise<{ ready: boolean; error?: string }> {
+  if (!readinessRefresh) {
+    readinessRefresh = (async () => {
+      const socketPath = executorSocketPath(OPENSESSION_SESSIONS_DIR);
+      const token = readExecutorCredential();
+      if (!existsSync(socketPath) || !token) {
+        readinessCache = { at: Date.now(), ready: false, error: "executor socket or credential is unavailable" };
+        return readinessCache;
+      }
+      const requestId = crypto.randomUUID();
+      try {
+        const response = await requestExecutor(socketPath, {
+          t: "hello",
+          requestId,
+          token,
+          minVersion: EXECUTOR_PROTOCOL_MIN_VERSION,
+          maxVersion: EXECUTOR_PROTOCOL_VERSION,
+        }, 2_000);
+        const ready = response.ok && response.compatible === true;
+        readinessCache = { at: Date.now(), ready, ...(ready ? {} : { error: "executor protocol is incompatible" }) };
+      } catch (cause) {
+        readinessCache = { at: Date.now(), ready: false, error: String(cause) };
+      }
+      return readinessCache;
+    })().finally(() => {
+      readinessRefresh = undefined;
+    });
+  }
+  return readinessRefresh;
+}
+
+/** Readiness probes report executor degradation but never wait on its IPC
+ * lane. The executor still fails closed at launchHostViaExecutor(). */
+export function executorClientReadinessSnapshot(): { ready: boolean; error?: string } {
+  if (process.env.OPENSESSION_EXECUTOR === "0") return { ready: true };
+  if (!readinessCache || Date.now() - readinessCache.at >= 2_000)
+    void refreshExecutorReadiness();
+  return readinessCache ?? { ready: false, error: "executor readiness is pending" };
+}
 
 export async function executorClientReady(): Promise<{ ready: boolean; error?: string }> {
   if (process.env.OPENSESSION_EXECUTOR === "0") return { ready: true };
   if (readinessCache && Date.now() - readinessCache.at < 2_000)
     return readinessCache;
-  const socketPath = executorSocketPath(OPENSESSION_SESSIONS_DIR);
-  const token = readExecutorCredential();
-  if (!existsSync(socketPath) || !token) {
-    readinessCache = { at: Date.now(), ready: false, error: "executor socket or credential is unavailable" };
-    return readinessCache;
-  }
-  const requestId = crypto.randomUUID();
-  try {
-    const response = await requestExecutor(socketPath, {
-      t: "hello",
-      requestId,
-      token,
-      minVersion: EXECUTOR_PROTOCOL_MIN_VERSION,
-      maxVersion: EXECUTOR_PROTOCOL_VERSION,
-    }, 2_000);
-    const ready = response.ok && response.compatible === true;
-    readinessCache = { at: Date.now(), ready, ...(ready ? {} : { error: "executor protocol is incompatible" }) };
-  } catch (cause) {
-    readinessCache = { at: Date.now(), ready: false, error: String(cause) };
-  }
-  return readinessCache;
+  return refreshExecutorReadiness();
 }
 
 export function noteExecutorFallback(): void {

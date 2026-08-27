@@ -1,4 +1,12 @@
-import React, { useState, useEffect, useLayoutEffect, useRef } from "react";
+import { mergeStylexProps, mergeStylexOverrideClassName } from "../ui/cn";
+import { utilityClassName } from "../ui/cn";
+import React, {
+	useState,
+	useEffect,
+	useEffectEvent,
+	useLayoutEffect,
+	useRef,
+} from "react";
 import { createPortal } from "react-dom";
 import type {
 	UnifiedSession,
@@ -63,7 +71,6 @@ import {
 	SIDEBAR_WS_ACTIONS,
 	SIDEBAR_WS_ACTIONS_HOVER,
 	SIDEBAR_WS_ACTIONS_TOUCH,
-	SIDEBAR_WS_DRAFT,
 	SIDEBAR_WS_FACE,
 	SIDEBAR_WS_FACES,
 	SIDEBAR_WS_ROW,
@@ -92,6 +99,7 @@ import {
 	type PrClosedDetail,
 	type OpenPr,
 } from "../lib/api";
+import { sameOpenPrSnapshot } from "../lib/open-pr-snapshot";
 import { useCurrentUser } from "./UserPicker";
 import { getLane, getLanes, onLanesChanged } from "../lib/lanes";
 import { getPins, onPinsChanged, togglePin, reorderPins, unpin } from "../lib/pins";
@@ -119,7 +127,6 @@ import { pickUnreadWorkspaceSession } from "../lib/sidebar-unread-session";
 import { mentionFor, onMentionsChanged } from "../lib/mentions";
 import { TeamLensMenu, useTeamPresence } from "./TeamPresence";
 import { sessionPath, absoluteLink, copyToClipboard } from "../lib/share-link";
-import { hasDraft, onDraftsChanged } from "../lib/drafts";
 import { getWsTimePref, onWsTimeChanged } from "../lib/workspace-time";
 import {
 	getSidebarDensity,
@@ -134,7 +141,7 @@ import {
 	setRepoOrder,
 } from "../lib/repo-order";
 import { UserAvatar, githubLoginFor } from "./UserAvatar";
-import { otherViewers } from "../lib/presence";
+import { facepileAvatarStyle, otherViewers } from "../lib/presence";
 import { shortTime } from "../lib/time";
 import {
 	IconChevronDown,
@@ -169,7 +176,7 @@ import { useConfirm } from "../ui/confirm";
 import { Tooltip } from "../ui/tooltip";
 import { ContextMenu, MENU_ICON, Menu } from "../ui/menu";
 import { Popover } from "../ui/popover";
-import { cn, mergeStylexProps, mergeStylexClassName, mergeStylexOverrideClassName } from "../ui/cn";
+import { cn } from "../ui/cn";
 import { RowCardPopup } from "./SidebarRowCards";
 import { pointerCanHover } from "../lib/pointer";
 import { RepoTile, repoLabel } from "./RepoTile";
@@ -265,6 +272,7 @@ import {
 	nextRenderedSidebarItem,
 	nextUnreadRenderedWorkspaceItem,
 } from "../lib/sidebar-next";
+import { previewSidebarSelection } from "../lib/sidebar-selection";
 import {
 	LONG_PRESS_MS,
 	LONG_PRESS_SLOP,
@@ -307,11 +315,11 @@ import { OriginMark } from "./sidebar/OriginMark";
 import { AutomationReportRow } from "./sidebar/AutomationReportRow";
 import { ActiveSubagentRows } from "./sidebar/ActiveSubagentRows";
 import { DraftRow } from "./sidebar/DraftRow";
+import { WorkspaceDraftIndicator } from "./sidebar/WorkspaceDraftIndicator";
 import { SidebarCtxMenu } from "./sidebar/SidebarCtxMenu";
 import { SidebarToolRows, SidebarToolsMenu } from "./sidebar/SidebarToolsMenu";
 import { SidebarCustomizeDialog } from "./sidebar/SidebarCustomizeDialog";
 import { OrganizationSwitcher } from "./OrganizationSwitcher";
-import { GithubConnectEmptyState } from "./GithubConnectEmptyState";
 import { EmptyState, ListSkeleton } from "../ui/state";
 import {
 	SIDEBAR_ROW,
@@ -319,9 +327,7 @@ import {
 	SidebarItem,
 } from "./sidebar/SidebarItem";
 import * as stylex from "@stylexjs/stylex";
-import { tokens } from "../styles/tokens.stylex";
 import { type as typography } from "../styles/typography.stylex";
-import { sharedClassStyles } from "../styles/shared-class-styles.stylex";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -338,9 +344,9 @@ const sx = stylex.create({
 			flex: "1"
 	},
 	roundedMd: {
-			borderRadius: "calc(7px * var(--rf))"
-	,
-		cornerShape: "var(--cs)"},
+			borderRadius: "calc(7px * var(--rf))",
+
+		cornerShape: "var(--cs)",},
 	border: {
 			borderStyle: "solid",
 			borderWidth: "1px"
@@ -379,22 +385,22 @@ const sx = stylex.create({
 			position: "absolute"
 	},
 	Right1: {
-			right: "-4px"
+			right: "calc(4px * -1)"
 	},
 	Bottom1: {
-			bottom: "-4px"
+			bottom: "calc(4px * -1)"
 	},
 	size3: {
-			width: "12px",
-			height: "12px"
+			width: "calc(4px * 3)",
+			height: "calc(4px * 3)"
 	},
 	justifyCenter: {
 			justifyContent: "center"
 	},
 	roundedFull: {
-			borderRadius: "calc(infinity * 1px)"
-	,
-		cornerShape: "round"},
+			borderRadius: "calc(infinity * 1px)",
+
+		cornerShape: "round",},
 	bgAccent: {
 			backgroundColor: "var(--accent)"
 	},
@@ -410,21 +416,20 @@ const sx = stylex.create({
 	textOnAccent: {
 			color: "var(--on-accent)"
 	},
-	ringPanel: { "--tw-ring-color": "var(--bg-panel)" },
 	mb2: {
-			marginBottom: "8px"
+			marginBottom: "calc(4px * 2)"
 	},
 	textFaint: {
 			color: "var(--text-faint)"
 	},
 	flex01Auto: {
-			flex: "0 auto"
+			flex: "0 1 auto"
 	},
 	itemsBaseline: {
 			alignItems: "baseline"
 	},
 	gap15: {
-			gap: "6px"
+			gap: "calc(4px * 1.5)"
 	},
 	mlAuto: {
 			marginLeft: "auto"
@@ -433,23 +438,23 @@ const sx = stylex.create({
 			display: "inline-flex"
 	},
 	size7: {
-			width: "28px",
-			height: "28px"
+			width: "calc(4px * 7)",
+			height: "calc(4px * 7)"
 	},
 	opacity100: {
-			opacity: "1"
+			opacity: "100%"
 	},
 	duration150: {
-			transitionDuration: ".15s"
+			transitionDuration: "150ms"
 	},
 	mt05: {
-			marginTop: "2px"
+			marginTop: "calc(4px * 0.5)"
 	},
 	px3: {
-			paddingInline: "12px"
+			paddingInline: "calc(4px * 3)"
 	},
 	py2: {
-			paddingBlock: "8px"
+			paddingBlock: "calc(4px * 2)"
 	},
 	px7px: {
 			paddingInline: "7px"
@@ -464,43 +469,42 @@ const sx = stylex.create({
 			fontWeight: "var(--font-weight-semibold)"
 	},
 	truncate: {
+			overflow: "hidden",
 			textOverflow: "ellipsis",
-			whiteSpace: "nowrap",
-			overflow: "hidden"
+			whiteSpace: "nowrap"
 	},
 	right2: {
-			right: "8px"
+			right: "calc(4px * 2)"
 	},
 	top12: {
-			top: "50%"
+			top: "calc(1 / 2 * 100%)"
 	},
 	TranslateY12: {
 			translate: "0 calc(calc(1 / 2 * 100%) * -1)"
 	},
-	TeamFaceRingVarSidebarBg: { "--team-face-ring": "var(--sidebar-bg)" },
 	gap2: {
-			gap: "8px"
+			gap: "calc(4px * 2)"
 	},
 	textSm: {
 			fontSize: "var(--type-label)",
-			lineHeight: "var(--tw-leading,var(--text-sm--line-height))"
+			lineHeight: "var(--tw-leading, var(--text-sm--line-height))"
 	},
 	textFg: {
 			color: "var(--text)"
 	},
 	translateY05px: {
-			translate: "0 .5px"
+			translate: "0 0.5px"
 	},
 	textDim: {
 			color: "var(--text-dim)"
 	},
 	size10: {
-			width: "40px",
-			height: "40px"
+			width: "calc(4px * 10)",
+			height: "calc(4px * 10)"
 	},
 	border0: {
 			borderStyle: "solid",
-			borderWidth: "0"
+			borderWidth: "0px"
 	},
 	bgTransparent: {
 			backgroundColor: "transparent"
@@ -515,13 +519,13 @@ const sx = stylex.create({
 			flex: "none"
 	},
 	mx4: {
-			marginInline: "16px"
+			marginInline: "calc(4px * 4)"
 	},
 	mt2px: {
 			marginTop: "-2px"
 	},
 	my7: {
-			marginBlock: "28px"
+			marginBlock: "calc(4px * 7)"
 	},
 	py0: {
 			paddingBlock: "0"
@@ -538,26 +542,23 @@ const sx = stylex.create({
 	minH360px: {
 			minHeight: "360px"
 	},
-	py12: {
-			paddingBlock: "48px"
-	},
 	flexCol: {
 			flexDirection: "column"
 	},
 	px7: {
-			paddingInline: "28px"
+			paddingInline: "calc(4px * 7)"
+	},
+	py12: {
+			paddingBlock: "calc(4px * 12)"
 	},
 	mb3: {
-			marginBottom: "12px"
+			marginBottom: "calc(4px * 3)"
 	},
 	leading115: {
 			lineHeight: "1.15"
 	},
 	tracking002em: {
-			letterSpacing: "-.02em"
-	},
-	m0: {
-			margin: "0"
+			letterSpacing: "-0.02em"
 	},
 	mt1: {
 			marginTop: "4px"
@@ -572,356 +573,19 @@ const sx = stylex.create({
 			textWrap: "pretty"
 	},
 	mt4: {
-			marginTop: "16px"
+			marginTop: "calc(4px * 4)"
 	},
 	gap1: {
 			gap: "4px"
 	},
 	px4: {
-			paddingInline: "16px"
+			paddingInline: "calc(4px * 4)"
 	},
 	pb1: {
 			paddingBottom: "4px"
 	},
 	pt05: {
-			paddingTop: "2px"
-	},
-	transitionColors: {
-		transitionProperty: "color, background-color, border-color, outline-color, text-decoration-color, fill, stroke, --tw-gradient-from, --tw-gradient-via, --tw-gradient-to",
-		transitionTimingFunction: "var(--ease)",
-		transitionDuration: "var(--dur-micro)",
-	},
-	bgSelected: { backgroundColor: tokens.selected },
-	hoverPr68: { ":hover": { "@media (hover: hover)": { paddingRight: "68px" } } },
-	z1: { zIndex: 1 },
-	mt0: { marginTop: 0 },
-	touchPanY: { touchAction: "pan-y" },
-	transformSwipe: { transform: "translateX(var(--swipe-x,0))" },
-	transitionNone: { transitionProperty: "none" },
-	transitionTransform: {
-		transitionProperty: "transform, translate, scale, rotate",
-		transitionTimingFunction: "var(--ease)",
-		transitionDuration: "var(--dur-micro)",
-	},
-	durationMicro: { transitionDuration: "var(--dur-micro)" },
-	duration: { transitionDuration: "var(--dur)" },
-	willChangeTransform: { willChange: "transform" },
-	size2: { width: "8px", height: "8px" },
-	hidden: { display: "none" },
-	hoverNoneInlineFlex: { "@media (hover: none)": { display: "inline-flex" } },
-	ml15: { marginLeft: "6px" },
-	textAccent: { color: tokens.accentInk },
-	hoverTextFg: { ":hover": { "@media (hover: hover)": { color: tokens.fg } } },
-	hoverTextRed: { ":hover": { "@media (hover: hover)": { color: tokens.red } } },
-	cursorGrab: { cursor: "grab" },
-	activeCursorGrabbing: { ":active": { cursor: "grabbing" } },
-	desktopGap9: { "@media (min-width: 721px)": { gap: "9px" } },
-	bgBlue: { backgroundColor: tokens.blue },
-	bgRed: { backgroundColor: tokens.red },
-	phoneHidden: { "@media (max-width: 720px)": { display: "none" } },
-	wFull: { width: "100%" },
-	textLeft: { textAlign: "left" },
-	roundedRow: { borderRadius: tokens.radiusRow ,
-		cornerShape: "var(--cs)"},
-	pxSidebarNav: { paddingInline: "var(--sidebar-nav-x)" },
-	pxSidebarTool: { paddingInline: "calc(var(--sidebar-icon-left) - var(--sidebar-nav-x))" },
-	pySidebarTool: { paddingBlock: "var(--sidebar-tool-pad)" },
-	phonePy13: { "@media (max-width: 720px)": { paddingBlock: "13px" } },
-	desktopItemTitle: { "@media (min-width: 721px)": { fontSize: "var(--type-item-title)" } },
-	phonePy25: { "@media (max-width: 720px)": { paddingBlock: "10px" } },
-	gap05: { gap: "2px" },
-	pt2: { paddingTop: "8px" },
-	pb15: { paddingBottom: "6px" },
-	desktopPt05: { "@media (min-width: 721px)": { paddingTop: "2px" } },
-	pb05: { paddingBottom: "2px" },
-	pt3: { paddingTop: "12px" },
-	phoneMt0: { "@media (max-width: 720px)": { marginTop: 0 } },
-	phonePt0: { "@media (max-width: 720px)": { paddingTop: 0 } },
-	phonePt4: { "@media (max-width: 720px)": { paddingTop: "16px" } },
-	px2: { paddingInline: "8px" },
-	px16px: { paddingInline: "16px" },
-	pr7px: { paddingRight: "7px" },
-	minH10: { minHeight: "40px" },
-	bgBlueSoft: { backgroundColor: tokens.blueSoft },
-	pl3: { paddingLeft: "12px" },
-	pr1: { paddingRight: "4px" },
-	phoneMinH12: { "@media (max-width: 720px)": { minHeight: "48px" } },
-	phonePl35: { "@media (max-width: 720px)": { paddingLeft: "14px" } },
-	desktopHFull: { "@media (min-width: 721px)": { height: "100%" } },
-	desktopMinH0: { "@media (min-width: 721px)": { minHeight: 0 } },
-	gap5px: { gap: "5px" },
-	fontInherit: { font: "inherit" },
-	minH38px: { minHeight: "38px" },
-	minW38px: { minWidth: "38px" },
-	borderLineStrong: { borderColor: tokens.lineStrong },
-	bgPressed: { backgroundColor: tokens.pressed },
-	hoverBgHover: { ":hover": { "@media (hover: hover)": { backgroundColor: tokens.hover } } },
-	minH0: { minHeight: 0 },
-	overflowXHidden: { overflowX: "hidden" },
-	overflowYAuto: { overflowY: "auto" },
-	phoneScrollPadding: {
-		paddingTop: "var(--header-h)",
-		paddingBottom: "max(24px, env(safe-area-inset-bottom,0px))",
-	},
-	mb1: { marginBottom: "4px" },
-	py15: { paddingBlock: "6px" },
-	pb7: { paddingBottom: "28px" },
-	pl0: { paddingLeft: 0 },
-	pr2: { paddingRight: "8px" },
-	desktopPr0: { "@media (min-width: 721px)": { paddingRight: 0 } },
-	phoneTextBase: {
-		"@media (max-width: 720px)": {
-			fontSize: "var(--type-body)",
-			lineHeight: "var(--text-base--line-height)",
-		},
-	},
-	phoneTranslateYMinus1: { "@media (max-width: 720px)": { translate: "0 -1px" } },
-	closeButtonMotion: {
-		transitionProperty: "color, scale",
-		transitionTimingFunction: "var(--ease)",
-		transitionDuration: "var(--dur-micro)",
-		":active": { scale: 0.96 },
-		"@media (prefers-reduced-motion: reduce)": { transform: "none" },
-	},
-	closeButtonBefore: {
-		"::before": {
-			content: "''",
-			position: "absolute",
-			inset: "8px",
-			borderRadius: "calc(7px * var(--rf))",
-			transitionProperty: "color, background-color, border-color, outline-color, text-decoration-color, fill, stroke, --tw-gradient-from, --tw-gradient-via, --tw-gradient-to",
-			transitionTimingFunction: "var(--ease)",
-			transitionDuration: "var(--dur-micro)",
-		},
-		":hover::before": { backgroundColor: tokens.hover },
-	},
-	phoneSize11: { "@media (max-width: 720px)": { width: "44px", height: "44px" } },
-	flexColGap05Nav: { display: "flex", flexDirection: "column", gap: "2px" },
-	beforePlusWash: {
-		"::before": {
-			content: "''",
-			position: "absolute",
-			inset: "2px",
-			zIndex: 0,
-			borderRadius: "calc(4px * var(--rf))",
-			transitionProperty: "background-color",
-			transitionTimingFunction: "var(--ease)",
-			transitionDuration: "var(--dur-micro)",
-		},
-		":hover::before": { backgroundColor: tokens.hover },
-	},
-	transitionOpacityColor: {
-		transitionProperty: "opacity, color",
-		transitionDuration: ".15s",
-		":hover": { "@media (hover: hover)": { color: tokens.fg } },
-		":focusVisible": { opacity: 1 },
-		"@media (min-width: 768px)": { opacity: 0 },
-	},
-	borrowedBand: {
-		minHeight: "40px",
-		width: "100%",
-		borderRadius: tokens.radiusRow,
-		backgroundColor: tokens.blueSoft,
-		paddingLeft: "12px",
-		paddingRight: "4px",
-		"@media (max-width: 720px)": { minHeight: "48px", paddingLeft: "14px" },
-		"@media (min-width: 721px)": { height: "100%", minHeight: 0 },
-	},
-	mdFallbackMargins: { "@media (min-width: 768px)": { marginRight: "8px", marginLeft: "16px" } },
-	tabularNums: { fontVariantNumeric: "tabular-nums" },
-
-
-	MediaHoverNoneInlineFlex: {
-		"@media (hover: none)": {
-			"display": "inline-flex"
-		}
-	},
-	pxVarSidebarNavX: {
-		"paddingInline": "var(--sidebar-nav-x)"
-	},
-	pxCalcVarSidebarIconLeftVarSidebarNavX: {
-		"paddingInline": "calc(var(--sidebar-icon-left) - var(--sidebar-nav-x))"
-	},
-	pyVarSidebarToolPad: {
-		"paddingBlock": "var(--sidebar-tool-pad)"
-	},
-	phonePy13px: {
-		"@media (max-width: 720px)": {
-			"paddingBlock": "13px"
-		}
-	},
-	desktopTextItemTitle: {
-		"@media (min-width: 721px)": {
-			"fontSize": "var(--type-item-title)"
-		}
-	},
-	desktopWFull: {
-		"@media (min-width: 721px)": {
-			"width": "100%"
-		}
-	},
-	FontInherit: {
-		"font": "inherit"
-	},
-	ScrollbarWidthNone: {
-		"scrollbarWidth": "none"
-	},
-	ptVarHeaderH: {
-		"paddingTop": "var(--header-h)"
-	},
-	desktopSidebarBandSlot0px: {
-		"@media (min-width: 721px)": {
-			"--sidebar-band-slot": "0px"
-		}
-	},
-	hoverTextDim: {
-		"@media (hover: hover)": {
-			":hover": {
-				"color": "var(--text-dim)"
-			}
-		}
-	},
-	mt2: {
-		"marginTop": "8px"
-	},
-
-	pbMax24pxEnvSafeAreaInsetBottom0px: {
-		"paddingBottom": "max(24px, env(safe-area-inset-bottom,0px))"
-	},
-	WebkitMaskImageLinearGradientToBottomTransparent0000VarHeaderH: {
-		"WebkitMaskImage": "linear-gradient(to bottom,transparent 0,var(--color-black) var(--header-h))"
-	},
-	MaskImageLinearGradientToBottomTransparent0000VarHeaderH: {
-		"WebkitMaskImage": "linear-gradient(to bottom,transparent 0,var(--color-black) var(--header-h))",
-		"maskImage": "linear-gradient(to bottom,transparent 0,var(--color-black) var(--header-h))"
-	},
-
-	borderVarAccent6b8afd: {
-		"borderColor": "var(--accent)"
-	},
-	ring2: {
-		"--tw-ring-shadow": "var(--tw-ring-inset,) 0 0 0 calc(2px + var(--tw-ring-offset-width)) var(--tw-ring-color,currentcolor)",
-		"boxShadow": "var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow)"
-	},
-	desktopGap9px: {
-		"@media (min-width: 721px)": {
-			"gap": "9px"
-		}
-	},
-	focusVisibleOpacity100: {
-		":focusVisible": {
-			"opacity": "1"
-		}
-	},
-	mdOpacity0: {
-		"@media (min-width: 48rem)": {
-			"opacity": "0"
-		}
-	},
-	beforeAbsolute: {
-		"::before": {
-			"content": "var(--tw-content)",
-			"position": "absolute"
-		}
-	},
-	beforeInset05: {
-		"::before": {
-			"content": "var(--tw-content)",
-			"inset": "2px"
-		}
-	},
-	beforeZ0: {
-		"::before": {
-			"content": "var(--tw-content)",
-			"zIndex": "0"
-		}
-	},
-	beforeRoundedSm: {
-		"::before": {
-			"content": "var(--tw-content)",
-			"borderRadius": "calc(4px * var(--rf))"
-		}
-	},
-	beforeCornerShapeVarCs: {
-		"::before": {
-			"content": "var(--tw-content)",
-			"cornerShape": "var(--cs)"
-		}
-	},
-	beforeTransitionBackground: {
-		"::before": {
-			"content": "var(--tw-content)",
-			"transitionProperty": "background",
-			"transitionTimingFunction": "var(--tw-ease,var(--ease))",
-			"transitionDuration": "var(--tw-duration,var(--dur-micro))"
-		}
-	},
-	beforeContent: {
-		"::before": {
-			"--tw-content": "\"\"",
-			"content": "var(--tw-content)"
-		}
-	},
-	hoverBeforeBgHover: {
-		"@media (hover: hover)": {
-			":hover": {
-				"::before": {
-					"content": "var(--tw-content)",
-					"backgroundColor": "var(--hover)"
-				}
-			}
-		}
-	},
-	phoneTranslateYPx: {
-		"@media (max-width: 720px)": {
-			"--tw-translate-y": "-1px",
-			"translate": "var(--tw-translate-x) var(--tw-translate-y)"
-		}
-	},
-	transitionColorScale: {
-		"transitionProperty": "color,scale",
-		"transitionTimingFunction": "var(--tw-ease,var(--ease))",
-		"transitionDuration": "var(--tw-duration,var(--dur-micro))"
-	},
-	beforeInset2: {
-		"::before": {
-			"content": "var(--tw-content)",
-			"inset": "8px"
-		}
-	},
-	beforeRoundedMd: {
-		"::before": {
-			"content": "var(--tw-content)",
-			"borderRadius": "calc(7px * var(--rf))"
-		}
-	},
-	beforeTransitionColors: {
-		"::before": {
-			"content": "var(--tw-content)",
-			"transitionProperty": "color,background-color,border-color,outline-color,text-decoration-color,fill,stroke,--tw-gradient-from,--tw-gradient-via,--tw-gradient-to",
-			"transitionTimingFunction": "var(--tw-ease,var(--ease))",
-			"transitionDuration": "var(--tw-duration,var(--dur-micro))"
-		}
-	},
-	activeScale096: {
-		":active": {
-			"scale": ".96"
-		}
-	},
-	motionReduceTransformNone: {
-		"@media (prefers-reduced-motion: reduce)": {
-			"transform": "none"
-		}
-	},
-	mdMr2: {
-		"@media (min-width: 48rem)": {
-			"marginRight": "8px"
-		}
-	},
-	mdMl4: {
-		"@media (min-width: 48rem)": {
-			"marginLeft": "16px"
-		}
+			paddingTop: "calc(4px * 0.5)"
 	},
 });
 
@@ -929,6 +593,191 @@ const sx = stylex.create({
 export type { SidebarHandle } from "../lib/sidebar-types";
 
 const AUTOMATION_COLOR = "#d29922";
+
+type WorkspaceMenuTarget = {
+	id: string;
+	x: number;
+	y: number;
+	source: HTMLButtonElement;
+};
+
+function WorkspaceContextMenu({
+	menu,
+	workspace,
+	row,
+	pins,
+	currentUser,
+	activeSnoozeKeys,
+	snoozes,
+	hiddenRowKeys,
+	onPinsChange,
+	onSetStatus,
+	onSnooze,
+	onStartWorkspaceRename,
+	onStartSessionRename,
+	onToast,
+	onOpenReview,
+	onHide,
+	onArchive,
+	onDeleteDraft,
+	onClose,
+}: {
+	menu: WorkspaceMenuTarget;
+	workspace?: Workspace;
+	row?: WsRow;
+	pins: string[];
+	currentUser: string;
+	activeSnoozeKeys: Set<string>;
+	snoozes: Record<string, string>;
+	hiddenRowKeys: Set<string>;
+	onPinsChange: (pins: string[]) => void;
+	onSetStatus: Props["onSetStatus"];
+	onSnooze: (row: WsRow, until: string | null) => void;
+	onStartWorkspaceRename: (workspace: Workspace) => void;
+	onStartSessionRename: (session: UnifiedSession) => void;
+	onToast?: (message: string) => void;
+	onOpenReview: (session: UnifiedSession) => void;
+	onHide: (row: WsRow, hidden: boolean) => void;
+	onArchive: (row: WsRow, source: HTMLButtonElement) => void;
+	onDeleteDraft: (workspace: Workspace) => void;
+	onClose: () => void;
+}) {
+	const sessions = row?.sessions ?? [];
+	const first = sessions[0];
+	const pinKey = workspace ? `workspace:${workspace.id}` : menu.id;
+	const pinnedKeys = [
+		pinKey,
+		...(row
+			? [
+					row.key,
+					...row.sessions.flatMap((session) => [
+						session.id,
+						...(session.aliasIds || []),
+					]),
+				]
+			: []),
+	].filter((key, index, all) => pins.includes(key) && all.indexOf(key) === index);
+	const pinned = pinnedKeys.length > 0;
+	const togglePinNow = () => {
+		if (!pinned) {
+			onPinsChange(togglePin(pinKey));
+			return;
+		}
+		let next = pins;
+		for (const key of pinnedKeys) next = togglePin(key);
+		onPinsChange(next);
+	};
+	const anyManual = sessions.some((session) => pinnedLane(session));
+	const sharedManual =
+		anyManual &&
+		sessions.every((session) => pinnedLane(session) === pinnedLane(sessions[0]))
+			? (pinnedLane(sessions[0]) ?? null)
+			: null;
+	const entries: CtxEntry[] = [];
+	const rowUnread = row?.unread ?? false;
+	if (sessions.length > 0)
+		entries.push({
+			kind: "item",
+			icon: <IconMail size={20} />,
+			label: rowUnread ? "Mark as read" : "Mark as unread",
+			onClick: () =>
+				sessions.forEach((session) =>
+					rowUnread
+						? markRead(session.id, session.lastActivity)
+						: markUnread(session.id),
+				),
+		});
+	const rowClaimed = sessions.some((session) => isClaimed(session));
+	const rowMine = sessions.some((session) => ownedBy(session, currentUser));
+	if (sessions.length > 0 && (!rowMine || rowClaimed))
+		entries.push({
+			kind: "item",
+			icon: <IconInbox size={20} />,
+			label: rowClaimed ? "Remove from my workspaces" : "Add to my workspaces",
+			onClick: () => onSetStatus(sessions, rowClaimed ? null : "mine"),
+		});
+	entries.push({
+		kind: "item",
+		icon: <IconPin size={20} fill={pinned ? "currentColor" : "none"} />,
+		label: pinned ? "Unpin" : "Pin",
+		onClick: togglePinNow,
+	});
+	if (sessions.length > 0)
+		entries.push({
+			kind: "status",
+			current: sharedManual,
+			onPick: (status) => onSetStatus(sessions, status),
+		});
+	if (row && sessions.length > 0)
+		entries.push({
+			kind: "snooze",
+			until: activeSnoozeKeys.has(row.key) ? (snoozes[row.key] ?? null) : null,
+			onPick: (until) => onSnooze(row, until),
+		});
+	if (workspace)
+		entries.push({
+			kind: "item",
+			icon: <IconPencil size={20} />,
+			label: "Rename",
+			onClick: () => onStartWorkspaceRename(workspace),
+		});
+	else if (first)
+		entries.push({
+			kind: "item",
+			icon: <IconPencil size={20} />,
+			label: "Rename",
+			onClick: () => onStartSessionRename(first),
+		});
+	if (first)
+		entries.push({
+			kind: "item",
+			icon: <IconLink size={20} />,
+			label: "Copy link",
+			shortcut: shortcutLabel("session-copy-link") ?? undefined,
+			onClick: () =>
+				copyToClipboard(absoluteLink(sessionPath(first)), () => onToast?.("Link copied")),
+		});
+	if (first && (first.worktreeDir || first.branch))
+		entries.push({
+			kind: "item",
+			icon: <IconEye size={20} />,
+			label: "Open review",
+			onClick: () => onOpenReview(first),
+		});
+	if (row && sessions.length > 0) {
+		entries.push({ kind: "sep" });
+		const hidden = hiddenRowKeys.has(row.key);
+		entries.push({
+			kind: "item",
+			icon: hidden ? <IconEye size={20} /> : <IconEyeOff size={20} />,
+			label: hidden ? "Restore to my sidebar" : "Hide from my sidebar",
+			onClick: () => onHide(row, hidden),
+		});
+		entries.push({
+			kind: "item",
+			icon: <IconArchive size={20} />,
+			label: "Archive",
+			onClick: () => onArchive(row, menu.source),
+		});
+	} else if (workspace) {
+		entries.push({ kind: "sep" });
+		entries.push({
+			kind: "item",
+			icon: <IconTrash size={20} />,
+			danger: true,
+			label: "Delete draft",
+			onClick: () => onDeleteDraft(workspace),
+		});
+	}
+	return (
+		<SidebarCtxMenu
+			x={menu.x}
+			y={menu.y}
+			entries={entries}
+			onClose={onClose}
+		/>
+	);
+}
 
 export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 	sessions,
@@ -967,7 +816,6 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 	onNewSession,
 	onNewSessionInRepo,
 	showDraftRow,
-	githubConnectionRequired = false,
 	draftRowActive,
 	onOpenDraft,
 	onOpenWorkspace,
@@ -1313,10 +1161,11 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 	const filter = useSidebarFilter();
 	const [filterOpen, setFilterOpen] = useState(false);
 	const [customizeOpen, setCustomizeOpen] = useState(false);
-	const filterBtnRef = useRef<HTMLButtonElement>(null);
+	const [filterButton, setFilterButton] = useState<HTMLButtonElement | null>(null);
 	// The phone stand-in for the header filter button (portaled into the top
 	// bar next to Search). The popover anchors to whichever button is live.
-	const mobileFilterBtnRef = useRef<HTMLButtonElement>(null);
+	const [mobileFilterButton, setMobileFilterButton] =
+		useState<HTMLButtonElement | null>(null);
 	// The active repo-filter chip prefers to sit inline in the "My sessions"
 	// header (right after the title); it drops to its own row only when the
 	// sidebar is too narrow to fit it there. `repoInline` is decided by measuring
@@ -1334,7 +1183,9 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 	// the server hasn't stamped runStartedAt yet (external CLI runs, or the brief
 	// gap between isRunning flipping via WS and the next sessions poll). Entries
 	// are pruned once a row stops running so a later run starts its clock fresh.
-	const runStartSeen = useRef<Map<string, number>>(new Map());
+	const [runStartSeen, setRunStartSeen] = useState<Map<string, number>>(
+		() => new Map(),
+	);
 	useLayoutEffect(() => {
 		if (filter.repo === "all") return;
 		const measure = () => {
@@ -1376,10 +1227,8 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 	// changes nothing else must still rebuild them.
 	const [mentionsRev, setMentionsRev] = useState(0);
 	useEffect(() => onMentionsChanged(() => setMentionsRev((n) => n + 1)), []);
-	// Re-render when a composer draft appears/disappears — rows check hasDraft()
-	// during render to show the Slack-style "unsent draft" pencil.
-	const [, setDraftsRev] = useState(0);
-	useEffect(() => onDraftsChanged(() => setDraftsRev((v) => v + 1)), []);
+	// Draft pencils subscribe per workspace row, so typing into one composer does
+	// not rebuild the complete sidebar inventory.
 	// Opt-in "last used" time badge on workspace rows (off / always / on hover).
 	const [wsTimePref, setWsTimePref] = useState(getWsTimePref);
 	useEffect(() => onWsTimeChanged(() => setWsTimePref(getWsTimePref())), []);
@@ -1473,6 +1322,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 	useEffect(() => {
 		let alive = true;
 		const load = () => {
+			if (document.hidden) return Promise.resolve();
 			const requestSequence = ++openPrRequestSequence.current;
 			const requestGeneration = prCloseGeneration.current;
 			return (
@@ -1485,8 +1335,11 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 							if (closeGeneration <= requestGeneration)
 								closedPrTombstones.current.delete(url);
 						}
-						setOpenPrs(
-							prs.filter((pr) => !closedPrTombstones.current.has(pr.url)),
+						const next = prs.filter(
+							(pr) => !closedPrTombstones.current.has(pr.url),
+						);
+						setOpenPrs((current) =>
+							sameOpenPrSnapshot(current, next) ? current : next,
 						);
 					})
 					.catch(() => {})
@@ -1498,10 +1351,15 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 		// The response is backed by the server's PR cache, but also carries live
 		// Open Session review state. Poll it often enough that a PR moves in and out
 		// of "Review running" promptly without triggering extra GitHub requests.
+		const onVisibilityChange = () => {
+			if (!document.hidden) void load();
+		};
+		document.addEventListener("visibilitychange", onVisibilityChange);
 		const t = setInterval(load, 15_000);
 		return () => {
 			alive = false;
 			clearInterval(t);
+			document.removeEventListener("visibilitychange", onVisibilityChange);
 			window.removeEventListener(PR_REVIEW_SUBMITTED_EVENT, onReviewSubmitted);
 		};
 	}, []);
@@ -1540,7 +1398,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 			alive = false;
 		};
 	}, []);
-	const visibleFeeds = (feeds.filter((feed) => !hiddenFeeds.has(feed.id)));
+	const visibleFeeds = feeds.filter((feed) => !hiddenFeeds.has(feed.id));
 
 	// The Support queue now arrives through the generic feeds poll: the plain
 	// feed's items carry the full SupportThreadSummary in meta, so all the
@@ -1572,9 +1430,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 	const [feedFilters, setFeedFiltersState] = useState<
 		Record<string, FeedFilterValues>
 	>(readFeedFilters);
-	const feedFiltersRef = useRef(feedFilters);
-	feedFiltersRef.current = feedFilters;
-	const argFiltersFor = (feed: FeedDescriptor, all = feedFiltersRef.current) =>
+	const argFiltersFor = (feed: FeedDescriptor, all: Record<string, FeedFilterValues>) =>
 		Object.fromEntries(
 			(feed.filters || [])
 				.filter((f) => f.mode !== "meta")
@@ -1602,26 +1458,32 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 	};
 	// Items use the same gentle 60s cadence as Support (the server caches ~60s).
 	// Re-enabling a source loads it immediately; hiding one tears its timer down.
-	useEffect(() => {
-		if (visibleFeeds.length === 0) return;
-		let alive = true;
-		const load = () => {
-			for (const feed of visibleFeeds) {
-				fetchFeedItems(feed.id, argFiltersFor(feed))
+	// Filter changes already fetch their feed in setFeedFilter; interval ticks
+	// read the latest filters without restarting every feed's timer.
+	const refreshEnabledFeeds = useEffectEvent(
+		(enabledFeeds: FeedDescriptor[], isAlive: () => boolean) => {
+			for (const feed of enabledFeeds) {
+				fetchFeedItems(feed.id, argFiltersFor(feed, feedFilters))
 					.then((items) => {
-						if (alive)
+						if (isAlive())
 							setFeedItems((prev) => ({ ...prev, [feed.id]: items }));
 					})
 					.catch(() => {});
 			}
-		};
+		},
+	);
+	useEffect(() => {
+		const enabledFeeds = feeds.filter((feed) => !hiddenFeeds.has(feed.id));
+		if (enabledFeeds.length === 0) return;
+		let alive = true;
+		const load = () => refreshEnabledFeeds(enabledFeeds, () => alive);
 		load();
 		const timer = setInterval(load, 60_000);
 		return () => {
 			alive = false;
 			clearInterval(timer);
 		};
-	}, [visibleFeeds]);
+	}, [feeds, hiddenFeeds]);
 
 	// Newest live session per Plain thread — a Support row with one opens that
 	// session instead of the session-less ticket preview.
@@ -2078,6 +1940,24 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 	// Opening a deep link must not undo a personal hide. The viewer owns the
 	// recovery action while the row stays absent.
 	const wsRows = (allWsRows.filter((r) => !hiddenRowKeys.has(r.key)));
+	useEffect(() => {
+		setRunStartSeen((current) => {
+			const next = new Map(current);
+			let changed = false;
+			for (const row of wsRows) {
+				const hasServerStart = row.sessions.some(
+					(session) => session.isRunning && session.runStartedAt,
+				);
+				if (row.running && !hasServerStart && !next.has(row.key)) {
+					next.set(row.key, Date.now());
+					changed = true;
+				} else if ((!row.running || hasServerStart) && next.delete(row.key)) {
+					changed = true;
+				}
+			}
+			return changed ? next : current;
+		});
+	}, [wsRows]);
 	// Consume the hide of any row that just resurfaced (blocked on a question),
 	// marking its sessions unread so the return reads as fresh activity — the same
 	// shape as the snooze wake above. Idempotent: clearHides ignores keys that
@@ -2357,12 +2237,9 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 
 	// ── Inbox rows ──────────────────────────────────────────────────────────
 	// Snoozed rows already left `focusWsRows` through placement. The remaining
-	// inbox stays stable by creation time, and pinned rows keep their dedicated
-	// quick-access copy rather than repeating directly under it.
-	const pinnedRowKeys = (new Set(pinnedWsRows.map((row) => row.key)));
-	const activeFocusWsRows = (sortInboxByCreation(
-				focusWsRows.filter((row) => !pinnedRowKeys.has(row.key)),
-			));
+	// inbox stays stable by creation time. Pinned is an orthogonal quick-access
+	// facet, so a pinned row still keeps its primary Active/status placement.
+	const activeFocusWsRows = sortInboxByCreation(focusWsRows);
 	// ── PR rows in the project lanes ────────────────────────────────────────
 	// The retired standalone Pull-requests band dissolved into the project
 	// groups: every open PR classifies into a lane (ready → Ready to merge,
@@ -2447,21 +2324,29 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 	const [closingPrUrls, setClosingPrUrls] = useState<Set<string>>(
 		() => new Set(),
 	);
-	async function closePrRow(item: ReviewQueueItem) {
-		if (!window.confirm(`Close PR #${item.pr.number} without merging it?`))
-			return;
-		setClosingPrUrls((current) => new Set(current).add(item.pr.url));
-		await (async () => {
-await closePrPreviewApi(item.pr.repo, item.pr.branch);
-})().catch(async (error: any) => {
-onToast?.(error.message || `Failed to close PR #${item.pr.number}.`);
-}).finally(async () => {
-setClosingPrUrls((current) => {
-				const next = new Set(current);
-				next.delete(item.pr.url);
-				return next;
-			});
-});
+	function closePrRow(item: ReviewQueueItem) {
+		confirm({
+			title: `Close PR #${item.pr.number}?`,
+			description: "This closes the pull request without merging it.",
+			confirmLabel: "Close PR",
+			destructive: true,
+			onConfirm: () => {
+				setClosingPrUrls((current) => new Set(current).add(item.pr.url));
+				void closePrPreviewApi(item.pr.repo, item.pr.branch)
+					.catch((error: any) => {
+						onToast?.(
+							error.message || `Failed to close PR #${item.pr.number}.`,
+						);
+					})
+					.finally(() => {
+						setClosingPrUrls((current) => {
+							const next = new Set(current);
+							next.delete(item.pr.url);
+							return next;
+						});
+					});
+			},
+		});
 	}
 
 	// A PR row is selected while the open workspace carries its PR.
@@ -2552,6 +2437,8 @@ setClosingPrUrls((current) => {
 	function isDraftWsRow(row: WsRow): boolean {
 		return !!row.workspace?.draft && row.sessions.length === 0;
 	}
+
+	const wsSwipeOffset = useRef(0);
 
 	function deleteDraftWsRow(row: WsRow) {
 		const ws = row.workspace;
@@ -2688,6 +2575,57 @@ setClosingPrUrls((current) => {
 	const pinShortcutKeys = useShortcutKeys("session-pin");
 	const archiveShortcutKeys = useShortcutKeys("session-archive");
 
+	// ── Workspace hover card ────────────────────────────────────────────────
+	// The same card every sidebar row raises, driven by hand: workspace rows
+	// come out of a render function rather than a component, so one card serves
+	// the whole list (only one row can be dwelled on at a time) and the hovered
+	// row is its anchor. The card carries actions (Archive, PR link,
+	// thumbnails), so leaving the row schedules the close with a short grace
+	// period and entering the card cancels it — the pointer can travel the 8px
+	// gap without the card vanishing under it.
+	const wsHoverOpenT = useRef<ReturnType<typeof setTimeout> | null>(null);
+	const wsHoverCloseT = useRef<ReturnType<typeof setTimeout> | null>(null);
+	// The row element itself is the anchor — the popover tracks it, so a
+	// scrolling list repositions the card instead of dropping it.
+	const [wsHover, setWsHover] = useState<{ row: WsRow; el: HTMLElement } | null>(
+		null,
+	);
+	// Mobile long-press sheet (the touch stand-in for the hover card).
+	const [wsSheet, setWsSheet] = useState<{
+		row: WsRow;
+		source: HTMLButtonElement;
+	} | null>(null);
+
+	const cancelWsHoverTimers = () => {
+		if (wsHoverOpenT.current) clearTimeout(wsHoverOpenT.current);
+		if (wsHoverCloseT.current) clearTimeout(wsHoverCloseT.current);
+		wsHoverOpenT.current = null;
+		wsHoverCloseT.current = null;
+	};
+	function wsRowHoverEnter(row: WsRow, el: HTMLElement) {
+		if (rowRenameEditing(row) || !pointerCanHover()) return;
+		cancelWsHoverTimers();
+		if (wsHover) {
+			setWsHover({ row, el });
+			return;
+		}
+		wsHoverOpenT.current = setTimeout(() => {
+			setWsHover({ row, el });
+		}, 380);
+	}
+	function scheduleWsHoverClose() {
+		if (wsHoverOpenT.current) clearTimeout(wsHoverOpenT.current);
+		wsHoverOpenT.current = null;
+		if (wsHoverCloseT.current) clearTimeout(wsHoverCloseT.current);
+		wsHoverCloseT.current = setTimeout(() => setWsHover(null), 140);
+	}
+	function closeWsHover() {
+		cancelWsHoverTimers();
+		setWsHover(null);
+	}
+	useEffect(() => cancelWsHoverTimers, []);
+
+
 	// ⌘E (or the legacy ⌘⇧A) archives the open session and lands on the next entry
 	// in the sidebar, rather than dropping back to Home. This lives here (not in
 	// the viewer) because the sidebar owns the row ordering that defines "next".
@@ -2695,42 +2633,44 @@ setClosingPrUrls((current) => {
 	// already-archived session — that session isn't in this list, so this
 	// handler no-ops on it and the two never both fire. ⌘⌥⇧A below escalates to
 	// the whole workspace.
+	const handleArchiveSessionKey = useEffectEvent((e: KeyboardEvent) => {
+		if (e.defaultPrevented || !matchesShortcut(e, "session-archive")) return;
+		if (blockingOverlayOpen()) return;
+		if (editableSwallowsArchiveChord(e.target)) return;
+		const canArchive = sessions.some(
+			(s) => s.id === selectedId && !s.archived,
+		);
+		if (!canArchive) return;
+		e.preventDefault();
+		closeWsHover();
+		archiveOpenSessionWithNext();
+	});
 	useEffect(() => {
-		function onKeyDown(e: KeyboardEvent) {
-			if (e.defaultPrevented || !matchesShortcut(e, "session-archive")) return;
-			if (blockingOverlayOpen()) return;
-			if (editableSwallowsArchiveChord(e.target)) return;
-			const canArchive = sessions.some(
-				(s) => s.id === selectedId && !s.archived,
-			);
-			if (!canArchive) return;
-			e.preventDefault();
-			closeWsHover();
-			archiveOpenSessionWithNext();
-		}
+		const onKeyDown = (e: KeyboardEvent) => handleArchiveSessionKey(e);
 		window.addEventListener("keydown", onKeyDown);
 		return () => window.removeEventListener("keydown", onKeyDown);
-	}, [wsRowOrder, sessions, selectedId, onArchive, onSelect]);
+	}, []);
 
 	// ⌘⌥⇧A escalates the session archive (⌘E/⌘⇧A) to the whole active workspace.
 	// The Alt modifier is the only thing that separates the two handlers, so
 	// exactly one fires. Targets the workspace holding the open session.
+	const handleArchiveWorkspaceKey = useEffectEvent((e: KeyboardEvent) => {
+		if (e.defaultPrevented || !matchesShortcut(e, "workspace-archive"))
+			return;
+		if (editableSwallowsArchiveChord(e.target)) return;
+		const row = wsRowOrder.find(
+			(r) => r.sessions.length > 0 && r.sessions.some((c) => c.id === selectedId),
+		);
+		if (!row) return;
+		e.preventDefault();
+		closeWsHover();
+		archiveWorkspaceWithNext(row);
+	});
 	useEffect(() => {
-		function onKeyDown(e: KeyboardEvent) {
-			if (e.defaultPrevented || !matchesShortcut(e, "workspace-archive"))
-				return;
-			if (editableSwallowsArchiveChord(e.target)) return;
-			const row = wsRowOrder.find(
-				(r) => r.sessions.length > 0 && r.sessions.some((c) => c.id === selectedId),
-			);
-			if (!row) return;
-			e.preventDefault();
-			closeWsHover();
-			archiveWorkspaceWithNext(row);
-		}
+		const onKeyDown = (e: KeyboardEvent) => handleArchiveWorkspaceKey(e);
 		window.addEventListener("keydown", onKeyDown);
 		return () => window.removeEventListener("keydown", onKeyDown);
-	}, [wsRowOrder, selectedId, onArchiveWorkspace]);
+	}, []);
 
 	// ⌘P pins the open session's workspace ROW, so the chord and the row's own
 	// pin button move the same pin. They used to move different ones: the button
@@ -2741,22 +2681,23 @@ setClosingPrUrls((current) => {
 	// archived one, or one the current lens filters out. Capture phase, so this
 	// runs before the viewer's window listener whatever order they mounted in,
 	// and `preventDefault` is what tells it we took the key.
+	const handlePinWorkspaceKey = useEffectEvent((e: KeyboardEvent) => {
+		if (e.defaultPrevented || !matchesShortcut(e, "session-pin")) return;
+		if (blockingOverlayOpen()) return;
+		// Decline inside a text field rather than swallowing the key: the
+		// viewer's own handler still sees it, so this only ever adds row
+		// semantics, never removes the chord from where it worked before.
+		if (editableSwallowsArchiveChord(e.target)) return;
+		const row = wsRowOrder.find(rowOwnsSelection);
+		if (!row) return;
+		e.preventDefault();
+		workspacePinState(row).toggle();
+	});
 	useEffect(() => {
-		function onKeyDown(e: KeyboardEvent) {
-			if (e.defaultPrevented || !matchesShortcut(e, "session-pin")) return;
-			if (blockingOverlayOpen()) return;
-			// Decline inside a text field rather than swallowing the key: the
-			// viewer's own handler still sees it, so this only ever adds row
-			// semantics, never removes the chord from where it worked before.
-			if (editableSwallowsArchiveChord(e.target)) return;
-			const row = wsRowOrder.find(rowOwnsSelection);
-			if (!row) return;
-			e.preventDefault();
-			workspacePinState(row).toggle();
-		}
+		const onKeyDown = (e: KeyboardEvent) => handlePinWorkspaceKey(e);
 		window.addEventListener("keydown", onKeyDown, true);
 		return () => window.removeEventListener("keydown", onKeyDown, true);
-	}, [wsRowOrder, selectedSession, pins]);
+	}, []);
 
 	// ⌘↓/⌘↑ cycle through the sidebar's rendered items in visual order (down =
 	// next row), wrapping at the ends. Reading the DOM here is intentional: each
@@ -2805,55 +2746,6 @@ setClosingPrUrls((current) => {
 		return () => window.removeEventListener("keydown", onKeyDown);
 	}, []);
 
-	// ── Workspace hover card ────────────────────────────────────────────────
-	// The same card every sidebar row raises, driven by hand: workspace rows
-	// come out of a render function rather than a component, so one card serves
-	// the whole list (only one row can be dwelled on at a time) and the hovered
-	// row is its anchor. The card carries actions (Archive, PR link,
-	// thumbnails), so leaving the row schedules the close with a short grace
-	// period and entering the card cancels it — the pointer can travel the 8px
-	// gap without the card vanishing under it.
-	const wsHoverOpenT = useRef<ReturnType<typeof setTimeout> | null>(null);
-	const wsHoverCloseT = useRef<ReturnType<typeof setTimeout> | null>(null);
-	// The row element itself is the anchor — the popover tracks it, so a
-	// scrolling list repositions the card instead of dropping it.
-	const [wsHover, setWsHover] = useState<{ row: WsRow; el: HTMLElement } | null>(
-		null,
-	);
-	// Mobile long-press sheet (the touch stand-in for the hover card).
-	const [wsSheet, setWsSheet] = useState<{
-		row: WsRow;
-		source: HTMLButtonElement;
-	} | null>(null);
-
-	function cancelWsHoverTimers() {
-		if (wsHoverOpenT.current) clearTimeout(wsHoverOpenT.current);
-		if (wsHoverCloseT.current) clearTimeout(wsHoverCloseT.current);
-		wsHoverOpenT.current = null;
-		wsHoverCloseT.current = null;
-	}
-	function wsRowHoverEnter(row: WsRow, el: HTMLElement) {
-		if (rowRenameEditing(row) || !pointerCanHover()) return;
-		cancelWsHoverTimers();
-		if (wsHover) {
-			setWsHover({ row, el });
-			return;
-		}
-		wsHoverOpenT.current = setTimeout(() => {
-			setWsHover({ row, el });
-		}, 380);
-	}
-	function scheduleWsHoverClose() {
-		if (wsHoverOpenT.current) clearTimeout(wsHoverOpenT.current);
-		wsHoverOpenT.current = null;
-		if (wsHoverCloseT.current) clearTimeout(wsHoverCloseT.current);
-		wsHoverCloseT.current = setTimeout(() => setWsHover(null), 140);
-	}
-	function closeWsHover() {
-		cancelWsHoverTimers();
-		setWsHover(null);
-	}
-	useEffect(() => cancelWsHoverTimers, []);
 
 	// Mobile: tap-to-open a workspace row fires from `touchend`, not the
 	// synthesized click — same trick as SessionRow. The row has :hover styles
@@ -2872,7 +2764,6 @@ setClosingPrUrls((current) => {
 		null,
 	);
 	const wsSwiping = useRef(false);
-	const wsSwipeOffset = useRef(0);
 	const [wsSwipe, setWsSwipe] = useState<SwipeState | null>(null);
 	const [wsDraggingKey, setWsDraggingKey] = useState<string | null>(null);
 	// Which action the in-flight drag is revealing. Split from wsSwipe so a
@@ -3279,8 +3170,8 @@ setClosingPrUrls((current) => {
 	// "Group, filter & sort" — and the strip at the top is the way out.
 	// Support is the one tool whose visibility is not its own: it and the Plain
 	// band are two doors onto one queue, and both at once would list the same
-	// tickets twice. The band wins when the stored lists still say both, which
-	// is every account that had arranged its tools before the tool existed.
+	// tickets twice. The tool wins when the independent stored lists say both,
+	// because it is the default placement and the band is the alternate.
 	const supportSurface = supportSurfaceOf(
 		!hiddenTools.has(PLAIN_ID),
 		!hiddenFeeds.has(PLAIN_ID),
@@ -3327,7 +3218,7 @@ setClosingPrUrls((current) => {
 	// The shared rail centres its 20px glyph on the same line as the 18px repo tiles.
 	const archivedLink = (
 		<button
-			{...mergeStylexProps(cn(
+			className={cn(
 				SIDEBAR_GROUP_HEADER,
 				SIDEBAR_GROUP_HEADER_INSET,
 				SIDEBAR_HEADER_ROW,
@@ -3335,7 +3226,9 @@ setClosingPrUrls((current) => {
 				// fill. Its neighbours in the rail collapse a group instead and
 				// deliberately take none. See the two signals in sidebar-classes.ts.
 				SIDEBAR_HOVER_LAYER,
-			), sx.transitionColors, archivedActive && sx.bgSelected, archivedActive && sx.textFg)}
+				utilityClassName("transition-colors"),
+				archivedActive && utilityClassName("bg-selected text-fg"),
+			)}
 			data-selected={archivedActive || undefined}
 			onClick={onOpenArchived}
 			title="View archived sessions"
@@ -3343,7 +3236,7 @@ setClosingPrUrls((current) => {
 			<span className={SIDEBAR_RAIL}>
 				<IconArchive size={20} />
 			</span>
-			<span {...mergeStylexProps(SIDEBAR_GROUP_NAME, sx.fontSemibold)}>Archived</span>
+			<span className={cn(SIDEBAR_GROUP_NAME, utilityClassName("font-semibold"))}>Archived</span>
 		</button>
 	);
 
@@ -3410,15 +3303,8 @@ setClosingPrUrls((current) => {
 				.filter((c) => c.isRunning && c.runStartedAt)
 				.map((c) => Date.parse(c.runStartedAt!))
 				.filter((n) => !Number.isNaN(n));
-			if (stamps.length) {
-				runStartMs = Math.min(...stamps);
-				runStartSeen.current.set(row.key, runStartMs);
-			} else {
-				runStartMs = runStartSeen.current.get(row.key) ?? Date.now();
-				runStartSeen.current.set(row.key, runStartMs);
-			}
-		} else {
-			runStartSeen.current.delete(row.key);
+			if (stamps.length) runStartMs = Math.min(...stamps);
+			else runStartMs = runStartSeen.get(row.key) ?? null;
 		}
 		// The yellow duration is a live status, not a sort key. Stable creation
 		// ordering makes that distinction honest without taking the useful timer
@@ -3471,12 +3357,12 @@ setClosingPrUrls((current) => {
 			>
 				{isPhone && row.sessions.length > 0 && (
 					<button
-						{...mergeStylexProps(cn(
+						className={cn(
 							SIDEBAR_SWIPE_ACTION,
 							SIDEBAR_SWIPE_ACTION_ARCHIVE,
 							swipeSide === "archive" && SIDEBAR_SWIPE_ACTION_OPEN,
-							draggingRow ? undefined : SIDEBAR_SWIPE_ACTION_TRANSITION,
-						), draggingRow && sx.transitionNone)}
+							draggingRow ? utilityClassName("transition-none") : SIDEBAR_SWIPE_ACTION_TRANSITION,
+						)}
 						data-swipe-action="archive"
 						onClick={(e) => {
 							e.stopPropagation();
@@ -3494,12 +3380,12 @@ setClosingPrUrls((current) => {
 				    long-press sheet) would defeat the point of a swipe. */}
 				{isPhone && isDraftWsRow(row) && (
 					<button
-						{...mergeStylexProps(cn(
+						className={cn(
 							SIDEBAR_SWIPE_ACTION,
 							SIDEBAR_SWIPE_ACTION_ARCHIVE,
 							swipeSide === "archive" && SIDEBAR_SWIPE_ACTION_OPEN,
-							draggingRow ? undefined : SIDEBAR_SWIPE_ACTION_TRANSITION,
-						), draggingRow && sx.transitionNone)}
+							draggingRow ? utilityClassName("transition-none") : SIDEBAR_SWIPE_ACTION_TRANSITION,
+						)}
 						data-swipe-action="delete"
 						onClick={(e) => {
 							e.stopPropagation();
@@ -3514,12 +3400,12 @@ setClosingPrUrls((current) => {
 				)}
 				{isPhone && (
 					<button
-						{...mergeStylexProps(cn(
+						className={cn(
 							SIDEBAR_SWIPE_ACTION,
 							pinned ? SIDEBAR_SWIPE_ACTION_STAR_ON : SIDEBAR_SWIPE_ACTION_STAR,
 							swipeSide === "star" && SIDEBAR_SWIPE_ACTION_OPEN,
-							draggingRow ? undefined : SIDEBAR_SWIPE_ACTION_TRANSITION,
-						), draggingRow && sx.transitionNone)}
+							draggingRow ? utilityClassName("transition-none") : SIDEBAR_SWIPE_ACTION_TRANSITION,
+						)}
 						data-swipe-action="star"
 						onClick={(e) => {
 							e.stopPropagation();
@@ -3533,14 +3419,30 @@ setClosingPrUrls((current) => {
 					</button>
 				)}
 				<button
-					{...mergeStylexProps(cn(
+					className={cn(
 						SIDEBAR_ROW,
 						// Inside a swipe row: the wrapper carries the 2px gap and the
 						// row carries the slide. The drag writes --swipe-x straight onto
 						// the node, so the transform reads it rather than a React style.
 						SIDEBAR_WS_ROW,
+						// The reserve follows the chips that actually appear: an
+						// unpinned row reveals snooze + archive, not the pin, so it
+						// gives up one chip less of its right end (26px + the 4px gap).
+						!pinned && utilityClassName("hover:pr-[68px]"),
+						utilityClassName("z-1 mt-0 touch-pan-y transform-[translateX(var(--swipe-x,0))]"),
 						SIDEBAR_HOVER_LAYER,
-					), !pinned && sx.hoverPr68, sx.z1, sx.mt0, sx.touchPanY, sx.transformSwipe, active && sx.bgSelected, draggingRow ? sx.transitionNone : sx.transitionTransform, !draggingRow && (swipeSide ? sx.durationMicro : sx.duration), (draggingRow || swipeSide) && sx.willChangeTransform)}
+						// "Needs you" paints no fill of its own: it is a question
+						// waiting, not a failure, and the row's one background slot
+						// belongs to selection. The blue mark in the rail and the bold
+						// title carry it — same as the native app.
+						active && utilityClassName("bg-selected"),
+						draggingRow
+							? utilityClassName("transition-none")
+							: swipeSide
+								? utilityClassName("transition-transform duration-(--dur-micro)")
+								: utilityClassName("transition-transform duration-(--dur)"),
+						(draggingRow || swipeSide) && utilityClassName("will-change-transform"),
+					)}
 					data-sidebar-row=""
 					data-ws-row=""
 					data-sidebar-item-key={`workspace:${row.key}`}
@@ -3563,11 +3465,18 @@ setClosingPrUrls((current) => {
 						return;
 					}
 					if (editing) return;
+					// Keyboard activation has no mousedown. Give it the same immediate
+					// selection feedback before the route render reconciles the sidebar.
+					previewSidebarSelection(sidebarScrollRef.current, e.currentTarget);
 					openWsRow(row, review);
 				}}
 					onMouseEnter={(e) => wsRowHoverEnter(row, e.currentTarget)}
 					onMouseLeave={scheduleWsHoverClose}
-					onMouseDown={closeWsHover}
+					onMouseDown={(e) => {
+					closeWsHover();
+					if (e.button === 0 && !editing)
+						previewSidebarSelection(sidebarScrollRef.current, e.currentTarget);
+				}}
 					onTouchStart={(e) => wsRowTouchStart(row, e)}
 					onTouchMove={(e) => wsRowTouchMove(row, e)}
 					onTouchEnd={(e) => wsRowTouchEnd(row, e, review)}
@@ -3616,17 +3525,17 @@ setClosingPrUrls((current) => {
 				<span className={SIDEBAR_RAIL}>
 					{waiting || needsMyReview ? (
 						<span
-							{...mergeStylexProps(SIDEBAR_STATUS_DOT.waiting, sx.size2, sx.shrink0, sx.roundedFull)}
+							className={utilityClassName(`size-2 shrink-0 rounded-full ${SIDEBAR_STATUS_DOT.waiting}`)}
 						/>
 					) : failed ? (
 						<span
-							{...mergeStylexProps(SIDEBAR_STATUS_DOT.failed, sx.size2, sx.shrink0, sx.roundedFull)}
+							className={utilityClassName(`size-2 shrink-0 rounded-full ${SIDEBAR_STATUS_DOT.failed}`)}
 						/>
 					) : noSectionHeading ? (
 						<WsStatusMark row={row} size={18} />
 					) : row.running ? (
 						<span
-							{...mergeStylexProps(SIDEBAR_STATUS_DOT.running, sx.size2, sx.shrink0, sx.roundedFull)}
+							className={utilityClassName(`size-2 shrink-0 rounded-full ${SIDEBAR_STATUS_DOT.running}`)}
 						/>
 					) : (
 						<WsPrStatusMark
@@ -3644,7 +3553,8 @@ setClosingPrUrls((current) => {
 					<RepoTile name={wsRowRepo(row)} size={14} />
 				)}
 				{editing ? (
-					<input {...mergeStylexProps("", sx.borderVarAccent6b8afd, sx.desktopTextItemTitle, sx.minW0, sx.flex1, sx.roundedMd, sx.border, sx.bgBg, sx.px3px, sx.fontMedium, sx.textInherit, sx.outlineNone, typography.body)}
+					<input
+						{...mergeStylexProps("border-[var(--accent,#6b8afd)] desktop:text-item-title", sx.minW0, sx.flex1, sx.roundedMd, sx.border, sx.bgBg, sx.px3px, sx.fontMedium, sx.textInherit, sx.outlineNone, typography.body)}
 						value={row.workspace ? workspaceDraft : sessionDraft}
 						autoFocus
 						onChange={(e) =>
@@ -3708,7 +3618,8 @@ setClosingPrUrls((current) => {
 					>
 						<UserAvatar name={row.mention} size={16} className={mergeStylexOverrideClassName("", sx.shrink0)} />
 						<span
-							aria-hidden="true" {...mergeStylexProps("", sx.ring2, sx.absolute, sx.Right1, sx.Bottom1, sx.flex, sx.size3, sx.itemsCenter, sx.justifyCenter, sx.roundedFull, sx.bgAccent, sx.text8px, sx.fontBold, sx.leadingNone, sx.textOnAccent, sx.ringPanel)}
+							aria-hidden="true"
+							{...mergeStylexProps("ring-2 ring-panel", sx.absolute, sx.Right1, sx.Bottom1, sx.flex, sx.size3, sx.itemsCenter, sx.justifyCenter, sx.roundedFull, sx.bgAccent, sx.text8px, sx.fontBold, sx.leadingNone, sx.textOnAccent)}
 						>
 							@
 						</span>
@@ -3734,12 +3645,17 @@ setClosingPrUrls((current) => {
 								className={SIDEBAR_WS_FACES}
 								aria-label={`Viewing: ${viewers.join(", ")}`}
 							>
-								{viewers.slice(0, 3).map((viewer) => (
+								{viewers.slice(0, 3).map((viewer, index, shown) => (
 									<UserAvatar
 										key={viewer}
 										name={viewer}
 										size={16}
 										className={SIDEBAR_WS_FACE}
+										style={facepileAvatarStyle(
+											index,
+											shown.length,
+											"var(--sidebar-face-ring)",
+										)}
 										title={`${viewer} is here`}
 									/>
 								))}
@@ -3756,7 +3672,7 @@ setClosingPrUrls((current) => {
 					// second auto margin would split the free space between them.
 					<SnoozeBadge
 						until={snoozeIso}
-						className={showRunDuration ? mergeStylexClassName("", sx.ml15) : undefined}
+						className={showRunDuration ? utilityClassName("ml-1.5") : undefined}
 					/>
 				)}
 				{/* The optional last-used preference remains useful context, but it is
@@ -3773,10 +3689,10 @@ setClosingPrUrls((current) => {
 								// The "hover" mode (the default) shows the badge only under
 								// the pointer. On touch there is no hover, so it shows inline
 								// like "always". A running row keeps its duration instead.
-								showRunDuration && mergeStylexClassName("", sx.hidden),
+								showRunDuration && utilityClassName("hidden"),
 								wsTimePref === "hover" &&
 									!showRunDuration &&
-									mergeStylexClassName("", sx.MediaHoverNoneInlineFlex),
+									"[@media(hover:none)]:inline-flex",
 							)}
 							data-ws-time=""
 							aria-label={new Date(row.lastActivity).toLocaleString()}
@@ -3786,21 +3702,10 @@ setClosingPrUrls((current) => {
 					)}
 				{/* Slack-style pencil: a session here holds an unsent draft — come back
 				    and finish it. Yields to the hover actions like the count/time. */}
-				{row.sessions.some((c) => hasDraft(`session:${c.id}`)) && (
-					<span
-						className={cn(
-							SIDEBAR_WS_DRAFT,
-							// The pencil pins itself to the row's right edge unless a
-							// ticker or a snooze countdown already did that pushing.
-							showRunDuration || snoozeIso ? mergeStylexClassName("", sx.ml15) : mergeStylexClassName("", sx.mlAuto),
-							"group-hover:hidden",
-						)}
-						data-ws-draft=""
-						aria-label="Unsent draft. Return to finish it."
-					>
-						<IconPencil size={20} />
-					</span>
-				)}
+				<WorkspaceDraftIndicator
+					sessionIdsKey={row.sessions.map((session) => session.id).join("\0")}
+					pushed={showRunDuration || Boolean(snoozeIso)}
+				/>
 				{/* Hover actions stay in one predictable order: Pin, Snooze, Archive. */}
 				<span
 					className={cn(
@@ -3808,7 +3713,7 @@ setClosingPrUrls((current) => {
 						// A revealed swipe action owns the row's right edge, so the
 						// hover cluster stays out of it entirely rather than being
 						// hidden again by a more specific rule further down the sheet.
-						swipeSide ? mergeStylexClassName("", sx.hidden) : SIDEBAR_WS_ACTIONS_HOVER,
+						swipeSide ? utilityClassName("hidden") : SIDEBAR_WS_ACTIONS_HOVER,
 					)}
 					data-ws-actions=""
 				>
@@ -3831,7 +3736,7 @@ setClosingPrUrls((current) => {
 							// One colour, picked here rather than stacking two `text-*`
 							// utilities, whose winner would be Tailwind's ordering: a
 							// pinned action keeps its accent under the pointer.
-							className={cn(SIDEBAR_WS_ACTION, mergeStylexClassName("", sx.textAccent))}
+							className={cn(SIDEBAR_WS_ACTION, "text-accent")}
 							aria-label="Unpin workspace"
 							onClick={(e) => {
 								e.stopPropagation();
@@ -3856,7 +3761,7 @@ setClosingPrUrls((current) => {
 								<span
 									role="button"
 									tabIndex={0}
-									className={cn(SIDEBAR_WS_ACTION, mergeStylexClassName("", sx.textFaint, sx.hoverTextFg))}
+									className={cn(SIDEBAR_WS_ACTION, utilityClassName("text-faint hover:text-fg"))}
 									aria-label={snoozed ? "Unsnooze workspace" : "Snooze workspace"}
 									onClick={(e) => {
 										e.stopPropagation();
@@ -3881,7 +3786,7 @@ setClosingPrUrls((current) => {
 								<span
 									role="button"
 									tabIndex={0}
-									className={cn(SIDEBAR_WS_ACTION, mergeStylexClassName("", sx.textFaint, sx.hoverTextFg))}
+									className={cn(SIDEBAR_WS_ACTION, utilityClassName("text-faint hover:text-fg"))}
 									aria-label="Archive workspace"
 									onClick={(e) => {
 										e.stopPropagation();
@@ -3913,7 +3818,7 @@ setClosingPrUrls((current) => {
 							<span
 								role="button"
 								tabIndex={0}
-								className={cn(SIDEBAR_WS_ACTION, mergeStylexClassName("", sx.textFaint, sx.hoverTextRed))}
+								className={cn(SIDEBAR_WS_ACTION, utilityClassName("text-faint hover:text-red"))}
 								aria-label="Delete draft"
 								onClick={(e) => {
 									e.stopPropagation();
@@ -4059,7 +3964,7 @@ fetchFeedItems("plain")
 						SIDEBAR_GROUP_HEADER,
 						SIDEBAR_GROUP_HEADER_INSET,
 						SIDEBAR_LANE_HEADER,
-						mergeStylexClassName("", sx.transitionColors),
+						utilityClassName("transition-colors"),
 						SIDEBAR_STICKY_LANE,
 						ns && SIDEBAR_STICKY_LANE_NESTED,
 						SIDEBAR_STUCK_BACKING,
@@ -4120,7 +4025,7 @@ fetchFeedItems("plain")
 						SIDEBAR_GROUP_HEADER,
 						SIDEBAR_GROUP_HEADER_INSET,
 						SIDEBAR_LANE_HEADER,
-						mergeStylexClassName("", sx.transitionColors),
+						utilityClassName("transition-colors"),
 						SIDEBAR_STICKY_LANE,
 						ns && SIDEBAR_STICKY_LANE_NESTED,
 						SIDEBAR_STUCK_BACKING,
@@ -4205,7 +4110,7 @@ fetchFeedItems("plain")
 							SIDEBAR_GROUP_HEADER,
 							SIDEBAR_GROUP_HEADER_INSET,
 							SIDEBAR_LANE_HEADER,
-							mergeStylexClassName("", sx.transitionColors),
+							utilityClassName("transition-colors"),
 							SIDEBAR_STICKY_LANE,
 							ns && SIDEBAR_STICKY_LANE_NESTED,
 							SIDEBAR_STUCK_BACKING,
@@ -4299,7 +4204,7 @@ fetchFeedItems("plain")
 								SIDEBAR_GROUP_HEADER,
 								SIDEBAR_GROUP_HEADER_INSET,
 								SIDEBAR_LANE_HEADER,
-								mergeStylexClassName("", sx.transitionColors),
+								utilityClassName("transition-colors"),
 								SIDEBAR_STICKY_LANE,
 								ns && SIDEBAR_STICKY_LANE_NESTED,
 								SIDEBAR_STUCK_BACKING,
@@ -4349,7 +4254,7 @@ fetchFeedItems("plain")
 						SIDEBAR_GROUP_HEADER,
 						SIDEBAR_GROUP_HEADER_INSET,
 						SIDEBAR_LANE_HEADER,
-						mergeStylexClassName("", sx.transitionColors),
+						utilityClassName("transition-colors"),
 						SIDEBAR_STICKY_LANE,
 						ns && SIDEBAR_STICKY_LANE_NESTED,
 						SIDEBAR_STUCK_BACKING,
@@ -4401,6 +4306,74 @@ fetchFeedItems("plain")
 	// Scratch workspaces stay in one unlabelled group above them:
 	// they have no project, even when an older workspace record carries a stale
 	// repo. A collapsed band wears a count of the urgent rows it hides. Repos
+	// Drag handlers stay outside the render helper so refs are reached only from
+	// deferred browser events, never while the helper builds its JSX.
+	function moveDraggedRepo(
+		targetRepo: string,
+		order: string[],
+		fullOrder: string[],
+		event: React.DragEvent<HTMLDivElement>,
+	) {
+		const draggedRepo = repoDragging.current;
+		if (!draggedRepo || targetRepo === ASK_BAND) return;
+		event.preventDefault();
+		if (draggedRepo === targetRepo) return;
+		const visibleOrder = [
+			...(repoVisualOrder.current ?? order.filter((repo) => repo !== ASK_BAND)),
+		];
+		const from = visibleOrder.indexOf(draggedRepo);
+		if (from < 0) return;
+		visibleOrder.splice(from, 1);
+		let target = visibleOrder.indexOf(targetRepo);
+		if (target < 0) return;
+		const header = event.currentTarget.querySelector<HTMLElement>(
+			":scope > [data-sticky-head]",
+		);
+		const rect = (header ?? event.currentTarget).getBoundingClientRect();
+		if (event.clientY > rect.top + rect.height / 2) target++;
+		visibleOrder.splice(target, 0, draggedRepo);
+		if (JSON.stringify(visibleOrder) === JSON.stringify(repoVisualOrder.current)) return;
+		repoVisualOrder.current = visibleOrder;
+		const baseline = repoOrderAtDragStart.current ?? fullOrder;
+		const next = replaceVisibleRepoOrder(baseline, visibleOrder);
+		repoOrderPending.current = next;
+		setRepoOrderDraft(next);
+	}
+	function finishRepoDrag(commit: boolean) {
+		stopRepoAutoScroll();
+		repoJustDragged.current = true;
+		setTimeout(() => {
+			repoJustDragged.current = false;
+		}, 0);
+		repoOrderAtDragStart.current = null;
+		repoVisualOrder.current = null;
+		repoDragging.current = null;
+		setRepoDragKey(null);
+		const pending = repoOrderPending.current;
+		repoOrderPending.current = null;
+		setRepoOrderDraft(null);
+		if (commit && pending) setRepoOrder(pending);
+	}
+	function startRepoDrag(
+		repo: string,
+		fullOrder: string[],
+		order: string[],
+		event: React.DragEvent<HTMLButtonElement>,
+	) {
+		repoDragging.current = repo;
+		setRepoDragKey(repo);
+		repoOrderAtDragStart.current = [...fullOrder];
+		repoOrderPending.current = null;
+		repoVisualOrder.current = order.filter((item) => item !== ASK_BAND);
+		event.dataTransfer.effectAllowed = "move";
+		event.dataTransfer.setData("text/plain", repo);
+	}
+	function swallowRepoDragClick(event: React.MouseEvent) {
+		if (!repoJustDragged.current) return;
+		event.preventDefault();
+		event.stopPropagation();
+	}
+
 	// are ordered by the user's shared preference (`repos`), with newly seen
 	// repositories appended in frequency order; a band is force-open while it
 	// holds the selected row so the open session never hides inside a collapsed repo.
@@ -4505,55 +4478,6 @@ fetchFeedItems("plain")
 			!isPhone &&
 			filter.repo === "all" &&
 			order.filter((r) => r !== ASK_BAND).length > 1;
-		const moveDraggedRepo = (
-			targetRepo: string,
-			event: React.DragEvent<HTMLDivElement>,
-		) => {
-			const draggedRepo = repoDragging.current;
-			if (!draggedRepo) return;
-			// Ask is pinned: it is neither a drag source nor a drop target, and
-			// letting it into `visibleOrder` would write the sentinel into the
-			// saved repo order via replaceVisibleRepoOrder's append.
-			if (targetRepo === ASK_BAND) return;
-			event.preventDefault();
-			if (draggedRepo === targetRepo) return;
-			const visibleOrder = [
-				...(repoVisualOrder.current ?? order.filter((r) => r !== ASK_BAND)),
-			];
-			const from = visibleOrder.indexOf(draggedRepo);
-			if (from < 0) return;
-			visibleOrder.splice(from, 1);
-			let target = visibleOrder.indexOf(targetRepo);
-			if (target < 0) return;
-			const header = event.currentTarget.querySelector<HTMLElement>(
-				":scope > [data-sticky-head]",
-			);
-			const rect = (header ?? event.currentTarget).getBoundingClientRect();
-			if (event.clientY > rect.top + rect.height / 2) target++;
-			visibleOrder.splice(target, 0, draggedRepo);
-			if (JSON.stringify(visibleOrder) === JSON.stringify(repoVisualOrder.current))
-				return;
-			repoVisualOrder.current = visibleOrder;
-			const baseline = repoOrderAtDragStart.current ?? fullOrder;
-			const next = replaceVisibleRepoOrder(baseline, visibleOrder);
-			repoOrderPending.current = next;
-			setRepoOrderDraft(next);
-		};
-		const finishRepoDrag = (commit: boolean) => {
-			stopRepoAutoScroll();
-			repoJustDragged.current = true;
-			setTimeout(() => {
-				repoJustDragged.current = false;
-			}, 0);
-			repoOrderAtDragStart.current = null;
-			repoVisualOrder.current = null;
-			repoDragging.current = null;
-			setRepoDragKey(null);
-			const pending = repoOrderPending.current;
-			repoOrderPending.current = null;
-			setRepoOrderDraft(null);
-			if (commit && pending) setRepoOrder(pending);
-		};
 		return (
 			<>
 				{(scratchRows.length > 0 || scratchSnoozedRows.length > 0) && (
@@ -4613,29 +4537,25 @@ fetchFeedItems("plain")
 					<div
 						className={cn(
 							"[&:not(:first-child)]:mt-4",
-							canReorder && mergeStylexClassName("", sx.cursorGrab, sx.activeCursorGrabbing),
+							canReorder && utilityClassName("cursor-grab active:cursor-grabbing"),
 							repoDragKey === repo &&
 								"[&>[data-sticky-head]]:rounded-md [&>[data-sticky-head]]:bg-hover [&>[data-sticky-head]]:opacity-50 [&>[data-sticky-head]]:ring-1 [&>[data-sticky-head]]:ring-inset [&>[data-sticky-head]]:ring-line-strong",
 						)}
 						key={gkey}
 						data-repo-id={repo}
-						onDragOver={(event) => moveDraggedRepo(repo, event)}
+						onDragOver={(event) => moveDraggedRepo(repo, order, fullOrder, event)}
 						onDrop={(event) => {
 							event.preventDefault();
 							finishRepoDrag(true);
 						}}
-						onClickCapture={(event: React.MouseEvent) => {
-							if (!repoJustDragged.current) return;
-							event.preventDefault();
-							event.stopPropagation();
-						}}
+						onClickCapture={swallowRepoDragClick}
 					>
 						<button
 							className={cn(
 								SIDEBAR_GROUP_HEADER,
 								SIDEBAR_GROUP_HEADER_INSET,
 								SIDEBAR_HEADER_ROW,
-								mergeStylexClassName("group", sx.transitionColors),
+								utilityClassName("group transition-colors"),
 								SIDEBAR_STICKY_LANE,
 								SIDEBAR_STUCK_BACKING,
 							)}
@@ -4646,15 +4566,7 @@ fetchFeedItems("plain")
 									? "Drag to reorder repositories"
 									: undefined
 							}
-							onDragStart={(event) => {
-								repoDragging.current = repo;
-								setRepoDragKey(repo);
-								repoOrderAtDragStart.current = [...fullOrder];
-								repoOrderPending.current = null;
-								repoVisualOrder.current = order.filter((r) => r !== ASK_BAND);
-								event.dataTransfer.effectAllowed = "move";
-								event.dataTransfer.setData("text/plain", repo);
-							}}
+							onDragStart={(event) => startRepoDrag(repo, fullOrder, order, event)}
 							onDragEnd={() => finishRepoDrag(false)}
 							onClick={() => toggleGroup(gkey)}
 						>
@@ -4673,11 +4585,11 @@ fetchFeedItems("plain")
 							</span>
 							{/* The differently sized name and count share a baseline, while the
 							    pair stays vertically centred against the tile. */}
-							<span {...mergeStylexProps("", sx.desktopGap9px, sx.flex, sx.minW0, sx.flex01Auto, sx.itemsBaseline, sx.gap15)}>
-								<span className={cn(SIDEBAR_GROUP_NAME, mergeStylexClassName("", sx.flex01Auto, sx.fontSemibold))}>
+							<span {...mergeStylexProps("desktop:gap-[9px]", sx.flex, sx.minW0, sx.flex01Auto, sx.itemsBaseline, sx.gap15)} >
+								<span className={cn(SIDEBAR_GROUP_NAME, utilityClassName("flex-[0_1_auto] font-semibold"))}>
 									{repo === ASK_BAND ? "Ask" : repoLabel(repo)}
 								</span>
-								<span className={cn(SIDEBAR_GROUP_COUNT, mergeStylexClassName("", sx.shrink0))}>
+								<span className={cn(SIDEBAR_GROUP_COUNT, utilityClassName("shrink-0"))}>
 									{rows.length +
 										snoozedRows.length +
 										needsReviewRepoRows.length +
@@ -4692,7 +4604,7 @@ fetchFeedItems("plain")
 							    and of reviews being asked of you. */}
 							{!open && urgent > 0 && (
 								<span
-									className={cn(SIDEBAR_ATTN_COUNT, mergeStylexClassName("", sx.bgBlue))}
+									className={cn(SIDEBAR_ATTN_COUNT, utilityClassName("bg-blue"))}
 									aria-label={`${urgent} waiting on you`}
 								>
 									{urgent}
@@ -4718,7 +4630,8 @@ fetchFeedItems("plain")
 							{!borrowedLens && (
 								<span
 									role="button"
-									tabIndex={0} {...mergeStylexProps("md:group-hover:opacity-100 [&>*]:relative [&>*]:z-[1]", sx.transitionOpacityColor, sx.hoverTextFg, sx.focusVisibleOpacity100, sx.mdOpacity0, sx.beforeAbsolute, sx.beforeInset05, sx.beforeZ0, sx.beforeRoundedSm, sx.beforeCornerShapeVarCs, sx.beforeTransitionBackground, sx.beforeContent, sx.hoverBeforeBgHover, sx.relative, sx.mlAuto, sx.inlineFlex, sx.size7, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.roundedMd, sx.textFaint, sx.opacity100, sx.duration150)}
+									tabIndex={0}
+									{...mergeStylexProps("transition-[opacity,color] hover:text-fg focus-visible:opacity-100 md:opacity-0 md:group-hover:opacity-100 before:absolute before:inset-0.5 before:z-0 before:rounded-sm before:[corner-shape:var(--cs)] before:transition-[background] before:content-[''] hover:before:bg-hover [&>*]:relative [&>*]:z-[1]", sx.relative, sx.mlAuto, sx.inlineFlex, sx.size7, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.roundedMd, sx.textFaint, sx.opacity100, sx.duration150)}
 									title={
 										repo === ASK_BAND
 											? "New Ask session, no repo"
@@ -4841,7 +4754,7 @@ fetchFeedItems("plain")
 						<IconChevronDown
 							className={cn(
 								SIDEBAR_GROUP_CHEVRON,
-								mergeStylexClassName("", sx.mlAuto),
+								utilityClassName("ml-auto"),
 								!groupIsOpen && SIDEBAR_GROUP_CHEVRON_COLLAPSED,
 							)}
 							size={20}
@@ -4990,7 +4903,7 @@ fetchFeedItems("plain")
 									SIDEBAR_GROUP_HEADER,
 									SIDEBAR_GROUP_HEADER_INSET,
 									SIDEBAR_HEADER_ROW,
-									mergeStylexClassName("group", sx.transitionColors),
+									utilityClassName("group transition-colors"),
 									SIDEBAR_STICKY_LANE,
 									SIDEBAR_STUCK_BACKING,
 								)}
@@ -5002,13 +4915,13 @@ fetchFeedItems("plain")
 						<span className={SIDEBAR_RAIL}>
 							<RepoTile name={feed.id} className={SIDEBAR_REPO_TILE} />
 						</span>
-						<span {...mergeStylexProps("", sx.desktopGap9px, sx.flex, sx.minW0, sx.flex01Auto, sx.itemsBaseline, sx.gap15)}>
-							<span className={cn(SIDEBAR_GROUP_NAME, mergeStylexClassName("", sx.flex01Auto, sx.fontSemibold))}>{feed.title}</span>
-							<span className={cn(SIDEBAR_GROUP_COUNT, mergeStylexClassName("", sx.shrink0))}>{count}</span>
+						<span {...mergeStylexProps("desktop:gap-[9px]", sx.flex, sx.minW0, sx.flex01Auto, sx.itemsBaseline, sx.gap15)} >
+							<span className={cn(SIDEBAR_GROUP_NAME, utilityClassName("flex-[0_1_auto] font-semibold"))}>{feed.title}</span>
+							<span className={cn(SIDEBAR_GROUP_COUNT, utilityClassName("shrink-0"))}>{count}</span>
 						</span>
 						{!open && attentionCount > 0 && (
 							<span
-								className={cn(SIDEBAR_ATTN_COUNT, mergeStylexClassName("", sx.bgRed))}
+								className={cn(SIDEBAR_ATTN_COUNT, utilityClassName("bg-red"))}
 								aria-label={`${attentionCount} urgent`}
 							>
 								{attentionCount}
@@ -5069,7 +4982,7 @@ fetchFeedItems("plain")
 		// twice, which costs nothing: they are one string either way.
 		data-density={density}
 		className={cn(
-			mergeStylexClassName("", sx.block, sx.maxWFull, sx.minW0, sx.flexNone),
+			utilityClassName("block max-w-full min-w-0 flex-none"),
 			SIDEBAR_DENSITY_VARS,
 			SIDEBAR_NAV_X,
 		)}
@@ -5105,10 +5018,10 @@ fetchFeedItems("plain")
 				// The organization row leads this rail on desktop now that the old
 				// heading is gone. Pull it slightly closer to the fixed top bar there;
 				// phones keep the original spacing because their first row is a tool.
-				mergeStylexClassName("", sx.flex, sx.flexCol, sx.gap05, sx.pxVarSidebarNavX, sx.pt2, sx.pb15, sx.desktopPt05),
+				utilityClassName("flex flex-col gap-0.5 px-[var(--sidebar-nav-x)] pt-2 pb-1.5 desktop:pt-0.5"),
 			)}
 		>
-			<div className={mergeStylexClassName("", sx.phoneHidden)}>
+			<div className={utilityClassName("phone:hidden")}>
 				<OrganizationSwitcher
 					connected={connected}
 					onOpenSettings={onOpenSettings}
@@ -5118,7 +5031,7 @@ fetchFeedItems("plain")
 				const rowClass = cn(
 					// One look at both widths. Only the box changes, and only
 					// because a phone row is pressed rather than read.
-					mergeStylexClassName("group", sx.flex, sx.itemsCenter, sx.textLeft, sx.transitionColors),
+					utilityClassName("group flex items-center text-left transition-colors"),
 					// Rows use control-label type, with glyphs matching the
 					// sidebar's standard 22px leading rail.
 					// `--sidebar-tool-pad` is 5px for a 32px box: the tools are a
@@ -5134,16 +5047,16 @@ fetchFeedItems("plain")
 					// Phones override it to the 13px the session rows take
 					// (SIDEBAR_ROW, lib/sidebar-classes.ts) for a 48px box: 32px is
 					// a reading height, not a tap target.
-					[mergeStylexClassName("", sx.wFull), SIDEBAR_RAIL_GAP, mergeStylexClassName("", sx.roundedRow, sx.bgTransparent, sx.pxCalcVarSidebarIconLeftVarSidebarNavX, sx.pyVarSidebarToolPad, sx.phonePy13px, typography.body, sx.fontMedium, sx.textDim, sx.desktopTextItemTitle, sx.hoverTextFg)].filter(Boolean).join(" "),
+					utilityClassName(`w-full ${SIDEBAR_RAIL_GAP} rounded-row bg-transparent px-[calc(var(--sidebar-icon-left)-var(--sidebar-nav-x))] py-[var(--sidebar-tool-pad)] phone:py-[13px] text-body font-medium text-dim desktop:text-item-title hover:text-fg`),
 					SIDEBAR_HOVER_LAYER,
-					tool.active && mergeStylexClassName("", sx.bgSelected, sx.textFg),
+					tool.active && utilityClassName("bg-selected text-fg"),
 				);
 				const rowBody = (
 					<>
 						<span
 							className={cn(
-								mergeStylexClassName("[&_svg]:size-[22px]", sx.inlineFlex, sx.textFaint),
-								tool.active ? mergeStylexClassName("", sx.textDim) : "group-hover:text-dim",
+								utilityClassName("inline-flex text-faint [&_svg]:size-[22px]"),
+								tool.active ? utilityClassName("text-dim") : "group-hover:text-dim",
 							)}
 						>
 							{tool.icon}
@@ -5238,7 +5151,7 @@ fetchFeedItems("plain")
 				// Feed.
 				if (tool.id !== "feed" || team.length === 0) return row;
 				return (
-					<div key={tool.id} {...mergeStylexProps("group/team-lens", sx.relative)}>
+					<div key={tool.id} {...mergeStylexProps("group/team-lens", sx.relative)} >
 						{row}
 						<TeamLensMenu
 							members={team}
@@ -5255,7 +5168,12 @@ fetchFeedItems("plain")
 							label={personLensName}
 							onPick={(next) =>
 								setFilter({ person: personLensFilter(next, currentUser) })
-							} {...mergeStylexProps("group-hover/team-lens:[--team-face-ring:var(--row-chip)] data-[popup-open]:[--team-face-ring:var(--row-chip)]", sx.phonePy25, sx.absolute, sx.right2, sx.top12, sx.TranslateY12, sx.TeamFaceRingVarSidebarBg)}
+							}
+							// Phones pad the trigger out to the row's own height so
+							// the faces are a thumb-sized target rather than a 24px
+							// one. It stays a pill either way, so the padding is only
+							// reach: nothing about it reads larger at rest.
+							className={mergeStylexOverrideClassName("phone:py-2.5 [--team-face-ring:var(--sidebar-bg)] group-hover/team-lens:[--team-face-ring:var(--row-chip)] data-[popup-open]:[--team-face-ring:var(--row-chip)]", sx.absolute, sx.right2, sx.top12, sx.TranslateY12)}
 						/>
 					</div>
 				);
@@ -5269,15 +5187,15 @@ fetchFeedItems("plain")
 			// caption hidden and the chevron invisible-but-in-layout, that was a
 			// near-empty band between the tool cards and the first project, which
 			// read as the strip being bottom-heavy. Nothing to set off there.
-			mergeStylexClassName("", sx.mt1, sx.pb05, sx.pt3, sx.phoneMt0, sx.phonePt0),
+			utilityClassName("mt-1 pb-0.5 pt-3 phone:mt-0 phone:pt-0"),
 			// A borrowed lens hides the tools strip, so this bar becomes the
 			// first thing in the phone scroll. Give it enough air to clear the
 			// floating top bar's fade instead of letting its top edge wash out.
-			borrowedLens && mergeStylexClassName("", sx.phonePt4),
+			borrowedLens && utilityClassName("phone:pt-4"),
 			// A caption starts on the rail's 16px text column; the borrowed
 			// lens's strip is a filled bar, so it takes the rows' own 8px
 			// inset instead and lines up with the workspace pills under it.
-			borrowedLens ? mergeStylexClassName("", sx.px2) : mergeStylexClassName("", sx.px16px, sx.pr7px),
+			borrowedLens ? utilityClassName("px-2") : utilityClassName("px-[16px] pr-[7px]"),
 			SIDEBAR_STICKY_BAND,
 			SIDEBAR_STICKY_BAND_ROW,
 			SIDEBAR_STUCK_BACKING,
@@ -5286,14 +5204,14 @@ fetchFeedItems("plain")
 	>
 		<div
 			className={cn(
-				mergeStylexClassName("group/wshead", sx.flex, sx.minW0, sx.itemsCenter, sx.gap15, sx.desktopWFull),
+				utilityClassName("group/wshead flex min-w-0 items-center gap-1.5 desktop:w-full"),
 				// In someone else's sidebar this row IS the strip: one bar that
 				// names whose lanes these are, takes you back out, and carries
 				// the header's own actions. The name was being said twice —
 				// once by a strip above the tools, once by this heading — and
 				// each said it with its own ✕.
 				borrowedLens &&
-					mergeStylexClassName("", sx.minH10, sx.wFull, sx.roundedRow, sx.bgBlueSoft, sx.pl3, sx.pr1, sx.phoneMinH12, sx.phonePl35, sx.desktopHFull, sx.desktopMinH0),
+					utilityClassName("min-h-10 w-full rounded-row bg-blue-soft pl-3 pr-1 phone:min-h-12 phone:pl-3.5 desktop:h-full desktop:min-h-0"),
 			)}
 			ref={headRef}
 		>
@@ -5302,14 +5220,14 @@ fetchFeedItems("plain")
 					{/* The bar reports the active lens. Closing it is a separate
 					    action at the far edge, so the label stays visually stable and
 					    the close control gets a full touch target. */}
-					<div {...mergeStylexProps("", sx.phoneTextBase, sx.flex, sx.minW0, sx.flex1, sx.itemsCenter, sx.gap2, sx.textSm, sx.textFg)}
-						ref={(node) => {
-							titleRef.current = node;
-						}}
+					<div
+						{...mergeStylexProps("phone:text-base", sx.flex, sx.minW0, sx.flex1, sx.itemsCenter, sx.gap2, sx.textSm, sx.textFg)}
+						ref={titleRef as React.RefObject<HTMLDivElement | null>}
 					>
 						{filter.person === "everyone" ? (
 							<IconPeople
-								size={20} {...mergeStylexProps("", sx.phoneTranslateYPx, sx.shrink0, sx.translateY05px, sx.textDim)}
+								size={20}
+								className={mergeStylexOverrideClassName("phone:-translate-y-px", sx.shrink0, sx.translateY05px, sx.textDim)}
 							/>
 						) : (
 							filter.person !== "unassigned" && (
@@ -5329,7 +5247,8 @@ fetchFeedItems("plain")
 						</span>
 					</div>
 					<Tooltip label="Back to your workspaces">
-						<button {...mergeStylexProps("[&>*]:relative [&>*]:z-[1]", sx.transitionColorScale, sx.beforeAbsolute, sx.beforeInset2, sx.beforeRoundedMd, sx.beforeTransitionColors, sx.beforeContent, sx.hoverTextFg, sx.hoverBeforeBgHover, sx.activeScale096, sx.phoneSize11, sx.motionReduceTransformNone, sx.relative, sx.flex, sx.size10, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.roundedMd, sx.border0, sx.bgTransparent, sx.textDim)}
+						<button
+							{...mergeStylexProps("transition-[color,scale] before:absolute before:inset-2 before:rounded-md before:transition-colors before:content-[''] hover:text-fg hover:before:bg-hover active:scale-[0.96] phone:size-11 motion-reduce:transform-none [&>*]:relative [&>*]:z-[1]", sx.relative, sx.flex, sx.size10, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.roundedMd, sx.border0, sx.bgTransparent, sx.textDim)}
 							onClick={() => setFilter({ person: "me" })}
 							aria-label="Back to your workspaces"
 						>
@@ -5340,7 +5259,7 @@ fetchFeedItems("plain")
 			) : (
 			<button
 				className={cn(
-					mergeStylexClassName("group/wstoggle", sx.flex, sx.minW0, sx.itemsCenter, sx.gap5px, sx.FontInherit),
+					utilityClassName("group/wstoggle flex min-w-0 items-center gap-[5px] [font:inherit]"),
 					// On phones the caption is hidden and the chevron only paints on
 					// hover, so while the band is open this button is a 22px row of
 					// nothing between the tool cards and the first project. That row
@@ -5349,7 +5268,7 @@ fetchFeedItems("plain")
 					// Collapsed it stays: the chevron IS visible then
 					// (SIDEBAR_BAND_CHEVRON_COLLAPSED), and it is the only way to
 					// open the band back up.
-					isPhone && workspacesOpen && mergeStylexClassName("", sx.hidden),
+					isPhone && workspacesOpen && utilityClassName("hidden"),
 				)}
 				onClick={() => toggleBand("workspaces")}
 				aria-expanded={workspacesOpen}
@@ -5366,12 +5285,10 @@ fetchFeedItems("plain")
 						// The band caption, same as SIDEBAR_BAND_LABEL wears one
 						// section down: this heading is written inline rather than
 						// composed from it only because of the strip above.
-						mergeStylexClassName("group-hover/wshead:text-fg", sx.shrink0, typography.label, sx.fontSemibold, sx.textDim),
-						isPhone && mergeStylexClassName("", sx.hidden),
+						utilityClassName("shrink-0 text-label font-semibold text-dim group-hover/wshead:text-fg"),
+						isPhone && utilityClassName("hidden"),
 					)}
-					ref={(node) => {
-						titleRef.current = node;
-					}}
+					ref={titleRef as React.RefObject<HTMLSpanElement | null>}
 				>
 					Workspaces
 				</span>
@@ -5410,30 +5327,30 @@ fetchFeedItems("plain")
 			    bar keeps the one action that belongs to it, which is leaving. */}
 			<div
 				className={cn(
-					mergeStylexClassName("", sx.shrink0, sx.itemsCenter, sx.gap15),
-					isPhone || borrowedLens ? mergeStylexClassName("", sx.hidden) : mergeStylexClassName("", sx.flex),
+					utilityClassName("shrink-0 items-center gap-1.5"),
+					isPhone || borrowedLens ? utilityClassName("hidden") : utilityClassName("flex"),
 				)}
 				ref={actionsRef}
 			>
 				<Tooltip label="Group, filter & sort">
 				<button
-					ref={filterBtnRef}
+					ref={setFilterButton}
 					className={cn(
 						SIDEBAR_HEADER_BTN,
 						isPhone
-							? cn(SIDEBAR_HEADER_BTN_PHONE, mergeStylexClassName("", sx.minH38px, sx.minW38px))
+							? cn(SIDEBAR_HEADER_BTN_PHONE, utilityClassName("min-h-[38px] min-w-[38px]"))
 							: SIDEBAR_HEADER_BTN_DESKTOP,
-						mergeStylexClassName("", sx.inlineFlex, sx.itemsCenter, sx.justifyCenter),
+						utilityClassName("inline-flex items-center justify-center"),
 						// The open state paints the stronger wash and the hover now
 						// layers OVER it (SIDEBAR_HOVER_LAYER), so the button no
 						// longer has to withhold its hover to keep from washing
 						// itself back out while open.
 						SIDEBAR_HOVER_LAYER,
-						filterOpen && mergeStylexClassName("", sx.borderLineStrong, sx.bgPressed),
+						filterOpen && utilityClassName("border-line-strong bg-pressed"),
 						// A set filter is already spelled out in the header (the repo
 						// chip) and in the popover itself, so the button stays a plain
 						// glyph: full contrast under the pointer or while open.
-						filterOpen ? mergeStylexClassName("", sx.textFg) : mergeStylexClassName("", sx.textDim, sx.hoverTextFg),
+						filterOpen ? utilityClassName("text-fg") : utilityClassName("text-dim hover:text-fg"),
 					)}
 					// A Base UI tooltip is a DESCRIPTION, not a name, so an
 					// icon-only trigger still needs one of its own. The phone twin
@@ -5464,7 +5381,7 @@ fetchFeedItems("plain")
 						isPhone
 							? SIDEBAR_HEADER_BTN_PHONE
 							: SIDEBAR_HEADER_BTN_DESKTOP,
-						mergeStylexClassName("", sx.inlineFlex, sx.itemsCenter, sx.justifyCenter, sx.textDim, sx.hoverBgHover, sx.hoverTextFg),
+						utilityClassName("inline-flex items-center justify-center text-dim hover:bg-hover hover:text-fg"),
 					)}
 					onClick={onNewSession}
 				>
@@ -5481,6 +5398,17 @@ fetchFeedItems("plain")
 	</div>
 	</div>
 	);
+
+	const workspaceMenuWorkspace = workspaceMenu
+		? workspaces.find((workspace) => workspace.id === workspaceMenu.id)
+		: undefined;
+	const workspaceMenuRow = workspaceMenu
+		? wsRows.find((row) =>
+				workspaceMenuWorkspace
+					? row.workspace?.id === workspaceMenuWorkspace.id
+					: row.key === workspaceMenu.id,
+			)
+		: undefined;
 
 	return (
 		<>
@@ -5502,7 +5430,7 @@ fetchFeedItems("plain")
 			// rows inherit rather than a flag every family has to be handed.
 			data-density={density}
 			className={cn(
-				mergeStylexClassName("[&::-webkit-scrollbar]:hidden", sx.flex, sx.wFull, sx.minH0, sx.flex1, sx.flexCol, sx.overflowXHidden, sx.overflowYAuto, sx.ScrollbarWidthNone),
+				utilityClassName("flex w-full min-h-0 flex-1 flex-col overflow-x-hidden overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"),
 				SIDEBAR_DENSITY_VARS,
 				SIDEBAR_NAV_X,
 				// The whole sidebar scrolls as one on phones, so the tools (and the
@@ -5513,7 +5441,7 @@ fetchFeedItems("plain")
 				// Fade the list into the bar with a mask, and keep the last section
 				// clear of the home indicator.
 				isPhone &&
-					mergeStylexClassName("", sx.pbMax24pxEnvSafeAreaInsetBottom0px, sx.WebkitMaskImageLinearGradientToBottomTransparent0000VarHeaderH, sx.MaskImageLinearGradientToBottomTransparent0000VarHeaderH, sx.ptVarHeaderH),
+					utilityClassName("pt-[var(--header-h)] pb-[max(24px,env(safe-area-inset-bottom,0px))] [-webkit-mask-image:linear-gradient(to_bottom,transparent_0,#000_var(--header-h))] [mask-image:linear-gradient(to_bottom,transparent_0,#000_var(--header-h))]"),
 			)}
 			ref={sidebarScrollRef}
 			onDragOver={handleRepoAutoScroll}
@@ -5530,7 +5458,7 @@ fetchFeedItems("plain")
 
 				{/* Fallback row: only when the chip doesn't fit inline. */}
 				{filter.repo !== "all" && !repoInline && (
-					<div {...mergeStylexProps("", sx.mdMr2, sx.mdMl4, sx.mx4, sx.mt2px, sx.mb2, sx.flex, sx.minW0)}>
+					<div {...mergeStylexProps("md:mr-2 md:ml-4", sx.mx4, sx.mt2px, sx.mb2, sx.flex, sx.minW0)} >
 						<RepoFilterChip
 							repo={filter.repo}
 							repos={repos}
@@ -5549,7 +5477,7 @@ fetchFeedItems("plain")
 				createPortal(
 					<>
 						<button
-							ref={mobileFilterBtnRef}
+							ref={setMobileFilterButton}
 							className={mobileFilterBtn(filterOpen)}
 							onClick={() => setFilterOpen((o) => !o)}
 							aria-label="Group, filter & sort"
@@ -5562,11 +5490,7 @@ fetchFeedItems("plain")
 
 			{filterOpen && (
 				<FilterPopover
-					anchor={
-						isPhone
-							? mobileFilterBtnRef.current
-							: filterBtnRef.current
-					}
+					anchor={isPhone ? mobileFilterButton : filterButton}
 					filter={filter}
 					repos={repos}
 					people={peopleWithAgent}
@@ -5580,197 +5504,38 @@ fetchFeedItems("plain")
 				/>
 			)}
 
-			{workspaceMenu &&
-				(() => {
-					// The menu id is a real workspace id, or a row key for a
-					// workspace-less row (solo session / shared-worktree group).
-					const ws = workspaces.find((p) => p.id === workspaceMenu.id);
-					const menuRow = wsRows.find((r) =>
-						ws ? r.workspace?.id === ws.id : r.key === workspaceMenu.id,
-					);
-					const sessions = menuRow?.sessions ?? [];
-					const first = sessions[0];
-					const pinKey = ws ? `workspace:${ws.id}` : workspaceMenu.id;
-					// A row can be pinned via its own key or a legacy pin on any member
-					// session (incl. alias ids) — unpin clears all of them.
-					const pinnedKeys = [
-						pinKey,
-						...(menuRow
-							? [
-									menuRow.key,
-									...menuRow.sessions.flatMap((c) => [
-										c.id,
-										...(c.aliasIds || []),
-									]),
-								]
-							: []),
-					].filter((k, i, a) => pins.includes(k) && a.indexOf(k) === i);
-					const pinned = pinnedKeys.length > 0;
-					const togglePinNow = () => {
-						if (pinned) {
-							let next = pins;
-							for (const k of pinnedKeys) next = togglePin(k);
-							setPins(next);
-						} else {
-							setPins(togglePin(pinKey));
-						}
-					};
-					const anyManual = sessions.some((c) => pinnedLane(c));
-					const sharedManual =
-						anyManual &&
-						sessions.every((c) => pinnedLane(c) === pinnedLane(sessions[0]))
-							? (pinnedLane(sessions[0]) ?? null)
-							: null;
-
-					const entries: CtxEntry[] = [];
-					// Offer the move you can actually make: a row with unread
-					// activity reads, an already-read one goes back to unread.
-					const rowUnread = menuRow?.unread ?? false;
-					if (sessions.length > 0)
-						entries.push({
-							kind: "item",
-							icon: <IconMail size={20} />,
-							label: rowUnread ? "Mark as read" : "Mark as unread",
-							onClick: () =>
-								sessions.forEach((c) =>
-									rowUnread
-										? markRead(c.id, c.lastActivity)
-										: markUnread(c.id),
-								),
-						});
-					// Claim someone else's work — an automation run, a teammate's
-					// workspace — into your own lanes, where it then behaves like
-					// your sessions do (In progress while running, Backlog when
-					// idle). Rows you started are already there, so they don't
-					// offer it; the full lane picker stays in the flyout below.
-					const rowClaimed = sessions.some((c) => isClaimed(c));
-					const rowMine = sessions.some((c) => ownedBy(c, currentUser));
-					if (sessions.length > 0 && (!rowMine || rowClaimed))
-						entries.push({
-							kind: "item",
-							icon: <IconInbox size={20} />,
-							label: rowClaimed
-								? "Remove from my workspaces"
-								: "Add to my workspaces",
-							onClick: () =>
-								onSetStatus(sessions, rowClaimed ? null : "mine"),
-						});
-					entries.push({
-						kind: "item",
-						icon: (
-							<IconPin size={20} fill={pinned ? "currentColor" : "none"} />
-						),
-						label: pinned ? "Unpin" : "Pin",
-						onClick: togglePinNow,
-					});
-					if (sessions.length > 0)
-						entries.push({
-							kind: "status",
-							current: sharedManual,
-							// Applies the pin to every session so the aggregated row lands
-							// in the chosen lane; "Auto" clears it back to the derived one.
-							onPick: (s) => onSetStatus(sessions, s),
-						});
-					if (menuRow && sessions.length > 0) {
-						entries.push({
-							kind: "snooze",
-							until: activeSnoozeKeys.has(menuRow.key)
-								? (snoozes[menuRow.key] ?? null)
-								: null,
-							// Parks the row in the Snoozed section until the chosen time;
-							// null unsnoozes it back to its derived lane.
-							onPick: (until) =>
-								until
-									? setSnooze(menuRow.key, until)
-									: clearSnooze(menuRow.key),
-						});
+			{workspaceMenu && (
+				<WorkspaceContextMenu
+					menu={workspaceMenu}
+					workspace={workspaceMenuWorkspace}
+					row={workspaceMenuRow}
+					pins={pins}
+					currentUser={currentUser}
+					activeSnoozeKeys={activeSnoozeKeys}
+					snoozes={snoozes}
+					hiddenRowKeys={hiddenRowKeys}
+					onPinsChange={setPins}
+					onSetStatus={onSetStatus}
+					onSnooze={(row, until) =>
+						until ? setSnooze(row.key, until) : clearSnooze(row.key)
 					}
-					if (ws)
-						entries.push({
-							kind: "item",
-							icon: <IconPencil size={20} />,
-							label: "Rename",
-							onClick: () => {
-								setWorkspaceDraft(ws.name);
-								setEditingWorkspaceId(ws.id);
-							},
-						});
-					else if (first)
-						entries.push({
-							kind: "item",
-							icon: <IconPencil size={20} />,
-							label: "Rename",
-							onClick: () => startSessionRename(first),
-						});
-					if (first)
-						entries.push({
-							kind: "item",
-							icon: <IconLink size={20} />,
-							label: "Copy link",
-							shortcut: shortcutLabel("session-copy-link") ?? undefined,
-							onClick: () =>
-								copyToClipboard(absoluteLink(sessionPath(first)), () =>
-									onToast?.("Link copied"),
-								),
-						});
-					// A session that owns a worktree/branch (and thus a PR/diff) can open
-					// its Review tab here — it's off by default in the viewer.
-					if (first && (first.worktreeDir || first.branch))
-						entries.push({
-							kind: "item",
-							icon: <IconEye size={20} />,
-							label: "Open review",
-							onClick: () => onOpenReview(first),
-						});
-					// Archive is the removal action here (a session/workspace is finished
-					// by archiving, never inferred-deleted). A sessionless workspace has
-					// nothing to archive, so it keeps Delete as its only removal.
-					if (menuRow && sessions.length > 0) {
-						entries.push({ kind: "sep" });
-						// Hide sits above Archive as the gentler removal: Archive is
-						// global (it ends the work for the whole team), Hide only
-						// clears it off your own sidebar while a teammate keeps
-						// working in it. On an already-hidden row — which you can
-						// only be looking at because you searched for it — the same
-						// slot offers the way back, since there's no Hidden band.
-						const rowHidden = hiddenRowKeys.has(menuRow.key);
-						entries.push({
-							kind: "item",
-							icon: rowHidden ? <IconEye size={20} /> : <IconEyeOff size={20} />,
-							label: rowHidden
-								? "Restore to my sidebar"
-								: "Hide from my sidebar",
-							onClick: () =>
-								rowHidden ? clearHides([menuRow.key]) : hideRow(menuRow),
-						});
-						entries.push({
-							kind: "item",
-							icon: <IconArchive size={20} />,
-							label: "Archive",
-							onClick: () =>
-								archiveWorkspaceWithNext(menuRow, workspaceMenu.source),
-						});
-					} else if (ws) {
-						entries.push({ kind: "sep" });
-						entries.push({
-							kind: "item",
-							icon: <IconTrash size={20} />,
-							danger: true,
-							label: "Delete draft",
-							onClick: () =>
-								confirmDeleteDraft(() => onDeleteWorkspace(ws.id)),
-						});
+					onStartWorkspaceRename={(workspace) => {
+						setWorkspaceDraft(workspace.name);
+						setEditingWorkspaceId(workspace.id);
+					}}
+					onStartSessionRename={startSessionRename}
+					onToast={onToast}
+					onOpenReview={onOpenReview}
+					onHide={(row, hidden) =>
+						hidden ? clearHides([row.key]) : hideRow(row)
 					}
-
-					return (
-						<SidebarCtxMenu
-							x={workspaceMenu.x}
-							y={workspaceMenu.y}
-							entries={entries}
-							onClose={() => setWorkspaceMenu(null)}
-						/>
-					);
-				})()}
+					onArchive={archiveWorkspaceWithNext}
+					onDeleteDraft={(workspace) =>
+						confirmDeleteDraft(() => onDeleteWorkspace(workspace.id))
+					}
+					onClose={() => setWorkspaceMenu(null)}
+				/>
+			)}
 			{workspacesOpen && (
 				<div
 					className={cn(
@@ -5781,7 +5546,7 @@ fetchFeedItems("plain")
 						// Scoped here rather than on the scroll root because the bands BELOW
 						// this list (Automations, People) still pin inside it and their lanes
 						// still have to clear them.
-						mergeStylexClassName("", sx.desktopSidebarBandSlot0px),
+						"desktop:[--sidebar-band-slot:0px]",
 					)}
 					data-sidebar-list
 				>
@@ -5791,7 +5556,7 @@ fetchFeedItems("plain")
 						rows={8}
 						label="Loading sessions"
 						className={mergeStylexOverrideClassName("", sx.py2)}
-						rowClassName={mergeStylexClassName("", sharedClassStyles.sidebarSkeletonRowPadding)}
+						rowClassName={utilityClassName("px-2.5 py-[9px] phone:px-2 phone:py-[13px]")}
 					/>
 				)}
 				{/* A list that failed to fetch is an empty list with a reason, not a
@@ -5818,8 +5583,7 @@ fetchFeedItems("plain")
 				{workspaceListEmpty &&
 					!sessionsLoading &&
 					!sessionsError &&
-					hasWorkspaceFilter &&
-					!githubConnectionRequired && (
+					hasWorkspaceFilter && (
 					<div {...stylex.props(sx.mx4, sx.my7, sx.textCenter, sx.leading14, sx.textFaint, typography.label)}>
 						No matching workspaces
 					</div>
@@ -5839,47 +5603,40 @@ fetchFeedItems("plain")
 				{workspaceListEmpty &&
 					!sessionsLoading &&
 					!sessionsError &&
-					(!hasWorkspaceFilter || githubConnectionRequired) &&
+					!hasWorkspaceFilter &&
 					!draftRow &&
 					(!isPhone || !productEmpty) && (
 					<div {...stylex.props(sx.mx4, sx.my7, sx.textCenter, sx.leading14, sx.textFaint, typography.label)}>
-						{githubConnectionRequired ? "No sessions" : "No workspaces yet"}
+						No workspaces yet
 					</div>
 				)}
 				{productEmpty &&
 					!sessionsLoading &&
 					!sessionsError &&
-					(!hasWorkspaceFilter || githubConnectionRequired) &&
+					!hasWorkspaceFilter &&
 					isPhone && (
-					githubConnectionRequired ? (
-						<GithubConnectEmptyState
-							onConnect={onNewSession}
-							className={mergeStylexOverrideClassName("", sx.minH360px, sx.py12)}
-						/>
-					) : (
-						<div {...stylex.props(sx.flex, sx.minH360px, sx.flexCol, sx.itemsCenter, sx.justifyCenter, sx.px7, sx.py12, sx.textCenter)}>
-							<IconMessages size={30} className={mergeStylexOverrideClassName("", sx.mb3, sx.textDim)} />
-							<div {...stylex.props(sx.leading115, sx.fontSemibold, sx.tracking002em, sx.textFg, typography.sectionTitle)}>
-								No sessions
-							</div>
-							<p {...stylex.props(sx.m0, sx.mt1, sx.maxW26ch, sx.leading145, sx.textDim, sx.textPretty, typography.body)}>
-								Start one and it shows up here.
-							</p>
-							<div {...stylex.props(sx.mt4, sx.flex, sx.flexCol, sx.itemsCenter, sx.gap1)}>
-								<Button
-									variant="soft"
-									size="md"
-									className={mergeStylexOverrideClassName("", sx.roundedFull, sx.px4)}
-									onClick={onNewSession}
-								>
-									New session
-								</Button>
-								<Button variant="ghost" size="sm" onClick={onOpenArchived}>
-									Archived
-								</Button>
-							</div>
+					<div {...stylex.props(sx.flex, sx.minH360px, sx.flexCol, sx.itemsCenter, sx.justifyCenter, sx.px7, sx.py12, sx.textCenter)}>
+						<IconMessages size={30} className={mergeStylexOverrideClassName("", sx.mb3, sx.textDim)} />
+						<div {...stylex.props(sx.leading115, sx.fontSemibold, sx.tracking002em, sx.textFg, typography.sectionTitle)}>
+							No sessions
 						</div>
-					)
+						<p {...mergeStylexProps("m-0", sx.mt1, sx.maxW26ch, sx.leading145, sx.textDim, sx.textPretty, typography.body)} >
+							Start one and it shows up here.
+						</p>
+						<div {...stylex.props(sx.mt4, sx.flex, sx.flexCol, sx.itemsCenter, sx.gap1)}>
+							<Button
+								variant="soft"
+								size="md"
+								className={mergeStylexOverrideClassName("", sx.roundedFull, sx.px4)}
+								onClick={onNewSession}
+							>
+								New session
+							</Button>
+							<Button variant="ghost" size="sm" onClick={onOpenArchived}>
+								Archived
+							</Button>
+						</div>
+					</div>
 				)}
 
 				{/* ── Needs review: everything waiting on YOUR review, both the
@@ -6316,9 +6073,9 @@ fetchFeedItems("plain")
 				{autoCreatedRows > 0 && (
 					<button
 						className={cn(
-							mergeStylexClassName("", sx.mb1, sx.flex, sx.wFull, sx.itemsCenter, sx.gap15, sx.roundedRow, sx.px4, sx.py15, sx.textLeft, typography.label, sx.textFaint),
+							utilityClassName("mb-1 flex w-full items-center gap-1.5 rounded-row px-4 py-1.5 text-left text-label text-faint"),
 							SIDEBAR_HOVER_LAYER,
-							mergeStylexClassName("", sx.hoverTextDim),
+							utilityClassName("hover:text-dim"),
 						)}
 						onClick={() =>
 							setFilter({
@@ -6341,14 +6098,14 @@ fetchFeedItems("plain")
 
 				{/* ── Automations (one collapsible band, one group per automation) ── */}
 				{groups.length > 0 && (
-					<div className={cn(SIDEBAR_INDEPENDENT_SECTION, mergeStylexClassName("", sx.mt2, sx.pb7))}>
+					<div className={cn(SIDEBAR_INDEPENDENT_SECTION, utilityClassName("mt-2 pb-7"))}>
 						<div
 							className={cn(
 								SIDEBAR_BAND_LABEL,
 								// A band heading carries no leading mark, so on phones it
 								// takes the 8px a 22px glyph spends on its own padding
 								// before the ink starts — see the toggle's inset below.
-								mergeStylexClassName("", sx.py0, sx.pl0, sx.pr2, sx.desktopPr0),
+								utilityClassName("py-0 pl-0 pr-2 desktop:pr-0"),
 								SIDEBAR_STICKY_BAND,
 								SIDEBAR_STICKY_BAND_ROW,
 								SIDEBAR_STUCK_BACKING,
@@ -6413,7 +6170,7 @@ fetchFeedItems("plain")
 											    way every band above it does. Pinned right it read
 											    as a column of its own, and it had to disappear on
 											    hover to hand the slot to the settings glyph. */}
-											<span className={cn(SIDEBAR_GROUP_COUNT, mergeStylexClassName("", sx.shrink0))}>
+											<span className={cn(SIDEBAR_GROUP_COUNT, utilityClassName("shrink-0"))}>
 												{group.totalItems || group.items.length}
 											</span>
 											{/* Collapsed, the chevron shows at rest, as it does
@@ -6479,7 +6236,7 @@ fetchFeedItems("plain")
 										)}
 										{open &&
 											(group.totalItems || group.items.length) > group.items.length && (
-												<div {...mergeStylexProps("", sx.tabularNums, sx.px4, sx.pb1, sx.pt05, sx.textFaint, typography.meta)}>
+												<div {...mergeStylexProps("tabular-nums", sx.px4, sx.pb1, sx.pt05, sx.textFaint, typography.meta)} >
 													Latest {group.items.length} of {group.totalItems} runs
 												</div>
 											)}
@@ -6529,12 +6286,12 @@ fetchFeedItems("plain")
 			    the workspace list. It is the end of the list, so anything ordered
 			    after the workspaces (the Automations band) used to render past it,
 			    which read as "the sidebar ended, and then there was more". */}
-			{!githubConnectionRequired && (!isPhone || !productEmpty || hasWorkspaceFilter) && (
+			{(!isPhone || !productEmpty || hasWorkspaceFilter) && (
 				<div
 					// It sits outside the workspace list, so it takes the same inset
 					// its other out-of-list siblings do. Without it the row is the one
 					// thing in the sidebar whose fill runs edge to edge.
-					className={cn(SIDEBAR_INDEPENDENT_SECTION, SIDEBAR_GROUP, mergeStylexClassName("", sx.mt1))}
+					className={cn(SIDEBAR_INDEPENDENT_SECTION, SIDEBAR_GROUP, utilityClassName("mt-1"))}
 					style={{ order: 99 }}
 				>
 					{archivedLink}

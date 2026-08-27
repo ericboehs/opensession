@@ -3,11 +3,23 @@ import {
 	createContext,
 	useContext,
 	useEffect,
-	
 	useRef,
 	useState,
 } from "react";
 import { attachCodeCopy, decorateCodeBlocks } from "../lib/code-copy";
+
+// Lazy loaders live at module scope: the compiler cannot lower dynamic
+// imports inside components.
+let mermaidPromise: Promise<typeof import("../lib/mermaid")> | null = null;
+function loadMermaid() {
+	mermaidPromise ??= import("../lib/mermaid");
+	return mermaidPromise;
+}
+let codeHighlightPromise: Promise<typeof import("./CodeHighlight")> | null = null;
+function loadCodeHighlight() {
+	codeHighlightPromise ??= import("./CodeHighlight");
+	return codeHighlightPromise;
+}
 import {
 	type EffectiveTheme,
 	effectiveTheme,
@@ -116,7 +128,7 @@ export function MarkdownBody({
 			// ```mermaid fences become inline diagrams; source that doesn't parse
 			// (still streaming, or just wrong) keeps the plain code fence.
 			if (fences.some((f) => f.lang === "mermaid")) {
-				const m = await import("../lib/mermaid").catch(() => null);
+				const m = await loadMermaid().catch(() => null);
 				for (const { code, lang } of fences) {
 					if (!m || lang !== "mermaid") continue;
 					const svg = await m
@@ -149,7 +161,7 @@ export function MarkdownBody({
 			}
 
 			if (!fences.some((f) => f.lang && f.lang !== "mermaid")) return;
-			const m = await import("./CodeHighlight").catch(() => null);
+			const m = await loadCodeHighlight().catch(() => null);
 			if (!m || !alive) return;
 			for (const { code, lang } of fences) {
 				if (!lang || lang === "mermaid" || !el.contains(code)) continue;

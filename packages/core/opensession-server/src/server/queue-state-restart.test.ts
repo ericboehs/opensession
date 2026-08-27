@@ -16,16 +16,16 @@ import {
 	settlePromptInterrupt,
 	undeliveredSteers,
 } from "./queue-state";
-import { sessionKernelStore } from "./session-kernel";
+import { __sessionKernelStoreForTest } from "./session-kernel";
 import { sessionWatchers } from "./ws-hub";
 
 const SESSION = "os-steer-restart-test";
 let scratch = "";
 
-afterEach(() => {
-	promptQueues.clear();
-	promptDispatches.clear();
-	steeredReceipts.clear();
+afterEach(async () => {
+	await promptQueues.clear();
+	await promptDispatches.clear();
+	await steeredReceipts.clear();
 	sessionWatchers.delete(SESSION);
 	if (scratch) rmSync(scratch, { recursive: true, force: true });
 	scratch = "";
@@ -49,7 +49,7 @@ describe("steer receipt restart persistence", () => {
 			}),
 		);
 
-		expect(hydratePersistedQueueState(storePath)).toBe(3);
+		expect(await hydratePersistedQueueState(storePath)).toBe(3);
 		expect(promptQueues.get(SESSION)?.map((item) => item.id)).toEqual(["queued"]);
 		expect(steeredReceipts.get(SESSION)?.map((item) => item.id)).toEqual([
 			"steered",
@@ -58,7 +58,7 @@ describe("steer receipt restart persistence", () => {
 
 		const queue = promptQueues.get(SESSION) || [];
 		queue.push({ id: "new", content: "after boot" });
-		promptQueues.set(SESSION, queue);
+		await promptQueues.set(SESSION, queue);
 		persistQueues(storePath);
 		const persisted = JSON.parse(await Bun.file(storePath).text());
 		expect(persisted.queued[SESSION].map((item: { id: string }) => item.id)).toEqual([
@@ -69,7 +69,7 @@ describe("steer receipt restart persistence", () => {
 		expect(persisted.dispatching[SESSION].promptEntryId).toBe("prompt-entry");
 	});
 
-	test("restores undelivered receipts without turning them into queued prompts", () => {
+	test("restores undelivered receipts without turning them into queued prompts", async () => {
 		scratch = mkdtempSync(join(tmpdir(), "os-steer-restart-"));
 		const storePath = join(scratch, "prompt-queues.json");
 		writeFileSync(
@@ -96,7 +96,7 @@ describe("steer receipt restart persistence", () => {
 			]),
 		);
 
-		const restored = restorePersistedQueueState({
+		const restored = await restorePersistedQueueState({
 			storePath,
 			sessionExists: (id) => id === SESSION,
 			journalOwnsPrompt: () => false,
@@ -120,7 +120,7 @@ describe("steer receipt restart persistence", () => {
 			steered: [{ id: "pending" }],
 		});
 
-		expect(requeueSteerReceipts(SESSION, [], false)).toBe(1);
+		expect(await requeueSteerReceipts(SESSION, [], false)).toBe(1);
 		expect(promptQueues.get(SESSION)?.map((item) => item.id)).toEqual([
 			"pending",
 			"queued",
@@ -128,7 +128,7 @@ describe("steer receipt restart persistence", () => {
 		expect(steeredReceipts.has(SESSION)).toBe(false);
 	});
 
-	test("requeues a receipt when no recovered run owns its delivery", () => {
+	test("requeues a receipt when no recovered run owns its delivery", async () => {
 		scratch = mkdtempSync(join(tmpdir(), "os-steer-orphan-"));
 		const storePath = join(scratch, "prompt-queues.json");
 		writeFileSync(
@@ -140,7 +140,7 @@ describe("steer receipt restart persistence", () => {
 			}),
 		);
 
-		const restored = restorePersistedQueueState({
+		const restored = await restorePersistedQueueState({
 			storePath,
 			sessionExists: () => true,
 			journalOwnsPrompt: () => false,
@@ -158,7 +158,7 @@ describe("steer receipt restart persistence", () => {
 		expect(steeredReceipts.has(SESSION)).toBe(false);
 	});
 
-	test("an ordinary multi-item dispatch keeps its identity after a crash", () => {
+	test("an ordinary multi-item dispatch keeps its identity after a crash", async () => {
 		scratch = mkdtempSync(join(tmpdir(), "os-ordinary-dispatch-"));
 		const storePath = join(scratch, "prompt-queues.json");
 		writeFileSync(
@@ -175,7 +175,7 @@ describe("steer receipt restart persistence", () => {
 				},
 			}),
 		);
-		const restored = restorePersistedQueueState({
+		const restored = await restorePersistedQueueState({
 			storePath,
 			sessionExists: () => true,
 			journalOwnsPrompt: () => false,
@@ -186,18 +186,18 @@ describe("steer receipt restart persistence", () => {
 		expect(restored.queuedCount).toBe(2);
 		expect(promptQueues.get(SESSION)?.[0]?.promptEntryId).toBe("ordinary-entry");
 		expect(promptDispatches.has(SESSION)).toBe(false);
-		expect(deleteQueuedPrompt(SESSION, "ordinary-one", undefined, false)).toBe(
+		expect(await deleteQueuedPrompt(SESSION, "ordinary-one", undefined, false)).toBe(
 			true,
 		);
-		const interruptId = preparePromptInterrupt(
+		const interruptId = await preparePromptInterrupt(
 			SESSION,
 			"ordinary-two",
 			SESSION,
 			"ordinary-two",
 		);
-		settlePromptInterrupt(SESSION, interruptId, "confirmed");
+		await settlePromptInterrupt(SESSION, interruptId, "confirmed");
 		expect(
-			beginNextPromptDispatch(SESSION, {}, false),
+			await beginNextPromptDispatch(SESSION, {}, false),
 		).toMatchObject({
 			kind: "deliver",
 			promptEntryId: "ordinary-entry",
@@ -207,26 +207,26 @@ describe("steer receipt restart persistence", () => {
 		});
 	});
 
-	test("production boot restores an unjournaled interrupt with its dispatch", () => {
-		sessionKernelStore().markDeliveryMigrationComplete();
-		promptQueues.set(SESSION, [
+	test("production boot restores an unjournaled interrupt with its dispatch", async () => {
+		__sessionKernelStoreForTest().markDeliveryMigrationComplete();
+		await promptQueues.set(SESSION, [
 			{ id: "interrupt", content: "send now", hold: true },
 		]);
-		promptQueues.set(`${SESSION}-unrelated`, [
+		await promptQueues.set(`${SESSION}-unrelated`, [
 			{ id: "unrelated", content: "must never be globally cleared" },
 		]);
-		const interruptId = preparePromptInterrupt(
+		const interruptId = await preparePromptInterrupt(
 			SESSION,
 			"interrupt",
 			SESSION,
 			"interrupt",
 		);
-		settlePromptInterrupt(SESSION, interruptId, "confirmed");
+		await settlePromptInterrupt(SESSION, interruptId, "confirmed");
 		expect(
-			beginNextPromptDispatch(SESSION, { stillWorking: true }, false),
+			await beginNextPromptDispatch(SESSION, { stillWorking: true }, false),
 		).toMatchObject({ kind: "deliver", interrupted: true });
 
-		const restored = restorePersistedQueueState({
+		const restored = await restorePersistedQueueState({
 			sessionExists: () => true,
 			journalOwnsPrompt: () => false,
 			runOwnsSteers: () => false,
@@ -238,7 +238,7 @@ describe("steer receipt restart persistence", () => {
 			{ id: "unrelated" },
 		]);
 		expect(
-			beginNextPromptDispatch(SESSION, { stillWorking: true }, false),
+			await beginNextPromptDispatch(SESSION, { stillWorking: true }, false),
 		).toMatchObject({
 			kind: "deliver",
 			interrupted: true,
@@ -246,7 +246,7 @@ describe("steer receipt restart persistence", () => {
 		});
 	});
 
-	test("a cold restart preserves an actor-owned create dispatch even after journaling", () => {
+	test("a cold restart preserves an actor-owned create dispatch even after journaling", async () => {
 		scratch = mkdtempSync(join(tmpdir(), "os-create-dispatch-adopt-"));
 		const storePath = join(scratch, "prompt-queues.json");
 		writeFileSync(
@@ -261,7 +261,7 @@ describe("steer receipt restart persistence", () => {
 				},
 			}),
 		);
-		const restored = restorePersistedQueueState({
+		const restored = await restorePersistedQueueState({
 			storePath,
 			sessionExists: () => true,
 			journalOwnsPrompt: () => true,
@@ -279,7 +279,7 @@ describe("steer receipt restart persistence", () => {
 		});
 	});
 
-	test("matches duplicate and substring receipts one-for-one", () => {
+	test("matches duplicate and substring receipts one-for-one", async () => {
 		const receipts = [
 			{ id: "first", content: "same", user: "Kent" },
 			{ id: "second", content: "same", user: "Kent" },

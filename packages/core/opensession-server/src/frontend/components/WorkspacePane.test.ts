@@ -86,7 +86,8 @@ test("sidebar Changes shares Review's code display options", () => {
 	expect(diffPanelSource).toContain("<CodeDisplaySettings {...codeDisplaySettings} />");
 	expect(diffPanelSource).toContain("<CodeOrganizationSettings");
 	expect(prPanelSource).toContain("<CodeOrganizationSettings");
-	expect(commentableDiffSource).toContain("sx.z6, sx.roundedTLg, sx.bgBg");
+	expect(commentableDiffSource).toContain("z-[6] bg-surface");
+	expect(commentableDiffSource).toContain("rounded-t-lg bg-bg");
 	expect(viewerSource).toContain("--diff-panel-top");
 	expect(codeDisplaySource).toContain('label="Wrap lines"');
 });

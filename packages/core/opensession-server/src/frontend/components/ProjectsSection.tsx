@@ -1,5 +1,8 @@
+import { mergeStylexProps, mergeStylexOverrideClassName } from "../ui/cn";
+import { utilityClassName } from "../ui/cn";
 import { BASE_PATH } from "../lib/base";
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
+import { cn } from "../ui/cn";
 import { Button } from "../ui/button";
 import { Modal } from "../ui/modal";
 import { OptionSelect } from "../ui/select";
@@ -12,8 +15,6 @@ import type { FeedDescriptor, Project } from "../lib/types";
 import { fieldClasses } from "../ui/input";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
-import { mergeStylexProps, mergeStylexClassName, mergeStylexOverrideClassName } from "../ui/cn";
-import { sharedClassStyles } from "../styles/shared-class-styles.stylex";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -24,13 +25,13 @@ const sx = stylex.create({
 			alignItems: "center"
 	},
 	gap3: {
-			gap: "12px"
+			gap: "calc(4px * 3)"
 	},
 	px5: {
-			paddingInline: "20px"
+			paddingInline: "calc(4px * 5)"
 	},
 	py3: {
-			paddingBlock: "12px"
+			paddingBlock: "calc(4px * 3)"
 	},
 	minW0: {
 			minWidth: "0"
@@ -45,9 +46,9 @@ const sx = stylex.create({
 			color: "var(--text)"
 	},
 	truncate: {
+			overflow: "hidden",
 			textOverflow: "ellipsis",
-			whiteSpace: "nowrap",
-			overflow: "hidden"
+			whiteSpace: "nowrap"
 	},
 	textDim: {
 			color: "var(--text-dim)"
@@ -56,13 +57,12 @@ const sx = stylex.create({
 			width: "100%"
 	},
 	gap2: {
-			gap: "8px"
+			gap: "calc(4px * 2)"
 	},
 	transitionColors: {
-    transitionProperty:
-      "color,background-color,border-color,outline-color,text-decoration-color,fill,stroke,--tw-gradient-from,--tw-gradient-via,--tw-gradient-to",
-			transitionTimingFunction: "var(--tw-ease,var(--ease))",
-			transitionDuration: "var(--tw-duration,var(--dur-micro))"
+			transitionProperty: "color, background-color, border-color, outline-color, text-decoration-color, fill, stroke, --tw-gradient-from, --tw-gradient-via, --tw-gradient-to",
+			transitionTimingFunction: "var(--tw-ease, var(--ease))",
+			transitionDuration: "var(--tw-duration, var(--dur-micro))"
 	},
 	maxH60vh: {
 			maxHeight: "60vh"
@@ -77,21 +77,21 @@ const sx = stylex.create({
 			display: "grid"
 	},
 	gridCols2: {
-			gridTemplateColumns: "repeat(2,minmax(0,1fr))"
+			gridTemplateColumns: "repeat(2, minmax(0, 1fr))"
 	},
 	flexShrink0: {
 			flexShrink: "0"
 	},
 	maxH28: {
-			maxHeight: "112px"
+			maxHeight: "calc(4px * 28)"
 	},
 	overflowAuto: {
 			overflow: "auto"
 	},
 	roundedMd: {
-			borderRadius: "calc(7px * var(--rf))"
-	,
-		cornerShape: "var(--cs)"},
+			borderRadius: "calc(7px * var(--rf))",
+
+		cornerShape: "var(--cs)",},
 	border: {
 			borderStyle: "solid",
 			borderWidth: "1px"
@@ -103,50 +103,25 @@ const sx = stylex.create({
 			backgroundColor: "var(--bg)"
 	},
 	p2: {
-			padding: "8px"
+			padding: "calc(4px * 2)"
 	},
 	leadingSnug: {
 			lineHeight: "var(--leading-snug)"
 	},
 	gridCols3: {
-			gridTemplateColumns: "repeat(3,minmax(0,1fr))"
+			gridTemplateColumns: "repeat(3, minmax(0, 1fr))"
 	},
 	gridCols1fr2fr: {
 			gridTemplateColumns: "1fr 2fr"
 	},
 	mt2: {
-			marginTop: "8px"
+			marginTop: "calc(4px * 2)"
 	},
 	mt3: {
-			marginTop: "12px"
+			marginTop: "calc(4px * 3)"
 	},
-  textFaint: { color: "var(--text-faint)" },
-  fieldLabel: {
-    display: "block",
-    marginTop: "12px",
-    marginBottom: "4px",
-    fontWeight: "var(--font-weight-semibold)",
+	textFaint: {
 			color: "var(--text-faint)"
-  },
-  removeButton: {
-    opacity: 0,
-    transitionProperty: "color, opacity, background",
-    ":hover": { "@media (hover: hover)": { color: "var(--red)" } },
-	},
-
-	hoverBgHover: {
-		"@media (hover: hover)": {
-			":hover": {
-				"backgroundColor": "var(--hover)"
-			}
-		}
-	},
-	hoverTextFg: {
-		"@media (hover: hover)": {
-			":hover": {
-				"color": "var(--text)"
-			}
-		}
 	},
 });
 
@@ -210,16 +185,8 @@ function suggestMap(sample: Record<string, any>) {
 		id: pick(paths, [/^id$/i, /Id$/, /^key$/i, /^slug$/i]),
 		title: pick(paths, [/^(name|title|subject|label)$/i]),
 		preview: pick(paths, [/^(description|preview|summary|excerpt|text)$/i]),
-    ts: pick(paths, [
-      /^(updatedAt|updated_at|modifiedAt)$/i,
-      /^(createdAt|created_at|date|ts)$/i,
-    ]),
-    url:
-      paths.find((k) =>
-        /^https?:\/\//.test(
-          String(sample[k.split(".")[0]]?.[k.split(".")[1]] ?? sample[k]),
-        ),
-      ) || "",
+		ts: pick(paths, [/^(updatedAt|updated_at|modifiedAt)$/i, /^(createdAt|created_at|date|ts)$/i]),
+		url: paths.find((k) => /^https?:\/\//.test(String(sample[k.split(".")[0]]?.[k.split(".")[1]] ?? sample[k]))) || "",
 		thumbnail: pick(paths, [/thumb/i, /image/i, /avatar/i]),
 	};
 }
@@ -227,6 +194,7 @@ function suggestMap(sample: Record<string, any>) {
 // ── component ────────────────────────────────────────────────────────────────
 
 const inputCls = fieldClasses("md");
+const labelCls = utilityClassName("mb-1 mt-3 block text-meta font-semibold text-faint");
 
 export function ProjectsSection() {
 	const [feeds, setFeeds] = useState<FeedDescriptor[] | null>(null);
@@ -234,11 +202,13 @@ export function ProjectsSection() {
 	const [open, setOpen] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 
-	const load = async () => {
+	const load = useCallback(async () => {
 		await (async () => {
 const res = await fetch(`${BASE_PATH}/api/feeds`);
 			if (res.ok) setFeeds((await res.json()).feeds || []);
-    })().catch(async () => {});
+})().catch(async () => {
+
+});
 		await (async () => {
 // The union view: repo projects come from the registry, feed
 			// projects from the same descriptors above. Only feeds are
@@ -246,23 +216,17 @@ const res = await fetch(`${BASE_PATH}/api/feeds`);
 			// project regardless of what backs it.
 			const res = await fetch(`${BASE_PATH}/api/projects`);
 			if (res.ok) setProjects((await res.json()).projects || []);
-    })().catch(async () => {});
-	};
+})().catch(async () => {
+
+});
+	}, []);
 	useEffect(() => {
 		void load();
 	}, [load]);
 
 	async function remove(id: string) {
-    if (
-      !confirm(
-        `Remove project "${id}"? Its sidebar band disappears; existing workspaces keep working.`,
-      )
-    )
-      return;
-    const res = await fetch(
-      `${BASE_PATH}/api/feeds/${encodeURIComponent(id)}`,
-      { method: "DELETE" },
-    );
+		if (!confirm(`Remove project "${id}"? Its sidebar band disappears; existing workspaces keep working.`)) return;
+		const res = await fetch(`${BASE_PATH}/api/feeds/${encodeURIComponent(id)}`, { method: "DELETE" });
 		if (!res.ok) setError((await res.json()).error || `Failed: ${res.status}`);
 		void load();
 	}
@@ -280,30 +244,11 @@ const res = await fetch(`${BASE_PATH}/api/feeds`);
 			{!!repoProjects.length && (
 				<SettingCard>
 					{repoProjects.map((p) => (
-            <div
-              key={p.key}
-              {...stylex.props(
-                sx.flex,
-                sx.itemsCenter,
-                sx.gap3,
-                sx.px5,
-                sx.py3,
-              )}
-            >
+						<div key={p.key} {...stylex.props(sx.flex, sx.itemsCenter, sx.gap3, sx.px5, sx.py3)}>
 							<IconTile name={p.id} size={30} />
 							<div {...stylex.props(sx.minW0, sx.flex1)}>
-                <div
-                  {...stylex.props(
-                    sx.fontMedium,
-                    sx.textFg,
-                    typography.itemTitle,
-                  )}
-                >
-                  {p.label}
-                </div>
-                <div
-                  {...stylex.props(sx.truncate, sx.textDim, typography.label)}
-                >
+								<div {...stylex.props(sx.fontMedium, sx.textFg, typography.itemTitle)}>{p.label}</div>
+								<div {...stylex.props(sx.truncate, sx.textDim, typography.label)}>
 									Repository · {p.repo?.ghRepo}
 									{p.repo?.defaultBranch ? ` · ${p.repo.defaultBranch}` : ""}
 									{p.repo?.sharedCheckout ? " · shared checkout" : ""}
@@ -318,29 +263,22 @@ const res = await fetch(`${BASE_PATH}/api/feeds`);
 				{(feeds || []).map((f) => (
 					<div
 						key={f.id}
-            {...mergeStylexProps("group", sx.flex, sx.itemsCenter, sx.gap3, sx.px5, sx.py3)}
+						{...mergeStylexProps("group", sx.flex, sx.itemsCenter, sx.gap3, sx.px5, sx.py3)}
 					>
 						<IconTile name={f.id} size={30} />
 						<div {...stylex.props(sx.minW0, sx.flex1)}>
-              <div
-                {...stylex.props(
-                  sx.fontMedium,
-                  sx.textFg,
-                  typography.itemTitle,
-                )}
-              >
-                {f.title}
-              </div>
+							<div {...stylex.props(sx.fontMedium, sx.textFg, typography.itemTitle)}>{f.title}</div>
 							<div {...stylex.props(sx.truncate, sx.textDim, typography.label)}>
 								{f.fromConfig ? "Config project" : "Built-in"} · ref {f.refKind}
-                {f.mcpServers?.length
-                  ? ` · MCP: ${f.mcpServers.join(", ")}`
-                  : ""}
+								{f.mcpServers?.length ? ` · MCP: ${f.mcpServers.join(", ")}` : ""}
 							</div>
 						</div>
 						{f.fromConfig && (
 							<button
-                {...mergeStylexProps(`${rowMenuTriggerClasses} group-hover:opacity-100`, sx.removeButton)}
+								className={cn(
+									rowMenuTriggerClasses,
+									utilityClassName("opacity-0 transition-[color,opacity,background] hover:text-red group-hover:opacity-100"),
+								)}
 								onClick={() => remove(f.id)}
 								aria-label={`Remove ${f.title}`}
 							>
@@ -350,7 +288,7 @@ const res = await fetch(`${BASE_PATH}/api/feeds`);
 					</div>
 				))}
 				<button
-          {...mergeStylexProps("", sx.hoverBgHover, sx.hoverTextFg, sx.flex, sx.wFull, sx.itemsCenter, sx.gap2, sx.px5, sx.py3, sx.fontMedium, sx.textDim, sx.transitionColors, typography.controlLabel)}
+					{...mergeStylexProps("hover:bg-hover hover:text-fg", sx.flex, sx.wFull, sx.itemsCenter, sx.gap2, sx.px5, sx.py3, sx.fontMedium, sx.textDim, sx.transitionColors, typography.controlLabel)}
 					onClick={() => setOpen(true)}
 				>
 					<IconPlus size={16} /> New project
@@ -380,20 +318,11 @@ function NewProjectModal({
 	const [title, setTitle] = useState("");
 	const [servers, setServers] = useState<string[]>([]);
 	const [server, setServer] = useState("");
-  const [tools, setTools] = useState<{ name: string; description?: string }[]>(
-    [],
-  );
+	const [tools, setTools] = useState<{ name: string; description?: string }[]>([]);
 	const [tool, setTool] = useState("");
 	const [argsText, setArgsText] = useState("{}");
 	const [path, setPath] = useState("");
-  const [map, setMap] = useState({
-    id: "",
-    title: "",
-    preview: "",
-    ts: "",
-    url: "",
-    thumbnail: "",
-  });
+	const [map, setMap] = useState({ id: "", title: "", preview: "", ts: "", url: "", thumbnail: "" });
 	const [sampleItem, setSampleItem] = useState<string | null>(null);
 	const [panelLabel, setPanelLabel] = useState("");
 	const [panelEmbed, setPanelEmbed] = useState("");
@@ -416,7 +345,9 @@ const res = await fetch(`${BASE_PATH}/api/connections`);
 						.filter((s: { transport: string }) => s.transport === "http")
 						.map((s: { name: string }) => s.name),
 				);
-      })().catch(async () => {});
+})().catch(async () => {
+
+});
 		})();
 	}, [open]);
 
@@ -441,11 +372,9 @@ const res = await fetch(
 					return la - lb || a.name.localeCompare(b.name);
 				});
 				setTools(all);
-      })()
-        .catch(async (e: any) => {
+})().catch(async (e: any) => {
 setError(e.message);
-        })
-        .finally(async () => {
+}).finally(async () => {
 setBusy(null);
 });
 		})();
@@ -470,18 +399,13 @@ throw new Error("Args must be valid JSON");
 			if (!res.ok) throw new Error(body.error || `Failed: ${res.status}`);
 			const raw = body.result ?? JSON.parse(body.sample || "null");
 			const found = findItemsPath(raw);
-      if (!found)
-        throw new Error(
-          "No array of items found in the tool result. Try different args or another tool.",
-        );
+			if (!found) throw new Error("No array of items found in the tool result. Try different args or another tool.");
 			setPath(found.path);
 			setMap(suggestMap(found.sample));
 			setSampleItem(JSON.stringify(found.sample, null, 1).slice(0, 600));
-    })()
-      .catch(async (e: any) => {
+})().catch(async (e: any) => {
 setError(e.message);
-      })
-      .finally(async () => {
+}).finally(async () => {
 setBusy(null);
 });
 	}
@@ -513,7 +437,9 @@ throw new Error("Args must be valid JSON");
 					tool,
 					args,
 					...(path ? { path } : {}),
-          map: Object.fromEntries(Object.entries(map).filter(([, v]) => v)),
+					map: Object.fromEntries(
+						Object.entries(map).filter(([, v]) => v),
+					),
 				},
 				...(panelLabel && panelEmbed
 					? {
@@ -521,11 +447,7 @@ throw new Error("Args must be valid JSON");
 								label: panelLabel,
 								embedUrlTemplate: panelEmbed,
 								...(panelLinkLabel && panelLinkHref
-                  ? {
-                      links: [
-                        { label: panelLinkLabel, hrefTemplate: panelLinkHref },
-                      ],
-                    }
+									? { links: [{ label: panelLinkLabel, hrefTemplate: panelLinkHref }] }
 									: {}),
 							},
 						}
@@ -539,39 +461,29 @@ throw new Error("Args must be valid JSON");
 			const out = await res.json();
 			if (!res.ok) throw new Error(out.error || `Failed: ${res.status}`);
 			onSaved();
-    })()
-      .catch(async (e: any) => {
+})().catch(async (e: any) => {
 setError(e.message);
-      })
-      .finally(async () => {
+}).finally(async () => {
 setBusy(null);
 });
 	}
 
-  const canSave =
-    !!title.trim() && !!server && !!tool && !!map.id && !!map.title;
+	const canSave = !!title.trim() && !!server && !!tool && !!map.id && !!map.title;
 
 	return (
 		<Modal.Root open={open} onOpenChange={(v) => !v && onClose()}>
-			<Modal.Content widthClassName={mergeStylexClassName("", sharedClassStyles.maxW34rem)}>
+			<Modal.Content widthClassName={utilityClassName("max-w-[34rem]")}>
 				<Modal.Header
 					title="New project"
 					description="A sidebar feed built from one MCP tool call. Pick a server and its list-tool, fetch a sample, then adjust the mapping."
 				/>
 				<div {...stylex.props(sx.maxH60vh, sx.overflowYAuto, sx.px1)}>
-          <label {...stylex.props(sx.fieldLabel, typography.meta)}>Name</label>
-          <input
-            className={inputCls}
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            placeholder="Videos, Tickets, Posts…"
-          />
+					<label className={labelCls}>Name</label>
+					<input className={inputCls} value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Videos, Tickets, Posts…" />
 
 					<div {...stylex.props(sx.grid, sx.gridCols2, sx.gap3)}>
 						<div>
-              <label {...stylex.props(sx.fieldLabel, typography.meta)}>
-                MCP server
-              </label>
+							<label className={labelCls}>MCP server</label>
 							<OptionSelect
 								label="MCP server"
 								value={server}
@@ -583,18 +495,13 @@ setBusy(null);
 							/>
 						</div>
 						<div>
-              <label {...stylex.props(sx.fieldLabel, typography.meta)}>
-                List tool
-              </label>
+							<label className={labelCls}>List tool</label>
 							<OptionSelect
 								label="List tool"
 								value={tool}
 								disabled={!tools.length}
 								options={[
-                  {
-                    value: "",
-                    label: tools.length ? "Pick…" : "Pick a server first",
-                  },
+									{ value: "", label: tools.length ? "Pick…" : "Pick a server first" },
 									...tools.map((t) => ({ value: t.name, label: t.name })),
 								]}
 								onChange={setTool}
@@ -602,15 +509,9 @@ setBusy(null);
 						</div>
 					</div>
 
-          <label {...stylex.props(sx.fieldLabel, typography.meta)}>
-            Tool args (JSON)
-          </label>
+					<label className={labelCls}>Tool args (JSON)</label>
 					<div {...stylex.props(sx.flex, sx.gap2)}>
-            <input
-              className={inputCls}
-              value={argsText}
-              onChange={(e) => setArgsText(e.target.value)}
-            />
+						<input className={inputCls} value={argsText} onChange={(e) => setArgsText(e.target.value)} />
 						<Button
 							variant="primary"
 							className={mergeStylexOverrideClassName("", sx.flexShrink0, typography.controlLabel)}
@@ -623,102 +524,53 @@ setBusy(null);
 
 					{sampleItem && (
 						<>
-              <label {...stylex.props(sx.fieldLabel, typography.meta)}>
-                Sample item (items path: “{path || "(root)"}”)
-              </label>
-              <pre
-                {...stylex.props(
-                  sx.maxH28,
-                  sx.overflowAuto,
-                  sx.roundedMd,
-                  sx.border,
-                  sx.borderLine,
-                  sx.bgSurface,
-                  sx.p2,
-                  sx.leadingSnug,
-                  sx.textDim,
-                  typography.meta,
-                )}
-              >
-                {sampleItem}
-              </pre>
+							<label className={labelCls}>Sample item (items path: “{path || "(root)"}”)</label>
+							<pre {...stylex.props(sx.maxH28, sx.overflowAuto, sx.roundedMd, sx.border, sx.borderLine, sx.bgSurface, sx.p2, sx.leadingSnug, sx.textDim, typography.meta)}>{sampleItem}</pre>
 						</>
 					)}
 
 					<div {...stylex.props(sx.grid, sx.gridCols3, sx.gap3)}>
-            {(
-              ["id", "title", "preview", "ts", "url", "thumbnail"] as const
-            ).map((k) => (
+						{(["id", "title", "preview", "ts", "url", "thumbnail"] as const).map((k) => (
 							<div key={k}>
-                <label {...stylex.props(sx.fieldLabel, typography.meta)}>
+								<label className={labelCls}>
 									{k}
 									{k === "id" || k === "title" ? " *" : ""}
 								</label>
 								<input
 									className={inputCls}
 									value={map[k]}
-                  onChange={(e) =>
-                    setMap((m) => ({ ...m, [k]: e.target.value }))
-                  }
+									onChange={(e) => setMap((m) => ({ ...m, [k]: e.target.value }))}
 									placeholder="field path"
 								/>
 							</div>
 						))}
 					</div>
 
-          <label {...stylex.props(sx.fieldLabel, typography.meta)}>
-            Panel (optional): tab label and {"{id}"}-templated embed URL
-          </label>
+					<label className={labelCls}>Panel (optional): tab label and {"{id}"}-templated embed URL</label>
 					<div {...stylex.props(sx.grid, sx.gridCols1fr2fr, sx.gap3)}>
-            <input
-              className={inputCls}
-              value={panelLabel}
-              onChange={(e) => setPanelLabel(e.target.value)}
-              placeholder="Video"
-            />
-            <input
-              className={inputCls}
-              value={panelEmbed}
-              onChange={(e) => setPanelEmbed(e.target.value)}
-              placeholder="https://…/{id}/embed"
-            />
+						<input className={inputCls} value={panelLabel} onChange={(e) => setPanelLabel(e.target.value)} placeholder="Video" />
+						<input className={inputCls} value={panelEmbed} onChange={(e) => setPanelEmbed(e.target.value)} placeholder="https://…/{id}/embed" />
 					</div>
 					<div {...stylex.props(sx.mt2, sx.grid, sx.gridCols1fr2fr, sx.gap3)}>
-            <input
-              className={inputCls}
-              value={panelLinkLabel}
-              onChange={(e) => setPanelLinkLabel(e.target.value)}
-              placeholder="Open"
-            />
-            <input
-              className={inputCls}
-              value={panelLinkHref}
-              onChange={(e) => setPanelLinkHref(e.target.value)}
-              placeholder="https://…/{id}"
-            />
+						<input className={inputCls} value={panelLinkLabel} onChange={(e) => setPanelLinkLabel(e.target.value)} placeholder="Open" />
+						<input className={inputCls} value={panelLinkHref} onChange={(e) => setPanelLinkHref(e.target.value)} placeholder="https://…/{id}" />
 					</div>
 
-          <label {...stylex.props(sx.fieldLabel, typography.meta)}>
-            Tile color
-          </label>
-          <input
-            className={inputCls}
-            value={tileBg}
-            onChange={(e) => setTileBg(e.target.value)}
-          />
+					<label className={labelCls}>Tile color</label>
+					<input className={inputCls} value={tileBg} onChange={(e) => setTileBg(e.target.value)} />
 
-          {error && (
-            <InlineAlert className={mergeStylexOverrideClassName("", sx.mt3)}>{error}</InlineAlert>
-          )}
-          {busy && (
-            <div {...stylex.props(sx.mt3, sx.textFaint, typography.label)}>
-              {busy}
-            </div>
-          )}
+					{error && <InlineAlert className={mergeStylexOverrideClassName("", sx.mt3)}>{error}</InlineAlert>}
+					{busy && <div {...stylex.props(sx.mt3, sx.textFaint, typography.label)}>{busy}</div>}
 				</div>
 				<Modal.Footer>
 					<div {...stylex.props(sx.flex1)} />
-          <Modal.Close render={<Button variant="ghost">Cancel</Button>} />
+					<Modal.Close
+						render={
+							<Button variant="ghost">
+								Cancel
+							</Button>
+						}
+					/>
 					<Button
 						variant="primary"
 						className={mergeStylexOverrideClassName("", sx.px5)}

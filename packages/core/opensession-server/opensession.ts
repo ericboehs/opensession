@@ -17,8 +17,10 @@ import { startRunnerPortalReaper } from "./src/server/runner-portals";
 import { startTodoReminderTicker } from "./src/server/todos";
 import { startGeneratedTitleSweep } from "./src/server/generated-titles";
 import { startLiveActivitySync } from "./src/server/live-activities";
-import { kickTranscriptBackfillOnce } from "./src/server/transcript-backfill";
-import { kickOrphanTranscriptSweep } from "./src/server/transcript-orphan-sweep";
+import {
+	drainPendingTranscriptWakeBatch,
+	drainPendingTranscriptWakesAfter,
+} from "./src/server/actor-transcript";
 import { makeAskHandler, restorePendingAsks } from "./src/server/asks";
 import { activeAutomationPreparationCount, automationResumeMcpForSession, ensureConfiguredAutomations, getWebhookRoutes, resumePendingAutomationRuns, setEventSessionCallback, settleResumedAutomationRun, startScheduler } from "./src/server/automations";
 import { startUsagePoller } from "./src/server/claude-accounts";
@@ -27,11 +29,14 @@ import { FRONTEND_SRC, SPA_HEADERS, ensureFrontendBuilt, frontend, isPrebuiltFro
 import { configuredIntegration } from "./src/server/config";
 import { initHumanAsks } from "./src/server/human-asks";
 import { interactiveMcpServers } from "./src/server/interactive-mcp";
-import { homeDir, OPENSESSION_SESSIONS_DIR } from "./src/server/paths";
+import { homeDir, OPENSESSION_SESSIONS_DIR, stateDir } from "./src/server/paths";
+import { shouldRedirectLegacyPublicPath } from "./src/server/legacy-public-prefix";
 import { startPlainArchiveSweep } from "./src/server/plain-archive";
 import { devInstanceBootError, isDevInstance } from "./src/server/dev-mode";
 import { startPrReviewNotificationTicker } from "./src/server/pr-review-notifications";
 import { startPublicIngress } from "./src/server/public-ingress";
+import { ensureCloudflareTunnel } from "./src/server/ingress-settings";
+import { startPrivateAppCertificateRenewal } from "./src/server/private-app-domain";
 import { creationOwnsPrompt, readActiveShutdownSnapshot, recoverableLocalHostSnapshotRecords, recordRecoveredRunEvent, restorePromptQueues, resumeDrainedSessions, settleRecoveredCreationOpening, snapshotActiveSessions, startLoopTicker } from "./src/server/run-session";
 import { startMcpHttpServer, startRunRpcServer } from "./src/server/run-rpc";
 import { handleSandboxWsUpgrade, startTimerPoisonHeartbeat, timerPoisonRequestCheck } from "./src/server/run-ws";
@@ -41,6 +46,7 @@ import {
 } from "./src/server/github-auth";
 import { startGoalTicker } from "./src/server/goal-runner";
 import { startSessionIndexSweeper } from "./src/server/session-index";
+import { startEventLoopLagMonitor } from "./src/server/system-stats";
 import { ensureWarmTemplateScheduler } from "./src/server/warm-template";
 import { handleRunnerWsUpgrade } from "./src/server/runner-ws";
 import { handleSandboxPortalRelayUpgrade } from "./src/server/sandbox-portal-relay";
@@ -49,7 +55,10 @@ import {
 	findSession,
 	findSessionAsync,
 	invalidateSessionsCache,
+	reconcileRecoverableSafetyFences,
 	recordRunOutcome,
+	startSessionOwnershipWatchdog,
+	stopSessionOwnershipWatchdog,
 } from "./src/server/session-cache";
 import { getSessionControl } from "./src/server/session-control";
 import { buildReposNote } from "./src/server/session-repos";
@@ -64,7 +73,7 @@ import {
 	type WebIdentity,
 	webAuthRequired,
 } from "./src/server/web-auth";
-import { startWebhookServer } from "./src/server/webhook-server";
+import { configureWebhookRoutes } from "./src/server/webhook-server";
 import { prImagePublicRoutes } from "./src/server/pr-images";
 import {
 	sessionHtmlWithSocialMeta,
@@ -77,7 +86,6 @@ import {
 	broadcastToAll,
 } from "./src/server/ws-hub";
 import { mkdirSync, watch, writeFileSync } from "fs";
-import { homedir } from "node:os";
 import { join } from "node:path";
 
 // Side-effect modules: these must be loaded even when the entry references
@@ -174,8 +182,8 @@ let agents: AgentModule[] = (g.__agents as AgentModule[] | undefined) ?? [];
 // live maps and skip this branch.
 if (!g.__opensessionBooted && !isDevInstance()) {
 	initHumanAsks();
-	restorePendingAsks();
-	hydratePersistedQueueState();
+	await restorePendingAsks();
+	await hydratePersistedQueueState();
 }
 
 console.log(`Starting Open Session server on ${HOST}:${PORT}...`);
@@ -257,6 +265,7 @@ const server: import("bun").Server<WSClientData> = hotServe({
 				"/index.html",
 				// Client-side routes must serve the SPA shell, not the raw file
 				"/new",
+				"/welcome",
 				"/session/*",
 				"/workspace/*",
 				"/pr/*",
@@ -313,9 +322,11 @@ const server: import("bun").Server<WSClientData> = hotServe({
 			if (publicPrefix) {
 				path = path.slice(publicPrefix.length) || "/";
 				if (
-					(req.method === "GET" || req.method === "HEAD") &&
-					!req.headers.get("upgrade") &&
-					!path.startsWith("/api/")
+					shouldRedirectLegacyPublicPath(
+						req.method,
+						req.headers.get("upgrade"),
+						path,
+					)
 				) {
 					return Response.redirect(path + url.search, 301);
 				}
@@ -589,6 +600,17 @@ if (!g.__opensessionBooted) {
 			console.log(`[engine] claude CLI ${claudeBin}`);
 		}
 	}
+
+	// Pi's SDK can take over a minute to load cold. Keep the loader import-inert,
+	// then warm it explicitly from the process boot owner when Pi is enabled.
+	void import("./src/server/pi-config")
+		.then(async ({ piEngineEnabled }) => {
+			if (!piEngineEnabled()) return;
+			const { prewarmPiSdk } = await import("./src/server/pi-runner");
+			await prewarmPiSdk();
+		})
+		.catch((error) => console.warn("[pi-runner] Pi SDK prewarm failed:", error));
+
 	// Dev instances (src/server/dev-mode.ts) skip background work here:
 	// no agents, no webhook intake, no schedulers/sweeps, no detached-server
 	// adoption — a second instance next to production must never double-send
@@ -597,17 +619,6 @@ if (!g.__opensessionBooted) {
 	const devInstance = isDevInstance();
 	if (!devInstance) {
 	startLiveActivitySync();
-
-	// Public dial-back ingress for remote sandboxes (src/server/public-ingress.ts):
-	// a second, isolated listener serving ONLY the run-ws/rpc-ws upgrades +
-	// /ingress-health. No-op unless ~/.opensession-sandbox.json enables
-	// publicIngress; starting/stopping it or changing its port needs a real
-	// restart (the config's other values stay read-fresh-per-run).
-	try {
-		startPublicIngress();
-	} catch (e) {
-		console.error("[public-ingress] failed to start:", e);
-	}
 
 	// Restore completed sandbox prewarms and maintain any explicit keep-ready
 	// targets. This is a boot hook rather than a module-scope side effect.
@@ -622,8 +633,9 @@ if (!g.__opensessionBooted) {
 		})
 		.catch((e) => console.error("[sandbox-prewarm] startup failed:", e));
 
-	// Start webhook server with enabled agents + automation webhook triggers
-	// + the public PR-image capability URLs (comment_on_pr_with_images).
+	// Build the exact public route allowlist before binding the one isolated
+	// ingress gateway. Webhooks, sandbox callbacks and workload identity share
+	// :3860; the private app on :3850 is never part of this listener.
 	agents = await loadAgents();
 	g.__agents = agents;
 	const webhookRoutes = getWebhookRoutes(() => {
@@ -635,8 +647,14 @@ if (!g.__opensessionBooted) {
 	for (const [key, handler] of sessionSocialCardPublicRoutes()) {
 		webhookRoutes.set(key, handler);
 	}
-	const webhookServer = startWebhookServer(agents, webhookRoutes);
-	void webhookServer;
+	configureWebhookRoutes(agents, webhookRoutes);
+	try {
+		startPublicIngress();
+		ensureCloudflareTunnel();
+		startPrivateAppCertificateRenewal();
+	} catch (e) {
+		console.error("[public-ingress] failed to start:", e);
+	}
 
 	// Optional instance seed pack. Generic installations start empty; existing
 	// records and anything created through the UI are unaffected.
@@ -722,24 +740,17 @@ if (!g.__opensessionBooted) {
 	// Distil finished sessions into the search index (session-index.ts).
 	startSessionIndexSweeper();
 
+	// Gateway event-loop lag telemetry for /api/health and the health MCP tool
+	// (system-stats.ts). The session-performance contract only measures the
+	// client; this is the server-side counterpart.
+	startEventLoopLagMonitor();
+
 	// Re-try sidebar titles whose one-shot died in flight (a restart, or an
 	// engine-spawn outage) — without this they stay raw forever.
 	startGeneratedTitleSweep(() => {
 		invalidateSessionsCache();
 	});
 
-	// Transcript v2 (docs/transcripts.md): one-time full backfill of
-	// legacy transcripts into transcripts.db. The helper self-gates (marker
-	// file once it completed — already done since 2026-07-23); the delay keeps
-	// its import chunks out of the restart-resume window below.
-	setTimeout(() => kickTranscriptBackfillOnce(), 15_000);
-
-	// Junk transcripts: rows written under session ids that never had a session
-	// behind them (test harnesses, before the store's per-pid scratch database).
-	// Deletes only what it can prove is bookkeeping — see the module doc — and
-	// is idempotent, so it runs every boot rather than once ever. Delayed past
-	// the restart-resume window so it never competes with a waking session.
-	setTimeout(() => kickOrphanTranscriptSweep(), 45_000);
 	} else {
 		agents = [];
 		g.__agents = agents;
@@ -769,26 +780,19 @@ if (!g.__opensessionBooted) {
 		setTimeout(() => {
 		void (async () => {
 		try {
+		// Release only actor-proven repairable safety fences before claiming the
+		// run journal. If this happens later in the watchdog, the boot recovery
+		// sweep has already skipped the quarantined lineage and its terminal host
+		// receipt can remain stranded behind a ghost owner until another restart.
+		await reconcileRecoverableSafetyFences();
 		const shutdownRecords = readActiveShutdownSnapshot();
-		const resumedIds = resumeInterruptedRuns(
-			(bksSessionId, terminalEvent, recoveredRun) => {
+		const resumedIds = await resumeInterruptedRuns(
+			async (bksSessionId, terminalEvent, recoveredRun) => {
 				if (bksSessionId && terminalEvent) {
 					const failed =
 						terminalEvent.type === "error" ||
 						!!terminalEvent.usageLimitExhausted;
-					if (recoveredRun?.promptEntryId) {
-						settleRecoveredCreationOpening(
-							bksSessionId,
-							recoveredRun.promptEntryId,
-							failed
-								? terminalEvent.content ||
-									terminalEvent.result ||
-									"Recovered opening run failed"
-								: undefined,
-							recoveredRun.runKey,
-						);
-					}
-					recordRunOutcome(
+					await recordRunOutcome(
 						bksSessionId,
 						failed
 							? terminalEvent.content ||
@@ -803,7 +807,7 @@ if (!g.__opensessionBooted) {
               ...(recoveredRun?.runKey
                 ? {
                     runId: recoveredRun.runKey,
-                    runGeneration: sessionKernel(bksSessionId).runState().generation,
+                    runGeneration: sessionKernel(bksSessionId).runStateProjection().generation,
                     projectionId: `outcome:${recoveredRun.runKey}`,
                   }
                 : {}),
@@ -813,6 +817,18 @@ if (!g.__opensessionBooted) {
 								: undefined,
 						},
 					);
+					if (recoveredRun?.promptEntryId) {
+						await settleRecoveredCreationOpening(
+							bksSessionId,
+							recoveredRun.promptEntryId,
+							failed
+								? terminalEvent.content ||
+									terminalEvent.result ||
+									"Recovered opening run failed"
+								: undefined,
+							recoveredRun.runKey,
+						);
+					}
 					// The in-process settleRun died with the restart — close the
 					// automation ledger entry here or it stays "running" forever.
 					settleResumedAutomationRun(
@@ -887,14 +903,14 @@ if (!g.__opensessionBooted) {
 		}
 		resumeDrainedSessions(new Set(resumedIds), shutdownRecords);
 		// Re-deliver messages that were queued/steered when the process went down.
-		restorePromptQueues(new Set(resumedIds));
+		await restorePromptQueues(new Set(resumedIds));
 		const ownedSessionIds = new Set(
 			activeRunRecords()
 				.map((run) => run.osSessionId)
 				.filter((id): id is string => !!id),
 		);
 		for (const id of resumedIds) ownedSessionIds.add(id);
-		const staleKernelOwners = reconcileSessionKernelOwnership(ownedSessionIds);
+		const staleKernelOwners = await reconcileSessionKernelOwnership(ownedSessionIds);
 		if (staleKernelOwners.length)
 			console.warn(
 				`[session-kernel] Settled ${staleKernelOwners.length} session(s) without a recoverable run owner`,
@@ -905,15 +921,35 @@ if (!g.__opensessionBooted) {
 		// Re-admit only historical branch effects rejected before execution by
 		// retired compatibility checks. Do this behind the recovery gate so the
 		// runtime cannot race the dead-letter transition.
+		// This compatibility repair scans every isolated session database. It is
+		// maintenance work, not a boot invariant: running it after the server has
+		// accepted traffic monopolizes the actor lane long enough to make ordinary
+		// per-session reads time out and can restart the gateway in a loop. Keep it
+		// available as an explicit one-off while old deployments are being repaired,
+		// but never put it on the production recovery critical path by default.
 		const reconciledBranchEffects =
-			await reconcileCompatibleCreationBranchEffects();
+			process.env.OPENSESSION_RECONCILE_CREATION_BRANCH_DEAD_LETTERS === "1"
+				? await reconcileCompatibleCreationBranchEffects()
+				: [];
 		if (reconciledBranchEffects.length)
 			console.warn(
 				`[session-kernel] Reconciled ${reconciledBranchEffects.length} compatible branch effect(s)`,
 			);
+		// Transcript mutations commit their durable wake before gateway bus
+		// delivery. Drain crash-window wakes before readiness so a replacement or
+		// deletion does not wait for another mutation to become visible.
+		const transcriptWakeBatch = await drainPendingTranscriptWakeBatch();
+		if (transcriptWakeBatch.drained > 0)
+			console.log(
+				`[transcript] Reconciled ${transcriptWakeBatch.drained} pending wake(s) before readiness`,
+			);
+		if (!transcriptWakeBatch.complete)
+			void drainPendingTranscriptWakesAfter(transcriptWakeBatch.nextAfter)
+				.catch((error) => console.error("[transcript] background wake drain failed:", error));
 		// Only now may durable timers and effects wake actors: every recovery
 		// stage above completed and ownership is established.
 		startSessionKernelRuntime();
+		startSessionOwnershipWatchdog();
 		setServiceReadiness("ready");
 		})().catch((error) => {
 			setServiceReadiness("failed", error);
@@ -995,6 +1031,7 @@ if (!g.__opensessionBooted) {
 		// race the drain deadline.
 		beginShutdown();
 		stopSessionKernelRuntime();
+		stopSessionOwnershipWatchdog();
 		// With poisoned timers (see run-ws.ts tripwire)
 		// every `await sleep` and Promise.race timeout below would wedge forever
 		// and systemd would SIGKILL us at TimeoutStopSec (observed: an 80s
@@ -1020,11 +1057,10 @@ if (!g.__opensessionBooted) {
 		// post-restart toast; the `by` here feeds the pre-restart overlay.
 		const restartBy = sharedCheckoutEditors();
 		try {
-			// homedir-shared state (does not follow OPENSESSION_STATE_DIR) — a
-			// dev instance must not overwrite the production restart marker.
+			// A dev instance must not overwrite the production restart marker.
 			if (!devInstance) {
 				writeFileSync(
-					join(homedir(), ".opensession-last-restart.json"),
+					stateDir("last-restart.json"),
 					JSON.stringify({ by: restartBy || "", at: new Date().toISOString(), signal }),
 				);
 			}

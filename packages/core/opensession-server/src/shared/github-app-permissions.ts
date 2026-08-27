@@ -6,7 +6,7 @@
  * they can never drift apart. Drift is exactly what left real Apps missing
  * `checks` and `issues`: the create builders under-requested, the mints asked
  * for scopes the App was never granted, and every installation token 422'd and
- * fell back silently to the bot PAT.
+ * failed open through unrelated host credentials.
  *
  * A mint is all-or-nothing: it succeeds only if every requested scope is a
  * subset of what the installation holds. So each mint set below is a strict
@@ -17,7 +17,7 @@
  *  params, and the superset of every mint. */
 export const GITHUB_APP_GRANT_PERMISSIONS: Record<string, string> = {
 	actions: "read", // workflow runs/logs for trusted autofix diagnosis
-	checks: "read", // CI check runs — App-only; no PAT can read them
+	checks: "read", // CI check runs
 	statuses: "read", // commit statuses, the other half of the status rollup
 	contents: "write", // push fixes, clone
 	pull_requests: "write", // reviews, comments, open/merge
@@ -28,10 +28,19 @@ export const GITHUB_APP_GRANT_PERMISSIONS: Record<string, string> = {
 };
 
 /** Read installation token (pr-info's statusCheckRollup) — the read view of the
- *  grant. Contents/pull_requests/issues at read, plus checks/statuses, members,
- *  deployments, and metadata as granted. No `actions`: the rollup needs check runs and statuses, not workflow
- *  runs, and requesting an ungranted scope would 422 the token. */
+ *  grant. Contents/pull_requests/issues at read, plus actions/checks/statuses,
+ *  members, deployments, and metadata as granted.
+ *
+ *  `actions: read` is NOT optional despite the rollup being "just checks":
+ *  gh's `pr view --json statusCheckRollup` selects `checkSuite.workflowRun` on
+ *  every check run, and that field is gated on Actions. Without it GitHub fails
+ *  the whole GraphQL response with "Resource not accessible by integration
+ *  (…checkSuite.workflowRun)" — no data at all, not a partial result — which
+ *  surfaced as "The GitHub App is missing a permission for this API" on every
+ *  PR panel, review and auto-fix run. Verified live: same installation, same
+ *  query, read mint → hard failure, read+actions mint → full payload. */
 export const GITHUB_APP_READ_PERMISSIONS: Record<string, string> = {
+	actions: "read",
 	checks: "read",
 	statuses: "read",
 	pull_requests: "read",

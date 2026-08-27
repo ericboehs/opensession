@@ -176,7 +176,8 @@ function reviewMutationKey(
 // state root changed — a test's scratch HOME, a demo instance's state dir —
 // is read from the right place by an explicit loadPrCacheSnapshot() call.
 const prCacheFile = () => statePath(".opensession-pr-cache.json");
-const PR_CACHE_VERSION = 4;
+const PR_CACHE_VERSION = 5;
+const DURABLE_CACHE_MAX_AGE_MS = 30 * 60_000;
 const probeEtags = new Map<string, string>(); // ghRepo → last seen ETag
 const lastFullRefresh = new Map<string, number>(); // repo id → epoch ms
 /**
@@ -190,7 +191,7 @@ export function loadPrCacheSnapshot(): void {
 try {
   const parsed = JSON.parse(readFileSync(prCacheFile(), "utf8"));
   const raw: Record<string, Record<string, PrInfo>> =
-    ([2, 3, PR_CACHE_VERSION].includes(parsed?.version)) && parsed?.repos
+    ([2, 3, 4, PR_CACHE_VERSION].includes(parsed?.version)) && parsed?.repos
       ? parsed.repos
       : parsed;
   prCache.data = new Map(
@@ -204,9 +205,12 @@ try {
   // timestamps so the current shape refills immediately.
   if (parsed?.version === PR_CACHE_VERSION) {
     const now = Date.now();
-    for (const repo of prRepos()) {
+    let durableRepos = 0;
+    const repos = prRepos();
+    for (const repo of repos) {
       if (!prCache.data.has(repo.id)) continue;
       if (parsed.recentLimits?.[repo.id] !== repo.recentLimit) continue;
+      if (parsed.openLimits?.[repo.id] !== repo.openLimit) continue;
       const etag = parsed.probeEtags?.[repo.ghRepo];
       if (typeof etag === "string" && etag) probeEtags.set(repo.ghRepo, etag);
       const refreshedAt = parsed.lastFullRefresh?.[repo.id];
@@ -217,8 +221,13 @@ try {
         refreshedAt <= now + 60_000
       ) {
         lastFullRefresh.set(repo.id, refreshedAt);
+        if (now - refreshedAt < DURABLE_CACHE_MAX_AGE_MS) durableRepos++;
       }
     }
+    // Keep the snapshot hot across a restart only when every configured repo is
+    // represented with the current query bounds and a recent full refresh.
+    // Otherwise first access reconciles immediately, preserving multi-repo correctness.
+    if (repos.length > 0 && durableRepos === repos.length) prCache.ts = now;
   }
 } catch {}
 }
@@ -232,6 +241,7 @@ function persistPrCache(data: Map<string, Map<string, PrInfo>>) {
       version: PR_CACHE_VERSION,
       repos: obj,
       recentLimits: Object.fromEntries(prRepos().map((repo) => [repo.id, repo.recentLimit])),
+      openLimits: Object.fromEntries(prRepos().map((repo) => [repo.id, repo.openLimit])),
       probeEtags: Object.fromEntries(probeEtags),
       lastFullRefresh: Object.fromEntries(lastFullRefresh),
     }, false);

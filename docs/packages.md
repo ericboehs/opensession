@@ -7,12 +7,21 @@ root**, bundling any of four things this instance already knows how to store:
 | In the manifest | Installs into |
 | --- | --- |
 | `mcpServers` | `mcp-config.json` |
-| `feeds` | `~/.opensession-feeds.json` |
+| `feeds` | `~/.opensession/feeds.json` |
 | `automations` | the config seed list, disabled |
 | `skills` | `.agents/skills/<name>/` |
 
-No registry, no npm, no build step, and **no runtime code**: nothing in a
-package is ever executed by the server or the browser. The reasoning is in
+These are fresh-install defaults. If the corresponding new path does not exist,
+an existing `~/.opensession-feeds.json`, `~/.opensession-plugins.json`, or
+`~/.opensession-plugins/` remains active. `OPENSESSION_STATE_DIR` instead roots
+those entries in another directory under their legacy-style names.
+`OPENSESSION_SKILLS_DIR` changes the skill destination, while
+`OPENSESSION_MCP_CONFIG` or `paths.mcpConfig` changes the MCP config path.
+
+No registry, no npm, and no build or postinstall step. Packages do not load
+JavaScript or browser code from their checkouts. An MCP entry can still define
+a stdio `command` and `args`; Open Session executes that command when it
+connects, so review it as runtime code. The reasoning is in
 [adrs/publishable-packages.md](../adrs/publishable-packages.md).
 
 ```sh
@@ -23,35 +32,36 @@ opensession plugins update my-package
 opensession plugins remove my-package
 ```
 
-`add` clones the repository, validates the manifest, prints every artifact it
-would write, and asks. Reading that plan is the trust model: installing mounts
-an MCP server whose tools your sessions can call, and adds text your agents
-read. `--yes` skips the question for scripted installs.
+`add` clones the repository, validates the manifest and declared skill paths,
+prints a summary of each planned artifact, and asks for confirmation. The
+summary omits automation prompts, full feed descriptors, and skill contents,
+so inspect the cloned manifest and declared skill directories before accepting.
+Installing mounts an MCP server whose tools your sessions can call and adds
+text your agents read. `--yes` skips confirmation.
 
 ## The manifest
 
 ```json
 {
-  "name": "loom",
+  "name": "video-library",
   "version": "1.0.0",
-  "description": "Your Loom videos as a project, with a weekly digest.",
-  "homepage": "https://github.com/acme/opensession-loom",
+  "description": "Your team's videos as a project, with a weekly digest.",
+  "homepage": "https://github.com/acme/opensession-video-library",
   "requires": [],
   "mcpServers": {
-    "loom": {
+    "video-library": {
       "type": "http",
-      "url": "https://mcp.loom.example/mcp",
-      "headers": { "Authorization": "${LOOM_TOKEN}" }
+      "url": "https://mcp.video-library.example/mcp"
     }
   },
   "feeds": [
     {
-      "id": "loom",
-      "title": "Loom",
-      "refKind": "loom",
-      "mcpServers": ["loom"],
+      "id": "video-library",
+      "title": "Video library",
+      "refKind": "video-library",
+      "mcpServers": ["video-library"],
       "items": {
-        "server": "loom",
+        "server": "video-library",
         "tool": "list_videos",
         "path": "videos",
         "map": { "id": "id", "title": "name", "ts": "updatedAt" }
@@ -64,15 +74,15 @@ read. `--yes` skips the question for scripted installs.
       "label": "Weekly video digest",
       "description": "Summarises what the team recorded last week.",
       "automation": {
-        "name": "Loom weekly digest",
+        "name": "Video library weekly digest",
         "prompt": "List the videos recorded in the last seven days...",
         "schedule": "0 9 * * 1",
         "mode": "ask",
-        "mcpServers": ["loom"]
+        "mcpServers": ["video-library"]
       }
     }
   ],
-  "skills": ["skills/loom-editing"]
+  "skills": ["skills/video-library-editing"]
 }
 ```
 
@@ -83,31 +93,37 @@ rather than a second schema.
 
 ## Rules the format enforces
 
-These are validated before anything is written, and a failure names the field:
+The manifest validator and install plan enforce these rules:
 
-- **No secrets.** Every value in a server's `env` and `headers` must be a bare
-  `${NAME}` reference, and a server URL may carry neither a query string nor
-  userinfo. A package repository is publishable by construction: there is
-  nowhere in the format to put a credential. The operator supplies `LOOM_TOKEN`
-  in their env file, and the connection card says `needs-env` until they do.
+- **Credential checks have limits.** Every value in a server's `env` and
+  `headers` must be a bare `${NAME}` reference, and a server URL may carry
+  neither a query string nor userinfo. Commands, arguments, and URL paths are
+  not inspected for secrets, so publishers and installers must review them.
+  The MCP runtime currently passes `${NAME}` references literally instead of
+  expanding them, and HTTP status does not detect missing header references.
+  Do not rely on package placeholders for working credential setup.
 - **No self-scoping.** A manifest may not set `allowedUsers`. Who inside your
   company reaches a tool is your call, so it comes from `--users` at install
   time and is remembered across updates.
-- **No self-starting.** Automations install disabled, and a manifest may not
-  set `enabled` or `selfImprove`. A package proposes a job; you start it.
-- **No overwriting.** If any name a package wants is already taken by something
-  it does not already own, the whole install refuses. Nothing is half-applied.
+- **No self-starting.** Automations install disabled. A manifest cannot set
+  `enabled: true` or a truthy `selfImprove`. A package proposes a job; you
+  start it.
+- **No unowned overwrites.** Name collisions are detected before artifact
+  apply, which then does not start. New artifacts are removed if a later apply
+  step fails, but updates are not fully transactional: a late failure can leave
+  an already-owned artifact changed.
 - **No escaping the package.** Skill paths are relative and cannot contain
   `..`.
 
 ## What installing records
 
-`~/.opensession-plugins.json` holds, per package, the source, the commit it was
+`~/.opensession/plugins.json` holds, per package, the source, the commit it was
 installed from, and the exact name of every artifact it created, with a sha256
-for each skill. That ledger is what makes `remove` exact: it reverses the names
-it recorded rather than guessing from a prefix, so it can never delete an
-automation you wrote yourself. The checkout stays under
-`~/.opensession-plugins/<name>/` and is what `update` fetches into.
+of each skill's `SKILL.md`. Other files in a skill directory are copied but are
+not included in that hash or the change summary. The ledger lets `remove`
+reverse recorded names instead of guessing from a prefix, avoiding unrelated
+automations with similar names. The fetched checkout stays under
+`~/.opensession/plugins/<name>/`; `update` replaces it from the recorded source.
 
 Two things `remove` deliberately does not do: it leaves an automation the
 server has already created from the seed in place (delete it in the UI, as with
@@ -121,9 +137,9 @@ That is the whole distribution story:
 [github.com/topics/opensession-plugin](https://github.com/topics/opensession-plugin)
 is the catalog, there is no submission process, and nobody has to approve you.
 
-A good package README says what the MCP server is, which credential it needs
-and where to get it, and what the automations would do on a schedule. Someone
-is going to read that before typing `y`.
+A good package README says what the MCP server is, which credentials it needs,
+how to configure them after installation, and what the automations would do on
+a schedule. Someone is going to read that before typing `y`.
 
 Installed packages show up in Settings → Library beside the rest of the
 catalog, one card each.

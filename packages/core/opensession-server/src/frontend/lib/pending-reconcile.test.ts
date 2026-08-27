@@ -1,8 +1,13 @@
 import { describe, expect, test } from "bun:test";
 import {
+	markPendingBusy,
+	markPendingStarted,
+	type OptimisticPendingPrompt,
+	optimisticOutboxFallbacks,
 	PENDING_GIVE_UP_MS,
 	reconcilePending,
 } from "./pending-reconcile";
+import type { PromptOutboxItem } from "./prompt-outbox";
 
 const SENT = 1_000_000;
 const bubble = (id: string, content: string, user?: string) => ({
@@ -17,6 +22,110 @@ const entry = (content: string, at = SENT) => ({
 	timestamp: new Date(at).toISOString(),
 });
 
+const outboxItem = (
+	overrides: Partial<PromptOutboxItem> = {},
+): PromptOutboxItem => ({
+	clientId: "a",
+	sessionId: "session",
+	content: "ship it",
+	state: "pending",
+	attempts: 0,
+	createdAt: SENT,
+	nextAttemptAt: SENT,
+	...overrides,
+});
+
+describe("optimisticOutboxFallbacks", () => {
+	test("keeps a pristine idle outbox handoff on the transcript surface", () => {
+		expect(optimisticOutboxFallbacks([outboxItem()], new Set(), new Set())).toEqual([
+			{
+				id: "outbox-a",
+				content: "ship it",
+				user: undefined,
+				sentAt: SENT,
+			},
+		]);
+	});
+
+	test("does not duplicate a local pending row or a landed delivery", () => {
+		expect(
+			optimisticOutboxFallbacks(
+				[outboxItem()],
+				new Set(["outbox-a"]),
+				new Set(),
+			),
+		).toEqual([]);
+		expect(
+			optimisticOutboxFallbacks(
+				[outboxItem()],
+				new Set(),
+				new Set(["outbox-a"]),
+			),
+		).toEqual([]);
+	});
+
+	test("leaves real queue placement and retry feedback in the outbox", () => {
+		expect(
+			optimisticOutboxFallbacks(
+				[
+					outboxItem({ busyMode: "queue" }),
+					outboxItem({ clientId: "b", attempts: 1 }),
+					outboxItem({ clientId: "c", state: "failed" }),
+				],
+				new Set(),
+				new Set(),
+			),
+		).toEqual([]);
+	});
+});
+
+describe("markPendingStarted", () => {
+	const started: OptimisticPendingPrompt = {
+		id: "outbox-a",
+		content: "ship it",
+		user: "michiel",
+		sentAt: SENT,
+	};
+
+	test("moves a stale busy send from the queue back to the transcript", () => {
+		expect(
+			markPendingStarted([{ ...started, busyMode: "queue" as const }], started),
+		).toEqual([{ ...started, serverStarted: true }]);
+	});
+
+	test("restores a bubble claimed by the transient admission queue", () => {
+		expect(markPendingStarted([], started)).toEqual([
+			{ ...started, serverStarted: true },
+		]);
+	});
+
+	test("leaves an already-confirmed transcript bubble alone", () => {
+		const current = [{ ...started, serverStarted: true as const }];
+		expect(markPendingStarted(current, started)).toBe(current);
+	});
+});
+
+describe("markPendingBusy", () => {
+	const delivered: OptimisticPendingPrompt = {
+		id: "outbox-a",
+		content: "ship it",
+		user: "michiel",
+		sentAt: SENT,
+	};
+
+	test("moves a stale idle send to its authoritative queue surface", () => {
+		expect(markPendingBusy([delivered], delivered, "queue")).toEqual([
+			{ ...delivered, busyMode: "queue" },
+		]);
+	});
+
+	test("restores a queued row if an early admission echo claimed it", () => {
+		expect(markPendingBusy([], delivered, "steer")).toEqual([
+			{ ...delivered, busyMode: "steer" },
+		]);
+	});
+});
+
 describe("reconcilePending", () => {
 	test("a transcript user entry claims its bubble as landed", () => {
 		const { landed, expired } = reconcilePending(
@@ -29,10 +138,40 @@ describe("reconcilePending", () => {
 		expect(expired.size).toBe(0);
 	});
 
-	test("a queue or steer echo claims its bubble", () => {
+	test("an authoritative queue or steer echo claims its busy row", () => {
+		const { landed } = reconcilePending(
+			[{ ...bubble("outbox-a", "ship it"), busyMode: "queue" }],
+			[],
+			[{ id: "a", content: "ship it" }],
+			SENT,
+		);
+		expect([...landed]).toEqual(["outbox-a"]);
+	});
+
+	test("a transient admission echo does not claim an idle outbox bubble", () => {
 		const { landed } = reconcilePending(
 			[bubble("outbox-a", "ship it")],
 			[],
+			[{ id: "a", content: "ship it" }],
+			SENT,
+		);
+		expect(landed.size).toBe(0);
+	});
+
+	test("a transient queue echo does not claim a server-started bubble", () => {
+		const { landed } = reconcilePending(
+			[{ ...bubble("outbox-a", "ship it"), serverStarted: true }],
+			[],
+			[{ content: "ship it" }],
+			SENT,
+		);
+		expect(landed.size).toBe(0);
+	});
+
+	test("the transcript still claims a server-started bubble", () => {
+		const { landed } = reconcilePending(
+			[{ ...bubble("outbox-a", "ship it"), serverStarted: true }],
+			[entry("ship it")],
 			[{ content: "ship it" }],
 			SENT,
 		);

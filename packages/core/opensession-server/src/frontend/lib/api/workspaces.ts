@@ -62,6 +62,8 @@ export async function fetchSessionOverview(
 // ── Workspaces (containers that group sessions) ──
 
 let defaultModelSettings: Workspace["modelSettings"] | undefined;
+let workspaceSnapshot = "";
+let stableWorkspaces: Workspace[] | null = null;
 
 /** The instance-wide default model settings, captured from the last workspaces
  *  fetch. A workspace without its own modelSettings inherits these. */
@@ -76,7 +78,19 @@ export async function fetchWorkspaces(): Promise<Workspace[]> {
 			defaultModelSettings?: Workspace["modelSettings"];
 		}>("/workspaces?active=1");
 		if (data?.defaultModelSettings) defaultModelSettings = data.defaultModelSettings;
-		return data?.workspaces ?? [];
+		const next = data?.workspaces ?? [];
+		// Workspace invalidations can overlap or repeat (PR attachment, focus,
+		// settings broadcasts). Preserve the array identity for an unchanged
+		// response so App's setState bails instead of reconciling every route and
+		// sidebar row after parsing the same 500+ KB payload again.
+		const snapshot = JSON.stringify({
+			workspaces: next,
+			defaultModelSettings: data?.defaultModelSettings,
+		});
+		if (stableWorkspaces && snapshot === workspaceSnapshot) return stableWorkspaces;
+		workspaceSnapshot = snapshot;
+		stableWorkspaces = next;
+		return next;
 	} catch (e) {
 		console.warn("fetchWorkspaces failed:", e);
 		return [];

@@ -39,6 +39,14 @@ extraResources:
     to: Assets.car
   - from: build/vendor/os1-dictation
     to: os1-dictation
+  - from: ../../../LICENSE
+    to: LICENSE
+  - from: ../../../THIRD-PARTY-NOTICES.md
+    to: THIRD-PARTY-NOTICES.md
+  - from: ../../../THIRD-PARTY-LICENSES
+    to: THIRD-PARTY-LICENSES
+  - from: build/release-metadata
+    to: release-metadata
 mac:
   category: public.app-category.developer-tools
   icon: build/icon.icns

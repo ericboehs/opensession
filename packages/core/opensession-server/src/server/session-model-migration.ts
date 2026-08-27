@@ -19,13 +19,13 @@
  *    model mid-turn races the run's own end-of-turn session patch.
  *  - targets that don't name an engine.
  */
+import { executeSessionProjection } from "./session-projection-executor";
 import { existsSync, readFileSync } from "fs";
 import { OPENSESSION_SESSIONS_DIR } from "./paths";
 import { writeJsonAtomic } from "./shared/atomic-write";
 import { explicitEngineFor, resolveModel } from "./models";
 import type { ActiveRunRecord } from "./run-journal";
 import type { NativeSessionFile } from "./types";
-import { sessionKernel } from "./session-kernel";
 
 export type MigrateEngineResult =
   | { ok: true; sessionId: string; from?: string; to: string }
@@ -84,12 +84,12 @@ export function sessionHasJournaledRun(
  * migrates via the transcript handoff. Pure session-file operation. See the
  * module doc for what it deliberately does not do.
  */
-export function migrateSessionEngine(
+export async function migrateSessionEngine(
   sessionId: string,
   targetModel: string,
   by = "engine-migration",
   options: { preserveActivity?: boolean } = {}
-): MigrateEngineResult {
+): Promise<MigrateEngineResult> {
   const path = `${OPENSESSION_SESSIONS_DIR}/${sessionId}.json`;
   const data = readJson<NativeSessionFile>(path);
   if (!data?.id) {
@@ -131,7 +131,7 @@ export function migrateSessionEngine(
   }
 
   const from = data.model;
-  sessionKernel(sessionId).applySync("model_migration", () =>
+  await executeSessionProjection(sessionId, "model_migration", () =>
     writeJsonAtomic(path, {
       ...data,
       model: resolved.id,

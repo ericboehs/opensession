@@ -1,19 +1,21 @@
+import { mergeStylexProps, mergeStylexOverrideClassName } from "../ui/cn";
+import { utilityClassName } from "../ui/cn";
 import React, { useState, useEffect } from "react";
 import { BrandMark } from "./BrandMark";
 import { UserAvatar } from "./UserAvatar";
 import { IconArrowUpRight } from "./icons";
 import { BASE_PATH } from "../lib/base";
 import { PRODUCT_NAME } from "../lib/brand";
-import { usePeople } from "../lib/people";
+import { ensurePeople, getPeople, usePeople } from "../lib/people";
 import { effectiveTheme, onThemeChanged } from "../lib/theme";
 import { Button } from "../ui/button";
+import { cn } from "../ui/cn";
 import { DeviceCode } from "../ui/device-code";
 import { InlineAlert } from "../ui/state";
 import { PulseDot } from "../ui/status";
 import { AUTH_STATUS_EVENT, authGatesOut } from "../lib/auth-ready";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
-import { mergeStylexProps, mergeStylexClassName, mergeStylexOverrideClassName } from "../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -33,14 +35,7 @@ const sx = stylex.create({
 			backgroundSize: "cover"
 	},
 	bgCenter: {
-			backgroundPosition: "50%"
-	},
-	sizeFull: {
-			width: "100%",
-			height: "100%"
-	},
-	objectCover: {
-			objectFit: "cover"
+			backgroundPosition: "center"
 	},
 	relative: {
 			position: "relative"
@@ -61,7 +56,7 @@ const sx = stylex.create({
 			overflow: "hidden"
 	},
 	p6: {
-			padding: "24px"
+			padding: "calc(4px * 6)"
 	},
 	w400px: {
 			width: "400px"
@@ -69,56 +64,48 @@ const sx = stylex.create({
 	maxWFull: {
 			maxWidth: "100%"
 	},
-	rounded2xl: {
-			borderRadius: "calc(22px * var(--rf))"
-	,
-		cornerShape: "var(--cs)"},
+	rounded3xl: {
+			borderRadius: "calc(26px * var(--rf))",
+
+		cornerShape: "var(--cs)",},
+	bgPopupGlass: {
+			backgroundColor: "var(--popup-glass)"
+	},
 	p8: {
-			padding: "32px"
+			padding: "calc(4px * 8)"
 	},
 	textCenter: {
 			textAlign: "center"
 	},
-	mxAuto: {
-			marginInline: "auto"
-	},
-	mb5: {
-			marginBottom: "20px"
-	},
-	block: {
-			display: "block"
-	},
-	size14: {
-			width: "56px",
-			height: "56px"
-	},
-	m0: {
-			margin: "0"
+	BackdropFilterVarPopupBlur: {
+			backdropFilter: "var(--popup-blur)"
 	},
 	fontTitle: {
-			fontWeight: "var(--title-weight)",
-		"--settings-leading": "1.1"
+			fontWeight: "var(--title-weight)"
 	},
 	textFg: {
 			color: "var(--text)"
 	},
+	mxAuto: {
+			marginInline: "auto"
+	},
 	mt2: {
-			marginTop: "8px"
+			marginTop: "calc(4px * 2)"
 	},
 	mb6: {
-			marginBottom: "24px"
+			marginBottom: "calc(4px * 6)"
 	},
 	maxW32ch: {
 			maxWidth: "32ch"
 	},
-	leadingRelaxed: {
-			lineHeight: "var(--leading-relaxed)"
+	leadingNormal: {
+			lineHeight: "var(--leading-normal)"
 	},
 	textDim: {
 			color: "var(--text-dim)"
 	},
 	minH10: {
-			minHeight: "40px"
+			minHeight: "calc(4px * 10)"
 	},
 	wFull: {
 			width: "100%"
@@ -127,12 +114,12 @@ const sx = stylex.create({
 			flexDirection: "column"
 	},
 	gap2: {
-			gap: "8px"
+			gap: "calc(4px * 2)"
 	},
 	roundedLg: {
-			borderRadius: "calc(14px * var(--rf))"
-	,
-		cornerShape: "var(--cs)"},
+			borderRadius: "calc(14px * var(--rf))",
+
+		cornerShape: "var(--cs)",},
 	border: {
 			borderStyle: "solid",
 			borderWidth: "1px"
@@ -144,85 +131,28 @@ const sx = stylex.create({
 			backgroundColor: "var(--button-surface)"
 	},
 	px3: {
-			paddingInline: "12px"
+			paddingInline: "calc(4px * 3)"
 	},
 	py4: {
-			paddingBlock: "16px"
+			paddingBlock: "calc(4px * 4)"
 	},
 	fontMedium: {
 			fontWeight: "var(--font-weight-medium)"
 	},
-	smoothShadowXs: {
-			boxShadow: "0 1px 2px -1px var(--smooth-shadow-color), 0 2px 5px -3px var(--smooth-shadow-color)"
-	},
-	focusRing: {
-			":focus-visible": {
-					outline: "2px solid var(--accent-ink)",
-					outlineOffset: "2px"
-			}
-	},
 	px4: {
-			paddingInline: "16px"
+			paddingInline: "calc(4px * 4)"
 	},
 	py25: {
-			paddingBlock: "10px"
+			paddingBlock: "calc(4px * 2.5)"
 	},
 	mt5: {
-			marginTop: "20px"
+			marginTop: "calc(4px * 5)"
 	},
 	mt35: {
-			marginTop: "14px"
+			marginTop: "calc(4px * 3.5)"
 	},
 	textLeft: {
 			textAlign: "left"
-	},
-	grid: {
-		display: "grid",
-	},
-	gridCols1: {
-		gridTemplateColumns: "repeat(1, minmax(0, 1fr))",
-	},
-	gridCols2: {
-		gridTemplateColumns: {
-			default: "repeat(2, minmax(0, 1fr))",
-			"@media (max-width: 720px)": "repeat(1, minmax(0, 1fr))",
-		},
-	},
-
-	selectNone: {
-		"WebkitUserSelect": "none",
-		"userSelect": "none"
-	},
-	motionReduceHidden: {
-		"@media (prefers-reduced-motion: reduce)": {
-			"display": "none"
-		}
-	},
-	shadowAuthCardEdge: {
-		"--tw-shadow": "var(--auth-card-edge)",
-		"boxShadow": "var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow)"
-	},
-	phoneP6: {
-		"@media (max-width: 720px)": {
-			"padding": "24px"
-		}
-	},
-	transitionBorderColorScale: {
-		"transitionProperty": "border-color,scale",
-		"transitionTimingFunction": "var(--tw-ease,var(--ease))",
-		"transitionDuration": "var(--tw-duration,var(--dur-micro))"
-	},
-	hoverBorderLineStrong: {
-		"@media (hover: hover)": {
-			":hover": {
-				"borderColor": "var(--border-strong)"
-			}
-		}
-	},
-	activeScale098: {
-		":active": {
-			"scale": ".98"
-		}
 	},
 });
 
@@ -282,6 +212,13 @@ export interface AuthStatus {
   required: boolean;
   authenticated: boolean;
   admin?: boolean;
+  /** The server's own name, answered pre-auth so the sign-in card can say
+   *  whose server this is (every other source sits behind the gate). */
+  organizationName?: string;
+  /** The organization's configured icon, revisioned; null when the server
+   *  still wears the bundled app mark. The image itself is served pre-auth
+   *  as a static asset — only the URL needs this response to travel. */
+  organizationIconUrl?: string | null;
   /** Signed out because GitHub permanently rejected this person's grant, not
    *  because they never signed in: `login` is still theirs, and the way back
    *  in is the same authorize. */
@@ -331,48 +268,19 @@ await fetch(`${BASE_PATH}/api/auth/logout`, { method: "POST" });
 }
 
 /**
- * The backdrop behind every gate screen: the same "Silver Silk" loop the
- * landing page runs, so the site and the app's front door are one surface.
- * Served from our own origin (routes/static-assets.ts), never the site's CDN.
- *
- * Three layers, each covering for the one above it: a flat fill that is
- * whatever paints first, the loop's own first frame as a background image, and
- * the video. So an offline browser, a slow connection and a reduced-motion
- * visitor all get the same picture, just not moving. `aria-hidden` and
- * `pointer-events-none` because it is wallpaper.
- *
- * Dark gets its OWN cut of the loop rather than the silver one behind a scrim.
- * A dimmed light background is still a light background: it stays the
- * brightest thing on the display and the whole screen glows in a dark room.
- * The dark cut is the same footage graded to charcoal (`scripts/signin-bg.sh`),
- * so it is the same material and the same motion in a different finish, and
- * its darkest point still sits clear of the card's own fill.
- *
- * `key` on the video: swapping a <source> child does not make an already-live
- * <video> reload, so a theme flip would keep playing the old cut. Keying it to
- * the theme replaces the element instead.
+ * The fixed light/dark artwork shared with marketing and onboarding. It is
+ * vendored beside the app so the sign-in gate never depends on a public CDN.
  */
 function AuthBackdrop() {
 	const [theme, setTheme] = useState(effectiveTheme);
 	useEffect(() => onThemeChanged(() => setTheme(effectiveTheme())), []);
-	const name = theme === "dark" ? "signin-bg-dark" : "signin-bg";
-	const poster = `${BASE_PATH}/${name}.webp`;
+	const name = theme === "dark" ? "onboarding-bg-dark" : "onboarding-bg";
 	return (
 		<div
-			aria-hidden="true" {...mergeStylexProps("", sx.selectNone, sx.pointerEventsNone, sx.absolute, sx.inset0, sx.bgSurface, sx.bgCover, sx.bgCenter)}
-			style={{ backgroundImage: `url(${poster})` }}
-		>
-			<video
-				key={name} {...mergeStylexProps("", sx.motionReduceHidden, sx.sizeFull, sx.objectCover)}
-				autoPlay
-				loop
-				muted
-				playsInline
-				poster={poster}
-			>
-				<source src={`${BASE_PATH}/${name}.mp4`} type="video/mp4" />
-			</video>
-		</div>
+			aria-hidden="true"
+			{...mergeStylexProps("select-none", sx.pointerEventsNone, sx.absolute, sx.inset0, sx.bgSurface, sx.bgCover, sx.bgCenter)}
+			style={{ backgroundImage: `url(${BASE_PATH}/${name}.webp)` }}
+		/>
 	);
 }
 
@@ -383,23 +291,19 @@ function AuthBackdrop() {
  * why the first thing a new teammate saw looked like a different product from
  * the one behind it.
  *
- * One card, one corner, one width. The corner is the container step of the
- * radius scale (`rounded-2xl`) rather than the card step: nothing is stacked
- * around it, so it is the whole page's shape.
+ * One card, one corner, one width. Its `rounded-3xl` shape is a small step
+ * softer than the standard container, and its shared popup glass lets the new
+ * artwork read through without competing with the content. The popup token
+ * becomes opaque when blur is unavailable or reduced transparency is enabled.
  *
- * It is paper (`bg-surface`, the page's own base) rather than the panel grey
- * every other card takes: on the silk it is the only opaque thing on screen,
- * so it reads against the backdrop rather than against a page.
+ * Its edge still changes with the theme through `--auth-card-edge` (base.css):
+ * light gets a restrained cast, while dark gets the hairline that holds the
+ * translucent shape without muddying the backdrop.
  *
- * Its edge is the one thing that changes with the theme, and `--auth-card-edge`
- * (base.css) holds both answers. Over the silver loop the card is white in
- * front of a picture and takes the `lg` cast a genuinely floating card has
- * earned. Over the charcoal cut there is nothing for a cast to fall on, so it
- * takes a hairline instead.
- *
- * Every screen opens on the product's own icon, the same one the loading
- * splash shows (index.html), so the app you are signing in to is what you land
- * on. GitHub is the method, and it is named on the button.
+ * Every screen opens on the organization's own mark when one is configured,
+ * else the product icon — the same one the loading splash shows (index.html),
+ * so the app you are signing in to is what you land on. GitHub is the method,
+ * and it is named on the button.
  */
 function AuthCard({
 	title,
@@ -413,22 +317,45 @@ function AuthCard({
 		// none of the rows it normally makes draggable. The backdrop is the handle
 		// here; the card opts back out so its controls stay clickable. The durable
 		// shell capability keeps this working if WCO geometry disappears.
-		<div {...mergeStylexProps("[html.wco_&]:[-webkit-app-region:drag] [html.wco_&]:[app-region:drag] [html.desktop-shell_&]:[-webkit-app-region:drag] [html.desktop-shell_&]:[app-region:drag]", sx.relative, sx.flex, sx.hScreen, sx.itemsCenter, sx.justifyCenter, sx.overflowHidden, sx.p6)}>
+		<div {...mergeStylexProps("[html.wco_&]:[-webkit-app-region:drag] [html.wco_&]:[app-region:drag] [html.desktop-shell_&]:[-webkit-app-region:drag] [html.desktop-shell_&]:[app-region:drag]", sx.relative, sx.flex, sx.hScreen, sx.itemsCenter, sx.justifyCenter, sx.overflowHidden, sx.p6)} >
 			<AuthBackdrop />
-			<div {...mergeStylexProps("[html.wco_&]:[-webkit-app-region:no-drag] [html.wco_&]:[app-region:no-drag] [html.desktop-shell_&]:[-webkit-app-region:no-drag] [html.desktop-shell_&]:[app-region:no-drag]", sx.shadowAuthCardEdge, sx.phoneP6, sx.relative, sx.w400px, sx.maxWFull, sx.rounded2xl, sx.bgSurface, sx.p8, sx.textCenter)}>
-				<img
-					src={`${BASE_PATH}/mac-app-icon.png?v=7`}
-					alt=""
-					width={56}
-					height={56}
-					{...stylex.props(sx.mxAuto, sx.mb5, sx.block, sx.size14)}
-				/>
+			<div {...mergeStylexProps("shadow-(--auth-card-edge) phone:p-6 [html.wco_&]:[-webkit-app-region:no-drag] [html.wco_&]:[app-region:no-drag] [html.desktop-shell_&]:[-webkit-app-region:no-drag] [html.desktop-shell_&]:[app-region:no-drag]", sx.relative, sx.w400px, sx.maxWFull, sx.rounded3xl, sx.bgPopupGlass, sx.p8, sx.textCenter, sx.BackdropFilterVarPopupBlur)} >
+				<AuthMark />
 				{/* Medium, not semibold: at 19px on the card's own paper the heavier
 				    step read as a slab rather than a heading. */}
-				<h1 {...stylex.props(sx.m0, sx.fontTitle, sx.textFg, typography.sectionTitle)}>{title}</h1>
+				<h1 {...mergeStylexProps("m-0", sx.fontTitle, sx.textFg, typography.sectionTitle)} >{title}</h1>
 				{children}
 			</div>
 		</div>
+	);
+}
+
+/** The card's mark: the organization's configured icon when one exists (its
+ *  URL arrives pre-auth on /api/auth/status), else the bundled app mark. A
+ *  configured icon that fails to load falls back rather than leaving a hole. */
+function AuthMark() {
+	const fallback = `${BASE_PATH}/mac-app-icon.png?v=7`;
+	const configured = useAuthStatus()?.organizationIconUrl || null;
+	const [failedSrc, setFailedSrc] = useState<string | null>(null);
+	const custom = configured !== null && configured !== failedSrc;
+	const src = custom ? configured : fallback;
+	return (
+		<img
+			src={src}
+			alt=""
+			width={56}
+			height={56}
+			// The bundled mark is drawn to the tile's edge; an uploaded org icon is
+			// a full-bleed square (Settings → General crops it to one), so it rounds
+			// like it does in the OrganizationSwitcher.
+			className={cn(
+				utilityClassName("mx-auto mb-5 block size-14"),
+				custom ? utilityClassName("rounded-control object-cover") : "",
+			)}
+			onError={() => {
+				if (custom) setFailedSrc(src);
+			}}
+		/>
 	);
 }
 
@@ -438,7 +365,7 @@ function AuthCopy({ children }: { children: React.ReactNode }) {
 		// `last:mb-0` for the cards whose sentence IS the card (the expired
 		// notice): the margin is air before whatever follows, and with nothing
 		// following it just lands the card off-centre.
-		<p {...mergeStylexProps("last:mb-0", sx.mxAuto, sx.mt2, sx.mb6, sx.maxW32ch, sx.leadingRelaxed, sx.textDim, typography.supporting)}>
+		<p {...mergeStylexProps("last:mb-0", sx.mxAuto, sx.mt2, sx.mb6, sx.maxW32ch, sx.leadingNormal, sx.textDim, typography.supporting)} >
 			{children}
 		</p>
 	);
@@ -465,15 +392,22 @@ export function UserGate({ children }: { children: React.ReactNode }) {
 				if (!r.ok) throw new Error(`Authentication status failed: ${r.status}`);
 				return r.json();
 			})
-			.then((body: AuthStatus | null) => {
+			.then(async (body: AuthStatus | null) => {
 				if (!body) throw new Error("Authentication status was empty");
-				setAuth(body);
 				if (body.required && body.authenticated && body.name) {
 					const user = body.name.split(" ")[0];
 					setStoredUser(user);
+				} else if (!body.required && getCurrentUser() === "Anonymous") {
+					// A fresh local instance has nobody to choose between. Wait for the
+					// roster so a configured team still gets its picker, then enter an
+					// empty or single-person instance directly into first-mile setup.
+					await ensurePeople();
+					const people = getPeople();
+					if (people.length <= 1) setStoredUser(people[0]?.name ?? "Local User");
 				}
-				// Publish readiness after localStorage carries the verified name so
-				// deferred per-user stores hydrate the authenticated account.
+				setAuth(body);
+				// Publish readiness after localStorage carries the verified or local
+				// name so deferred per-user stores hydrate the right account.
 				setAuthStatusCache(body);
 			})
 			.catch(() => setAuthFailed(true));
@@ -543,10 +477,8 @@ export function UserGate({ children }: { children: React.ReactNode }) {
 
   if (user !== "Anonymous") return <>{children}</>;
 
-  // No sign-in configured, which is the default for a fresh instance: the
-  // server cannot verify anyone, so this name is a label rather than an
-  // identity. It is also the bootstrap path, since an admin has to get in
-  // here before there is a GitHub app to sign in with.
+  // No sign-in configured with more than one rostered person. Fresh and
+  // single-person instances are assigned above and skip this choice entirely.
   return (
     <AuthCard title="Who are you?">
       <AuthCopy>
@@ -554,18 +486,21 @@ export function UserGate({ children }: { children: React.ReactNode }) {
         sessions.
       </AuthCopy>
       <div
-        {...stylex.props(
-          sx.grid,
-          sx.gap2,
+        className={cn(
+          utilityClassName("grid gap-2"),
           // One tile has no column to pair with: a half-width button floating
           // in a card reads as a layout that lost its other half.
-          roster.length > 1 ? sx.gridCols2 : sx.gridCols1,
+          roster.length > 1 ? utilityClassName("grid-cols-2 phone:grid-cols-1") : utilityClassName("grid-cols-1"),
         )}
       >
         {(roster.length ? roster.map(({ name }) => name) : ["Local User"]).map(
           (name) => (
             <button
-              key={name} {...mergeStylexProps("", sx.transitionBorderColorScale, sx.hoverBorderLineStrong, sx.activeScale098, sx.flex, sx.flexCol, sx.itemsCenter, sx.gap2, sx.roundedLg, sx.border, sx.borderLine, sx.bgButton, sx.px3, sx.py4, sx.fontMedium, sx.textFg, sx.smoothShadowXs, sx.focusRing, typography.itemTitle)}
+              key={name}
+              // The raised-control optics of Button's `default` variant, at
+              // tile proportions: a hairline is allowed here because the tile
+              // is a control, not a card (see src/frontend/AGENTS.md).
+              {...mergeStylexProps("smooth-shadow-xs transition-[border-color,scale] hover:border-line-strong active:scale-[0.98] focus-ring", sx.flex, sx.flexCol, sx.itemsCenter, sx.gap2, sx.roundedLg, sx.border, sx.borderLine, sx.bgButton, sx.px3, sx.py4, sx.fontMedium, sx.textFg, typography.itemTitle)}
               onClick={() => setStoredUser(name)}
             >
               <UserAvatar name={name} size={36} />
@@ -607,6 +542,7 @@ function GithubSignIn({
   } | null>(null);
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const serverName = useAuthStatus()?.organizationName || PRODUCT_NAME;
 
   // Poll GitHub (via the server) until the device code is authorized.
   useEffect(() => {
@@ -667,7 +603,7 @@ setError(e.message);
           ? "Enter this code"
           : reconnect
             ? "Reconnect GitHub"
-            : `Sign in to ${PRODUCT_NAME}`
+            : `Sign in to ${serverName}`
       }
     >
       {!flow ? (
@@ -680,10 +616,7 @@ setError(e.message);
                 continue.
               </>
             ) : (
-              <>
-                Sessions act as your own GitHub account, so pull requests are
-                authored by you.
-              </>
+              "Open Session is your team’s control room for coding agents. Sign in with GitHub so pull requests from your sessions are authored by you."
             )}
           </AuthCopy>
           <Button

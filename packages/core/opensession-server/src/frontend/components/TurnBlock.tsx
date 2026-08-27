@@ -1,3 +1,5 @@
+import { mergeStylexProps, mergeStylexOverrideClassName } from "../ui/cn";
+import { utilityClassName } from "../ui/cn";
 import React, { useState, useEffect, useRef } from "react";
 import type { TranscriptEntry } from "../lib/types";
 import {
@@ -12,6 +14,8 @@ import {
 } from "./ToolCallBlock";
 import { ClampedBody, EntryImages, EntryVideos } from "./MessageBubble";
 import { IconChevronDown, IconStack } from "./icons";
+import { cn } from "../ui/cn";
+import { Fold } from "../ui/fold";
 import { msgBody } from "../lib/msg-classes";
 import { formatDuration } from "../lib/time";
 import {
@@ -27,8 +31,6 @@ import { transcriptDisclosureLedger } from "../lib/transcript-disclosures";
 import { turnScrollAnchor } from "../lib/transcript-block-identity";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
-import { mergeStylexProps, mergeStylexClassName, mergeStylexOverrideClassName } from "../ui/cn";
-import { motionStyles } from "../styles/animations.stylex";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -36,7 +38,7 @@ const sx = stylex.create({
 			marginInline: "auto"
 	},
 	mb3: {
-			marginBottom: "12px"
+			marginBottom: "calc(4px * 3)"
 	},
 	wFull: {
 			width: "100%"
@@ -45,7 +47,7 @@ const sx = stylex.create({
 			maxWidth: "var(--session-col)"
 	},
 	Mx2: {
-			marginInline: "-8px"
+			marginInline: "calc(4px * -2)"
 	},
 	flex: {
 			display: "flex"
@@ -63,15 +65,15 @@ const sx = stylex.create({
 			alignItems: "baseline"
 	},
 	gap2: {
-			gap: "8px"
+			gap: "calc(4px * 2)"
 	},
 	roundedControl: {
-			borderRadius: "calc(12px * var(--rf))"
-	,
-		cornerShape: "var(--cs)"},
+			borderRadius: "calc(12px * var(--rf))",
+
+		cornerShape: "var(--cs)",},
 	border0: {
 			borderStyle: "solid",
-			borderWidth: "0"
+			borderWidth: "0px"
 	},
 	bgTransparent: {
 			backgroundColor: "transparent"
@@ -83,7 +85,7 @@ const sx = stylex.create({
 			paddingLeft: "4px"
 	},
 	pr3: {
-			paddingRight: "12px"
+			paddingRight: "calc(4px * 3)"
 	},
 	textLeft: {
 			textAlign: "left"
@@ -92,15 +94,15 @@ const sx = stylex.create({
 			fontFamily: "var(--sans)"
 	},
 	leading5: {
-			lineHeight: "20px"
+			lineHeight: "calc(4px * 5)"
 	},
 	textDim: {
 			color: "var(--text-dim)"
 	},
 	transitionColors: {
-			transitionProperty: "color,background-color,border-color,outline-color,text-decoration-color,fill,stroke,--tw-gradient-from,--tw-gradient-via,--tw-gradient-to",
-			transitionTimingFunction: "var(--tw-ease,var(--ease))",
-			transitionDuration: "var(--tw-duration,var(--dur-micro))"
+			transitionProperty: "color, background-color, border-color, outline-color, text-decoration-color, fill, stroke, --tw-gradient-from, --tw-gradient-via, --tw-gradient-to",
+			transitionTimingFunction: "var(--tw-ease, var(--ease))",
+			transitionDuration: "var(--tw-duration, var(--dur-micro))"
 	},
 	block: {
 			display: "block"
@@ -112,12 +114,12 @@ const sx = stylex.create({
 			fontWeight: "var(--font-weight-medium)"
 	},
 	truncate: {
+			overflow: "hidden",
 			textOverflow: "ellipsis",
-			whiteSpace: "nowrap",
-			overflow: "hidden"
+			whiteSpace: "nowrap"
 	},
 	leading4: {
-			lineHeight: "16px"
+			lineHeight: "calc(4px * 4)"
 	},
 	textFaint: {
 			color: "var(--text-faint)"
@@ -129,10 +131,10 @@ const sx = stylex.create({
 			insetBlock: "0"
 	},
 	Left2: {
-			left: "-8px"
+			left: "calc(4px * -2)"
 	},
 	w4: {
-			width: "16px"
+			width: "calc(4px * 4)"
 	},
 	p0: {
 			padding: "0"
@@ -169,10 +171,10 @@ const sx = stylex.create({
 			placeItems: "center"
 	},
 	left12: {
-			left: "50%"
+			left: "calc(1 / 2 * 100%)"
 	},
 	top12: {
-			top: "50%"
+			top: "calc(1 / 2 * 100%)"
 	},
 	TranslateX12: {
 			translate: "calc(calc(1 / 2 * 100%) * -1) 0"
@@ -191,9 +193,9 @@ const sx = stylex.create({
 			animation: "var(--animate-spin)"
 	},
 	roundedFull: {
-			borderRadius: "calc(infinity * 1px)"
-	,
-		cornerShape: "round"},
+			borderRadius: "calc(infinity * 1px)",
+
+		cornerShape: "round",},
 	border: {
 			borderStyle: "solid",
 			borderWidth: "1px"
@@ -211,114 +213,10 @@ const sx = stylex.create({
 			borderTopColor: "var(--text-dim)"
 	},
 	ml3: {
-			marginLeft: "12px"
+			marginLeft: "calc(4px * 3)"
 	},
-	my2: { marginBlock: "8px" },
-	size5: { width: "20px", height: "20px" },
-	selfCenter: { alignSelf: "center" },
-	leadingNone: { lineHeight: 1 },
-	transitionTransform: { transitionProperty: "transform" },
-	duration150: { transitionDuration: "150ms" },
-	rotateNeg90: { transform: "rotate(-90deg)" },
-	mt05: { marginTop: "2px" },
-	mb2: { marginBottom: "8px" },
-	ml5px: { marginLeft: "5px" },
-	borderL: { borderLeftStyle: "solid", borderLeftWidth: "1px" },
-	borderLine: { borderColor: "var(--border)" },
-	pl25: { paddingLeft: "10px" },
-	inset0: { inset: 0 },
-	opacity0: { opacity: 0 },
-	opacity100: { opacity: 1 },
-	transitionOpacity: { transitionProperty: "opacity" },
-	transitionOpacityTransform: { transitionProperty: "opacity, transform" },
-	rotateNeg90Opacity0: { transform: "rotate(-90deg)", opacity: 0 },
-	textFg: { color: "var(--text)" },
-
-	hoverBgHover40: {
-		"@media (hover: hover)": {
-			":hover": {
-				"backgroundColor": "var(--hover)"
-			},
-			"@supports (color: color-mix(in lab, red, red))": {
-				":hover": {
-					"backgroundColor": "color-mix(in oklab, var(--hover) 40%, transparent)"
-				}
-			}
-		}
-	},
-	hoverTextFg: {
-		"@media (hover: hover)": {
-			":hover": {
-				"color": "var(--text)"
-			}
-		}
-	},
-	afterAbsolute: {
-		"::after": {
-			"content": "var(--tw-content)",
-			"position": "absolute"
-		}
-	},
-	afterInsetY0: {
-		"::after": {
-			"content": "var(--tw-content)",
-			"insetBlock": "0"
-		}
-	},
-	afterLeft12: {
-		"::after": {
-			"content": "var(--tw-content)",
-			"left": "50%"
-		}
-	},
-	afterBorderL: {
-		"::after": {
-			"content": "var(--tw-content)",
-			"borderLeftStyle": "var(--tw-border-style)",
-			"borderLeftWidth": "1px"
-		}
-	},
-	afterBorderTransparent: {
-		"::after": {
-			"content": "var(--tw-content)",
-			"borderColor": "transparent"
-		}
-	},
-	afterTransitionColors: {
-		"::after": {
-			"content": "var(--tw-content)",
-			"transitionProperty": "color,background-color,border-color,outline-color,text-decoration-color,fill,stroke,--tw-gradient-from,--tw-gradient-via,--tw-gradient-to",
-			"transitionTimingFunction": "var(--tw-ease,var(--ease))",
-			"transitionDuration": "var(--tw-duration,var(--dur-micro))"
-		}
-	},
-	hoverAfterBorderLineStrong: {
-		"@media (hover: hover)": {
-			":hover": {
-				"::after": {
-					"content": "var(--tw-content)",
-					"borderColor": "var(--border-strong)"
-				}
-			}
-		}
-	},
-	focusVisibleAfterBorderLineStrong: {
-		":focusVisible": {
-			"::after": {
-				"content": "var(--tw-content)",
-				"borderColor": "var(--border-strong)"
-			}
-		}
-	},
-	desktopMl0: {
-		"@media (min-width: 721px)": {
-			"marginLeft": "0"
-		}
-	},
-	phoneMinH10: {
-		"@media (max-width: 720px)": {
-			"minHeight": "40px"
-		}
+	my2: {
+			marginBlock: "calc(4px * 2)"
 	},
 });
 
@@ -484,10 +382,21 @@ export const TurnBlock = function TurnBlock({
             ? `${live ? "Working" : "Worked"}. ${countsLabel}. ${toolOnlyAggregate.statusLabel}`
             : undefined
         }
-        onClick={() => rememberExpansion(!expanded)} {...mergeStylexProps("", sx.hoverBgHover40, sx.hoverTextFg, sx.Mx2, sx.flex, sx.wCalc10016px, sx.minW0, sx.cursorPointer, sx.itemsBaseline, sx.gap2, sx.roundedControl, sx.border0, sx.bgTransparent, sx.py1, sx.pl1, sx.pr3, sx.textLeft, sx.fontSans, sx.leading5, sx.textDim, sx.transitionColors, typography.itemTitle)}
+        onClick={() => rememberExpansion(!expanded)}
+        // Baseline, not centre: this row mixes its 14px title with 13px meta
+        // runs, and centring aligns boxes rather than text. The chevron carries
+        // no baseline of its own, so it keeps centring individually.
+        // The 8px overhang gives the icon-aligned chevron breathing room. Its
+        // asymmetric padding moves the disclosure line into that overhang so
+        // the open rail sits near the transcript edge instead of floating
+        // inside the work column.
+        {...mergeStylexProps("hover:bg-hover/40 hover:text-fg", sx.Mx2, sx.flex, sx.wCalc10016px, sx.minW0, sx.cursorPointer, sx.itemsBaseline, sx.gap2, sx.roundedControl, sx.border0, sx.bgTransparent, sx.py1, sx.pl1, sx.pr3, sx.textLeft, sx.fontSans, sx.leading5, sx.textDim, sx.transitionColors, typography.itemTitle)}
       >
         <span
-          {...stylex.props(sx.grid, sx.size5, sx.flexShrink0, sx.selfCenter, sx.placeItemsCenter, sx.leadingNone, sx.textFaint, sx.transitionTransform, sx.duration150, !expanded && sx.rotateNeg90)}
+          className={cn(
+            utilityClassName("grid size-5 flex-shrink-0 self-center place-items-center leading-none text-faint transition-transform duration-150"),
+            !expanded && utilityClassName("-rotate-90")
+          )}
         >
           <IconChevronDown size={20} className={mergeStylexOverrideClassName("", sx.block)} />
         </span>
@@ -526,14 +435,26 @@ export const TurnBlock = function TurnBlock({
         )}
       </button>
 
-      {expanded && (
+      <Fold open={expanded}>
         <div
-          {...stylex.props(sx.mt05, sx.relative, sx.mb2, sx.ml5px, sx.borderL, sx.borderLine, sx.pl25)}
+          className={cn(
+            utilityClassName("mt-0.5"),
+            // Open, the work wears a rail: a hairline dropping from the
+            // chevron, with every row nudged in under the header's own text.
+            // The turn's final answer sits back at the column edge with no
+            // rail beside it, so where the work ends and the answer begins
+            // stays legible however long the fold runs (a divider only marks
+            // the seam; the rail says "still inside the work" from any
+            // scroll position). The 5px puts the hairline under the chevron's
+            // center after the disclosure line's 8px left shift.
+            utilityClassName("relative mb-2 ml-[5px] border-l border-line pl-2.5")
+          )}
         >
           <button
             type="button"
             aria-label={`Collapse ${live ? "Working" : "Worked"}`}
-            onClick={() => rememberExpansion(false)} {...mergeStylexProps("", sx.afterAbsolute, sx.afterInsetY0, sx.afterLeft12, sx.afterBorderL, sx.afterBorderTransparent, sx.afterTransitionColors, sx.hoverAfterBorderLineStrong, sx.focusVisibleAfterBorderLineStrong, sx.absolute, sx.insetY0, sx.Left2, sx.w4, sx.cursorPointer, sx.border0, sx.bgTransparent, sx.p0)}
+            onClick={() => rememberExpansion(false)}
+            {...mergeStylexProps("after:absolute after:inset-y-0 after:left-1/2 after:border-l after:border-transparent after:transition-colors hover:after:border-line-strong focus-visible:after:border-line-strong", sx.absolute, sx.insetY0, sx.Left2, sx.w4, sx.cursorPointer, sx.border0, sx.bgTransparent, sx.p0)}
           />
           {sections.map((sec) =>
             sec.kind === "msg" ? (
@@ -546,7 +467,8 @@ export const TurnBlock = function TurnBlock({
               // Tool icons align with the fold chevron on desktop. Phones use
               // the 1px optical correction for the icon's inset glyph.
               <div
-                key={sec.items[0].id} {...mergeStylexProps("", sx.desktopMl0, sx.MlPx)}
+                key={sec.items[0].id}
+                {...mergeStylexProps("desktop:ml-0", sx.MlPx)}
                 data-eid={`${sec.items[sec.items.length - 1].id}#sec`}
               >
                 {/* The outer Working row is already the tool-only run's
@@ -564,7 +486,7 @@ export const TurnBlock = function TurnBlock({
             )
           )}
         </div>
-      )}
+      </Fold>
 
       {/* Aligned with the fold's own rows (see TurnMessage on the 7px). */}
       {(featured.images.length > 0 || featured.videos.length > 0) && (
@@ -701,27 +623,34 @@ function ToolRunBlock({
         aria-expanded={expanded}
         aria-label={`${expanded ? "Hide" : "Show"} ${items.length} grouped steps: ${label}${statusLabel ? `. ${statusLabel}` : ""}`}
         title={`${items.length} grouped steps`}
-        onClick={() => rememberExpansion(!expanded)} {...mergeStylexProps("group", sx.hoverBgHover40, sx.phoneMinH10, sx.flex, sx.wFull, sx.minW0, sx.cursorPointer, sx.itemsCenter, sx.gap2, sx.roundedControl, sx.border0, sx.bgTransparent, sx.px1, sx.py3px, sx.textLeft, sx.fontSans, sx.transitionColors)}
+        onClick={() => rememberExpansion(!expanded)}
+        {...mergeStylexProps("group hover:bg-hover/40 phone:min-h-10", sx.flex, sx.wFull, sx.minW0, sx.cursorPointer, sx.itemsCenter, sx.gap2, sx.roundedControl, sx.border0, sx.bgTransparent, sx.px1, sx.py3px, sx.textLeft, sx.fontSans, sx.transitionColors)}
       >
         {/* Open, the row is a heading for the steps under it, so it keeps the
             chevron rather than a stack of what is already on screen. Closed,
             the stack stands in until a hover offers the chevron. */}
         <span {...stylex.props(sx.relative, sx.grid, sx.size22px, sx.flexShrink0, sx.placeItemsCenter, sx.textFaint)}>
           <span
-            {...mergeStylexProps("group-hover:opacity-0 group-focus-visible:opacity-0", sx.absolute, sx.inset0, sx.transitionOpacity, sx.duration150, expanded && sx.opacity0)}
+            className={cn(
+              utilityClassName("absolute inset-0 transition-opacity duration-150 group-hover:opacity-0 group-focus-visible:opacity-0"),
+              expanded && utilityClassName("opacity-0")
+            )}
           >
             <IconStack size={18} className={mergeStylexOverrideClassName("", sx.absolute, sx.left12, sx.top12, sx.TranslateX12, sx.TranslateY12)} />
           </span>
           <IconChevronDown
             size={20}
-            {...mergeStylexProps("group-hover:opacity-100 group-focus-visible:opacity-100", sx.absolute, sx.block, sx.transitionOpacityTransform, sx.duration150, expanded ? sx.opacity100 : sx.rotateNeg90Opacity0)}
+            className={cn(
+              utilityClassName("absolute block transition-[opacity,transform] duration-150 group-hover:opacity-100 group-focus-visible:opacity-100"),
+              expanded ? utilityClassName("opacity-100") : utilityClassName("-rotate-90 opacity-0")
+            )}
           />
         </span>
         {/* Just the count. Which tools ran is what the row is folding away,
             and one click puts every step back with its own glyph, so naming
             them here only asks to be read. The names stay in the aria-label,
             where the count alone would tell a screen reader nothing. */}
-        <span {...mergeStylexProps("group-hover:text-fg", sx.flexShrink0, sx.truncate, sx.fontMedium, sx.leading5, sx.textDim, sx.transitionColors, typography.itemTitle)}>
+        <span {...mergeStylexProps("group-hover:text-fg", sx.flexShrink0, sx.truncate, sx.fontMedium, sx.leading5, sx.textDim, sx.transitionColors, typography.itemTitle)} >
           {items.length} step{items.length === 1 ? "" : "s"}
         </span>
         {/* What the count can't say: a run that edited files moved lines, in
@@ -734,10 +663,10 @@ function ToolRunBlock({
           <span {...stylex.props(sx.flexShrink0, sx.textFaint, typography.meta)}>{mediaLabel}</span>
         )}
         {pending > 0 && (
-          <span {...stylex.props(sx.size11px, sx.flexShrink0, motionStyles.spin, sx.roundedFull, sx.border, sx.borderBLineStrong, sx.borderLLineStrong, sx.borderRLineStrong, sx.borderTDim)} />
+          <span {...stylex.props(sx.size11px, sx.flexShrink0, sx.animateSpin, sx.roundedFull, sx.border, sx.borderBLineStrong, sx.borderLLineStrong, sx.borderRLineStrong, sx.borderTDim)} />
         )}
       </button>
-      {expanded && (
+      <Fold open={expanded}>
         <div {...stylex.props(sx.ml3)}>
           {items.map((entry) => (
             <ToolCallBlock
@@ -756,7 +685,7 @@ function ToolRunBlock({
             />
           ))}
         </div>
-      )}
+      </Fold>
     </div>
   );
 }
@@ -920,7 +849,7 @@ function TurnMessage({
       data-eid={entry.id}
     >
       <ClampedBody
-        className={`${stylex.props(sx.textFg).className} ${msgBody} markdown`}
+        className={cn(msgBody, utilityClassName("markdown text-fg"))}
         content={entry.content}
         entry={entry}
         sessionId={sessionId}

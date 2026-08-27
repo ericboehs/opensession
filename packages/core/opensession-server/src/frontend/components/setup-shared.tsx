@@ -196,7 +196,8 @@ const sx = stylex.create({
 		fontFamily: "var(--mono)",
 		fontSize: ".92em",
 		color: "var(--text)",
-	},
+
+		cornerShape: "var(--cs)",},
 	linkChips: {
 		marginTop: "8px",
 		display: "flex",
@@ -214,7 +215,8 @@ const sx = stylex.create({
 			outline: "2px solid var(--accent-ink)",
 			outlineOffset: "2px",
 		},
-	},
+
+		cornerShape: "var(--cs)",},
 	scopeCopied: {
 		backgroundColor: "var(--green-soft)",
 		color: "var(--green)",
@@ -281,9 +283,11 @@ export interface SetupGithub {
 	userPrAuth: boolean;
 	clientIdConfigured: boolean;
 	clientSecretConfigured: boolean;
-	botTokenPresent: boolean;
-	botCredential: "pat" | "app";
+	mentionHandle: string;
 	appCredentialConfigured: boolean;
+	privateKeyConfigured: boolean;
+	appSlug: string | null;
+	installationOwner: string | null;
 	appOrg?: string | null;
 	appCreateUrl: string;
 }
@@ -326,10 +330,7 @@ export interface SetupEngine {
 
 export interface SetupAccess {
 	publicBaseUrl: string;
-	/** The separate public webhook origin, or null when integrations fall back to the app. */
-	webhookBaseUrl: string | null;
 	port: number;
-	webhookPort: number;
 	tailnetIp: string | null;
 	caddyInstalled: boolean;
 }
@@ -393,65 +394,6 @@ body = await res.json();
 
 export type ChipTone = "on" | "warn" | "off";
 
-export function publicUrlState(publicBaseUrl: string): {
-	tone: ChipTone;
-	label: string;
-	description: string;
-} {
-	try {
-		const url = new URL(publicBaseUrl);
-		if (url.protocol !== "http:" && url.protocol !== "https:") throw new Error();
-		const host = url.hostname.toLowerCase();
-		if (
-			host === "localhost" ||
-			host === "127.0.0.1" ||
-			host === "0.0.0.0" ||
-			host === "::1" ||
-			host === "[::1]"
-		) {
-			return {
-				tone: "warn",
-				label: "Local only",
-				description: "Only this server can open the instance. Set a Tailscale address during server setup.",
-			};
-		}
-		const octets = host.split(".").map(Number);
-		const tailnetIp =
-			octets.length === 4 &&
-			octets.every((octet) => Number.isInteger(octet) && octet >= 0 && octet <= 255) &&
-			octets[0] === 100 &&
-			octets[1]! >= 64 &&
-			octets[1]! <= 127;
-		if (tailnetIp || host.endsWith(".ts.net")) {
-			return {
-				tone: "on",
-				label: "Private address",
-				description: `Configured for Tailscale at ${publicBaseUrl}.`,
-			};
-		}
-		// A TLS address is served by the instance's own reverse proxy, so it is
-		// reachable by definition — the page you are reading came through it.
-		if (url.protocol === "https:") {
-			return {
-				tone: "on",
-				label: "Online",
-				description: `Serving at ${publicBaseUrl}.`,
-			};
-		}
-		return {
-			tone: "warn",
-			label: "Check access",
-			description: `${publicBaseUrl} is configured over plain http, so setup cannot verify that it is private or reachable.`,
-		};
-	} catch {
-		return {
-			tone: "warn",
-			label: "Invalid",
-			description: "The instance URL is not valid. Run the server setup again.",
-		};
-	}
-}
-
 const CHIP_DOTS: Record<ChipTone, string> = {
 	on: "var(--green)",
 	warn: "var(--yellow)",
@@ -468,7 +410,6 @@ export function chipDotColor(tone: ChipTone): string {
  *  the checklist can offer a "jump to that step" without importing the wizard
  *  it is rendered by. */
 export type SetupStepId =
-	| "server"
 	| "github"
 	| "organization"
 	| "models"
@@ -487,12 +428,12 @@ export function integrationState(i: SetupIntegration): {
 }
 
 export function githubAuthState(g: SetupGithub): { tone: ChipTone; label: string } {
-	if (g.userPrAuth && g.clientIdConfigured && g.clientSecretConfigured)
-		return { tone: "on", label: "Active" };
-	if (g.userPrAuth && g.clientIdConfigured)
+	if (!g.appCredentialConfigured)
+		return { tone: "warn", label: "Missing App credential" };
+	if (!g.appSlug) return { tone: "warn", label: "Missing App slug" };
+	if (g.userPrAuth && !g.clientSecretConfigured)
 		return { tone: "warn", label: "Missing client secret" };
-	if (g.userPrAuth) return { tone: "warn", label: "Missing client id" };
-	return { tone: "off", label: "Off" };
+	return { tone: "on", label: g.userPrAuth ? "GitHub" : "None" };
 }
 
 /** Does this repo carry what a session needs to provision and boot it on its
@@ -753,6 +694,7 @@ export function SecretField({
 							: (placeholder ?? "Not set")
 				}
 				aria-label={name}
+				required={required}
 				autoComplete="new-password"
 				autoCapitalize="none"
 				spellCheck={false}

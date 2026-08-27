@@ -7,16 +7,16 @@ import type {
 import { v2SnapshotEntryWeight } from "./transcript-wire";
 
 export interface TranscriptWatchStore {
-  getLastChangeSeq(sessionId: string): number;
-  getLastResetChangeSeq(sessionId: string): number;
+  getLastChangeSeq(sessionId: string): number | Promise<number>;
+  getLastResetChangeSeq(sessionId: string): number | Promise<number>;
   readChangesSince(
     sessionId: string,
     sinceChangeSeq: number,
     limit?: number
-  ): TranscriptPage;
-  readTail(sessionId: string, limit?: number): TranscriptPage;
+  ): TranscriptPage | Promise<TranscriptPage>;
+  readTail(sessionId: string, limit?: number): TranscriptPage | Promise<TranscriptPage>;
   /** Optional: a store without it falls back to the flat entry tail. */
-  readTailWindow?(sessionId: string, opts: TailWindowOpts): TranscriptPage;
+  readTailWindow?(sessionId: string, opts: TailWindowOpts): TranscriptPage | Promise<TranscriptPage>;
 }
 
 export interface TranscriptWatchSocket {
@@ -58,7 +58,7 @@ export interface TranscriptWatchHandle {
   changeSeq(): number;
 }
 
-const RESUME_LIMIT = 500;
+const RESUME_LIMIT = 199;
 
 // The opening window. SNAPSHOT_TAIL_ENTRIES is the floor it has always had;
 // the rest let it reach further back when those entries hold no conversation.
@@ -84,9 +84,9 @@ const SNAPSHOT_MAX_ESTIMATED_BYTES = 850_000;
  * and bus callbacks are only wake-ups: every delivery is reconciled from
  * SQLite by changeSeq. This makes delayed/duplicated notifications harmless.
  */
-export function startTranscriptWatch(
+export async function startTranscriptWatch(
   options: StartTranscriptWatchOptions
-): TranscriptWatchHandle {
+): Promise<TranscriptWatchHandle> {
   const {
     sessionId,
     store,
@@ -108,11 +108,11 @@ export function startTranscriptWatch(
     if (!closed && isCurrent()) socket.send(JSON.stringify(frame));
   };
 
-  function sendSnapshot(): void {
+  async function sendSnapshot(): Promise<void> {
     // Capture the mutation baseline before the tail. A write racing the tail
     // read may overlap the snapshot, but the following flush replays it by id.
-    cursor = store.getLastChangeSeq(sessionId);
-    const tail = store.readTailWindow
+    cursor = await store.getLastChangeSeq(sessionId);
+    const tail = await (store.readTailWindow
       ? store.readTailWindow(sessionId, {
           minEntries: SNAPSHOT_TAIL_ENTRIES,
           minMessages: SNAPSHOT_MIN_MESSAGES,
@@ -122,7 +122,7 @@ export function startTranscriptWatch(
           maxEstimatedBytes: SNAPSHOT_MAX_ESTIMATED_BYTES,
           weigh: v2SnapshotEntryWeight,
         })
-      : store.readTail(sessionId, SNAPSHOT_TAIL_ENTRIES);
+      : store.readTail(sessionId, SNAPSHOT_TAIL_ENTRIES));
     send({
       type: "transcript_init",
       sessionId,
@@ -138,7 +138,7 @@ export function startTranscriptWatch(
     if (initialized) options.afterResetSnapshot?.();
   }
 
-  const flush = (event?: TranscriptBusEvent) => {
+  const flush = async (event?: TranscriptBusEvent): Promise<void> => {
     if (event?.reset) resetPending = true;
     if (closed || !initialized) {
       pending = true;
@@ -154,11 +154,11 @@ export function startTranscriptWatch(
         pending = false;
         if (resetPending) {
           resetPending = false;
-          sendSnapshot();
+          await sendSnapshot();
         }
         let wakeEvent = event;
         for (;;) {
-          const page = store.readChangesSince(sessionId, cursor, RESUME_LIMIT);
+          const page = await store.readChangesSince(sessionId, cursor, RESUME_LIMIT);
           if (!page.entries.length) break;
           cursor = Math.max(cursor, ...page.entries.map((entry) => entry.changeSeq));
           const append = {
@@ -192,7 +192,7 @@ export function startTranscriptWatch(
 
   // Subscribe before observing any cursor or snapshot. A commit at every
   // possible handshake boundary either appears in the read or sets pending.
-  const unsubscribeBus = subscribe(sessionId, flush);
+  const unsubscribeBus = subscribe(sessionId, (event) => { void flush(event); });
   try {
     const requested =
       typeof options.sinceChangeSeq === "number" &&
@@ -200,15 +200,15 @@ export function startTranscriptWatch(
       options.sinceChangeSeq >= 0
         ? Math.floor(options.sinceChangeSeq)
         : undefined;
-    const lastChangeSeq = store.getLastChangeSeq(sessionId);
-    const lastResetChangeSeq = store.getLastResetChangeSeq(sessionId);
+    const lastChangeSeq = await store.getLastChangeSeq(sessionId);
+    const lastResetChangeSeq = await store.getLastResetChangeSeq(sessionId);
     let resumed = false;
     if (
       requested !== undefined &&
       requested >= lastResetChangeSeq &&
       requested <= lastChangeSeq
     ) {
-      const changes = store.readChangesSince(
+      const changes = await store.readChangesSince(
         sessionId,
         requested,
         RESUME_LIMIT + 1
@@ -234,12 +234,12 @@ export function startTranscriptWatch(
       }
     }
 
-    if (!resumed) sendSnapshot();
+    if (!resumed) await sendSnapshot();
 
     initialized = true;
     // Mandatory post-subscription reconciliation. It also covers writes caused
     // synchronously by a socket.send implementation in tests or adapters.
-    flush();
+    await flush();
 
     return {
       unsubscribe() {

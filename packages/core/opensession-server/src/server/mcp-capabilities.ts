@@ -41,9 +41,9 @@ export const INTERNAL_MCP_CAPABILITIES = {
       "Search the durable record of past sessions when earlier work, decisions, or findings may answer the task.",
   },
   "opensession-self-deploy": {
-    summary: "Deploy this instance to a sha and restart the live server.",
+    summary: "Standard deploy of an ordinary source change to the live instance.",
     guidance:
-      "Deploy this Open Session instance to a specific commit and restart it. Use only when the task explicitly requires deploying the instance.",
+      "Deploy an ordinary frontend, backend, protocol, or dependency change to a specific commit. It restarts all three runtime services but does not refresh root-owned host artifacts; changes to live deploy controllers, service templates, credential installers, the run-host helper, or root-managed systemd artifacts require the documented full root deploy instead. Use only when the task explicitly requires deploying the instance.",
   },
   "opensession-humans": {
     summary: "Ask a teammate and fold their answer back into this session.",
@@ -91,7 +91,7 @@ export const INTERNAL_MCP_CAPABILITIES = {
       "Open an editable Slack draft when the task needs human-reviewed communication. The human still presses Send.",
   },
   "opensession-ask": {
-    summary: "Ask the human a blocking question (for engines with no native ask tool).",
+    summary: "Ask the human a blocking question.",
     guidance:
       "Pause on a blocking question card when a decision only the human can make is required.",
   },
@@ -129,6 +129,11 @@ export const INTERNAL_MCP_CAPABILITIES = {
     summary: "Read this instance's own disk, memory, load, process fleets and agent status.",
     guidance:
       "Inspect this instance's disk, memory, load, process fleets, and agent status.",
+  },
+  "opensession-audit": {
+    summary: "Read one day's rolled-up audit digest.",
+    guidance:
+      "Inspect one UTC day's audit totals, run outcomes, model usage, recurring errors, papercuts, and troubled sessions.",
   },
   "opensession-self": {
     summary: "A self-improving automation reading and rewriting its OWN prompt.",

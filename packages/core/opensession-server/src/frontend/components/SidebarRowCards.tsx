@@ -158,7 +158,8 @@ const sx = stylex.create({
 	rowCard: {
 		width: "min(300px, calc(100vw - 24px))", paddingInline: "13px", paddingTop: "11px", paddingBottom: "12px",
 	},
-	statusDot: { width: "7px", height: "7px", borderRadius: "calc(infinity * 1px)" },
+	statusDot: { width: "7px", height: "7px", borderRadius: "calc(infinity * 1px)",
+		cornerShape: "var(--cs)",},
 	statusDotAttention: { backgroundColor: "var(--yellow)" },
 	statusDotDefault: { backgroundColor: "var(--text-faint)" },
 	stateLine: { marginTop: "3px", fontWeight: "var(--font-weight-medium)" },

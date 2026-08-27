@@ -1,4 +1,10 @@
-import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
+import React, {
+	useEffect,
+	useEffectEvent,
+	useLayoutEffect,
+	useRef,
+	useState,
+} from "react";
 import { createPortal } from "react-dom";
 import { motion } from "motion/react";
 import { transcribeClip } from "../lib/api";
@@ -448,6 +454,10 @@ export function VoiceInput({
   const [error, setError] = useState<string | null>(null);
   const [levels, setLevels] = useState<number[]>([]);
   const [liveTranscript, setLiveTranscript] = useState("");
+  const [overlayTarget, setOverlayTarget] = useState<HTMLElement | null>(null);
+  useLayoutEffect(() => {
+    setOverlayTarget(overlayTargetRef?.current ?? null);
+  }, [overlayTargetRef]);
   const recRef = useRef<MediaRecorder | null>(null);
   const speechRef = useRef<BrowserDictation | null>(null);
   const speechResultRef = useRef<Promise<string> | null>(null);
@@ -456,9 +466,11 @@ export function VoiceInput({
   const requestRef = useRef(0);
   const returnFocusRef = useRef<HTMLElement | null>(null);
   const callbacksRef = useRef({ onText, onTextSend });
-  callbacksRef.current = { onText, onTextSend };
   const activeChangeRef = useRef(onActiveChange);
-  activeChangeRef.current = onActiveChange;
+  useLayoutEffect(() => {
+    callbacksRef.current = { onText, onTextSend };
+    activeChangeRef.current = onActiveChange;
+  }, [onText, onTextSend, onActiveChange]);
   const chunksRef = useRef<BlobPart[]>([]);
   const streamRef = useRef<MediaStream | null>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
@@ -478,107 +490,6 @@ export function VoiceInput({
     audioCtxRef.current = null;
     recRef.current = null;
   }
-  useEffect(
-    () => () => {
-      requestRef.current++;
-      speechRef.current?.cancel();
-      speechRef.current = null;
-      cleanup();
-    },
-    [],
-  );
-
-  // The overlay is visually modal, so make it modal to keyboards and assistive
-  // technology too. The portal target remains interactive; its siblings are
-  // restored to exactly the inert state they had before recording.
-  const active = phase !== "idle";
-  useLayoutEffect(() => {
-    const waveform = waveformRef.current;
-    if (!active || !waveform) return;
-    const measure = () => {
-      const count = Math.max(
-        1,
-        Math.min(
-          MAX_BAR_COUNT,
-          Math.floor((waveform.clientWidth + BAR_GAP) / (BAR_WIDTH + BAR_GAP)),
-        ),
-      );
-      setBarCount((current) => (current === count ? current : count));
-    };
-    measure();
-    const observer = new ResizeObserver(measure);
-    observer.observe(waveform);
-    return () => observer.disconnect();
-  }, [active]);
-  useEffect(() => {
-    function onKeyDown(event: KeyboardEvent) {
-      if (
-        event.defaultPrevented ||
-        event.repeat ||
-        disabled ||
-        phase !== "idle" ||
-        !matchesShortcut(event, "composer-dictate")
-      )
-        return;
-      const button = idleButtonRef.current;
-      const editorFocused = document.activeElement === editTargetRef?.current;
-      if (!button || (!shortcutActive && !editorFocused)) return;
-      if (button.closest("[inert], [hidden], [aria-hidden='true']")) return;
-      const rect = button.getBoundingClientRect();
-      const hit = document.elementFromPoint(
-        rect.left + rect.width / 2,
-        rect.top + rect.height / 2,
-      );
-      if (!hit || (hit !== button && !button.contains(hit))) return;
-      event.preventDefault();
-      void start();
-    }
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [disabled, editTargetRef, phase, shortcutActive]);
-  useEffect(() => {
-    if (phase !== "recording" || !onTextSend) return;
-    function onKeyDown(event: KeyboardEvent) {
-      if (
-        event.defaultPrevented ||
-        event.repeat ||
-        !isSendCombo(event, sendKey)
-      )
-        return;
-      event.preventDefault();
-      stop(true, true);
-    }
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [onTextSend, phase, sendKey]);
-  useEffect(() => {
-    activeChangeRef.current?.(active);
-    return () => {
-      if (active) activeChangeRef.current?.(false);
-    };
-  }, [active]);
-  useEffect(() => {
-    const target = overlayTargetRef?.current;
-    const parent = target?.parentElement;
-    if (!active || !target || !parent) return;
-    const siblings = Array.from(parent.children).filter(
-      (child): child is HTMLElement =>
-        child instanceof HTMLElement && child !== target,
-    );
-    const previous = siblings.map((element) => [element, element.inert] as const);
-    for (const [element] of previous) element.inert = true;
-    return () => {
-      for (const [element, inert] of previous) element.inert = inert;
-    };
-  }, [active, overlayTargetRef]);
-
-  // Errors show as a small bubble above the control; clear themselves.
-  useEffect(() => {
-    if (!error) return;
-    const t = setTimeout(() => setError(null), 5000);
-    return () => clearTimeout(t);
-  }, [error]);
-
   function restoreEditorFocus() {
     // The first frame lets React remove `inert`; the second restores the caret
     // after that commit instead of trying to focus an inert textarea.
@@ -589,7 +500,79 @@ export function VoiceInput({
     );
   }
 
-  async function start() {
+  function finishCancellation() {
+    setLiveTranscript("");
+    setPhase("cancelling");
+    timersRef.current.push(
+      window.setTimeout(() => {
+        setPhase("idle");
+        restoreEditorFocus();
+      }, duration.large * 1000),
+    );
+  }
+
+  function stop(accept: boolean, send = false) {
+    if (phase === "requesting") {
+      requestRef.current++;
+      finishCancellation();
+      return;
+    }
+    const rec = recRef.current;
+    if (!rec || rec.state === "inactive") return;
+    acceptRef.current = accept;
+    sendRef.current = accept && send;
+    const speech = speechRef.current;
+    speechRef.current = null;
+    if (accept) {
+      setPhase("transcribing");
+      speechResultRef.current = speech?.finish() ?? null;
+    } else {
+      speech?.cancel();
+      speechResultRef.current = null;
+    }
+    rec.stop();
+  }
+
+  async function finish(
+    blob: Blob,
+    request: number,
+    browserResult: Promise<string> | null,
+  ) {
+    let restoreFocus = false;
+    await (async () => {
+      // A live browser result avoids uploading and reprocessing the complete
+      // clip. The existing server transcription remains the fallback, so an
+      // unsupported browser or a speech-service outage behaves as before.
+      const liveText = (await browserResult?.catch(() => ""))?.trim() || "";
+      const text = liveText || (await transcribeClip(blob));
+      if (request !== requestRef.current) return;
+      const callbacks = callbacksRef.current;
+      if (!text) {
+        setError("Heard nothing. Try again.");
+        restoreFocus = true;
+      } else if (sendRef.current && callbacks.onTextSend) {
+        callbacks.onTextSend(text);
+      } else {
+        callbacks.onText(text);
+        restoreFocus = true;
+      }
+    })()
+      .catch((error: any) => {
+        if (request !== requestRef.current) return;
+        setError(error?.message || "Transcription failed");
+        restoreFocus = true;
+      })
+      .finally(() => {
+        if (request === requestRef.current) {
+          sendRef.current = false;
+          setLiveTranscript("");
+          setPhase("idle");
+          if (restoreFocus) restoreEditorFocus();
+        }
+      });
+  }
+
+  const start = async () => {
     setError(null);
     // getUserMedia only exists in secure contexts. Over plain http (the
     // :3850 hostname) the mic simply isn't there.
@@ -659,7 +642,7 @@ export function VoiceInput({
     // Live level meter for the waveform is progressive enhancement. Recording
     // works fine without it.
     await (async () => {
-const Ctx = window.AudioContext || (window as any).webkitAudioContext;
+      const Ctx = window.AudioContext || (window as any).webkitAudioContext;
       const ctx: AudioContext = new Ctx();
       audioCtxRef.current = ctx;
       const analyser = ctx.createAnalyser();
@@ -681,9 +664,9 @@ const Ctx = window.AudioContext || (window as any).webkitAudioContext;
           ]);
         }, 90),
       );
-})().catch(async () => {
-// no waveform, no problem
-});
+    })().catch(() => {
+      // No waveform, no problem.
+    });
 
     const startedAt = Date.now();
     setLevels([]);
@@ -703,77 +686,112 @@ const Ctx = window.AudioContext || (window as any).webkitAudioContext;
       stream,
     );
     setPhase("recording");
-  }
+  };
 
-  function finishCancellation() {
-    setLiveTranscript("");
-    setPhase("cancelling");
-    timersRef.current.push(
-      window.setTimeout(() => {
-        setPhase("idle");
-        restoreEditorFocus();
-      }, duration.large * 1000),
-    );
-  }
-
-  function stop(accept: boolean, send = false) {
-    if (phase === "requesting") {
+  useEffect(
+    () => () => {
       requestRef.current++;
-      finishCancellation();
-      return;
-    }
-    const rec = recRef.current;
-    if (!rec || rec.state === "inactive") return;
-    acceptRef.current = accept;
-    sendRef.current = accept && send;
-    const speech = speechRef.current;
-    speechRef.current = null;
-    if (accept) {
-      setPhase("transcribing");
-      speechResultRef.current = speech?.finish() ?? null;
-    } else {
-      speech?.cancel();
-      speechResultRef.current = null;
-    }
-    rec.stop();
-  }
+      speechRef.current?.cancel();
+      speechRef.current = null;
+      cleanup();
+    },
+    [],
+  );
 
-  async function finish(
-    blob: Blob,
-    request: number,
-    browserResult: Promise<string> | null,
+  // The overlay is visually modal, so make it modal to keyboards and assistive
+  // technology too. The portal target remains interactive; its siblings are
+  // restored to exactly the inert state they had before recording.
+  const active = phase !== "idle";
+  useLayoutEffect(() => {
+    const waveform = waveformRef.current;
+    if (!active || !waveform) return;
+    const measure = () => {
+      const count = Math.max(
+        1,
+        Math.min(
+          MAX_BAR_COUNT,
+          Math.floor((waveform.clientWidth + BAR_GAP) / (BAR_WIDTH + BAR_GAP)),
+        ),
+      );
+      setBarCount((current) => (current === count ? current : count));
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(waveform);
+    return () => observer.disconnect();
+  }, [active]);
+  // The shortcut listener reads the live start closure through an effect
+  // event, so the subscription keys stay the enablement state.
+  const startFromShortcut = useEffectEvent(function onKeyDown(
+    event: KeyboardEvent,
   ) {
-    let restoreFocus = false;
-    await (async () => {
-// A live browser result avoids uploading and reprocessing the complete
-      // clip. The existing server transcription remains the fallback, so an
-      // unsupported browser or a speech-service outage behaves as before.
-      const liveText = (await browserResult?.catch(() => ""))?.trim() || "";
-      const text = liveText || (await transcribeClip(blob));
-      if (request !== requestRef.current) return;
-      const callbacks = callbacksRef.current;
-      if (!text) {
-        setError("Heard nothing. Try again.");
-        restoreFocus = true;
-      } else if (sendRef.current && callbacks.onTextSend) {
-        callbacks.onTextSend(text);
-      } else {
-        callbacks.onText(text);
-        restoreFocus = true;
-      }
-})().catch(async (e: any) => {
-if (request !== requestRef.current) return;
-      setError(e?.message || "Transcription failed");
-      restoreFocus = true;
-}).finally(async () => {
-if (request === requestRef.current) {
-        sendRef.current = false;
-        setLiveTranscript("");
-        setPhase("idle");
-        if (restoreFocus) restoreEditorFocus();
-      }
-});
-  }
+    if (
+      event.defaultPrevented ||
+      event.repeat ||
+      disabled ||
+      phase !== "idle" ||
+      !matchesShortcut(event, "composer-dictate")
+    )
+      return;
+    const button = idleButtonRef.current;
+    const editorFocused = document.activeElement === editTargetRef?.current;
+    if (!button || (!shortcutActive && !editorFocused)) return;
+    if (button.closest("[inert], [hidden], [aria-hidden='true']")) return;
+    const rect = button.getBoundingClientRect();
+    const hit = document.elementFromPoint(
+      rect.left + rect.width / 2,
+      rect.top + rect.height / 2,
+    );
+    if (!hit || (hit !== button && !button.contains(hit))) return;
+    event.preventDefault();
+    void start();
+  });
+  useEffect(() => {
+    window.addEventListener("keydown", startFromShortcut);
+    return () => window.removeEventListener("keydown", startFromShortcut);
+  }, [disabled, editTargetRef, phase, shortcutActive]);
+  const stopOnSend = useEffectEvent(function onKeyDown(event: KeyboardEvent) {
+    if (
+      event.defaultPrevented ||
+      event.repeat ||
+      !isSendCombo(event, sendKey)
+    )
+      return;
+    event.preventDefault();
+    stop(true, true);
+  });
+  useEffect(() => {
+    if (phase !== "recording" || !onTextSend) return;
+    window.addEventListener("keydown", stopOnSend);
+    return () => window.removeEventListener("keydown", stopOnSend);
+  }, [onTextSend, phase, sendKey]);
+  useEffect(() => {
+    activeChangeRef.current?.(active);
+    return () => {
+      if (active) activeChangeRef.current?.(false);
+    };
+  }, [active]);
+  useEffect(() => {
+    const target = overlayTarget;
+    const parent = target?.parentElement;
+    if (!active || !target || !parent) return;
+    const siblings = Array.from(parent.children).filter(
+      (child): child is HTMLElement =>
+        child instanceof HTMLElement && child !== target,
+    );
+    const previous = siblings.map((element) => [element, element.inert] as const);
+    for (const [element] of previous) element.inert = true;
+    return () => {
+      for (const [element, inert] of previous) element.inert = inert;
+    };
+  }, [active, overlayTarget]);
+
+  // Errors show as a small bubble above the control; clear themselves.
+  useEffect(() => {
+    if (!error) return;
+    const t = setTimeout(() => setError(null), 5000);
+    return () => clearTimeout(t);
+  }, [error]);
 
   const overlay = phase !== "idle" && (
     <div
@@ -929,8 +947,6 @@ if (request === requestRef.current) {
       )}
     </div>
   );
-  const overlayTarget = overlayTargetRef?.current;
-
   return (
     <>
       <Tooltip label="Dictate" shortcut={dictateKeys ?? undefined}>

@@ -26,7 +26,7 @@ Type=oneshot
 # the script (passwordless sudo for the service user, the host-client
 # precedent).
 User=ubuntu
-Environment=OPENSESSION_DEPLOY_STATE=/home/ubuntu/.opensession-deploy
+Environment=OPENSESSION_DEPLOY_STATE=/home/ubuntu/.opensession/deploy
 Environment=OPENSESSION_DEPLOY_CHECKOUT=/home/ubuntu/projects/opensession
 # bun must be on PATH for a rollback's best-effort dependency sync (mirrors
 # opensession.service's explicit PATH).

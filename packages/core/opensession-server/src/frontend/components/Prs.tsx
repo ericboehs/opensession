@@ -1,8 +1,16 @@
+import { mergeStylexProps, mergeStylexOverrideClassName } from "../ui/cn";
+import { utilityClassName } from "../ui/cn";
 import React, { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import type { Workspace, UnifiedSession } from "../lib/types";
 import { fetchHomeStats, fetchRecentPrs, type HomeStats, type RecentPr } from "../lib/api";
 import { prStatusMark } from "../lib/pr-status";
+import {
+  expandPrRenderWindow,
+  INITIAL_PR_ROWS,
+  PR_ROWS_PAGE,
+  visiblePrRowLimit,
+} from "../lib/pr-render-window";
 import {
   buildWorktreeRows,
   compactAge,
@@ -44,76 +52,90 @@ import {
 } from "./icons";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
-import { mergeStylexProps, mergeStylexClassName, mergeStylexOverrideClassName } from "../ui/cn";
-import { sharedClassStyles } from "../styles/shared-class-styles.stylex";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
-	textFaint: {
-			color: "var(--text-faint)"
+	minW0: {
+			minWidth: "0"
 	},
-	focusRing: {
-			":focus-visible": {
-					outline: "2px solid var(--accent-ink)",
-					outlineOffset: "2px"
-			}
+	roundedXl: {
+			borderRadius: "calc(18px * var(--rf))",
+
+		cornerShape: "var(--cs)",},
+	bgPanel: {
+			backgroundColor: "var(--bg-panel)"
 	},
-	Mx1: {
-			marginInline: "-4px"
+	px5: {
+			paddingInline: "calc(4px * 5)"
+	},
+	py4: {
+			paddingBlock: "calc(4px * 4)"
 	},
 	flex: {
 			display: "flex"
 	},
-	maxWFull: {
-			maxWidth: "100%"
-	},
-	cursorPointer: {
-			cursor: "pointer"
-	},
-	flexWrap: {
-			flexWrap: "wrap"
-	},
 	itemsCenter: {
 			alignItems: "center"
 	},
-	gapX15: {
-			columnGap: "6px"
+	gap2: {
+			gap: "calc(4px * 2)"
 	},
-	gapY05: {
-			rowGap: "2px"
-	},
-	roundedSm: {
-			borderRadius: "calc(4px * var(--rf))"
-	,
-		cornerShape: "var(--cs)"},
-	px1: {
-			paddingInline: "4px"
-	},
-	textLeft: {
-			textAlign: "left"
+	fontMedium: {
+			fontWeight: "var(--font-weight-medium)"
 	},
 	textDim: {
 			color: "var(--text-dim)"
 	},
-	transitionColors: {
-			transitionProperty: "color,background-color,border-color,outline-color,text-decoration-color,fill,stroke,--tw-gradient-from,--tw-gradient-via,--tw-gradient-to",
-			transitionTimingFunction: "var(--tw-ease,var(--ease))",
-			transitionDuration: "var(--tw-duration,var(--dur-micro))"
+	mt2: {
+			marginTop: "calc(4px * 2)"
 	},
-	gap2: {
-			gap: "8px"
+	block: {
+			display: "block"
 	},
-	h25: {
-			height: "10px"
+	h6: {
+			height: "calc(4px * 6)"
 	},
-	w40: {
-			width: "160px"
+	w16: {
+			width: "calc(4px * 16)"
 	},
-	shrink: {
-			flexShrink: "1"
+	roundedSm: {
+			borderRadius: "calc(4px * var(--rf))",
+
+		cornerShape: "var(--cs)",},
+	mt1: {
+			marginTop: "4px"
 	},
-	bgLine: {
-			backgroundColor: "var(--border)"
+	truncate: {
+			overflow: "hidden",
+			textOverflow: "ellipsis",
+			whiteSpace: "nowrap"
+	},
+	fontSemibold: {
+			fontWeight: "var(--font-weight-semibold)"
+	},
+	textFg: {
+			color: "var(--text)"
+	},
+	textFaint: {
+			color: "var(--text-faint)"
+	},
+	grid: {
+			display: "grid"
+	},
+	wFull: {
+			width: "100%"
+	},
+	cursorPointer: {
+			cursor: "pointer"
+	},
+	gridCols2: {
+			gridTemplateColumns: "repeat(2, minmax(0, 1fr))"
+	},
+	gap3: {
+			gap: "calc(4px * 3)"
+	},
+	textLeft: {
+			textAlign: "left"
 	},
 	w200px: {
 			width: "200px"
@@ -124,16 +146,11 @@ const sx = stylex.create({
 	shrink100: {
 			flexShrink: "100"
 	},
-	minW0: {
-			minWidth: "0"
+	mlAuto: {
+			marginLeft: "auto"
 	},
 	maxW150px: {
 			maxWidth: "150px"
-	},
-	truncate: {
-			textOverflow: "ellipsis",
-			whiteSpace: "nowrap",
-			overflow: "hidden"
 	},
 	minW200px: {
 			minWidth: "200px"
@@ -154,9 +171,6 @@ const sx = stylex.create({
 	minH0: {
 			minHeight: "0"
 	},
-	wFull: {
-			width: "100%"
-	},
 	overflowYAuto: {
 			overflowY: "auto"
 	},
@@ -170,25 +184,22 @@ const sx = stylex.create({
 			maxWidth: "920px"
 	},
 	px6: {
-			paddingInline: "24px"
+			paddingInline: "calc(4px * 6)"
 	},
 	pb15: {
-			paddingBottom: "60px"
+			paddingBottom: "calc(4px * 15)"
 	},
 	pt7: {
-			paddingTop: "28px"
+			paddingTop: "calc(4px * 7)"
 	},
-	mb18px: {
-			marginBottom: "18px"
+	mb6: {
+			marginBottom: "calc(4px * 6)"
 	},
 	mb8: {
-			marginBottom: "32px"
-	},
-	fontMedium: {
-			fontWeight: "var(--font-weight-medium)"
+			marginBottom: "calc(4px * 8)"
 	},
 	mb5: {
-			marginBottom: "20px"
+			marginBottom: "calc(4px * 5)"
 	},
 	itemsBaseline: {
 			alignItems: "baseline"
@@ -196,23 +207,23 @@ const sx = stylex.create({
 	leading13: {
 			lineHeight: "1.3"
 	},
-	textFg: {
-			color: "var(--text)"
-	},
 	justifySelfEnd: {
 			justifySelf: "flex-end"
 	},
-	textGreen: {
-			color: "var(--green)"
-	},
 	ml2: {
-			marginLeft: "8px"
+			marginLeft: "calc(4px * 2)"
 	},
 	textRed: {
 			color: "var(--red)"
 	},
+	justifyCenter: {
+			justifyContent: "center"
+	},
+	pb4: {
+			paddingBottom: "calc(4px * 4)"
+	},
 	minH13: {
-			minHeight: "52px"
+			minHeight: "calc(4px * 13)"
 	},
 	borderB: {
 			borderBottomStyle: "solid",
@@ -221,93 +232,21 @@ const sx = stylex.create({
 	borderLine: {
 			borderColor: "var(--border)"
 	},
-	bgPanel: {
-			backgroundColor: "var(--bg-panel)"
-	},
 	px3: {
-			paddingInline: "12px"
+			paddingInline: "calc(4px * 3)"
+	},
+	px1: {
+			paddingInline: "4px"
 	},
 	fontNormal: {
 			fontWeight: "var(--font-weight-normal)"
 	},
 	minH10: {
-			minHeight: "40px"
+			minHeight: "calc(4px * 10)"
 	},
 	size10: {
-			width: "40px",
-			height: "40px"
-	},
-
-	h15: {
-		"height": "6px"
-	},
-	w15: {
-		"width": "6px"
-	},
-	roundedFull: {
-		"borderRadius": "3.40282e38px"
-	,
-		cornerShape: "round"},
-	bgGreen: {
-		"backgroundColor": "var(--green)"
-	},
-	motionSafeAnimatePulse: {
-		"@media (prefers-reduced-motion: no-preference)": {
-			"animation": "var(--animate-pulse)"
-		}
-	},
-
-	tabularNums: {
-		"--tw-numeric-spacing": "tabular-nums",
-		"fontVariantNumeric": "var(--tw-ordinal,) var(--tw-slashed-zero,) var(--tw-numeric-figure,) var(--tw-numeric-spacing,) var(--tw-numeric-fraction,)"
-	},
-	hoverTextFg: {
-		"@media (hover: hover)": {
-			":hover": {
-				"color": "var(--text)"
-			}
-		}
-	},
-	max560pxPx4: {
-		"@media not all and (min-width: 560px)": {
-			"paddingInline": "16px"
-		}
-	},
-	max560pxPb12: {
-		"@media not all and (min-width: 560px)": {
-			"paddingBottom": "48px"
-		}
-	},
-	max560pxPt18px: {
-		"@media not all and (min-width: 560px)": {
-			"paddingTop": "18px"
-		}
-	},
-	max560pxMb35: {
-		"@media not all and (min-width: 560px)": {
-			"marginBottom": "14px"
-		}
-	},
-	phoneHidden: {
-		"@media (max-width: 720px)": {
-			"display": "none"
-		}
-	},
-	phoneMinH14: {
-		"@media (max-width: 720px)": {
-			"minHeight": "56px"
-		}
-	},
-	phoneMinH11: {
-		"@media (max-width: 720px)": {
-			"minHeight": "44px"
-		}
-	},
-	phoneSize11: {
-		"@media (max-width: 720px)": {
-			"width": "44px",
-			"height": "44px"
-		}
+			width: "calc(4px * 10)",
+			height: "calc(4px * 10)"
 	},
 });
 
@@ -375,35 +314,75 @@ function runningLabel(running: number): string {
 // the field that answers "how much did we get through" without needing a
 // second number beside it. Under 5% is noise at this scale, so it says so
 // rather than reporting a 2% week as movement.
-function weekTrend(stats: HomeStats | null): string | null {
+interface WeekTrend {
+  value: string;
+  detail: string;
+  summary: string;
+}
+
+function weekTrend(stats: HomeStats | null): WeekTrend | null {
   const now = stats?.completeWeek?.durationMs ?? 0;
   const before = stats?.priorWeek?.durationMs ?? 0;
   if (!now || !before) return null;
   const pct = Math.round(((now - before) / before) * 100);
-  if (Math.abs(pct) < 5) return "level with last week";
-  return `${Math.abs(pct)}% ${pct > 0 ? "busier" : "quieter"} than last week`;
+  if (Math.abs(pct) < 5) {
+    return {
+      value: "Level",
+      detail: "with last week",
+      summary: "level with last week",
+    };
+  }
+  const direction = pct > 0 ? "busier" : "quieter";
+  return {
+    value: `${Math.abs(pct)}%`,
+    detail: `${direction} than last week`,
+    summary: `${Math.abs(pct)}% ${direction} than last week`,
+  };
 }
 
-function Separator() {
-  // A space of its own rather than a margin: the dot costs the line as little
-  // as it can, and the clauses stay on one row a little longer for it.
+function OverviewTile({
+  label,
+  value,
+  detail,
+  live,
+  loading,
+}: {
+  label: string;
+  value?: string;
+  detail?: string;
+  live?: boolean;
+  loading?: boolean;
+}) {
   return (
-    <span aria-hidden="true" {...stylex.props(sx.textFaint)}>
-      {" ·"}
+    <span {...stylex.props(sx.minW0, sx.roundedXl, sx.bgPanel, sx.px5, sx.py4)}>
+      <span {...stylex.props(sx.flex, sx.itemsCenter, sx.gap2, sx.fontMedium, sx.textDim, typography.label)}>
+        {live !== undefined ? (
+          <span
+            aria-hidden="true"
+            className={
+              live
+                ? utilityClassName("size-1.5 shrink-0 rounded-full bg-green motion-safe:animate-pulse")
+                : utilityClassName("size-1.5 shrink-0 rounded-full bg-line")
+            }
+          />
+        ) : null}
+        {label}
+      </span>
+      {loading ? (
+        <span {...mergeStylexProps("bg-line motion-safe:animate-pulse", sx.mt2, sx.block, sx.h6, sx.w16, sx.roundedSm)}  />
+      ) : (
+        <span {...stylex.props(sx.mt1, sx.block, sx.truncate, sx.fontSemibold, sx.textFg, typography.stat)}>{value}</span>
+      )}
+      {detail ? <span {...stylex.props(sx.mt1, sx.block, sx.truncate, sx.textFaint, typography.meta)}>{detail}</span> : null}
     </span>
   );
 }
 
-// The page is about its list, so the day rides under the title as one line
-// instead of a slab of five figures with a second week-long tier under each.
-// The three kept are the ones you act on: what is live now, and how much
-// happened today. Turns, tokens, errors and the week are a click away in
-// Analytics, which this line opens and the sidebar also lists.
-//
-// One figure per clause. Sessions and agent time used to share one, joined by
-// a comma, which made the line read as a sentence with a list in the middle of
-// it rather than as four numbers.
-function OverviewLine({
+// A compact version of Analytics' stat grid. These are the four figures that
+// orient the pull-request list: what is live, what happened today, and how the
+// last complete week compares. The whole row remains one route to the deeper
+// breakdown rather than adding four identical stops to the tab order.
+function OverviewStats({
   running,
   stats,
   onOpenAnalytics,
@@ -422,48 +401,38 @@ function OverviewLine({
         today
           ? `Open Analytics · ${today.turns.toLocaleString()} turns and ${fmtCompact(today.outputTokens)} tokens out today${
               trend
-                ? ` · ${fmtAgentTime(stats!.completeWeek.durationMs)} of agent time over the last 7 whole days against ${fmtAgentTime(stats!.priorWeek.durationMs)} the week before`
+                ? ` · ${fmtAgentTime(stats!.completeWeek.durationMs)} of agent time over the last 7 whole days, ${trend.summary}`
                 : ""
             }`
           : "Analytics are loading"
       }
-      aria-busy={!stats} {...mergeStylexProps("group", sx.tabularNums, sx.hoverTextFg, sx.focusRing, sx.Mx1, sx.flex, sx.maxWFull, sx.cursorPointer, sx.flexWrap, sx.itemsCenter, sx.gapX15, sx.gapY05, sx.roundedSm, sx.px1, sx.textLeft, sx.textDim, sx.transitionColors, typography.supporting)}
+      aria-label="Open Analytics"
+      aria-busy={!stats}
+      {...mergeStylexProps("focus-ring tabular-nums desktop:grid-cols-4", sx.grid, sx.wFull, sx.cursorPointer, sx.gridCols2, sx.gap3, sx.roundedXl, sx.textLeft)}
     >
-      <span {...stylex.props(sx.flex, sx.itemsCenter, sx.gap2)}>
-        <span
-          aria-hidden="true"
-          className={
-            running > 0
-              ? mergeStylexClassName("", sx.h15, sx.w15, sx.shrink0, sx.roundedFull, sx.bgGreen, sx.motionSafeAnimatePulse)
-              : mergeStylexClassName("", sx.h15, sx.w15, sx.shrink0, sx.roundedFull, sx.bgLine)
-          }
-        />
-        {runningLabel(running)}
-        {/* Every separator trails the clause it follows, so a wrap leaves it at
-            the end of the line it finished. Led, it would orphan a dot at the
-            start of the next line, which reads as a bullet. */}
-        {today ? <Separator /> : null}
-      </span>
-      {today ? (
-        <>
-          <span>
-            {fmtCompact(today.sessions)} sessions today
-            <Separator />
-          </span>
-          <span>
-            {fmtAgentTime(today.durationMs)} of agent time
-            {trend ? <Separator /> : null}
-          </span>
-        </>
-      ) : null}
-      {trend ? (
-        <span {...mergeStylexProps("group-hover:text-dim", sx.textFaint, sx.transitionColors)}>
-          {trend}
-        </span>
-      ) : null}
-      {!stats && (
-        <span {...mergeStylexProps("", sx.motionSafeAnimatePulse, sx.h25, sx.w40, sx.shrink, sx.roundedSm, sx.bgLine)} />
-      )}
+      <OverviewTile
+        label="Agents running"
+        value={String(running)}
+        detail={runningLabel(running)}
+        live={running > 0}
+      />
+      <OverviewTile
+        label="Sessions today"
+        value={today ? fmtCompact(today.sessions) : undefined}
+        detail={today ? `${today.turns.toLocaleString()} turns` : undefined}
+        loading={!today}
+      />
+      <OverviewTile
+        label="Agent time today"
+        value={today ? fmtAgentTime(today.durationMs) : undefined}
+        loading={!today}
+      />
+      <OverviewTile
+        label="Weekly activity"
+        value={trend?.value}
+        detail={trend?.detail}
+        loading={!stats}
+      />
     </button>
   );
 }
@@ -508,6 +477,12 @@ export function Prs({
   const [personPrs, setPersonPrs] = useState<RecentPr[]>([]);
   const [stats, setStats] = useState<HomeStats | null>(readCachedHomeStats);
   const [preview, setPreview] = useState<PrPreviewTarget | null>(null);
+  const renderScope = [query, workspaceId, repo, person, String(showArchived)].join("\0");
+  const [renderWindow, setRenderWindow] = useState(() => ({
+    scope: renderScope,
+    limit: INITIAL_PR_ROWS,
+  }));
+  const rowLimit = visiblePrRowLimit(renderWindow, renderScope);
   const [addingToSidebar, setAddingToSidebar] = useState(false);
 
   function openPreviewTarget(repo: string, branch: string) {
@@ -601,6 +576,9 @@ setAddingToSidebar(false);
       });
   })();
 
+  const visibleWorktrees = worktrees.slice(0, rowLimit);
+  const remainingRows = Math.max(0, worktrees.length - visibleWorktrees.length);
+
   const sections = (() => {
     const definitions: Array<{ state: WorktreeRow["state"]; label: string }> = [
       { state: "OPEN", label: "Open" },
@@ -608,14 +586,15 @@ setAddingToSidebar(false);
       { state: "CLOSED", label: "Closed" },
     ];
     return definitions.flatMap((definition) => {
-      const rows = worktrees.filter((row) => row.state === definition.state);
+      const total = worktrees.filter((row) => row.state === definition.state).length;
+      const rows = visibleWorktrees.filter((row) => row.state === definition.state);
       if (!rows.length) return [];
       const groups = new Map<string, WorktreeRow[]>();
       for (const row of rows) {
         const label = dateGroup(row.updatedAt);
         groups.set(label, [...(groups.get(label) || []), row]);
       }
-      return [{ ...definition, rows, groups: [...groups.entries()] }];
+      return [{ ...definition, rows, total, groups: [...groups.entries()] }];
     });
   })();
 
@@ -665,6 +644,10 @@ setAddingToSidebar(false);
         spellCheck={false}
       />
 
+      {/* Search sits with the page name. The scopes and CTA remain a trailing
+          group, so widening the pane grows the quiet space between the two
+          jobs instead of separating the field from its heading. */}
+      <div {...stylex.props(sx.mlAuto, sx.flex, sx.minW0, sx.itemsCenter, sx.gap2)}>
       {people.length > 0 && (
         <Menu.Root>
           <Menu.Trigger
@@ -786,7 +769,7 @@ setAddingToSidebar(false);
             render={
               <Button
                 variant="ghost"
-                className={showArchived ? mergeStylexClassName("", sx.shrink0, sx.textFg) : mergeStylexClassName("", sx.shrink0)}
+                className={showArchived ? utilityClassName("shrink-0 text-fg") : utilityClassName("shrink-0")}
                 aria-label="More filters"
                 icon={<IconDotsHorizontal size={18} />}
               />
@@ -820,6 +803,7 @@ setAddingToSidebar(false);
       >
         New session
       </Button>
+      </div>
     </>
   );
 
@@ -828,18 +812,12 @@ setAddingToSidebar(false);
     // column at the shared width and padding, a PageHeader on top.
     <div data-page-scroll {...stylex.props(sx.minH0, sx.wFull, sx.flex1, sx.overflowYAuto, sx.bgSurface)}>
       {topbarActionsEl ? createPortal(actions, topbarActionsEl) : null}
-      <div {...mergeStylexProps("", sx.max560pxPx4, sx.max560pxPb12, sx.max560pxPt18px, sx.mxAuto, sx.wFull, sx.maxW920px, sx.px6, sx.pb15, sx.pt7)}>
-        {/* The page's name is the top bar's now. With no `PageTitle` under it
-            the large-title handoff never has a heading to defer to, so the bar
-            holds "Pull requests" in its left corner for good rather than
-            fading it in on scroll (hooks/useLargeTitle.ts). That buys the body
-            its first screen back: the day's numbers take a row of their own,
-            and the list starts on Open instead of a third row of chrome.
-
-            `min-w-0` because the line wraps, and a flex child asked for its
-            content size takes the width of one clause rather than of the row. */}
-        <div {...mergeStylexProps("", sx.max560pxMb35, sx.mb18px, sx.flex, sx.minW0)}>
-          <OverviewLine
+      <div {...mergeStylexProps("max-[560px]:px-4 max-[560px]:pb-12 max-[560px]:pt-[18px]", sx.mxAuto, sx.wFull, sx.maxW920px, sx.px6, sx.pb15, sx.pt7)} >
+        {/* The page name and search live together in the top bar. The day's
+            orientation figures take the same card row Analytics uses, while
+            the pull-request sections remain the page's primary content. */}
+        <div {...mergeStylexProps("max-[560px]:mb-4", sx.mb6)} >
+          <OverviewStats
             running={running}
             stats={stats}
             onOpenAnalytics={onOpenAnalytics}
@@ -867,7 +845,7 @@ setAddingToSidebar(false);
               <section key={section.state} {...stylex.props(sx.mb8)}>
                 <h2 className={PR_SECTION_LABEL}>
                   {section.label}
-                  <span {...stylex.props(sx.fontMedium, sx.textFaint, typography.label)}>{section.rows.length}</span>
+                  <span {...stylex.props(sx.fontMedium, sx.textFaint, typography.label)}>{section.total}</span>
                 </h2>
                 {section.groups.map(([label, rows]) => (
                   <div key={label} {...stylex.props(sx.mb5)}>
@@ -890,7 +868,7 @@ setAddingToSidebar(false);
                                 healthy, so the resting mark is drawn as
                                 structure and green now means approved. */}
                             <span
-                              className={[status.quiet ? mergeStylexClassName("", sx.textDim) : status.className, mergeStylexClassName("", sx.flex, sx.itemsCenter)].filter(Boolean).join(" ")}
+                              className={utilityClassName(`${status.quiet ? "text-dim" : status.className} flex items-center`)}
                               title={status.label}
                             >
                               <StateIcon state={row.state} />
@@ -909,7 +887,7 @@ setAddingToSidebar(false);
                                 {row.title}
                               </span>
                               {row.number && (
-                                <span {...mergeStylexProps("", sx.tabularNums, sx.shrink0, sx.textFaint, typography.meta)}>
+                                <span {...mergeStylexProps("tabular-nums", sx.shrink0, sx.textFaint, typography.meta)} >
                                   #{row.number}
                                 </span>
                               )}
@@ -919,15 +897,15 @@ setAddingToSidebar(false);
                                 is the convention rather than a status, and it
                                 reads at a glance in a way a neutral pair of
                                 numbers does not. */}
-                            <span {...mergeStylexProps("", sx.tabularNums, sx.phoneHidden, sx.justifySelfEnd, typography.meta)}>
+                            <span {...mergeStylexProps("tabular-nums phone:hidden", sx.justifySelfEnd, typography.meta)} >
                               {row.additions !== undefined && (
-                                <span {...stylex.props(sx.textGreen)}>+{compactDiff(row.additions)}</span>
+                                <span className="text-green">+{compactDiff(row.additions)}</span>
                               )}
                               {row.deletions !== undefined && (
                                 <span {...stylex.props(sx.ml2, sx.textRed)}>−{compactDiff(row.deletions)}</span>
                               )}
                             </span>
-                            <span {...mergeStylexProps("", sx.tabularNums, sx.justifySelfEnd, sx.textFaint, typography.meta)}>
+                            <span {...mergeStylexProps("tabular-nums", sx.justifySelfEnd, sx.textFaint, typography.meta)} >
                               {compactAge(row.updatedAt)}
                             </span>
                           </button>
@@ -938,6 +916,18 @@ setAddingToSidebar(false);
                 ))}
               </section>
             ))}
+            {remainingRows > 0 && (
+              <div {...stylex.props(sx.flex, sx.justifyCenter, sx.pb4)}>
+                <Button
+                  variant="ghost"
+                  onClick={() =>
+                    setRenderWindow(expandPrRenderWindow(renderScope, rowLimit))
+                  }
+                >
+                  Show {Math.min(remainingRows, PR_ROWS_PAGE)} more
+                </Button>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -948,24 +938,25 @@ setAddingToSidebar(false);
         phone={isPhone}
         label={preview ? `Pull request: ${preview.title}` : "Pull request"}
         showPhoneGrabber={false}
-        modalClassName={mergeStylexClassName("", sharedClassStyles.hMin820px85vh, sharedClassStyles.wMin1280px92vw, sharedClassStyles.maxWNone, sharedClassStyles.bgSurface)}
-        sheetClassName={mergeStylexClassName("[border-radius:0]! [box-shadow:none]!", sharedClassStyles.top0, sharedClassStyles.h100dvh, sharedClassStyles.maxHNone, sharedClassStyles.bgSurface)}
+        modalClassName={utilityClassName("h-[min(820px,85vh)] w-[min(1280px,92vw)] max-w-none bg-surface")}
+        sheetClassName={utilityClassName("top-0 h-[100dvh] max-h-none bg-surface [border-radius:0]! [box-shadow:none]!")}
       >
         {preview && (
           <>
-            <div {...mergeStylexProps("", sx.phoneMinH14, sx.flex, sx.minH13, sx.shrink0, sx.itemsCenter, sx.gap2, sx.borderB, sx.borderLine, sx.bgPanel, sx.px3)}>
+            <div {...mergeStylexProps("phone:min-h-14", sx.flex, sx.minH13, sx.shrink0, sx.itemsCenter, sx.gap2, sx.borderB, sx.borderLine, sx.bgPanel, sx.px3)} >
               <div {...stylex.props(sx.flex, sx.minW0, sx.flex1, sx.itemsCenter, sx.gap2, sx.px1, sx.fontMedium, sx.textFg, typography.itemTitle)}>
                 <IconPullRequest size={19} className={mergeStylexOverrideClassName("", sx.shrink0, sx.textDim)} />
                 <span {...stylex.props(sx.truncate)}>{repoLabel(preview.repo)}</span>
                 {preview.number && (
-                  <span {...mergeStylexProps("", sx.tabularNums, sx.shrink0, sx.fontNormal, sx.textFaint)}>
+                  <span {...mergeStylexProps("tabular-nums", sx.shrink0, sx.fontNormal, sx.textFaint)} >
                     #{preview.number}
                   </span>
                 )}
               </div>
               {preview.workspaceId ? (
                 <Button
-                  variant="default" {...mergeStylexProps("", sx.phoneMinH11, sx.minH10, sx.shrink0)}
+                  variant="default"
+                  className={mergeStylexOverrideClassName("phone:min-h-11", sx.minH10, sx.shrink0)}
                   icon={<IconSidebarLeft size={18} />}
                   onClick={() => {
                     onOpenWorkspace(preview.workspaceId!, preview);
@@ -976,7 +967,8 @@ setAddingToSidebar(false);
                 </Button>
               ) : preview.state === "OPEN" ? (
                 <Button
-                  variant="default" {...mergeStylexProps("", sx.phoneMinH11, sx.minH10, sx.shrink0)}
+                  variant="default"
+                  className={mergeStylexOverrideClassName("phone:min-h-11", sx.minH10, sx.shrink0)}
                   icon={<IconSidebarLeft size={18} />}
                   disabled={addingToSidebar}
                   onClick={() => void addPreviewToSidebar()}
@@ -985,7 +977,8 @@ setAddingToSidebar(false);
                 </Button>
               ) : null}
               <Button
-                variant="ghost" {...mergeStylexProps("", sx.phoneSize11, sx.size10, sx.shrink0)}
+                variant="ghost"
+                className={mergeStylexOverrideClassName("phone:size-11", sx.size10, sx.shrink0)}
                 icon={<IconX size={20} />}
                 aria-label="Close pull request"
                 onClick={() => setPreview(null)}

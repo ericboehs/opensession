@@ -47,7 +47,7 @@ function ensureScratchRepo(): void {
 }
 import { installRecipe, listRecipes } from "./recipes";
 import * as service from "./service";
-import { ask, askYesNo, bold, canPrompt, dim, heading, info, warn, wrote, yellow } from "./ui";
+import { ask, askYesNo, bold, canPrompt, dim, heading, info, ok, warn, wrote, yellow } from "./ui";
 
 export type OnboardOptions = {
   force?: boolean;
@@ -87,25 +87,23 @@ export type Answers = {
   org?: string;
 };
 
-function collect(orgFlag?: string): Answers {
-  heading("Instance configuration");
-  info(
-    dim(
-      "Every field is optional; precedence is env var -> config.json -> built-in\n" +
-        "  default. config.json is re-read on change; only the bind address needs a\n" +
-        "  restart, and `opensession bind` handles that one on its own.",
-    ),
-  );
+function collect(orgFlag?: string, quiet = false): Answers {
+  if (!quiet) {
+    heading("Instance configuration");
+    info(
+      dim(
+        "Every field is optional; precedence is env var -> config.json -> built-in\n" +
+          "  default. config.json is re-read on change; only the bind address needs a\n" +
+          "  restart, and `opensession bind` handles that one on its own.",
+      ),
+    );
+  }
 
-  // The one answer that changes the install's shape: an organization sets up a
-  // shared org-owned GitHub App and per-user GitHub sign-in; blank keeps it
-  // single-user with no sign-in. `--org` answers it without asking; on the
-  // defaults path (no tty) it stays blank.
-  const org =
-    orgFlag?.trim() ||
-    (canPrompt()
-      ? ask("GitHub organization (blank for a personal, single-user install)", "").trim()
-      : "");
+  // An organization sets up a shared org-owned GitHub App and per-user GitHub
+  // sign-in; blank keeps it single-user with no sign-in. Never prompted here —
+  // the org is configured in the web UI once the server is up. `--org` stays
+  // available for scripted installs that already know the answer.
+  const org = orgFlag?.trim() || "";
 
   const productName = ask("Product name", "Open Session");
 
@@ -128,8 +126,10 @@ function collect(orgFlag?: string): Answers {
     `http://${host === "0.0.0.0" ? "127.0.0.1" : host}:${port}`,
   );
 
-  heading("Your first repository");
-  info(dim("Sessions run in git worktrees cut from the repos you register here."));
+  if (!quiet) {
+    heading("Your first repository");
+    info(dim("Sessions run in git worktrees cut from the repos you register here."));
+  }
   // A source checkout can be its own first repo. A release install has no
   // .git under REPO_ROOT, so offer a scratch repo instead: a real git repo
   // with one commit, enough for a first session to get a worktree and run.
@@ -147,13 +147,15 @@ function collect(orgFlag?: string): Answers {
   // wizard-written config silently disagreed with both.
   const worktreesDir = ask("Worktrees directory", join(OPENSESSION_HOME, "worktrees"));
 
-  heading("Integrations");
-  info(
-    dim(
-      "All optional, all off by default. Each needs credentials before it will do\n" +
-        "  anything — turn them on later with `opensession integrations enable <id>`.",
-    ),
-  );
+  if (!quiet) {
+    heading("Integrations");
+    info(
+      dim(
+        "All optional, all off by default. Each needs credentials before it will do\n" +
+          "  anything — turn them on later with `opensession integrations enable <id>`.",
+      ),
+    );
+  }
   const enabled: string[] = [];
   if (canPrompt()) {
     // `always` modules self-gate and ignore their flag entirely — asking about
@@ -225,10 +227,12 @@ export function buildConfig(a: Answers): Record<string, unknown> {
     };
   }
   return {
+    // The web walkthrough owns the rest of first-run setup. It flips this only
+    // after the operator reaches the final confirmation step.
+    onboardingCompleted: false,
     server: {
       host: a.host,
       port: a.port,
-      webhookPort: 3848,
       publicBaseUrl: a.publicBaseUrl,
     },
     paths: {
@@ -269,7 +273,6 @@ function buildEnv(a: Answers): string {
     "# --- core server ---",
     `HOST=${a.host}`,
     `PORT=${a.port}`,
-    "WEBHOOK_PORT=3848",
     `OPENSESSION_UI_BASE=${a.publicBaseUrl}`,
     `OPENSESSION_WORKTREES_DIR=${a.worktreesDir}`,
     "",
@@ -305,11 +308,17 @@ export async function onboard(opts: OnboardOptions = {}): Promise<number> {
   // shows as the suggested value.
   if (opts.defaults) {
     process.env.NO_PROMPT = "1";
-    info(dim("writing defaults (127.0.0.1:3850, scratch repo, no integrations); `opensession onboard --force` to change them"));
+    heading("Configuration");
   }
   // Re-running against a live install would replace a working config with
   // defaults. Backups make that recoverable, not harmless.
   if (existsSync(CONFIG_PATH) && !opts.force) {
+    if (opts.defaults) {
+      ok("configuration already exists", CONFIG_PATH);
+      if (opts.org) info(dim("--org ignored because this box is already configured."));
+      info(dim("Use `opensession onboard --force` to replace it."));
+      return 1;
+    }
     warn(`${CONFIG_PATH} already exists — this box is already onboarded.`);
     // `--org` sets up the App owner and per-user sign-in intent, but only on a
     // FIRST onboard: re-running here would silently change an existing
@@ -337,9 +346,12 @@ export async function onboard(opts: OnboardOptions = {}): Promise<number> {
     }
   }
 
-  const answers = collect(opts.org);
+  if (opts.defaults) {
+    info(dim("Using local access, a scratch repo, and no integrations."));
+  }
+  const answers = collect(opts.org, opts.defaults);
 
-  heading("Writing configuration");
+  if (!opts.defaults) heading("Writing configuration");
   mkdirSync(OPENSESSION_HOME, { recursive: true });
   mkdirSync(answers.worktreesDir, { recursive: true });
 
@@ -387,16 +399,29 @@ export async function onboard(opts: OnboardOptions = {}): Promise<number> {
   // common way a first run stalls. `--system` on `service install` is the
   // operator path for a root unit.
   let serviceUp = false;
+  let serviceRequested = false;
+  if (opts.defaults) heading("Service");
   try {
     const kind = service.supervisor();
     if (kind !== "none") {
       const what = kind === "launchd" ? "LaunchAgent" : "user service";
-      if (askYesNo(`\n  Install and start it as a ${what} now?`, true)) {
-        serviceUp = await service.install();
-      }
+      serviceRequested = askYesNo(
+        `\n  Install and start it as a ${what} now?`,
+        true,
+      );
+      if (serviceRequested) serviceUp = await service.install();
     }
   } catch (err) {
     warn(`could not install the service: ${(err as Error).message}`);
+  }
+
+  // Exit 2 distinguishes a failed requested service from a harmless no-op on
+  // an already-configured box. install.sh uses it to stop immediately instead
+  // of printing a generic, half-working "Needs attention" summary.
+  if (serviceRequested && !serviceUp) {
+    warn("setup stopped because the requested service was not installed");
+    info("Fix the error above, then rerun the same setup command.");
+    return 2;
   }
 
   // Self-development needs a writable origin: sessions on the self repo commit
@@ -454,8 +479,8 @@ export async function onboard(opts: OnboardOptions = {}): Promise<number> {
 
   console.log(
     yellow(
-      `\n  Open Session has no built-in authentication. It trusts everyone who can\n` +
-        `  reach ${answers.host}:${answers.port} — keep it on Tailscale or an equivalent private\n` +
+      `\n  Until GitHub authentication is set up, Open Session trusts everyone who can\n` +
+        `  reach ${answers.host}:${answers.port}. Keep it on Tailscale or an equivalent private\n` +
         `  network. See docs/setup/README.md#trust-model.\n`,
     ),
   );

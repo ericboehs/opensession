@@ -1,6 +1,8 @@
+import { mergeStylexProps, mergeStylexOverrideClassName } from "../ui/cn";
+import { utilityClassName } from "../ui/cn";
 import { repoLabel } from "../lib/repo-label";
 import { BASE_PATH } from "../lib/base";
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import {
   fetchGoals,
   fetchGoal,
@@ -20,6 +22,7 @@ import {
 import { getCurrentUser } from "./UserPicker";
 import { docTitle, DEFAULT_DOC_TITLE } from "../lib/brand";
 import { Button } from "../ui/button";
+import { cn } from "../ui/cn";
 import { CheckStatusIcon } from "./CheckStatusIcon";
 import { IconPlus } from "./icons";
 import { SOURCE_CHIP } from "../lib/source-chip-classes";
@@ -37,7 +40,6 @@ import { EmptyState, InlineAlert, LoadingState } from "../ui/state";
 import { WorkingPill } from "../ui/status";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
-import { mergeStylexProps, mergeStylexClassName, mergeStylexOverrideClassName } from "../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -57,23 +59,23 @@ const sx = stylex.create({
 			flex: "1"
 	},
 	mb3: {
-			marginBottom: "12px"
+			marginBottom: "calc(4px * 3)"
 	},
 	size2: {
-			width: "8px",
-			height: "8px"
+			width: "calc(4px * 2)",
+			height: "calc(4px * 2)"
 	},
 	shrink0: {
 			flexShrink: "0"
 	},
 	roundedFull: {
-			borderRadius: "calc(infinity * 1px)"
-	,
-		cornerShape: "round"},
+			borderRadius: "calc(infinity * 1px)",
+
+		cornerShape: "round",},
 	truncate: {
+			overflow: "hidden",
 			textOverflow: "ellipsis",
-			whiteSpace: "nowrap",
-			overflow: "hidden"
+			whiteSpace: "nowrap"
 	},
 	fontMedium: {
 			fontWeight: "var(--font-weight-medium)"
@@ -82,7 +84,7 @@ const sx = stylex.create({
 			color: "var(--text)"
 	},
 	mt05: {
-			marginTop: "2px"
+			marginTop: "calc(4px * 0.5)"
 	},
 	textDim: {
 			color: "var(--text-dim)"
@@ -107,35 +109,32 @@ const sx = stylex.create({
 			alignItems: "center"
 	},
 	gap25: {
-			gap: "10px"
+			gap: "calc(4px * 2.5)"
 	},
 	borderB: {
 			borderBottomStyle: "solid",
 			borderBottomWidth: "1px"
 	},
-	borderDivider: {
-			borderColor: "var(--divider)"
-	},
 	px4: {
-			paddingInline: "16px"
+			paddingInline: "calc(4px * 4)"
 	},
 	py3: {
-			paddingBlock: "12px"
+			paddingBlock: "calc(4px * 3)"
 	},
 	My1: {
-			marginBlock: "-4px"
+			marginBlock: "calc(4px * -1)"
 	},
 	Ml05: {
-			marginLeft: "-2px"
+			marginLeft: "calc(4px * -0.5)"
 	},
 	hidden: {
 			display: "none"
 	},
 	gap175: {
-			gap: "7px"
+			gap: "calc(4px * 1.75)"
 	},
 	px15: {
-			paddingInline: "6px"
+			paddingInline: "calc(4px * 1.5)"
 	},
 	py1: {
 			paddingBlock: "4px"
@@ -147,33 +146,33 @@ const sx = stylex.create({
 			marginLeft: "auto"
 	},
 	gap15: {
-			gap: "6px"
+			gap: "calc(4px * 1.5)"
 	},
 	size7: {
-			width: "28px",
-			height: "28px"
+			width: "calc(4px * 7)",
+			height: "calc(4px * 7)"
 	},
 	justifyCenter: {
 			justifyContent: "center"
 	},
 	roundedMd: {
-			borderRadius: "calc(7px * var(--rf))"
-	,
-		cornerShape: "var(--cs)"},
+			borderRadius: "calc(7px * var(--rf))",
+
+		cornerShape: "var(--cs)",},
 	gap35: {
-			gap: "14px"
+			gap: "calc(4px * 3.5)"
 	},
 	overflowYAuto: {
 			overflowY: "auto"
 	},
 	px5: {
-			paddingInline: "20px"
+			paddingInline: "calc(4px * 5)"
 	},
 	pt45: {
-			paddingTop: "18px"
+			paddingTop: "calc(4px * 4.5)"
 	},
 	pb10: {
-			paddingBottom: "40px"
+			paddingBottom: "calc(4px * 10)"
 	},
 	textFaint: {
 			color: "var(--text-faint)"
@@ -189,11 +188,11 @@ const sx = stylex.create({
 			borderWidth: "1px"
 	},
 	roundedPanel: {
-			borderRadius: "calc(var(--radius) * var(--rf))"
-	,
-		cornerShape: "var(--cs)"},
+			borderRadius: "calc(var(--radius) * var(--rf))",
+
+		cornerShape: "var(--cs)",},
 	px35: {
-			paddingInline: "14px"
+			paddingInline: "calc(4px * 3.5)"
 	},
 	leadingRelaxed: {
 			lineHeight: "var(--leading-relaxed)"
@@ -211,16 +210,13 @@ const sx = stylex.create({
 			alignItems: "baseline"
 	},
 	gapX5: {
-			columnGap: "20px"
+			columnGap: "calc(4px * 5)"
 	},
 	gapY2: {
-			rowGap: "8px"
+			rowGap: "calc(4px * 2)"
 	},
 	mb2: {
-			marginBottom: "8px"
-	},
-	textGreen: {
-			color: "var(--green)"
+			marginBottom: "calc(4px * 2)"
 	},
 	textRed: {
 			color: "var(--red)"
@@ -234,126 +230,8 @@ const sx = stylex.create({
 	fontMono: {
 			fontFamily: "var(--mono)"
 	},
-  mb0: { marginBottom: "0" },
-  listPane: {
-    display: "flex",
-    minWidth: 0,
-    justifyContent: "center",
-    overflowY: "auto",
-	},
-  listPaneSelected: {
-    flex: "0 0 340px",
-    borderRightStyle: "solid",
-    borderRightWidth: "1px",
-    borderColor: "var(--border)",
-    paddingInline: "10px",
-    paddingTop: "16px",
-    paddingBottom: "40px",
-  },
-  listPaneDefault: {
-    flex: 1,
-    paddingInline: "32px",
-    paddingTop: "44px",
-    paddingBottom: "88px",
-    "@media (max-width: 720px)": {
-      paddingInline: "16px",
-      paddingTop: "20px",
-      paddingBottom: "48px",
-    },
-  },
-  selfStart: { alignSelf: "flex-start" },
-  maxWNone: { maxWidth: "none" },
-  headerPhone: {
-    "@media (max-width: 720px)": {
-      flexDirection: "column",
-      alignItems: "flex-start",
-      gap: "12px",
-    },
-  },
-  headerSelected: { marginBottom: "12px", paddingInline: "8px" },
-  goalRow: {
-    display: "flex",
-    width: "100%",
-    minWidth: 0,
-    alignItems: "center",
-    gap: "12px",
-    paddingInline: "20px",
-    paddingBlock: "14px",
-    textAlign: "left",
-    outlineStyle: "none",
-    transitionProperty: "color, background-color",
-    ":focusVisible": {
-      boxShadow:
-        "inset 0 0 0 2px color-mix(in srgb, var(--accent) 50%, transparent)",
-    },
-  },
-  goalRowSelected: { backgroundColor: "var(--selected)" },
-  goalRowIdle: { ":hover": { "@media (hover: hover)": { backgroundColor: "var(--hover)" } } },
-  goalRowNarrow: { gap: "10px", paddingInline: "12px", paddingBlock: "10px" },
-  statusActive: { backgroundColor: "var(--green)" },
-  statusPaused: { backgroundColor: "var(--yellow)" },
-  statusDone: { backgroundColor: "var(--accent)" },
-  statusFailed: { backgroundColor: "var(--red)" },
-  goalText: { display: "flex", minWidth: 0, flex: 1, flexDirection: "column" },
-  muted: { opacity: 0.55 },
-  resultIcon: {
-    display: "flex",
-    width: "20px",
-    height: "20px",
-    flexShrink: 0,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  nextWake: {
-    width: "84px",
-    flexShrink: 0,
-    textAlign: "right",
-    color: "var(--text-faint)",
-  },
-  phoneHidden: { "@media (max-width: 720px)": { display: "none" } },
-  formStack: { display: "flex", flexDirection: "column", gap: "14px" },
-  sectionLabel: {
-    marginBottom: "6px",
-    fontWeight: "var(--font-weight-semibold)",
-    color: "var(--text-faint)",
-  },
-  link: {
-    cursor: "pointer",
-    color: "var(--link)",
-    textDecorationLine: "none",
-    ":hover": { "@media (hover: hover)": { textDecorationLine: "underline" } },
-  },
-  textWhite: { color: "var(--color-white)" },
-
-	max900pxHidden: {
-		"@media not all and (min-width: 900px)": {
-			"display": "none"
-		}
-	},
-	max900pxBorderL0: {
-		"@media not all and (min-width: 900px)": {
-			"borderLeftStyle": "var(--tw-border-style)",
-			"borderLeftWidth": "0"
-		}
-	},
-	max900pxInlineFlex: {
-		"@media not all and (min-width: 900px)": {
-			"display": "inline-flex"
-		}
-	},
-	hoverBgHover: {
-		"@media (hover: hover)": {
-			":hover": {
-				"backgroundColor": "var(--hover)"
-			}
-		}
-	},
-	hoverTextFg: {
-		"@media (hover: hover)": {
-			":hover": {
-				"color": "var(--text)"
-			}
-		}
+	mb0: {
+			marginBottom: "0"
 	},
 });
 
@@ -367,6 +245,10 @@ const sx = stylex.create({
     iOS doesn't zoom a focused field, and paragraph leading in a textarea. */
 const FORM_FIELDS =
   "[&_textarea]:leading-normal phone:[&_input]:text-input-phone phone:[&_select]:text-input-phone phone:[&_textarea]:text-input-phone";
+/** .automations-drawer-section-label */
+const SECTION_LABEL = utilityClassName("mb-1.5 text-label font-semibold text-faint");
+/** .automation-session-link */
+const LINK = utilityClassName("cursor-pointer text-link no-underline hover:underline");
 
 type GoalStatus = "active" | "paused" | "done" | "failed";
 
@@ -403,11 +285,11 @@ interface Props {
   onSelect: (id: string) => void;
 }
 
-const statusStyle: Record<GoalStatus, stylex.StyleXStyles> = {
-  active: sx.statusActive,
-  paused: sx.statusPaused,
-  done: sx.statusDone,
-  failed: sx.statusFailed,
+const STATUS_COLOR: Record<GoalStatus, string> = {
+  active: "#1f9d55",
+  paused: "#b7791f",
+  done: "#3182ce",
+  failed: "#e03131",
 };
 
 export function Goals({ onOpenSession, selectedId, onSelect }: Props) {
@@ -424,12 +306,16 @@ export function Goals({ onOpenSession, selectedId, onSelect }: Props) {
       .catch(() => {});
   }, []);
 
-  const load = async () => {
+  // Stable identity: only setters and module functions are captured, so the
+  // polling effect can list `load` without ever refiring from re-renders.
+  const load = useCallback(async () => {
     await (async () => {
 setGoals(await fetchGoals());
       setLoading(false);
-    })().catch(async () => {});
-  };
+})().catch(async () => {
+
+});
+  }, []);
 
   useEffect(() => {
     document.title = docTitle("Goals");
@@ -442,32 +328,27 @@ setGoals(await fetchGoals());
   }, [load]);
 
   // The routed selection — matched by id, or by name for deep-links.
-  const sel = selectedId
+  const sel = (selectedId
         ? goals.find((g) => g.id === selectedId || g.name === selectedId) || null
-    : null;
+        : null);
 
   // Leaving the selection also leaves edit mode.
   useEffect(() => setEditMode(false), [sel?.id]);
 
   // Escape backs out one layer: inline edit → read view → closed.
+  const hasSelection = !!sel;
   useEffect(() => {
-    if (!sel) return;
+    if (!hasSelection) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
       const t = e.target as HTMLElement | null;
-      if (
-        t &&
-        (t.tagName === "INPUT" ||
-          t.tagName === "TEXTAREA" ||
-          t.isContentEditable)
-      )
-        return;
+      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
       if (editMode) setEditMode(false);
       else onSelect("");
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [!!sel, editMode, onSelect]);
+  }, [hasSelection, editMode, onSelect]);
 
   async function act(fn: () => Promise<unknown>, refreshDelay = 400) {
     await (async () => {
@@ -479,11 +360,7 @@ setError(e.message);
   }
 
   async function handleDelete(g: Goal) {
-    if (
-      !confirm(
-        `Delete goal "${g.name}" and its ledger? The session it created is left as-is.`,
-      )
-    )
+    if (!confirm(`Delete goal "${g.name}" and its ledger? The session it created is left as-is.`))
       return;
     if (sel?.id === g.id) onSelect("");
     await act(() => deleteGoalApi(g.id), 100);
@@ -494,9 +371,14 @@ setError(e.message);
     {/* Drawer open: the list compresses to a narrow rail, and on phones it
         steps aside entirely — Back returns to it. */}
     <div
-        {...mergeStylexProps(sel ? mergeStylexClassName("", sx.max900pxHidden) : undefined, sx.listPane, sel ? sx.listPaneSelected : sx.listPaneDefault)}
+      className={cn(
+        utilityClassName("flex min-w-0 justify-center overflow-y-auto"),
+        sel
+          ? utilityClassName("flex-[0_0_340px] border-r border-line px-2.5 pt-4 pb-10 max-[900px]:hidden")
+          : utilityClassName("flex-1 px-8 pt-11 pb-22 phone:px-4 phone:pt-5 phone:pb-12"),
+      )}
     >
-        <SettingsPanel className={mergeStylexOverrideClassName("", sx.selfStart, sel && sx.maxWNone)}>
+    <SettingsPanel className={cn(utilityClassName("self-start"), sel && utilityClassName("max-w-none"))}>
       <SettingsHeader
         title="Goals"
         description={
@@ -504,7 +386,10 @@ setError(e.message);
             ? undefined
             : "Long-running missions that pace themselves, keep a ledger, and stop when done."
         }
-            {...mergeStylexProps(sel ? "[&_h1]:text-item-title" : undefined, sx.headerPhone, sel && sx.headerSelected)}
+        className={cn(
+          utilityClassName("phone:flex-col phone:items-start phone:gap-3"),
+          sel && utilityClassName("mb-3 px-2 [&_h1]:text-item-title"),
+        )}
         actions={
           <Button
             variant="primary"
@@ -517,10 +402,7 @@ setError(e.message);
       />
 
       {error && (
-            <InlineAlert
-              className={mergeStylexOverrideClassName("", sx.mb3)}
-              onDismiss={() => setError(null)}
-            >
+        <InlineAlert className={mergeStylexOverrideClassName("", sx.mb3)} onDismiss={() => setError(null)}>
           {error}
         </InlineAlert>
       )}
@@ -540,9 +422,8 @@ setError(e.message);
         <LoadingState>Loading…</LoadingState>
       ) : goals.length === 0 && !showForm ? (
         <EmptyState title="No goals yet">
-              A goal pursues one mission over days or weeks. It wakes itself,
-              reads its ledger, ships work via PRs, measures, and iterates until
-              the objective is met.
+          A goal pursues one mission over days or weeks. It wakes itself, reads its ledger,
+          ships work via PRs, measures, and iterates until the objective is met.
         </EmptyState>
       ) : (
         <SettingCard>
@@ -551,46 +432,27 @@ setError(e.message);
             return (
               <button
                 key={g.id}
-                    {...stylex.props(
-                      sx.goalRow,
-                      sel?.id === g.id ? sx.goalRowSelected : sx.goalRowIdle,
-                      sel && sx.goalRowNarrow,
+                className={cn(
+                  utilityClassName("flex w-full min-w-0 items-center gap-3 px-5 py-3.5 text-left outline-none transition-colors"),
+                  utilityClassName("focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent/50"),
+                  sel?.id === g.id ? utilityClassName("bg-selected") : utilityClassName("hover:bg-hover"),
+                  sel && utilityClassName("gap-2.5 px-3 py-2.5"),
                 )}
                 onClick={() => onSelect(g.id)}
               >
                 <span
-                      {...stylex.props(
-                        sx.size2,
-                        sx.shrink0,
-                        sx.roundedFull,
-                        statusStyle[g.status],
-                      )}
+                  {...stylex.props(sx.size2, sx.shrink0, sx.roundedFull)}
+                  style={{ background: STATUS_COLOR[g.status] }}
                   title={g.pauseReason || g.doneReason || g.status}
                 />
                 <span
-                      {...stylex.props(
-                        sx.goalText,
-                        g.status !== "active" && sx.muted,
+                  className={cn(
+                    utilityClassName("flex min-w-0 flex-1 flex-col"),
+                    g.status !== "active" && utilityClassName("opacity-55"),
                   )}
                 >
-                      <span
-                        {...stylex.props(
-                          sx.truncate,
-                          sx.fontMedium,
-                          sx.textFg,
-                          typography.itemTitle,
-                        )}
-                      >
-                        {g.name}
-                      </span>
-                      <span
-                        {...stylex.props(
-                          sx.mt05,
-                          sx.truncate,
-                          sx.textDim,
-                          typography.supporting,
-                        )}
-                      >
+                  <span {...stylex.props(sx.truncate, sx.fontMedium, sx.textFg, typography.itemTitle)}>{g.name}</span>
+                  <span {...stylex.props(sx.mt05, sx.truncate, sx.textDim, typography.supporting)}>
                     {g.status}
                     {g.phase ? ` · ${g.phase}` : ""}
                     {` · wake #${g.wakeCount}${g.maxWakes ? ` / ${g.maxWakes}` : ""}`}
@@ -598,36 +460,31 @@ setError(e.message);
                 </span>
                 {running ? (
                   <WorkingPill />
-                    ) : g.lastRunStatus === "ok" ||
-                      g.lastRunStatus === "error" ? (
+                ) : g.lastRunStatus === "ok" || g.lastRunStatus === "error" ? (
                   <span
-                        {...mergeStylexProps("[&_svg]:size-3.5", sx.resultIcon, g.lastRunStatus === "ok" ? sx.textGreen : sx.textRed)}
+                    className={cn(
+                      utilityClassName("flex size-5 shrink-0 items-center justify-center [&_svg]:size-3.5"),
+                      g.lastRunStatus === "ok" ? "text-green" : utilityClassName("text-red"),
+                    )}
                     title={
                       g.lastRunStatus === "ok"
                         ? `Last wake ok${g.lastRunAt ? ` · ${relativeTime(g.lastRunAt)}` : ""}`
                         : g.lastRunError || "Last wake failed"
                     }
                   >
-                        <CheckStatusIcon
-                          kind={
-                            g.lastRunStatus === "ok" ? "success" : "failure"
-                          }
-                        />
+                    <CheckStatusIcon kind={g.lastRunStatus === "ok" ? "success" : "failure"} />
                   </span>
                 ) : null}
                 {/* Only the next wake: the status itself is already the first
                     word of the line on the left, and saying it twice made a
                     paused goal read as two different facts. */}
                 <span
-                      {...stylex.props(
-                        sx.nextWake,
-                        typography.meta,
-                        sel ? sx.hidden : sx.phoneHidden,
+                  className={cn(
+                    utilityClassName("w-21 shrink-0 text-right text-meta text-faint"),
+                    sel ? utilityClassName("hidden") : utilityClassName("phone:hidden"),
                   )}
                 >
-                      {g.status === "active" && g.nextWakeAt
-                        ? `next ${formatNext(g.nextWakeAt)}`
-                        : ""}
+                  {g.status === "active" && g.nextWakeAt ? `next ${formatNext(g.nextWakeAt)}` : ""}
                 </span>
               </button>
             );
@@ -638,47 +495,20 @@ setError(e.message);
     </div>
 
       {sel && (
-        <aside
-          {...mergeStylexProps("", sx.max900pxBorderL0, sx.flex, sx.minH0, sx.minW0, sx.flexAuto, sx.flexCol, sx.borderL, sx.borderLine, sx.bgPanel)}
-        >
-          <div
-            {...stylex.props(
-              sx.flex,
-              sx.shrink0,
-              sx.itemsCenter,
-              sx.gap25,
-              sx.borderB,
-              sx.borderDivider,
-              sx.px4,
-              sx.py3,
-            )}
-          >
+        <aside {...mergeStylexProps("max-[900px]:border-l-0", sx.flex, sx.minH0, sx.minW0, sx.flexAuto, sx.flexCol, sx.borderL, sx.borderLine, sx.bgPanel)} >
+          <div {...mergeStylexProps("border-divider", sx.flex, sx.shrink0, sx.itemsCenter, sx.gap25, sx.borderB, sx.px4, sx.py3)} >
             {/* Phones get Back instead of Close: there the drawer is the page. */}
             <button
-              {...mergeStylexProps("", sx.max900pxInlineFlex, sx.My1, sx.Ml05, sx.hidden, sx.shrink0, sx.itemsCenter, sx.gap175, sx.px15, sx.py1, sx.fontMedium, sx.textFg, typography.itemTitle)}
+              {...mergeStylexProps("max-[900px]:inline-flex", sx.My1, sx.Ml05, sx.hidden, sx.shrink0, sx.itemsCenter, sx.gap175, sx.px15, sx.py1, sx.fontMedium, sx.textFg, typography.itemTitle)}
               onClick={() => onSelect("")}
               title="Back to goals"
             >
-              <svg
-                width="19"
-                height="19"
-                viewBox="0 0 16 16"
-                fill="currentColor"
-                {...stylex.props(sx.textDim)}
-                aria-hidden
-              >
+              <svg width="19" height="19" viewBox="0 0 16 16" fill="currentColor" {...stylex.props(sx.textDim)} aria-hidden>
                 <path d="M9.78 12.78a.75.75 0 0 1-1.06 0L4.47 8.53a.75.75 0 0 1 0-1.06l4.25-4.25a.749.749 0 1 1 1.06 1.06L6.06 8l3.72 3.72a.75.75 0 0 1 0 1.06Z" />
               </svg>
               Goals
             </button>
-            <span
-              {...stylex.props(
-                sx.minW0,
-                sx.truncate,
-                sx.fontSemibold,
-                typography.label,
-              )}
-            >
+            <span {...stylex.props(sx.minW0, sx.truncate, sx.fontSemibold, typography.label)}>
               {editMode ? `Edit ${sel.name}` : sel.name}
             </span>
             {!editMode && (
@@ -694,67 +524,33 @@ setError(e.message);
                   </Button>
                 )}
                 {sel.status === "active" ? (
-                  <Button
-                    size="sm"
-                    variant="soft"
-                    onClick={() => act(() => pauseGoalApi(sel.id))}
-                  >
+                  <Button size="sm" variant="soft" onClick={() => act(() => pauseGoalApi(sel.id))}>
                     Pause
                   </Button>
                 ) : (
-                  <Button
-                    size="sm"
-                    variant="soft"
-                    onClick={() => act(() => resumeGoalApi(sel.id))}
-                  >
+                  <Button size="sm" variant="soft" onClick={() => act(() => resumeGoalApi(sel.id))}>
                     Resume
                   </Button>
                 )}
-                <Button
-                  size="sm"
-                  variant="soft"
-                  onClick={() => setEditMode(true)}
-                >
+                <Button size="sm" variant="soft" onClick={() => setEditMode(true)}>
                   Edit
                 </Button>
-                <Button
-                  size="sm"
-                  variant="danger"
-                  onClick={() => handleDelete(sel)}
-                >
+                <Button size="sm" variant="danger" onClick={() => handleDelete(sel)}>
                   Delete
                 </Button>
               </div>
             )}
             <button
-              {...mergeStylexProps("", sx.hoverBgHover, sx.hoverTextFg, sx.max900pxHidden, sx.flex, sx.size7, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.roundedMd, sx.textDim)}
+              {...mergeStylexProps("hover:bg-hover hover:text-fg max-[900px]:hidden", sx.flex, sx.size7, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.roundedMd, sx.textDim)}
               onClick={() => onSelect("")}
               title="Close"
             >
-              <svg
-                width="19"
-                height="19"
-                viewBox="0 0 16 16"
-                fill="currentColor"
-                aria-hidden
-              >
+              <svg width="19" height="19" viewBox="0 0 16 16" fill="currentColor" aria-hidden>
                 <path d="M3.72 3.72a.75.75 0 0 1 1.06 0L8 6.94l3.22-3.22a.749.749 0 1 1 1.06 1.06L9.06 8l3.22 3.22a.749.749 0 1 1-1.06 1.06L8 9.06l-3.22 3.22a.749.749 0 0 1-1.06-1.06L6.94 8 3.72 4.78a.75.75 0 0 1 0-1.06Z" />
               </svg>
             </button>
           </div>
-          <div
-            {...stylex.props(
-              sx.flex,
-              sx.minH0,
-              sx.flex1,
-              sx.flexCol,
-              sx.gap35,
-              sx.overflowYAuto,
-              sx.px5,
-              sx.pt45,
-              sx.pb10,
-            )}
-          >
+          <div {...stylex.props(sx.flex, sx.minH0, sx.flex1, sx.flexCol, sx.gap35, sx.overflowYAuto, sx.px5, sx.pt45, sx.pb10)}>
             {editMode ? (
               <GoalForm
                 key={sel.id}
@@ -770,7 +566,8 @@ setError(e.message);
               <>
                 <div {...stylex.props(sx.flex, sx.itemsCenter, sx.gap25)}>
                   <span
-                    {...mergeStylexProps(SOURCE_CHIP, statusStyle[sel.status], sx.textWhite)}
+                    className={SOURCE_CHIP}
+                    style={{ background: STATUS_COLOR[sel.status], color: "#fff" }}
                   >
                     {sel.status}
                   </span>
@@ -778,80 +575,32 @@ setError(e.message);
                     <WorkingPill />
                   )}
                   {sel.status === "active" && sel.nextWakeAt && (
-                    <span
-                      {...stylex.props(
-                        sx.textFaint,
-                        sx.mlAuto,
-                        sx.shrink0,
-                        typography.label,
-                      )}
-                      title={sel.nextWakeAt}
-                    >
+                    <span {...stylex.props(sx.textFaint, sx.mlAuto, sx.shrink0, typography.label)} title={sel.nextWakeAt}>
                       next wake {formatNext(sel.nextWakeAt)}
                     </span>
                   )}
                 </div>
                 {sel.status === "paused" && sel.pauseReason && (
-                  <div
-                    {...stylex.props(
-                      sx.textDim,
-                      sx.leadingSnug,
-                      typography.supporting,
-                    )}
-                  >
+                  <div {...stylex.props(sx.textDim, sx.leadingSnug, typography.supporting)}>
                     Paused: {sel.pauseReason}
                   </div>
                 )}
-                {(sel.status === "done" || sel.status === "failed") &&
-                  sel.doneReason && (
-                    <div
-                      {...stylex.props(
-                        sx.textDim,
-                        sx.leadingSnug,
-                        typography.supporting,
-                      )}
-                    >
-                      {sel.status === "done" ? "Done" : "Failed"}:{" "}
-                      {sel.doneReason}
+                {(sel.status === "done" || sel.status === "failed") && sel.doneReason && (
+                  <div {...stylex.props(sx.textDim, sx.leadingSnug, typography.supporting)}>
+                    {sel.status === "done" ? "Done" : "Failed"}: {sel.doneReason}
                   </div>
                 )}
 
                 <div>
-                  <div {...stylex.props(sx.sectionLabel, typography.label)}>
-                    Mission
-                  </div>
-                  <div
-                    {...stylex.props(
-                      sx.bgSurface,
-                      sx.border,
-                      sx.borderLine,
-                      sx.roundedPanel,
-                      sx.px35,
-                      sx.py3,
-                      sx.leadingRelaxed,
-                      sx.textDim,
-                      sx.whitespacePreWrap,
-                      typography.label,
-                    )}
-                  >
+                  <div className={SECTION_LABEL}>Mission</div>
+                  <div {...stylex.props(sx.bgSurface, sx.border, sx.borderLine, sx.roundedPanel, sx.px35, sx.py3, sx.leadingRelaxed, sx.textDim, sx.whitespacePreWrap, typography.label)}>
                     {sel.mission}
                   </div>
                 </div>
 
                 <div>
-                  <div {...stylex.props(sx.sectionLabel, typography.label)}>
-                    Configuration
-                  </div>
-                  <div
-                    {...stylex.props(
-                      sx.grid,
-                      sx.gridColsMaxContent1fr,
-                      sx.itemsBaseline,
-                      sx.gapX5,
-                      sx.gapY2,
-                      typography.label,
-                    )}
-                  >
+                  <div className={SECTION_LABEL}>Configuration</div>
+                  <div {...stylex.props(sx.grid, sx.gridColsMaxContent1fr, sx.itemsBaseline, sx.gapX5, sx.gapY2, typography.label)}>
                     <DetailKey>Mode</DetailKey>
                     <span {...stylex.props(sx.textDim)}>
                       {sel.mode === "ask"
@@ -862,9 +611,7 @@ setError(e.message);
                     {sel.phase && (
                       <>
                         <DetailKey>Phase</DetailKey>
-                        <span {...stylex.props(sx.textDim, sx.minW0)}>
-                          {sel.phase}
-                        </span>
+                        <span {...stylex.props(sx.textDim, sx.minW0)}>{sel.phase}</span>
                       </>
                     )}
 
@@ -876,8 +623,7 @@ setError(e.message);
                           {...stylex.props(sx.textFaint)}
                           title="Used only when every account for the primary model has hit its usage limit"
                         >
-                          {" "}
-                          · falls back to {sel.fallbackModel}
+                          {" "}· falls back to {sel.fallbackModel}
                         </span>
                       )}
                     </span>
@@ -890,9 +636,7 @@ setError(e.message);
 
                     <DetailKey>MCPs</DetailKey>
                     <span {...stylex.props(sx.textDim, sx.minW0)}>
-                      {sel.mcpServers?.length
-                        ? sel.mcpServers.join(", ")
-                        : "all connectors"}
+                      {sel.mcpServers?.length ? sel.mcpServers.join(", ") : "all connectors"}
                     </span>
 
                     {sel.bksSessionId && (
@@ -900,7 +644,7 @@ setError(e.message);
                         <DetailKey>Session</DetailKey>
                         <span {...stylex.props(sx.minW0)}>
                           <a
-                            {...stylex.props(sx.link)}
+                            className={LINK}
                             onClick={(e) => {
                               e.preventDefault();
                               onOpenSession(sel.bksSessionId!);
@@ -914,36 +658,22 @@ setError(e.message);
                     )}
 
                     <DetailKey>Created</DetailKey>
-                    <span {...stylex.props(sx.textDim)}>
-                      by {sel.createdBy}
-                    </span>
+                    <span {...stylex.props(sx.textDim)}>by {sel.createdBy}</span>
                   </div>
                 </div>
 
                 <div>
-                  <div {...stylex.props(sx.sectionLabel, typography.label)}>
-                    Activity
-                  </div>
-                  <div
-                    {...stylex.props(sx.textDim, sx.mb2, typography.supporting)}
-                  >
+                  <div className={SECTION_LABEL}>Activity</div>
+                  <div {...stylex.props(sx.textDim, sx.mb2, typography.supporting)}>
                     wake #{sel.wakeCount}
                     {sel.maxWakes ? ` of ${sel.maxWakes}` : ""}
                     {sel.lastRunAt && (
                       <>
                         {" · last wake "}
                         {relativeTime(sel.lastRunAt)}
-                        {sel.lastRunStatus === "ok" && (
-                          <span {...stylex.props(sx.textGreen)}> ✓</span>
-                        )}
+                        {sel.lastRunStatus === "ok" && <span className="text-green"> ✓</span>}
                         {sel.lastRunStatus === "error" && (
-                          <span
-                            {...stylex.props(sx.textRed)}
-                            title={sel.lastRunError}
-                          >
-                            {" "}
-                            ✗
-                          </span>
+                          <span {...stylex.props(sx.textRed)} title={sel.lastRunError}> ✗</span>
                         )}
                       </>
                     )}
@@ -962,16 +692,7 @@ setError(e.message);
 /** Left column of the drawer's Configuration grid. */
 function DetailKey({ children }: { children: React.ReactNode }) {
   return (
-    <span
-      {...stylex.props(
-        sx.textFaint,
-        sx.leading17,
-        sx.whitespaceNowrap,
-        typography.label,
-      )}
-    >
-      {children}
-    </span>
+    <span {...stylex.props(sx.textFaint, sx.leading17, sx.whitespaceNowrap, typography.label)}>{children}</span>
   );
 }
 
@@ -1050,18 +771,10 @@ function GoalForm({
   // picker opens on the real list rather than empty; the fetch below corrects it.
   const [repos, setRepos] = useState<RepoInfo[]>(cachedRepos);
   const [model, setModel] = useState(initial?.model || "");
-  const [fallbackModel, setFallbackModel] = useState(
-    initial?.fallbackModel || "",
-  );
-  const [mcpServers, setMcpServers] = useState(
-    (initial?.mcpServers || []).join(", "),
-  );
-  const [minWakeMinutes, setMinWakeMinutes] = useState(
-    String(initial?.minWakeMinutes ?? 30),
-  );
-  const [maxWakes, setMaxWakes] = useState(
-    initial?.maxWakes ? String(initial.maxWakes) : "",
-  );
+  const [fallbackModel, setFallbackModel] = useState(initial?.fallbackModel || "");
+  const [mcpServers, setMcpServers] = useState((initial?.mcpServers || []).join(", "));
+  const [minWakeMinutes, setMinWakeMinutes] = useState(String(initial?.minWakeMinutes ?? 30));
+  const [maxWakes, setMaxWakes] = useState(initial?.maxWakes ? String(initial.maxWakes) : "");
   const [models, setModels] = useState<ModelOption[]>([]);
   const [defaultModel, setDefaultModel] = useState("");
   const [saving, setSaving] = useState(false);
@@ -1073,8 +786,7 @@ function GoalForm({
         setModels(m.models);
         setDefaultModel(m.default);
         if (repoItems.length) setRepos(repoItems);
-        setRepo(
-          (current) =>
+        setRepo((current) =>
           current ||
           repoItems.find((item) => item.default)?.id ||
           repoItems[0]?.id ||
@@ -1140,14 +852,8 @@ setError(e.message);
             label="Mode"
             value={mode}
             options={[
-              {
-                value: "ask",
-                label: "Ask · read-only research and measurement",
-              },
-              {
-                value: "code",
-                label: "Code · persistent worktree, can open PRs",
-              },
+              { value: "ask", label: "Ask · read-only research and measurement" },
+              { value: "code", label: "Code · persistent worktree, can open PRs" },
             ]}
             onChange={(next) => setMode(next as "ask" | "code")}
           />
@@ -1170,14 +876,8 @@ setError(e.message);
             label="Model"
             value={model}
             options={[
-              {
-                value: "",
-                label: `Default${defaultModel ? ` · ${defaultModel}` : ""}`,
-              },
-              ...models.map((m) => ({
-                value: m.id,
-                label: m.label + accountPoolSuffix(m),
-              })),
+              { value: "", label: `Default${defaultModel ? ` · ${defaultModel}` : ""}` },
+              ...models.map((m) => ({ value: m.id, label: m.label + accountPoolSuffix(m) })),
             ]}
             onChange={setModel}
           />
@@ -1192,20 +892,14 @@ setError(e.message);
             value={fallbackModel}
             options={[
               { value: "", label: "None · fail instead" },
-              ...models.map((m) => ({
-                value: m.id,
-                label: m.label + accountPoolSuffix(m),
-              })),
+              ...models.map((m) => ({ value: m.id, label: m.label + accountPoolSuffix(m) })),
             ]}
             onChange={setFallbackModel}
           />
         </Field>
       </FieldGrid>
 
-      <Field
-        label="MCP servers"
-        title="Comma-separated. Blank means every connector."
-      >
+      <Field label="MCP servers" title="Comma-separated. Blank means every connector.">
         <Input
           value={mcpServers}
           onChange={(e) => setMcpServers(e.target.value)}
@@ -1215,10 +909,7 @@ setError(e.message);
       </Field>
 
       <FieldGrid>
-        <Field
-          label="Minutes between wakes"
-          title="The goal never wakes sooner than this."
-        >
+        <Field label="Minutes between wakes" title="The goal never wakes sooner than this.">
           <Input
             type="number"
             value={minWakeMinutes}
@@ -1256,17 +947,10 @@ setError(e.message);
 
   // In the drawer the panel is already the surface, so the form drops the
   // plate and the title the drawer's own header carries.
-  if (inline)
-    return (
-      <div {...mergeStylexProps(FORM_FIELDS, sx.formStack)}>
-        {fields}
-      </div>
-    );
+  if (inline) return <div className={utilityClassName(`flex flex-col gap-3.5 ${FORM_FIELDS}`)}>{fields}</div>;
 
   return (
-    <SettingsForm
-      {...mergeStylexProps(FORM_FIELDS, sx.mb3, sx.formStack)}
-    >
+    <SettingsForm className={utilityClassName(`mb-3 flex flex-col gap-3.5 ${FORM_FIELDS}`)}>
       <SettingsFormTitle className={mergeStylexOverrideClassName("", sx.mb0)}>
         {initial ? `Edit "${initial.name}"` : "New goal"}
       </SettingsFormTitle>

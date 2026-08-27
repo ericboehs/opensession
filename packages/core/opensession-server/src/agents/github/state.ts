@@ -129,6 +129,8 @@ export interface GithubPrState {
     replyToId?: number;
     inline?: { path: string; line?: number; diffHunk?: string };
     receivedAt: string;
+    /** REST-posted receipt, reused as the run progress comment after a retry. */
+    progressCommentId?: number;
   };
   updatedAt: string;
 }

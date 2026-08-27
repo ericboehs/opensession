@@ -1,10 +1,12 @@
 import { describe, expect, test } from "bun:test";
+import { productMark } from "./config";
 import {
 	agentActor,
 	delegatedActorParent,
 	isMachineActor,
 	isWorkerActor,
 	machineActorLabel,
+	providerAccountUser,
 	workerActor,
 } from "./session-actors";
 
@@ -33,10 +35,9 @@ describe("machine actors", () => {
 	});
 
 	test("matches the agent's own name across an ornament change", () => {
-		// The persona was renamed "OS¹" → "OS"; sessions started under the old
-		// mark must not become a person on the strength of a superscript.
-		expect(isMachineActor("OS¹")).toBe(true);
-		expect(isMachineActor("OS")).toBe(true);
+		const mark = productMark();
+		expect(isMachineActor(`${mark}¹`)).toBe(true);
+		expect(isMachineActor(mark)).toBe(true);
 	});
 
 	test("a delegated sender names its parent", () => {
@@ -50,6 +51,21 @@ describe("machine actors", () => {
 		// Only a worker's report is delivered verbatim; the other is wrapped.
 		expect(isWorkerActor(workerActor(SESSION))).toBe(true);
 		expect(isWorkerActor(agentActor(SESSION))).toBe(false);
+	});
+
+	test("machine continuations use the interactive session owner's provider account", () => {
+		expect(providerAccountUser(workerActor(SESSION), "Jaap")).toBe("Jaap");
+		expect(providerAccountUser("auto-continue", "Jaap")).toBe("Jaap");
+		expect(providerAccountUser("system (restart)", "Jaap")).toBe("Jaap");
+	});
+
+	test("human prompts keep the prompter's provider account", () => {
+		expect(providerAccountUser("Kent", "Jaap")).toBe("Kent");
+	});
+
+	test("machine-owned sessions remain pool-only", () => {
+		expect(providerAccountUser(workerActor(SESSION), agentActor(SESSION))).toBeUndefined();
+		expect(providerAccountUser(undefined, "Automation")).toBeUndefined();
 	});
 
 	test("delegated senders collapse to one label, not one row per session", () => {

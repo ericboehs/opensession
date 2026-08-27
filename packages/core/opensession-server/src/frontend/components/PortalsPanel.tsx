@@ -181,7 +181,8 @@ const sx = stylex.create({
     borderRadius: "calc(12px * var(--rf))",
     paddingRight: "4px",
     transitionProperty: "color, background-color",
-	},
+
+		cornerShape: "var(--cs)",},
   active: { backgroundColor: "var(--hover)" },
   inactive: { ":hover": { "@media (hover: hover)": { backgroundColor: "var(--hover)" } } },
   serviceDot: {
@@ -189,7 +190,8 @@ const sx = stylex.create({
     height: "7px",
     flexShrink: 0,
     borderRadius: "50%",
-  },
+
+		cornerShape: "var(--cs)",},
   bgGreen: { backgroundColor: "var(--green)" },
   bgLineStrong: { backgroundColor: "var(--border-strong)" },
 

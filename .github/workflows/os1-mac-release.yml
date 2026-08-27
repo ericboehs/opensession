@@ -10,6 +10,8 @@ on:
 
 permissions:
   contents: write
+  id-token: write
+  attestations: write
 
 concurrency:
   group: os1-mac-release
@@ -25,7 +27,7 @@ jobs:
     runs-on: macos-26
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.2.2
 
       - name: Prepare release draft
         if: github.ref_type == 'tag'
@@ -78,13 +80,29 @@ jobs:
       # The repository ships a portable default (localhost) so a fresh clone does
       # not point at someone else's server. Release builds stamp the real one in.
       # Set the OS1_SERVER_URL repository variable to override.
-      - name: Stamp deployment server
+      - name: Stamp release metadata
         env:
           SERVER: ${{ vars.OS1_SERVER_URL || 'https://os.tella.dev/' }}
+          TAG: ${{ github.ref_name }}
         run: |
-          jq --arg s "$SERVER" '.opensession.defaultServer = $s' package.json > /tmp/pkg.json
+          version="$(jq -r .version package.json)"
+          if [[ "$TAG" == v[0-9]* ]]; then version="${TAG#v}"; fi
+          jq --arg s "$SERVER" --arg v "$version" \
+            '.opensession.defaultServer = $s | .version = $v' package.json > /tmp/pkg.json
           mv /tmp/pkg.json package.json
-          jq -r '"default server: " + .opensession.defaultServer' package.json
+          jq -r '"version: " + .version + ", default server: " + .opensession.defaultServer' package.json
+
+      - name: Generate license inventory and SBOM
+        run: |
+          rm -rf build/release-metadata
+          export SOURCE_DATE_EPOCH="$(git show -s --format=%ct HEAD)"
+          bun ../../../scripts/generate-release-metadata.ts \
+            --lock bun.lock \
+            --node-modules node_modules \
+            --out build/release-metadata \
+            --name opensession-mac \
+            --version "$(jq -r .version package.json)" \
+            --include-dev
 
       - name: Build, sign & notarize
         run: |
@@ -157,13 +175,40 @@ jobs:
           xcrun stapler validate dist/mac-arm64/*.app
           spctl --assess --type open --context context:primary-signature -v dist/*.dmg
 
+      - name: Prepare stable aliases and checksums
+        if: github.ref_type == 'tag'
+        run: |
+          set -euo pipefail
+          for ext in dmg zip; do
+            versioned=(dist/OpenSession-*-arm64."$ext")
+            if [ "${#versioned[@]}" -ne 1 ]; then
+              echo "::error::Expected one versioned $ext, found ${#versioned[@]}"
+              exit 1
+            fi
+            cp "${versioned[0]}" "dist/OpenSession-arm64.$ext"
+          done
+          cd dist
+          for asset in *.dmg *.zip; do
+            hash="$(shasum -a 256 "$asset" | awk '{ print $1 }')"
+            printf '%s  %s\n' "$hash" "$asset" > "$asset.sha256"
+          done
+
+      - name: Attest release archives
+        if: github.ref_type == 'tag'
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2.4.0
+        with:
+          subject-path: |
+            packages/clients/mac/dist/*.dmg
+            packages/clients/mac/dist/*.zip
+
       - name: Upload to release draft
         if: github.ref_type == 'tag'
-        # Signing and notarisation finish before the upload. Retry transient API
-        # failures, but keep the release mutable until every producer succeeds.
+        # Signing, notarisation, checksums and attestations finish before upload.
+        # Retry transient API failures, but keep the release mutable until every
+        # producer succeeds.
         run: |
           for attempt in 1 2 3 4 5; do
-            if gh release upload "$GITHUB_REF_NAME" dist/*.dmg dist/*.zip --clobber; then
+            if gh release upload "$GITHUB_REF_NAME" dist/*.dmg dist/*.zip dist/*.sha256 --clobber; then
               echo "uploaded assets to the $GITHUB_REF_NAME draft"
               exit 0
             fi
@@ -177,7 +222,7 @@ jobs:
 
       - name: Upload artifacts (manual run)
         if: github.ref_type != 'tag'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: OS1
           path: |

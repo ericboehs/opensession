@@ -170,7 +170,7 @@ async function generateAndPersistRecap(
   // The viewer may have kicked off a new turn while we generated — a recap
   // landing mid-turn would describe a state that no longer exists.
   if (ACTIVE_STATES.has(getRunState(sessionId))) return;
-  storeAppendUserLineEarly(sessionId, transcriptLineRecap(text));
+  await storeAppendUserLineEarly(sessionId, transcriptLineRecap(text));
 }
 
 /** Normalize the model's output into one plain recap line, or null when it

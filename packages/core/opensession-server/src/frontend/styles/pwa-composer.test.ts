@@ -10,8 +10,10 @@ const SHIPPED = new URL(
 );
 const COMPOSER = new URL("../components/Composer.tsx", import.meta.url);
 const COMPOSER_STYLES = new URL("../lib/composer-classes.ts", import.meta.url).pathname;
+const UTILITY_COMPAT = new URL("./utility-compat.stylex.ts", import.meta.url).pathname;
 const collector = newStylexCollector();
 stylexTransform(COMPOSER_STYLES, readFileSync(COMPOSER_STYLES, "utf8"), collector);
+stylexTransform(UTILITY_COMPAT, readFileSync(UTILITY_COMPAT, "utf8"), collector);
 const composerCss = stylexCss(collector);
 
 test("phone composers use the same quiet edge as the desktop ring", () => {
@@ -29,8 +31,8 @@ test("team note mode stays compact at rest and names itself when expanded", asyn
 	expect(minimizedStart).toBeGreaterThan(-1);
 	expect(composer.slice(minimizedStart, minimizedEnd)).not.toContain("noteMode");
 	expect(composer).toContain("{noteMode && !minimized && (");
-	expect(composer).toContain("noteMode && mergeStylexClassName");
-	expect(composer).toContain("sx.beforeOpacity100");
+	expect(composer).toContain("noteMode && utilityClassName");
+	expect(composer).toContain("before:opacity-100");
 });
 
 test("the installed phone composer keeps its add menu and hides only auxiliary controls", async () => {
@@ -50,10 +52,11 @@ test("the installed phone composer keeps its add menu and hides only auxiliary c
 	expect(standalonePhone).toContain(
 		"border-color: color-mix(in srgb, var(--composer-border) 35%, transparent)",
 	);
-	expect(standalonePhone).toContain(".app .pwa-composer-auxiliary");
+	expect(standalonePhone).toContain(".app .pwa-composer-dictation");
 	expect(standalonePhone).toContain("display: none");
-	expect(composer.match(/pwa-composer-auxiliary/g)).toHaveLength(2);
+	expect(composer.match(/pwa-composer-dictation/g)).toHaveLength(1);
+	expect(composer).not.toContain("pwa-composer-auxiliary");
 	expect(composer).not.toContain("pwa-note-option");
-	expect(composer).toContain('mergeStylexClassName("composer-pop-wrap"');
-	expect(composer).toContain("sx.relative, sx.inlineFlex, sx.shrink0");
+	expect(composer).toContain('utilityClassName("composer-pop-wrap');
+	expect(composer).toContain("relative inline-flex shrink-0");
 });

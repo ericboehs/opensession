@@ -1,9 +1,9 @@
 # Open Session
 
 Self-hosted agent-infrastructure server: a web UI plus Slack, Linear, Plain,
-and GitHub agents, driving coding sessions through the Pi engine
-(any model provider) in git worktrees on your own box, or in isolated
-sandboxes — Docker locally, with pluggable adapters for other providers.
+and GitHub agents, driving coding sessions through the Pi engine in git worktrees on your own box, or in isolated
+sandboxes.
+Supports multiple Codex and Claude subscriptions and model APIs.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/readme-hero-roomy-dark.webp">
@@ -25,6 +25,26 @@ first.
 curl -fsSL https://raw.githubusercontent.com/tellahq/opensession/main/install.sh | bash
 ```
 
+The recommended install also adds Tailscale, Caddy and
+the lego certificate helper so the private app can use HTTPS or a friendly
+custom domain.
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/tellahq/opensession/main/install.sh | bash -s -- --tailscale --caddy
+```
+
+For public ingress through Cloudflare Tunnel instead of Tailscale, `--cloudflare` installs
+`cloudflared`. Finish configuring either option under Settings → Domains and
+ingress.
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/tellahq/opensession/main/install.sh | bash -s -- --cloudflare
+```
+
+Already installed Open Session? You do not need to reinstall it. Follow [Add
+Tailscale after a normal
+install](docs/setup/install.md#add-tailscale-after-a-normal-install).
+
 On a fresh box this downloads the compiled release for your OS and
 architecture, unpacks it under `~/.opensession`, installs the `claude` CLI,
 puts an `opensession` command on your `PATH`, writes a default configuration,
@@ -35,8 +55,9 @@ download.
 
 Open the URL, add a model account in Workspace → Providers, pick a repo, write
 a prompt, and create the session. A turn that actually runs is the proof the
-install works, not a health check. Connect GitHub and the other integrations
-later from Settings → Connections; see
+install works, not a health check. Connect your GitHub account later from
+Settings → Connections. Configure Slack, Linear, Plain, GitHub agent intake,
+and other integrations under Settings → Integrations; see
 [docs/setup/github.md](docs/setup/github.md).
 
 Check on it any time:
@@ -48,6 +69,18 @@ opensession update     # upgrade in place, health-gated
 opensession --help     # everything else
 ```
 
+The installer and updater verify each Open Session release archive against its
+published SHA-256 sidecar before extracting it. GitHub also signs keyless build
+provenance for every release archive, DMG, and ZIP. To verify a manually
+downloaded artifact:
+
+```sh
+gh attestation verify ./opensession-linux-x64.tar.gz --repo tellahq/opensession
+sha256sum --check ./opensession-linux-x64.tar.gz.sha256
+```
+
+Use `shasum -a 256 -c` instead of `sha256sum --check` on macOS.
+
 Or install from a source checkout instead. This is the path for
 self-development (sessions that modify Open Session itself) and for
 contributing:
@@ -55,20 +88,23 @@ contributing:
 ```sh
 git clone https://github.com/tellahq/opensession.git
 cd opensession && bun install
-bun run setup                             # same wizard, without the installer
+bun run setup                             # interactive onboarding
 ```
 
-With no flags it writes a default configuration, installs and starts the
-service, and ends with the URL. `--advanced` runs the full onboarding wizard;
-`--help` lists the rest (`--dir`, `--channel`, `--tailscale`, `--codex`,
-`--no-engine`, `--no-modify-path`, `--yes`, `--uninstall`).
+`bun run setup` runs the interactive onboarding wizard, writes the
+configuration, and offers to install and start a user service. For unattended
+defaults, run `bun scripts/cli.ts onboard --defaults`. Run
+`bun scripts/cli.ts --help` for CLI commands. Options such as `--source`,
+`--dir`, `--channel`, `--tailscale`, and `--no-engine` belong to `install.sh`;
+run `bash install.sh --help` for the complete installer list. A source checkout
+requires Bun and git.
 
 > Letting the agent improve Open Session itself? Clone your fork, not this
-> repo. Self-sessions commit and push to `origin` (and `deploy_self`
-> fast-forwards from it), so pointed at `tellahq/opensession` every push is
-> rejected and, once you've self-modified, updates from us stop
-> fast-forwarding. Fork, clone the fork, and keep us as an `upstream` remote.
-> Config-only use (your repos, your integrations) needs no fork.
+> repo. Self-sessions commit and push to `origin`, and `deploy_self` advances
+> the pinned runtime to a descendant commit from it. Pointed at
+> `tellahq/opensession`, every push is rejected. Fork, clone the fork, and keep
+> us as an `upstream` remote. Config-only use (your repos, your integrations)
+> needs no fork.
 
 > Authentication is available, and it is opt-in. By default, Open Session
 > trusts everyone who can reach the address it binds to. GitHub sign-in can
@@ -83,19 +119,21 @@ service, and ends with the URL. `--advanced` runs the full onboarding wizard;
 - [docs/setup/](docs/setup/README.md) — overview, requirements, trust model
 - [docs/setup/install.md](docs/setup/install.md) — bare box → running service
 - [docs/setup/ec2.md](docs/setup/ec2.md) — provisioning a clean EC2 box
-- [docs/setup/networking.md](docs/setup/networking.md) — Tailscale, a custom
-  domain, and verifying you are not public
+- [docs/setup/networking.md](docs/setup/networking.md) — private team access,
+  public callbacks, domains, and TLS
 - [CLIENTS.md](CLIENTS.md) — web UI, PWA, desktop shell, native app, extension
 - [docs/worktrees.md](docs/worktrees.md) — how sessions map to git worktrees,
   and where the disk goes
-- [docs/repo-lifecycle.md](docs/repo-lifecycle.md) — the `.opensession/`
+- [docs/repo-lifecycle.md](docs/repo-lifecycle.md) — the `.agents/` lifecycle
   scripts a repo commits so sessions provision and boot it themselves
 - [docs/extending.md](docs/extending.md) — adding tools, recipes, integrations
   and providers
 - [docs/security-model.md](docs/security-model.md) — least-privilege
   automations, per-user MCP/GitHub scoping, self-management boundaries
-- [docs/self-hosting-sandboxes.md](docs/self-hosting-sandboxes.md) — isolated
-  Docker/Daytona/E2B/Box/Modal/AWS Lambda MicroVM execution
+- [docs/self-hosting-sandboxes.md](docs/self-hosting-sandboxes.md) — certified
+  Docker, Daytona, Box, Modal, and local Firecracker MicroVM sandboxes;
+  implemented E2B and AWS Lambda MicroVM adapters remain unavailable until
+  live-certified
 - [docs/instance-configuration.md](docs/instance-configuration.md) — repos,
   identity, branding, integrations, deployment policy
 
@@ -107,7 +145,7 @@ talks to the same instance. [CLIENTS.md](CLIENTS.md) has the full tour.
 | Client | Where |
 | --- | --- |
 | Web UI | served by the server itself — start here |
-| PWA | the web UI on your phone's home screen (iOS push notifications) |
+| PWA | the web UI on your phone's home screen (iOS push notifications require the installed PWA and an HTTPS origin) |
 | macOS desktop shell (Electron) | [`packages/clients/mac/`](packages/clients/mac/) |
 | Native Swift app (iOS + macOS) | [`packages/clients/ios/`](packages/clients/ios/) |
 | Chrome extension (page context → session) | [`packages/clients/chrome/`](packages/clients/chrome/) |
@@ -139,10 +177,12 @@ manifest, and the lockfile stay at the root.
 ## Contributing
 
 We take contributions as human-written text, not code — see
-[CONTRIBUTING.md](CONTRIBUTING.md). Describe the change you'd like informally
-in a `.txt` or `.md` file in [`adrs/`](adrs/), and if we're aligned we'll
-handle the implementation. Report vulnerabilities privately — see
-[SECURITY.md](SECURITY.md), not a public issue.
+[CONTRIBUTING.md](CONTRIBUTING.md). Open a
+[GitHub issue](https://github.com/tellahq/opensession/issues) describing the
+change you'd like — a prompt or suggestion in plain language is exactly the
+right shape — and if we're aligned we'll handle the implementation. Report
+vulnerabilities privately — see [SECURITY.md](SECURITY.md), not a public
+issue.
 
 ## License
 

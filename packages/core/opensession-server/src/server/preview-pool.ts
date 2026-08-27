@@ -855,15 +855,13 @@ export async function cloneUrlFor(
     return authedRemoteUrl(repo.csRepo, opts?.longLived ? { ttlSeconds: 30 * 24 * 3600 } : {});
   }
   if (!repo.ghRepo) return null;
-  const { githubBotCredentialMode } = await import("./github-app");
-  const mode = githubBotCredentialMode();
   // Installation tokens expire too quickly to bake into a container command
-  // that may restart days later. App-mode warm restarts use the golden tree;
-  // one-shot golden/Daytona operations mint a fresh repository token below.
-  if (opts?.longLived && mode === "app") return null;
+  // that may restart days later. Warm restarts use the golden tree; one-shot
+  // golden and Daytona operations mint a fresh repository token below.
+  if (opts?.longLived) return null;
   const plain = `https://github.com/${repo.ghRepo}.git`;
   const selected = await injectCloneCredential(plain);
-  return mode === "app" && selected === plain ? null : selected;
+  return selected === plain ? null : selected;
 }
 
 /** Boot preamble every warm/golden boot runs: lock cleanup + full ports.conf. */
@@ -1379,9 +1377,8 @@ async function spawnWarmContainer(repo: Repo): Promise<void> {
   const { previewHost, httpsPortFor } = await import("./preview");
   const host = await previewHost();
   const previewUrl = `https://${host}:${httpsPortFor(hostPort)}`;
-  // PAT mode may use its long-lived credential here. App mode deliberately
-  // returns null rather than baking an hour-lived repository token into a boot
-  // command that can be re-run days later.
+  // Never bake an hour-lived repository token into a boot command that can be
+  // re-run days later.
   const cloneUrl = await cloneUrlFor(repo, { longLived: true });
 
   patchContainer(repo.id, name, {

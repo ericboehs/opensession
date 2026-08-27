@@ -14,19 +14,19 @@ A dev instance is `bun run packages/core/opensession-server/opensession.ts` with
   `.frontend-dist` bundle. It gated nothing on the backend. With the dev boot
   gate, `OPENSESSION_DEV=1` additionally skips every boot side effect that
   talks to the outside world or to shared state: integration agents
-  (Slack/Linear/Plain/GitHub/Stripe/Grafana), the webhook server, the cron
+  (Slack/Linear/Plain/GitHub/Stripe/Grafana), public webhook intake, the cron
   automation scheduler and all background tickers/sweeps, the public-ingress
   listener, detached-engine-server adoption, run resume/redelivery, and the
   seed writes to automations. What remains is the web server, the
   session store, and the UI.
-- `OPENSESSION_DEMO=1` — demo mode: the instance seeds generated demo
-  sessions/transcripts into its (empty) state dir so the UI has something to
-  show without real history. (Forthcoming; until the generator lands a demo
-  instance simply starts empty.)
-- `OPENSESSION_STATE_DIR=<dir>` — root for all instance state. Everything
-  that defaults to `~/.opensession-*` (sessions, config, automations, sandbox
-  config, the run-rpc unix socket, …) resolves under this dir instead, so a
-  dev instance never reads or writes the operator's live stores.
+- `OPENSESSION_DEMO=1` — demo mode. On first boot it idempotently seeds
+  generated sessions, transcripts, repository and PR state, automations, audit
+  data, and a goal, then registers a demo ask card and starts the transcript
+  replayer. It requires `OPENSESSION_STATE_DIR`.
+- `OPENSESSION_STATE_DIR=<dir>` — root for all instance state. The session
+  store, config, automations, sandbox config, run-rpc unix socket, and the other
+  stores normally grouped under `~/.opensession/` resolve under this directory
+  instead, so a dev instance never reads or writes the operator's live stores.
 
 None of these flags change anything when unset: an unflagged boot is
 byte-identical to today's behavior.
@@ -42,11 +42,16 @@ every other repo uses ([repo-lifecycle.md](repo-lifecycle.md)):
   `$WEBAPP_PORT`, loopback only, with the three flags above and
   `OPENSESSION_STATE_DIR=$PWD/.dev-state`.
 
-Flow: press Preview in an opensession session → the running server allocates a
-port (3100–3999), runs the `setup` hook once, then `start.sh` detached with cwd =
-the session's checkout → Caddy fronts the port at
+For a host preview when no warm-pool claim is available, pressing Preview
+allocates a port (3100–3999), runs the `setup` hook once, and launches
+`start.sh` detached with cwd = the session's checkout. Caddy fronts the port at
 `https://<host>:<port+6000>` (the `PREVIEW_URL` in the button). Stop kills the
 script's process group, which kills the instance because `start.sh` `exec`s it.
+
+A warm-pool preview may adopt an already-running container instead. A sandbox
+preview launches `start.sh` inside the sandbox on a pre-published container
+port and uses a separately allocated HTTPS route in 20000–27999, so the
+3100–3999 and port+6000 rules are host-specific.
 
 `start.sh` is deliberately paranoid: the environment it inherits is the
 calling server's production env (ports, agent toggles, secrets), so it
@@ -60,51 +65,133 @@ the checkout the preview ran from; it is disposable and must stay gitignored.
 ## What a dev instance does NOT cover
 
 Live integrations are out of scope by design. A dev instance has no Slack,
-Linear, Plain, Stripe, Grafana, or GitHub agents, receives no webhooks, runs
-no cron automations, and never adopts or spawns detached engine servers. You
-cannot use it to test "did my change fix the Slack agent" end-to-end — that
-class of change is verified by tests plus a real deploy. Engine runs (actually
-chatting inside the dev instance) depend on engine credentials and are best
-treated as untested from a preview.
+Linear, Plain, Stripe, Grafana, or GitHub agents, receives no webhooks, and runs
+no cron automations. It does not adopt or resume detached run hosts left by an
+earlier process. The current `.agents/start.sh` disables the executor but does
+not set `OPENSESSION_PI_DETACH=0`, so Pi turns may still attempt a transient
+detached run host and fall back in-process if launch is unavailable.
 
-## Deploying your change: `deploy_self` and the canary
+You cannot use a dev instance to test "did my change fix the Slack agent"
+end-to-end. Verify that class of change with tests plus a real deploy. Engine
+runs depend on engine credentials and are best treated as untested from a
+preview.
 
-The complement of previews is the `opensession-self-deploy` in-process MCP
-server (interactive sessions only, never automations, never dev instances):
-`deploy_self({ sha?, confirm: true })` launches `deploy/self-deploy.sh` as a
-transient system unit — so the sequence survives the restart it triggers —
-which fetches, fast-forwards the checkout (ff-only; aborts loudly on a dirty
-or diverged tree), records the pre-deploy HEAD as a last-known-good pin,
-restarts the service, and health-gates the result (3 consecutive `/api/health`
-successes from the same `bootId`). On failure it rolls back to the pin —
-rewriting the tree only when it is clean AND `OPENSESSION_DEPLOY_ALLOW_RESET=1`
-is set (meant for a dedicated deploy-only checkout; on a live shared checkout
-it instead records `rollback-needed` and leaves the tree for a human).
-`deploy_status({})` reads the pin, the last result, and the watchdog window.
+## Deploying a source change
 
-Prerequisites — **your own remote first**: self-sessions commit and push to
-`origin`, and `deploy_self` fast-forwards from `origin/main`. If your checkout
-was cloned straight from `tellahq/opensession`, every push is rejected (you
-can't write to our upstream) and, after your first local commit, ff-only
-deploys abort permanently because your history has diverged from ours. Clone
-your **fork** (keep `tellahq/opensession` as an `upstream` remote to pull our
-updates), and in worktree mode set the self repo's `ghRepo` in your config to
-the fork so the PR flow targets it. Run `opensession service install` once as
-an administrator; it installs the fixed run-host helper and narrowly scoped
-service-restart grants used by self-deploy.
+A system-scope source installation bootstrapped by `deploy/deploy.sh`, including
+Tella's live instance, has two immutable-release rollout paths. Both deploy one
+release containing the gateway, session kernel, and executor. “Light” and
+“full” describe whether root-owned installation artifacts are refreshed, not
+which runtime process restarts. A plain source service installed directly from a
+checkout still follows
+[the checkout watcher/restart behavior](setup/install.md#10-frontend-rebuilds-vs-restart)
+until an operator deliberately adopts the immutable-release deploy path.
 
-Staying current is one command: **`opensession update`** detects the fork
-topology (origin = your fork + an upstream remote), fetches upstream, merges
-it into your branch (an honest merge commit — never a rebase; conflicts abort
-cleanly back to your tree), pushes the result to your fork, reinstalls deps,
-and restarts through the same health-gated deploy path as `deploy_self` — the
-pre-update commit becomes the rollback pin, so an upstream release that
-doesn't come up healthy on your instance rolls back under the same rules.
-`opensession update --check` previews what it would pull without changing
-anything. The optional watchdog —
-`deploy/systemd/opensession-watchdog.{service,timer}` — probes health every
-60s but only ever acts inside a 15-minute window after a self-deploy restart,
-after 3 consecutive failures, at most once per deploy. Install it with:
+| Path | Use it for | Entry point |
+| --- | --- | --- |
+| Standard (light) | Ordinary frontend, backend, protocol, and dependency changes that can reuse the installed units, credentials, and helper | interactive MCP `deploy_self({ sha, confirm: true })` |
+| Full (root) | Changes to the live deploy controllers, `opensession*.service`, credential installers, the fixed run-host helper/installer, or systemd artifacts managed by the root script | `sudo deploy/deploy.sh <sha>` |
+
+A docs-only commit does not need a live rollout. A frontend-only commit does.
+The production frontend watcher follows the pinned release worktree, not the
+shared WIP checkout, so editing `src/frontend` in the shared checkout cannot
+change the live bundle.
+
+Do not substitute `systemctl restart opensession`. That restarts the currently
+pinned release, does not pick up the new commit, and bypasses the coordinated
+executor/kernel/gateway rollout.
+
+### Standard (light) deploy
+
+The `opensession-self-deploy` in-process MCP server is available only to
+interactive admin sessions, never automations or dev instances.
+`deploy_self({ sha?, confirm: true })` launches the controller from the running
+release as a transient system unit so it survives the gateway restart.
+
+The controller:
+
+1. fetches `origin` and resolves the requested target (`origin/main` by
+   default),
+2. requires the currently pinned commit to be an ancestor of the target, so a
+   stale or parallel release cannot silently replace it,
+3. creates or reuses a detached worktree under the deploy state directory,
+   runs `bun install --frozen-lockfile` there, and verifies tracked files stayed
+   unchanged,
+4. records the current release as last-known-good, stops the gateway, and
+   atomically repoints `current` to the prepared release,
+5. restarts and readiness-checks the installed executor, runs the offline
+   session migration, restarts and checks the session kernel, then restarts the
+   gateway, and
+6. requires three consecutive health responses from the same `bootId`.
+
+The shared checkout is only the Git object source. Its branch, index, staged
+files, and unrelated dirty edits are not changed by deployment. Detached engine
+turns survive in their transient run-host units and sessions reattach after the
+UI blip.
+
+This path deliberately does **not** copy root-owned units, credentials, helper
+executables, sudo policy, or systemd drop-ins from a writable checkout. If the
+target relies on a changed installed artifact, use the full deploy instead.
+
+On readiness or health failure, the controller switches the `current` pointer
+back to last-known-good and brings all three services back. Rollback is refused
+when the old release cannot read the durable session-kernel schema floor.
+`deploy_status({})` reports the pin, latest result, and deploy-marker age. The
+optional watchdog can act once during the first 15 minutes after a deploy; the
+current `deploy_status` `OPEN` label itself does not expire at that cutoff.
+
+### Full (root) deploy
+
+`sudo deploy/deploy.sh <sha>` uses the same immutable release preparation and
+pointer switch, then also installs or synchronizes the privileged credentials,
+fixed run-host helper and sudo policy, three systemd units, gateway resource
+drop-in, user slice, and Caddy boot drop-in. It waits up to
+`MAX_DRAIN_WAIT` (480 seconds by default) for gateway activity to drain before
+the cut-over, restarts and health-checks the executor and kernel before the
+gateway, and switches back to the previous release if the rollout fails.
+
+The root path also requires the current release to be an ancestor of the
+target. `OPENSESSION_DEPLOY_ALLOW_DIVERGED=1` is an explicit operator override
+for a deliberate history-line change, not a normal agent workflow. It manages
+only the artifacts named in `deploy/deploy.sh`; watchdog units, sandbox images,
+and other operator-managed assets keep their own rollout procedures.
+
+### Prerequisites and updates
+
+Use **your own remote first**. Self-sessions normally commit and push to
+`origin`, and the default `deploy_self` target is `origin/main`. If the checkout
+was cloned directly from an upstream repository you cannot write, clone your
+fork instead (keep the original as `upstream`) and set the self repo's `ghRepo`
+to the fork. Passing an exact pushed SHA avoids deploying an unintended newer
+`origin/main`.
+
+On Linux/systemd, run `opensession service install --system` once from the
+service user account and allow its sudo prompts. The default command without
+`--system` installs a rootless user service and does not install the fixed
+run-host helper or self-deploy grants.
+
+Staying current is one command: **`opensession update`**. It refuses a dirty
+checkout, detects fork topology (origin = your fork + an upstream remote),
+fetches upstream, and either fast-forwards or creates an honest merge commit.
+It never rebases, and conflicts abort cleanly back to your tree. For a fork it
+attempts to push the result to `origin`; a push failure is only a warning.
+
+For a source checkout, update uses the health-gated self-deploy script only
+when a service is installed, the script exists, and `sudo -n true` succeeds.
+In that path the pre-update commit is the rollback pin. Otherwise an installed
+service receives a plain restart with no rollback pin or health gate.
+`opensession update --check` previews what it would pull without applying it.
+
+The optional watchdog,
+`deploy/systemd/opensession-watchdog.{service,timer}`, probes health every 60s
+but only acts inside a 15-minute window after a self-deploy restart, after 3
+consecutive failures, and at most once per deploy. The checked-in units are
+host-specific templates. Before copying them, replace `User=ubuntu`,
+`OPENSESSION_DEPLOY_STATE`, `OPENSESSION_DEPLOY_CHECKOUT`, `PATH`, and
+`ExecStart` with this installation's service user, state directory, checkout,
+and Bun path.
+
+Install the adjusted units with:
 
 ```bash
 sudo cp deploy/systemd/opensession-watchdog.{service,timer} /etc/systemd/system/

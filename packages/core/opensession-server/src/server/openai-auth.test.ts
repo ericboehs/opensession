@@ -4,14 +4,37 @@ import { tmpdir } from "os";
 import { join } from "path";
 import type { CodexAccount } from "./codex-accounts";
 import {
+  enableOpenaiFastMode,
   buildOpenaiRemoteSeedUpload,
   buildSeededOpenaiAuth,
   supportsOpenaiFastMode,
 } from "./openai-auth";
 
 describe("OpenAI auth", () => {
-  test("does not advertise priority-tier variants on Pi", () => {
-    expect(supportsOpenaiFastMode("pi/openai/gpt-5.6-sol")).toBe(false);
+  test("advertises priority-tier variants for current ChatGPT models", () => {
+    expect(supportsOpenaiFastMode("pi/openai/gpt-5.6-sol")).toBe(true);
+    expect(supportsOpenaiFastMode("openai/gpt-5.6-terra")).toBe(true);
+    expect(supportsOpenaiFastMode("gpt-5.6-luna")).toBe(true);
+    expect(supportsOpenaiFastMode("pi/anthropic/claude-fable-5")).toBe(false);
+  });
+
+  test("adds the priority service tier after Pi's existing payload hook", async () => {
+    const agent = {
+      onPayload: async (payload: unknown): Promise<Record<string, unknown>> => ({
+        ...(payload as Record<string, unknown>),
+        existing_hook: true,
+      }),
+    };
+    const payload = { model: "gpt-5.6-sol", stream: true };
+    enableOpenaiFastMode(agent);
+
+    expect(await agent.onPayload(payload)).toEqual({
+      model: "gpt-5.6-sol",
+      stream: true,
+      existing_hook: true,
+      service_tier: "priority",
+    });
+    expect(payload).toEqual({ model: "gpt-5.6-sol", stream: true });
   });
 
   test("round-trips the projected remote seed without copying host credentials", () => {
@@ -31,7 +54,7 @@ describe("OpenAI auth", () => {
       id: "scoped-api-key",
       name: "Scoped API key",
       kind: "api_key",
-      value: "sk-selected-remote-key",
+      value: "test-selected-remote-key",
       createdAt: "2026-08-20T00:00:00.000Z",
     };
     try {

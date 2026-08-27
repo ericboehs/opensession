@@ -290,10 +290,15 @@ final class Outbox {
         var blocked = Set<String>()
         for item in items {
             if blocked.contains(item.sessionId) { continue }
-            guard item.serverKey == server, !item.failed else {
+            guard item.serverKey == server else {
                 blocked.insert(item.sessionId)
                 continue
             }
+            // A terminally refused item remains visible for Edit/Delete/Retry,
+            // but it must not hold every later follow-up in this conversation.
+            // Retry keeps its original idempotency key and rejoins the next
+            // flush without changing any message that already passed it.
+            if item.failed { continue }
             if let until = backoffUntil[item.sessionId], until > now {
                 blocked.insert(item.sessionId)
                 continue

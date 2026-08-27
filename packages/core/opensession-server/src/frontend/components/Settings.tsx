@@ -41,9 +41,12 @@ import {
 } from "./icons";
 import { MyAccountsPanel } from "./MyAccounts";
 import { AuditPanel } from "./settings/AuditPanel";
+import { AuthenticationPanel } from "./settings/AuthenticationPanel";
 import { DeploysPanel } from "./settings/DeploysPanel";
+import { DownloadsPanel } from "./settings/DownloadsPanel";
 import { GeneralPanel } from "./settings/GeneralPanel";
 import { IntegrationsPanel } from "./settings/IntegrationsPanel";
+import { IngressPanel } from "./settings/IngressPanel";
 import { LibraryPanel } from "./settings/LibraryPanel";
 import { MembersPanel } from "./settings/MembersPanel";
 import { MemoryPanel } from "./settings/MemoryPanel";
@@ -57,7 +60,6 @@ import { ReposPanel } from "./settings/ReposPanel";
 import { SandboxesPanel } from "./settings/SandboxesPanel";
 import { StoragePanel } from "./settings/StoragePanel";
 import { RunnersPanel } from "./settings/RunnersPanel";
-import { ReliabilityPanel } from "./settings/ReliabilityPanel";
 import { SettingsAccountCard, SettingsAccountFooter } from "./SettingsAccount";
 import { SetupPanel } from "./Setup";
 import type { Workspace } from "../lib/types";
@@ -201,7 +203,8 @@ const sx = stylex.create({
 		borderColor: "transparent",
 		backgroundColor: "var(--bg-raised)",
 		paddingLeft: "44px",
-	},
+
+		cornerShape: "var(--cs)",},
 	searchInputDesktop: { paddingLeft: "32px" },
 	searchInputValueSheet: { paddingRight: "44px" },
 	searchInputValueDesktop: { paddingRight: "32px" },
@@ -226,13 +229,15 @@ const sx = stylex.create({
 		width: "32px",
 		height: "32px",
 		borderRadius: "calc(infinity * 1px)",
-	},
+
+		cornerShape: "var(--cs)",},
 	clearSearchDesktop: {
 		right: "4px",
 		width: "24px",
 		height: "24px",
 		borderRadius: "calc(7px * var(--rf))",
-	},
+
+		cornerShape: "var(--cs)",},
 	pageEase: {
 		transitionProperty: "transform",
 		transitionDuration: "var(--dur-lg)",
@@ -462,16 +467,18 @@ function SectionPanel({
 			)}
 			{section === "repos" && <ReposPanel />}
 			{section === "members" && <MembersPanel />}
+			{section === "authentication" && <AuthenticationPanel />}
 			{section === "library" && <LibraryPanel />}
 			{section === "integrations" && <IntegrationsPanel />}
 			{section === "audit" && <AuditPanel />}
+			{section === "downloads" && <DownloadsPanel />}
 			{section === "providers" && <ProvidersPanel workspace={workspace} />}
 			{section === "sandboxes" && <SandboxesPanel />}
 			{section === "runners" && <RunnersPanel />}
-			{section === "reliability" && <ReliabilityPanel />}
 			{section === "connections" && <Connections />}
 			{section === "myAccounts" && <MyAccountsPanel />}
 			{section === "memory" && <MemoryPanel />}
+			{section === "ingress" && <IngressPanel />}
 			{section === "storage" && <StoragePanel />}
 			{section === "prewarming" && <PrewarmingPanel />}
 			{section === "papercuts" && <PapercutsPanel />}

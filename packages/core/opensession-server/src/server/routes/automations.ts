@@ -181,7 +181,7 @@ export async function handleAutomationsRoutes(
 		const { deleteScheduledPrompt } = await import(
 			"../../server/scheduled-prompts"
 		);
-		return deleteScheduledPrompt(schedDelMatch[1])
+		return await deleteScheduledPrompt(schedDelMatch[1])
 			? Response.json({ ok: true })
 			: Response.json({ error: "Not found" }, { status: 404 });
 	}

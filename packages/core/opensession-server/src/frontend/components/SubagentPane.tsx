@@ -114,7 +114,8 @@ const sx = stylex.create({
 	minW0: {
 			minWidth: "0"
 	},
-	liveDot: { width: "7px", height: "7px", flexShrink: 0, borderRadius: "calc(infinity * 1px)", backgroundColor: "var(--green)", animationName: pulse, animationDuration: "1.6s", animationTimingFunction: "ease-in-out", animationIterationCount: "infinite", "@media (prefers-reduced-motion: reduce)": { animationDuration: "1.6s !important", animationIterationCount: "infinite !important" } },
+	liveDot: { width: "7px", height: "7px", flexShrink: 0, borderRadius: "calc(infinity * 1px)", backgroundColor: "var(--green)", animationName: pulse, animationDuration: "1.6s", animationTimingFunction: "ease-in-out", animationIterationCount: "infinite", "@media (prefers-reduced-motion: reduce)": { animationDuration: "1.6s !important", animationIterationCount: "infinite !important" },
+		cornerShape: "var(--cs)",},
 	px35: { paddingInline: "14px" },
 	py3: { paddingBlock: "12px" },
 

@@ -7,8 +7,8 @@
  * by tracing interactive-mcp.ts, automations.ts, handlers.ts and goal-runner.ts
  * by hand. scripts/gen-catalogs.ts walks this table, talks tools/list to each
  * built server, and writes docs/generated/mcp-tools.md; a test regenerates the
- * catalog and fails when the committed file is stale, and a second test asserts
- * this table still matches the live wiring in interactive-mcp.ts.
+ * catalog and fails when the committed file is stale, and wiring tests assert
+ * this table still matches the interactive and automation server sets.
  *
  * Two rules keep it honest:
  *
@@ -18,9 +18,8 @@
  *    generator (tools/list only), so the placeholder callbacks throw.
  *  - `runClasses` and `condition` are DECLARED, because "which runs get this
  *    server" lives in call sites, not in the server object.
- *    mcp-catalog.test.ts checks the declaration against
- *    interactiveMcpServers(), so a new interactive server fails the suite until
- *    it is listed here.
+ *    mcp-catalog.test.ts checks the declarations against the interactive and
+ *    automation wiring, so a new server in either set fails until it is listed.
  *
  * This module deliberately does NOT import interactive-mcp.ts: that module
  * starts the run-rpc socket server as a load-time side effect, which a doc
@@ -49,6 +48,7 @@ import { createTodosMcpServer } from "../agents/slack/todos-tools";
 import { createTurnMcpServer } from "../agents/slack/turn-tools";
 import { createWalkthroughMcpServer } from "../agents/slack/walkthrough-tools";
 import { createWorkflowsMcpServer } from "../agents/slack/workflow-tools";
+import { createAuditMcpServer } from "./audit-mcp";
 import { createHealthMcpServer } from "./health-mcp";
 import { createRunnersMcpServer } from "./runners-mcp";
 import { createPortalsMcpServer } from "./portals-mcp";
@@ -301,7 +301,7 @@ export const MCP_SERVER_CATALOG: McpServerCatalogEntry[] = [
     source: "packages/core/opensession-server/src/agents/slack/ask-tools.ts",
     wiring: ["packages/core/opensession-server/src/server/interactive-mcp.ts", "packages/core/opensession-server/src/agents/slack/handlers.ts"],
     runClasses: ["interactive", "slack"],
-    condition: "Needs a session id. claude-runner strips it so Claude keeps its native AskUserQuestion.",
+    condition: "Needs a session id.",
     build: () => createAskUserMcpServer({ ask: () => unused("ask") }),
   },
   {
@@ -345,7 +345,7 @@ export const MCP_SERVER_CATALOG: McpServerCatalogEntry[] = [
     wiring: ["packages/core/opensession-server/src/server/interactive-mcp.ts", "packages/core/opensession-server/src/server/automations.ts"],
     runClasses: ["interactive", "automation"],
     condition: "Dropped when the session's repo opted out (Settings → Papercuts).",
-    note: "One of the two deliberate automation exceptions in docs/security-model.md: append-only, reads nothing sensitive, no control surface.",
+    note: "Automation-safe friction log: append-only, reads nothing sensitive, and exposes no control surface.",
     build: () =>
       createPapercutsMcpServer({
         sessionId: SESSION_ID,
@@ -384,6 +384,15 @@ export const MCP_SERVER_CATALOG: McpServerCatalogEntry[] = [
     runClasses: ["automation"],
     note: "The only way a monitor can see its own host: loopback fetches are refused and unattended ask runs have no shell. One argument-less read, no writes.",
     build: () => createHealthMcpServer(),
+  },
+  {
+    name: "opensession-audit",
+    summary: INTERNAL_MCP_CAPABILITIES["opensession-audit"].summary,
+    source: "packages/core/opensession-server/src/server/audit-mcp.ts",
+    wiring: ["packages/core/opensession-server/src/server/automations.ts"],
+    runClasses: ["automation"],
+    note: "One optional UTC date selects a rolled-up daily digest; it exposes no raw audit files or writes.",
+    build: () => createAuditMcpServer(),
   },
   {
     name: "opensession-self",

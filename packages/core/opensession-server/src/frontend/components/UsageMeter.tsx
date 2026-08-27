@@ -80,7 +80,8 @@ const sx = stylex.create({
     outlineStyle: "none",
     transitionProperty: "color, background-color",
     ":hover": { "@media (hover: hover)": { backgroundColor: "var(--hover)", color: "var(--text)" } },
-  },
+
+		cornerShape: "var(--cs)",},
 });
 
 /**

@@ -1,5 +1,12 @@
 import { repoLabel } from "../lib/repo-label";
-import React, { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
+import React, {
+	useEffect,
+	useEffectEvent,
+	useId,
+	useLayoutEffect,
+	useRef,
+	useState,
+} from "react";
 import { createPortal } from "react-dom";
 import type { FileMention } from "../lib/api";
 import { UserAvatar } from "./UserAvatar";
@@ -236,6 +243,8 @@ interface Options {
 interface FileMentions {
   /** Ref for the wrapper the popup is measured against. */
   inputWrapRef: React.RefObject<HTMLDivElement | null>;
+  /** Compiler-safe callback ref for hosts that also own the wrapper node. */
+  setInputWrap: (node: HTMLDivElement | null) => void;
   /** The suggestion popup (portaled to <body>), or null when closed. */
   popup: React.ReactNode;
   /** True while the popup is open (suggestions visible). */
@@ -287,14 +296,19 @@ export function useFileMentions({ value, onChange, textareaRef, mentionFetch, pa
   // them directly would re-run the fetch effect on every render — which loops
   // (fetch → setSuggestions → render → new closure → fetch) while open.
   const mentionFetchRef = useRef(mentionFetch);
-  mentionFetchRef.current = mentionFetch;
   const paletteFetchRef = useRef(paletteFetch);
-  paletteFetchRef.current = paletteFetch;
   const skillsFetchRef = useRef(skillsFetch);
-  skillsFetchRef.current = skillsFetch;
   const actionsRef = useRef(actions);
-  actionsRef.current = actions;
+  useLayoutEffect(() => {
+    mentionFetchRef.current = mentionFetch;
+    paletteFetchRef.current = paletteFetch;
+    skillsFetchRef.current = skillsFetch;
+    actionsRef.current = actions;
+  });
   const inputWrapRef = useRef<HTMLDivElement>(null);
+  const setInputWrap = (node: HTMLDivElement | null) => {
+    inputWrapRef.current = node;
+  };
   const popupRef = useRef<HTMLDivElement>(null);
   // Fixed viewport coordinates for the portaled popup, measured from the
   // wrapper. Null until the first measure after opening.
@@ -310,7 +324,7 @@ export function useFileMentions({ value, onChange, textareaRef, mentionFetch, pa
       el.focus();
       el.setSelectionRange(pos, pos);
     }
-  }, [value]);
+  }, [value, textareaRef]);
 
   // Every state write here keeps the previous value when nothing moved. sync()
   // runs several times per keystroke by design (the value effect below, plus
@@ -356,14 +370,15 @@ export function useFileMentions({ value, onChange, textareaRef, mentionFetch, pa
   // Controlled textarea updates are not guaranteed to commit before a caller's
   // queued microtask. Re-sync from the committed value so soft keyboards,
   // dictation and the toolbar's programmatic "@" insertion all open reliably.
+  const runSync = useEffectEvent(() => sync());
   useEffect(() => {
-    sync();
+    runSync();
   }, [value]);
 
   // People are already in the page-level directory cache, so paint them before
   // the file/tool/session request resolves. A bare "@" should feel like opening
   // a palette, not like waiting for a repository search.
-  useEffect(() => {
+  const loadSuggestions = useEffectEvent(() => {
     if (!mention) {
       clearSuggestions();
       return;
@@ -416,6 +431,9 @@ export function useFileMentions({ value, onChange, textareaRef, mentionFetch, pa
         })
         .catch(() => {});
     }
+  });
+  useEffect(() => {
+    loadSuggestions();
   }, [mention?.query, mention?.start, mention?.kind, people, currentUser]);
 
   const open = !!mention && suggestions.length > 0;
@@ -491,7 +509,7 @@ export function useFileMentions({ value, onChange, textareaRef, mentionFetch, pa
       window.removeEventListener("resize", measure);
       window.removeEventListener("scroll", measure, true);
     };
-  }, [open, suggestions.length, mention?.kind, mention?.start, value]);
+  }, [open, suggestions.length, mention?.kind, mention?.start, value, textareaRef]);
 
   useEffect(() => {
     if (!open) return;
@@ -700,5 +718,14 @@ export function useFileMentions({ value, onChange, textareaRef, mentionFetch, pa
       : {}),
   };
 
-  return { inputWrapRef, popup, open, inputProps, sync, handleKeyDown, close };
+  return {
+    inputWrapRef,
+    setInputWrap,
+    popup,
+    open,
+    inputProps,
+    sync,
+    handleKeyDown,
+    close,
+  };
 }

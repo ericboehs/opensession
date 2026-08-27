@@ -91,7 +91,7 @@ describe("parseReviewOutput", () => {
         },
       ],
     });
-    expect(out?.confidence).toBeUndefined();
+    expect(out?.confidence).toBe(2);
   });
 
   test("accepts a clean native Codex verdict without findings", () => {
@@ -106,6 +106,7 @@ describe("parseReviewOutput", () => {
     const out = parseReviewOutput(clean, "/home/ubuntu/worktrees/pr-review");
     expect(isCompleteReviewOutput(out)).toBe(true);
     expect(out?.verdict).toBe("approve");
+    expect(out?.confidence).toBe(5);
     expect(out?.findings).toEqual([]);
   });
 
@@ -115,11 +116,17 @@ describe("parseReviewOutput", () => {
     expect(out?.findings).toEqual([]);
   });
 
-  test("drops out-of-range confidence instead of rendering it on the 1-5 scale", () => {
-    expect(parseReviewOutput(solShaped)?.confidence).toBeUndefined();
+  test("derives merge safety when confidence is missing or uses another scale", () => {
+    expect(parseReviewOutput(solShaped)?.confidence).toBe(2);
     const percent = canonical.replace('"confidence": 2', '"confidence": 98');
-    expect(parseReviewOutput(percent)?.confidence).toBeUndefined();
+    expect(parseReviewOutput(percent)?.confidence).toBe(2);
     expect(parseReviewOutput(percent)?.findings).toHaveLength(1);
+
+    const advisory = canonical
+      .replace('"verdict": "request_changes"', '"verdict": "approve"')
+      .replace('"confidence": 2,', "")
+      .replace('"severity": "P1"', '"severity": "P3"');
+    expect(parseReviewOutput(advisory)?.confidence).toBe(4);
   });
 
   test("canonical names win over aliases when both are present", () => {

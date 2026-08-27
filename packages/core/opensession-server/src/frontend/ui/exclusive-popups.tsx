@@ -57,10 +57,11 @@ export function ExclusivePopupProvider({
 
 export function useExclusivePopup(entry: PopupEntry) {
 	const group = React.useContext(PopupGroupContext);
+	const deactivate = group?.deactivate;
 
 	React.useEffect(
-		() => () => group?.deactivate(entry),
-		[entry, group?.deactivate],
+		() => () => deactivate?.(entry),
+		[entry, deactivate],
 	);
 
 	return group;

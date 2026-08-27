@@ -56,6 +56,7 @@ import { handleSetupRoutes } from "./setup";
 import { handleOs1UpdateRoutes } from "./os1-update";
 import { handleInstanceSettingsRoutes } from "./instance-settings";
 import { handleLiveActivityRoutes } from "./live-activities";
+import { handleIngressRoutes } from "./ingress";
 
 export type { RouteContext, RouteHandler } from "./context";
 
@@ -72,6 +73,7 @@ export const routeHandlers: RouteHandler[] = [
 	handleSystemRoutes,
 	handleOs1UpdateRoutes,
 	handleLiveActivityRoutes,
+	handleIngressRoutes,
 	// Before the generic session routes: /api/sessions/:id/assets* and
 	// /api/sessions/:id/notes are inside their path family and must not be
 	// swallowed by broader matches.

@@ -1,15 +1,12 @@
 /**
  * Re-shoot the landing page's product poster.
  *
- * The preview iframe carries the whole app bundle, so it is a second or two
- * before there is anything to look at. The poster is that first frame, painted
- * from a file instead: the page shows the product immediately and swaps in the
- * live app underneath it when it is ready.
+ * The landing page paints these local files immediately, then fades its
+ * deterministic fixture app over the desktop poster when that app is ready.
+ * This script turns the same isolated fixture into the desktop and phone
+ * images shipped by the site, keeping the first frame aligned with the demo.
  *
- * It is a picture of the real preview, taken at the width the preview lays the
- * app out at (`desktopDemoWidth` in packages/clients/website/ProductDemo.tsx) and the aspect the
- * desktop window has, so the swap lands on the same pixels. Re-run it whenever
- * the demo's fixtures or the app's chrome change:
+ * Re-run it whenever the demo's fixtures or the app's chrome change:
  *
  *   bun run website:build && bun scripts/capture-demo-poster.ts
  *
@@ -28,7 +25,7 @@ const ROOT = join(import.meta.dir, "..");
 const WEBSITE = join(ROOT, "packages", "clients", "website");
 
 /**
- * The app's layout width in the preview. Keep in step with ProductDemo.tsx.
+ * The app's layout width used to produce the desktop poster.
  *
  * It is a zoom, not a taste. The window stands for a 14-inch MacBook Pro's
  * screen, which is 1512pt across, so laying the app out at 1260 draws its UI

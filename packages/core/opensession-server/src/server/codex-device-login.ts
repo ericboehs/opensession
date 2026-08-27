@@ -149,9 +149,9 @@ export function startDeviceLogin(
   };
   logins.set(l.id, l);
 
-  // The installer leaves codex off the critical path (it is only needed for
-  // this flow), so a missing binary is the expected first failure here. Say
-  // what to run rather than surfacing ENOENT from spawn.
+  // The installer adds Codex by default, but CLI installs are best-effort and
+  // can be opted out of. Keep a missing binary actionable rather than surfacing
+  // ENOENT from spawn.
   if (!Bun.which("codex")) {
     finish(
       l,

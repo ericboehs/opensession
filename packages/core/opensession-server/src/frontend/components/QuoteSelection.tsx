@@ -1,5 +1,5 @@
 import React, {
-	
+	useCallback,
 	useEffect,
 	useLayoutEffect,
 	useRef,
@@ -147,13 +147,13 @@ export function QuoteSelection({
 	const [offer, setOffer] = useState<Offer | null>(null);
 	const [placement, setPlacement] = useState<OfferPlacement | null>(null);
 
-	const clear = () => {
+	const clear = useCallback(() => {
 		window.getSelection()?.removeAllRanges();
 		stagedRef.current = null;
 		onClear();
-	};
+	}, [onClear]);
 
-	const capture = () => {
+	const capture = useCallback(() => {
 		const container = containerRef.current;
 		if (!container || disabled) return;
 		const selection = window.getSelection();
@@ -177,7 +177,7 @@ export function QuoteSelection({
 		if (!boxes) return;
 		offerRangeRef.current = range.cloneRange();
 		setOffer({ text, ...boxes });
-	};
+	}, [containerRef, disabled]);
 
 	const add = () => {
 		const range = offerRangeRef.current;

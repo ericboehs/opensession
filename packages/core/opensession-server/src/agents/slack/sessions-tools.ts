@@ -541,7 +541,7 @@ export async function taskStatusImpl(
     }
   } catch {}
   if (!evidenced && s.prUrl) parts.push(`*PR:* ${s.prState || ""} ${s.prUrl}`.trim());
-  const tail = deps.control.transcriptTail(args.taskId, args.transcript_lines ?? 12);
+  const tail = await deps.control.transcriptTail(args.taskId, args.transcript_lines ?? 12);
   parts.push(`*Recent transcript:*\n${fmtTranscriptTail(tail)}`);
   return parts.join("\n");
 }
@@ -622,7 +622,7 @@ export function createSessionsMcpServer(
               `\nUse answer_session_question to respond.`
           );
         }
-        const tail = ctrl.transcriptTail(args.id, args.transcript_lines ?? 12);
+        const tail = await ctrl.transcriptTail(args.id, args.transcript_lines ?? 12);
         parts.push(`\n*Recent transcript:*\n${fmtTranscriptTail(tail)}`);
         return text(parts.join("\n"));
       }
@@ -680,14 +680,14 @@ export function createSessionsMcpServer(
           const current = getSessionControl().getSession(sessionId);
           const result =
             args.kind === "timer"
-              ? registerTimerAgentWait({
+              ? await registerTimerAgentWait({
                   sessionId,
                   user: ctx.createdBy,
                   seconds: args.seconds ?? Number.NaN,
                   prompt: args.prompt,
                   waitId,
                 })
-              : registerPrChecksAgentWait({
+              : await registerPrChecksAgentWait({
                   sessionId,
                   user: ctx.createdBy,
                   repo: args.repo || current?.repo || "",
@@ -722,7 +722,7 @@ export function createSessionsMcpServer(
         async () => {
           const sessionId = ctx.currentSessionId;
           if (!sessionId) return text("This run has no Open Session id.");
-          const wait = getAgentWait(sessionId);
+          const wait = await getAgentWait(sessionId);
           if (!wait) return text("No background wait is registered for this session.");
           if (wait.kind === "timer")
             return text(`Timer wait \`${wait.id}\` wakes at ${new Date(wait.dueAt).toISOString()}.`);
@@ -738,7 +738,7 @@ export function createSessionsMcpServer(
         async () => {
           const sessionId = ctx.currentSessionId;
           if (!sessionId) return text("This run has no Open Session id.");
-          const cancelled = cancelAgentWait(sessionId);
+          const cancelled = await cancelAgentWait(sessionId);
           if (cancelled)
             audit({ msg: "agent_wait_cancelled", session_id: sessionId });
           return text(
@@ -937,7 +937,10 @@ export function createSessionsMcpServer(
             .string()
             .optional()
             .describe("Optional fallback branch for code mode. When the worker can't share the parent workspace's worktree, an omitted branch is generated from the prompt. Ignored for ask."),
-          model: z.string().optional().describe("Optional model id (e.g. 'claude-opus-5')."),
+          model: z
+            .string()
+            .optional()
+            .describe("Optional model id or unambiguous visible slug (e.g. 'claude-opus-5' or 'ox-alpha')."),
           mcpServers: z
             .array(z.string())
             .optional()
@@ -1025,7 +1028,7 @@ export function createSessionsMcpServer(
       ),
       tool(
         "migrate_session_engine",
-        "Migrate an existing session onto the Pi engine by flipping its model to an pi/* id (e.g. pi/anthropic/claude-sonnet-5). Does NOT start a run: the session's NEXT prompt builds a transcript handoff from its claude/codex history and continues on a fresh Pi session — file, workspace, branch, title and UI history all stay. Refuses automation-owned sessions (the pi engine hard-gates automations off) and sessions that are mid-run.",
+        "Migrate an existing session onto the Pi engine by flipping its model to a pi/* id (e.g. pi/anthropic/claude-sonnet-5). Does NOT start a run: the session's NEXT prompt builds a transcript handoff from its claude/codex history and continues on a fresh Pi session — file, workspace, branch, title and UI history all stay. Automation-owned sessions may migrate to Pi but not to a non-Pi engine; sessions with an in-flight run are refused.",
         {
           sessionId: z.string().describe("The opensession session id to migrate, e.g. 'bks-…'."),
           model: z
@@ -1044,7 +1047,7 @@ export function createSessionsMcpServer(
               );
             }
           } catch {}
-          const res = migrateSessionEngine(args.sessionId, args.model, ctx.createdBy);
+          const res = await migrateSessionEngine(args.sessionId, args.model, ctx.createdBy);
           if (!res.ok) return text(res.error);
           return text(
             `Migrated \`${res.sessionId}\` to ${res.to}` +
@@ -1072,7 +1075,7 @@ export function createSessionsMcpServer(
           prompt: z.string().describe("Self-contained task prompt: scope, relevant files, constraints, acceptance criteria, and what to report."),
           repo: z.string().optional().describe("Registered repo id. Defaults to this session's repo."),
           branch: z.string().optional().describe("Branch for code mode when the child can't share this session's worktree (standalone or different repo)."),
-          model: z.string().optional().describe("Optional model id (e.g. 'gpt-5.6-sol' for a Codex worker, or a Claude model id)."),
+          model: z.string().optional().describe("Optional model id or unambiguous visible slug (e.g. 'gpt-5.6-sol', 'claude-opus-5', or 'ox-alpha')."),
           mode: z.enum(["ask", "code", "scratch"]).optional().describe("'code' (default) can edit files / open PRs; 'ask' is read-only."),
           sandbox: z.union([z.boolean(), z.enum(["docker", "daytona", "e2b", "box", "modal", "microvm", "lambda-microvm"])]).optional().describe("Run the child in an isolated sandbox: true = the server's default provider, or an explicit configured provider id."),
         },

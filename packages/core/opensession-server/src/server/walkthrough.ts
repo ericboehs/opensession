@@ -31,7 +31,7 @@ import type {
 import { UPLOADS_DIR } from "./uploads";
 import { uploadUserAttachment } from "./gh-attachments";
 import { findSession, touchNativeSession } from "./session-cache";
-import { transcriptStore } from "./transcript-store";
+import { transcript } from "./actor-transcript";
 import { resolvePrTarget } from "./session-repos";
 import { prHostFor } from "./pr-host";
 import { getRepo } from "./worktree";
@@ -114,9 +114,9 @@ function stageMedia(
  * call the store hasn't flushed yet — and leaves the viewer's fallback in
  * charge, exactly as before.
  */
-function publishingEntryId(sessionId: string): string | undefined {
+async function publishingEntryId(sessionId: string): Promise<string | undefined> {
   try {
-    const { entries } = transcriptStore().readTail(sessionId, 60);
+    const { entries } = await transcript.readTail(sessionId, 60);
     for (let i = entries.length - 1; i >= 0; i--) {
       const e = entries[i];
       if (
@@ -141,7 +141,7 @@ export async function publishWalkthrough(
 }> {
   const summary = (input.summary || "").trim();
   if (!summary) throw new Error("summary is required");
-  const publishedEntryId = publishingEntryId(sessionId);
+  const publishedEntryId = await publishingEntryId(sessionId);
   const walkthrough: SessionWalkthrough = {
     summary,
     publishedAt: new Date().toISOString(),

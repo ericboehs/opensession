@@ -32,14 +32,13 @@ import { randomBytes, timingSafeEqual } from "crypto";
 import { audit } from "./audit";
 import { configuredIdentity } from "./config";
 import { githubUserAuthActive } from "./github-auth";
-import { homeDir, isNativeSessionId, OPENSESSION_SESSIONS_DIR } from "./paths";
+import { isNativeSessionId, OPENSESSION_SESSIONS_DIR, stateDir } from "./paths";
 import { writeJsonAtomic } from "./shared/atomic-write";
 import { githubLoginFor } from "./shared/user-mappings";
 
-const HOME = homeDir();
 /** Env override is for tests; read once at first use (the map loads lazily). */
 function sessionsPath(): string {
-  return process.env.OPENSESSION_WEB_SESSIONS_STORE || `${HOME}/.opensession-web-sessions.json`;
+  return process.env.OPENSESSION_WEB_SESSIONS_STORE || stateDir("web-sessions.json");
 }
 const COOKIE_NAME = "opensession_auth";
 const TTL_MS = 90 * 24 * 60 * 60 * 1000; // sliding

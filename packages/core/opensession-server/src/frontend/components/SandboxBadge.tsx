@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { Popover } from "../ui/popover";
 import {
 	fetchSessionSandbox,
@@ -123,7 +123,8 @@ const sx = stylex.create({
 			whiteSpace: "pre-wrap"
 	},
   leadingRelaxed: { lineHeight: "var(--leading-relaxed)" },
-  dot: { width: "8px", height: "8px", borderRadius: "50%" },
+  dot: { width: "8px", height: "8px", borderRadius: "50%",
+		cornerShape: "var(--cs)",},
   bgGreen: { backgroundColor: "var(--green)" },
   bgYellow: { backgroundColor: "var(--yellow)" },
   bgFaint: { backgroundColor: "var(--text-faint)" },
@@ -143,7 +144,8 @@ const sx = stylex.create({
     ":focusVisible": { backgroundColor: "var(--hover)", color: "var(--text)" },
     ":active": { scale: 0.96 },
     ":disabled": { pointerEvents: "none", opacity: 0.45 },
-	},
+
+		cornerShape: "var(--cs)",},
 
 	transitionColorBackgroundColorBorderColorScale: {
 		"transitionProperty": "color,background-color,border-color,scale",
@@ -206,14 +208,14 @@ export function SandboxBadge({
 	const [status, setStatus] = useState<SessionSandboxStatus | null>(null);
 	const [working, setWorking] = useState<string | null>(null);
 	const [error, setError] = useState<string | null>(null);
-	const load = async () => {
+	const load = useCallback(async () => {
 		await (async () => {
 setStatus(await fetchSessionSandbox(sessionId));
 			setError(null);
 })().catch(async (cause: any) => {
 setError(cause?.message || "Sandbox status unavailable");
 });
-	};
+	}, [sessionId]);
 
 	useEffect(() => {
 		if (runner) return;

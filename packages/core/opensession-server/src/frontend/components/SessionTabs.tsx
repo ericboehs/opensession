@@ -1,32 +1,42 @@
+import { mergeStylexOverrideClassName } from "../ui/cn";
+import { utilityClassName } from "../ui/cn";
 import React, { useEffect, useRef, useState } from "react";
 import { useShortcutLabel } from "../hooks/useShortcutBindings";
 import { Reorder, useReducedMotion } from "motion/react";
 import type { UnifiedSession } from "../lib/types";
 import { TAB_COLORS, colorHex } from "../lib/tab-colors";
-import { hasDraft, onDraftsChanged } from "../lib/drafts";
-import { Menu, ContextMenu } from "../ui/menu";
+import { Menu, ContextMenu, MENU_ICON } from "../ui/menu";
 import { sessionPath, absoluteLink, copyToClipboard } from "../lib/share-link";
 import { copySessionTranscript } from "../lib/transcript-copy";
 import {
 	IconChevronRight,
+	IconCopy,
+	IconFile,
 	IconHistory,
+	IconLink,
+	IconListCircles,
 	IconPencil,
 	IconPlus,
+	IconSidebarLeft,
+	IconSidebarRight,
+	IconTrash,
 	IconX,
 } from "./icons";
 import { ArchivedSessionItems } from "./ArchivedSessionItems";
+import { DeleteSessionDialog } from "./DeleteSessionDialog";
 import { useIsPhone } from "../hooks/useIsPhone";
 import { UserAvatar } from "./UserAvatar";
 import {
 	PANEL_TAB_DOT,
 	TAB_ACTIONS,
-	TAB_DRAFT,
 	TAB_DROP_SLOT,
 	TAB_FACE,
 	TAB_FACES,
 	TAB_FACES_MORE,
 	TAB_GROUP,
 	TAB_HISTORY,
+	TAB_ITEM,
+	TAB_ITEM_DRAGGING,
 	TAB_NEW,
 	TAB_RENAME,
 	TAB_SCROLL,
@@ -40,12 +50,13 @@ import {
 	tabCloseClass,
 	tabDotClass,
 } from "../lib/session-tab-classes";
-import { cn, mergeStylexClassName, mergeStylexOverrideClassName } from "../ui/cn";
+import { cn } from "../ui/cn";
 import {
 	animateEmptyTabClose,
 	animateEmptyTabOpen,
 } from "./session-tabs/empty-tab-morph";
 import { useTabReorder } from "./session-tabs/useTabReorder";
+import { SessionDraftIndicator } from "./session-tabs/SessionDraftIndicator";
 import { shouldShowTabStrip } from "../lib/split-tabs";
 import * as stylex from "@stylexjs/stylex";
 
@@ -72,27 +83,8 @@ const sx = stylex.create({
 	textFaint: {
 			color: "var(--text-faint)"
 	},
-
-	relative: {
-		"position": "relative"
-	},
-	z1: {
-		"zIndex": "1"
-	},
-	desktopMt11px: {
-		"@media (min-width: 721px)": {
-			"marginTop": "-11px"
-		}
-	},
-	desktopMr35: {
-		"@media (min-width: 721px)": {
-			"marginRight": "14px"
-		}
-	},
-	desktopPr7: {
-		"@media (min-width: 721px)": {
-			"paddingRight": "28px"
-		}
+	textRed: {
+			color: "var(--red)"
 	},
 });
 
@@ -107,7 +99,7 @@ const sx = stylex.create({
  *
  * There is no pinning here anymore (pinning moved to the sidebar). Right-click
  * opens a context menu (rename / copy concise or full transcript / copy link /
- * tab color / close); double-click the title also renames the session. The +
+ * tab color / close / delete); double-click the title also renames the session. The +
  * button starts a new session in this workspace sharing its worktree;
  * right-clicking + offers the other modes (stacked worktree / ask).
  *
@@ -228,6 +220,8 @@ interface Props {
 	onRename: (id: string, title: string) => void;
 	/** Close (archive) a session — the × revealed on hover. */
 	onClose: (session: UnifiedSession) => void;
+	/** Permanently delete a session from its tab's context menu. */
+	onDelete?: (session: UnifiedSession, cleanWorktree: boolean) => void | Promise<void>;
 	/** Un-archive a session from the history menu, back into the strip. */
 	onRestore: (session: UnifiedSession) => void;
 	/** Report a copy action's outcome ("Link copied", …). */
@@ -237,6 +231,46 @@ interface Props {
 type TabMember =
 	| { kind: "session"; id: string; session: UnifiedSession }
 	| { kind: "view"; id: string; view: ViewTab };
+
+function ReorderTabItem({
+	tabKey,
+	nextActive,
+	draggable,
+	dragging,
+	onPointerDown,
+	onDragStart,
+	onDragEnd,
+	onClickCapture,
+	children,
+}: {
+	tabKey: string;
+	nextActive: boolean;
+	draggable: boolean;
+	dragging: boolean;
+	onPointerDown: (key: string, event: React.PointerEvent) => void;
+	onDragStart: (key: string) => void;
+	onDragEnd: (key: string) => void;
+	onClickCapture: (event: React.MouseEvent) => void;
+	children: React.ReactNode;
+}) {
+	return (
+		<Reorder.Item
+			as="div"
+			value={tabKey}
+			data-tab-key={tabKey}
+			data-next-active={nextActive ? "" : undefined}
+			dragListener={draggable}
+			onPointerDown={(event) => onPointerDown(tabKey, event)}
+			onDragStart={() => onDragStart(tabKey)}
+			onDragEnd={() => onDragEnd(tabKey)}
+			whileDrag={{ scale: 1.02, zIndex: 3 }}
+			onClickCapture={onClickCapture}
+			className={dragging ? `${TAB_ITEM} ${TAB_ITEM_DRAGGING}` : TAB_ITEM}
+		>
+			{children}
+		</Reorder.Item>
+	);
+}
 
 /** Apply the edge fade only when the title is genuinely clipped. Keeping this
  * as a DOM attribute avoids rerendering the full tab strip for presentation. */
@@ -291,6 +325,7 @@ export function SessionTabs({
 	morphOrigin,
 	onRename,
 	onClose,
+	onDelete,
 	onRestore,
 	onToast,
 }: Props) {
@@ -299,10 +334,8 @@ export function SessionTabs({
 	const reducedMotion = useReducedMotion();
 	const [editKey, setEditKey] = useState<string | null>(null);
 	const [draft, setDraft] = useState("");
-	// Re-render when a composer draft appears/disappears — tabs check hasDraft()
-	// during render to show the unsent-draft pencil on sibling sessions.
-	const [, setDraftsRev] = useState(0);
-	useEffect(() => onDraftsChanged(() => setDraftsRev((v) => v + 1)), []);
+	const [deleteTarget, setDeleteTarget] = useState<UnifiedSession | null>(null);
+	const [deleting, setDeleting] = useState(false);
 	// On phones the +/history controls ride INSIDE the scroll (see below) so the
 	// tab strip claims the full width instead of losing it to pinned chrome; on
 	// desktop they stay pinned after the last tab. Icons run a touch bigger on
@@ -312,8 +345,18 @@ export function SessionTabs({
 
 	// A lone unsplit tab has nowhere to move. Split bars remain draggable so their
 	// final tab can cross into the other column.
-	const tabDrag = useTabReorder({
-		enabled: !isPhone && (inSplit || tabs.length + viewTabs.length > 1),
+	const tabDragEnabled = !isPhone && (inSplit || tabs.length + viewTabs.length > 1);
+	const {
+		draftOrder,
+		dropSlot,
+		groupRef,
+		handleReorder,
+		handleItemPointerDown,
+		handleItemDragStart,
+		handleItemDragEnd,
+		handleItemClickCapture,
+	} = useTabReorder({
+		enabled: tabDragEnabled,
 		editingId: editKey,
 		onReorder: onReorderTabs,
 		onSplitDrag,
@@ -331,7 +374,7 @@ export function SessionTabs({
 		...tabs.map((session): TabMember => ({ kind: "session", id: session.id, session })),
 		...viewTabs.map((view): TabMember => ({ kind: "view", id: view.id, view })),
 	];
-	const rank = new Map((tabDrag.draftOrder ?? tabOrder).map((id, i) => [id, i] as const));
+	const rank = new Map((draftOrder ?? tabOrder).map((id, i) => [id, i] as const));
 	const orderedMembers = members
 		.map((member, natural) => ({ member, natural }))
 		.sort((a, b) => {
@@ -400,6 +443,20 @@ export function SessionTabs({
 		setEditKey(null);
 	}
 
+	async function deleteSession(cleanWorktree: boolean) {
+		if (!deleteTarget || !onDelete || deleting) return;
+		setDeleting(true);
+		const deleted = await Promise.resolve()
+			.then(() => onDelete(deleteTarget, cleanWorktree))
+			.then(() => true)
+			.catch((error) => {
+				onToast(error instanceof Error ? error.message : "Delete failed");
+				return false;
+			});
+		setDeleting(false);
+		if (deleted) setDeleteTarget(null);
+	}
+
 	// Closed sessions of this workspace, if there are any to offer.
 	const hasHistory = showHistory && archived.length > 0;
 
@@ -421,7 +478,7 @@ export function SessionTabs({
 				render={
 					<button
 						type="button"
-						className={cn(TAB_NEW, mergeStylexClassName("", sx.relative, sx.z1))}
+						className={cn(TAB_NEW, utilityClassName("relative z-[1]"))}
 						aria-label="New session in this workspace"
 						title="New session. Shares this workspace's worktree (right-click for options)"
 						onClick={(event) => {
@@ -473,23 +530,23 @@ export function SessionTabs({
 	);
 
 	return (
-		<div className={cn(TAB_STRIP, !inSplit && mergeStylexClassName("", sx.desktopMt11px))} role="tablist">
+		<div className={cn(TAB_STRIP, !inSplit && utilityClassName("desktop:-mt-[11px]"))} role="tablist">
 			<div className={TAB_SCROLL} ref={scrollRef}>
 				<Reorder.Group
 					as="div"
 					axis="x"
-					ref={tabDrag.groupRef}
+					ref={groupRef}
 					className={TAB_GROUP}
 					values={orderedKeys}
-					onReorder={tabDrag.handleReorder}
+					onReorder={handleReorder}
 				>
 					{/* First child so the tabs sliding over it paint on top. */}
-					{tabDrag.dropSlot && (
+					{dropSlot && (
 						<div
 							className={TAB_DROP_SLOT}
 							style={{
-								left: tabDrag.dropSlot.left,
-								width: tabDrag.dropSlot.width,
+								left: dropSlot.left,
+								width: dropSlot.width,
 							}}
 							aria-hidden="true"
 						/>
@@ -504,7 +561,17 @@ export function SessionTabs({
 						if (member.kind === "view") {
 							const v = member.view;
 							return (
-								<Reorder.Item key={key} {...tabDrag.itemProps(key, nextActive)}>
+								<ReorderTabItem
+								key={key}
+								tabKey={key}
+								nextActive={nextActive}
+								draggable={tabDragEnabled && editKey !== key}
+								dragging={dropSlot?.key === key}
+								onPointerDown={handleItemPointerDown}
+								onDragStart={handleItemDragStart}
+								onDragEnd={handleItemDragEnd}
+								onClickCapture={handleItemClickCapture}
+							>
 									<div
 										role="tab"
 										aria-selected={v.active}
@@ -516,7 +583,7 @@ export function SessionTabs({
 										{v.dotClass && <span className={`${PANEL_TAB_DOT} ${v.dotClass}`} />}
 										{v.icon ? (
 											<span
-												className={cn(TAB_VICON, v.closable !== false && mergeStylexClassName("", sx.desktopMr35))}
+												className={cn(TAB_VICON, v.closable !== false && utilityClassName("desktop:mr-3.5"))}
 												aria-hidden="true"
 											>
 												{v.icon}
@@ -539,7 +606,7 @@ export function SessionTabs({
 											</button>
 										)}
 									</div>
-								</Reorder.Item>
+								</ReorderTabItem>
 							);
 						}
 						const session = member.session;
@@ -577,7 +644,17 @@ export function SessionTabs({
 								</TabTitle>
 							);
 						return (
-							<Reorder.Item key={key} {...tabDrag.itemProps(key, nextActive)}>
+							<ReorderTabItem
+								key={key}
+								tabKey={key}
+								nextActive={nextActive}
+								draggable={tabDragEnabled && editKey !== key}
+								dragging={dropSlot?.key === key}
+								onPointerDown={handleItemPointerDown}
+								onDragStart={handleItemDragStart}
+								onDragEnd={handleItemDragEnd}
+								onClickCapture={handleItemClickCapture}
+							>
 								<ContextMenu.Root>
 									<ContextMenu.Trigger
 										render={
@@ -595,7 +672,7 @@ export function SessionTabs({
 														waiting,
 														colored: !!hex,
 													}),
-													emptyVisual && mergeStylexClassName("", sx.desktopPr7),
+													emptyVisual && utilityClassName("desktop:pr-7"),
 												)}
 												style={{
 													...(hex ? { "--tab-color": hex } : {}),
@@ -654,11 +731,7 @@ export function SessionTabs({
 										})()}
 										{/* Unsent draft in a sibling session (the active tab's draft is
 							    already on screen in the composer — no pencil needed). */}
-										{key !== activeId && hasDraft(`session:${key}`) && (
-											<span className={TAB_DRAFT} title="Unsent draft">
-												<IconPencil size={16} dense />
-											</span>
-										)}
+										{key !== activeId && <SessionDraftIndicator sessionId={key} />}
 										<button
 											type="button"
 											className={tabCloseClass(isPhone)}
@@ -694,6 +767,7 @@ export function SessionTabs({
 												setEditKey(key);
 											}}
 										>
+											<IconPencil size={20} className={MENU_ICON} />
 											<span {...stylex.props(sx.grow)}>Rename session</span>
 										</ContextMenu.Item>
 										{/* The cross-bar drag, spelled out: a bar down to its last
@@ -701,23 +775,31 @@ export function SessionTabs({
 								    only way back for someone who never found the gesture. */}
 										{onMoveAcross && (
 											<ContextMenu.Item onClick={() => onMoveAcross(key)}>
+												{moveAcrossSide === "left" ? (
+													<IconSidebarLeft size={20} className={MENU_ICON} />
+												) : (
+													<IconSidebarRight size={20} className={MENU_ICON} />
+												)}
 												<span {...stylex.props(sx.grow)}>Move to {moveAcrossSide} side</span>
 											</ContextMenu.Item>
 										)}
 										<ContextMenu.Separator />
 										<ContextMenu.SubmenuRoot>
 											<ContextMenu.SubmenuTrigger>
+												<IconCopy size={20} className={MENU_ICON} />
 												<span {...stylex.props(sx.grow)}>Copy transcript</span>
 												<IconChevronRight size={16} className={mergeStylexOverrideClassName("", sx.textFaint)} />
 											</ContextMenu.SubmenuTrigger>
 											<Menu.Popup>
 												<Menu.Item onClick={() => void copySessionTranscript(session, "concise", onToast)}>
+													<IconListCircles size={20} className={MENU_ICON} />
 													<span {...stylex.props(sx.grow)}>Concise</span>
 													{key === activeId && copyTranscriptLabel && (
 														<Menu.Shortcut>{copyTranscriptLabel}</Menu.Shortcut>
 													)}
 												</Menu.Item>
 												<Menu.Item onClick={() => void copySessionTranscript(session, "full", onToast)}>
+													<IconFile size={20} className={MENU_ICON} />
 													<span {...stylex.props(sx.grow)}>Full</span>
 												</Menu.Item>
 											</Menu.Popup>
@@ -725,6 +807,7 @@ export function SessionTabs({
 										<ContextMenu.Item
 											onClick={() => copyToClipboard(absoluteLink(sessionPath(session)), () => onToast("Link copied"))}
 										>
+											<IconLink size={20} className={MENU_ICON} />
 											<span {...stylex.props(sx.grow)}>Copy link</span>
 										</ContextMenu.Item>
 										<ContextMenu.Separator />
@@ -752,14 +835,24 @@ export function SessionTabs({
 										</ContextMenu.Item>
 										<ContextMenu.Separator />
 										<ContextMenu.Item onClick={() => onClose(session)}>
+											<IconX size={20} className={MENU_ICON} />
 											<span {...stylex.props(sx.grow)}>Close tab</span>
 											{key === activeId && closeLabel && (
 												<ContextMenu.Shortcut>{closeLabel}</ContextMenu.Shortcut>
 											)}
 										</ContextMenu.Item>
+										{onDelete && (
+											<ContextMenu.Item
+												className={mergeStylexOverrideClassName("data-[highlighted]:bg-red-soft data-[highlighted]:text-red", sx.textRed)}
+												onClick={() => setDeleteTarget(session)}
+											>
+												<IconTrash size={20} />
+												<span {...stylex.props(sx.grow)}>Delete session</span>
+											</ContextMenu.Item>
+										)}
 									</ContextMenu.Popup>
 								</ContextMenu.Root>
-							</Reorder.Item>
+							</ReorderTabItem>
 						);
 					})}
 				</Reorder.Group>
@@ -772,7 +865,19 @@ export function SessionTabs({
 				    visible — never scrolled off when the tabs overflow a narrow pane. */}
 			{!isPhone && newTabButton}
 			{!isPhone && <div className={TAB_ACTIONS}>{historyMenu}</div>}
-
+			{deleteTarget && (
+				<DeleteSessionDialog
+					open
+					onOpenChange={(open) => {
+						if (!open && !deleting) setDeleteTarget(null);
+					}}
+					hasWorktree={Boolean(
+						deleteTarget.worktreeDir && deleteTarget.mode !== "ask"
+					)}
+					deleting={deleting}
+					onDelete={(cleanWorktree) => void deleteSession(cleanWorktree)}
+				/>
+			)}
 		</div>
 	);
 }

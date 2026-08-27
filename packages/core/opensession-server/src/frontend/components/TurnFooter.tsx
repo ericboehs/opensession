@@ -147,7 +147,8 @@ const sx = stylex.create({
 	maxW180px: { maxWidth: "180px" },
 	pr1: { paddingRight: "4px" },
 	hoverBg: { ":hover": { "@media (hover: hover)": { backgroundColor: "var(--hover)" } } },
-	chip: { marginLeft: "4px", display: "flex", height: "24px", minWidth: 0, alignItems: "center", gap: "6px", overflow: "hidden", borderRadius: "calc(12px * var(--rf))", borderStyle: "solid", borderWidth: 0, backgroundColor: "color-mix(in srgb, var(--text) 3%, transparent)", paddingBlock: 0, paddingLeft: "4px", textAlign: "left" },
+	chip: { marginLeft: "4px", display: "flex", height: "24px", minWidth: 0, alignItems: "center", gap: "6px", overflow: "hidden", borderRadius: "calc(12px * var(--rf))", borderStyle: "solid", borderWidth: 0, backgroundColor: "color-mix(in srgb, var(--text) 3%, transparent)", paddingBlock: 0, paddingLeft: "4px", textAlign: "left",
+		cornerShape: "var(--cs)",},
 	pr15: { paddingRight: "6px" },
 	diffCard: { width: "min(620px, calc(100vw - 24px))", padding: "8px" },
 	footerText: { fontWeight: "var(--font-weight-medium)", lineHeight: "16px" },
@@ -584,13 +585,15 @@ const MAX_CARD_FILES = 4;
  */
 export function TurnLineStatsCard({
   files,
-  additions = files.reduce((n, f) => n + f.additions, 0),
-  deletions = files.reduce((n, f) => n + f.deletions, 0),
+  additions: additionsProp,
+  deletions: deletionsProp,
 }: {
   files: TouchedFile[];
   additions?: number;
   deletions?: number;
 }) {
+  const additions = additionsProp ?? files.reduce((n, file) => n + file.additions, 0);
+  const deletions = deletionsProp ?? files.reduce((n, file) => n + file.deletions, 0);
   const roots = useToolPathRoots();
   const [open, setOpen] = useState(false);
   const anchor = useRef<HTMLSpanElement | null>(null);

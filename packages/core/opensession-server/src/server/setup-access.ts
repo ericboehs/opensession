@@ -82,10 +82,7 @@ export function normalizeWebhookOrigin(
 
 export interface SetupAccessSnapshot {
   publicBaseUrl: string;
-  /** The separately configured webhook origin, not the app-origin fallback. */
-  webhookBaseUrl: string | null;
   port: number;
-  webhookPort: number;
   tailnetIp: string | null;
   caddyInstalled: boolean;
 }
@@ -96,14 +93,13 @@ export interface SetupAccessSnapshot {
 export function setupAccessSnapshot(
   options: {
     publicBaseUrl?: string;
-    webhookBaseUrl?: string | null;
     persistedEnv?: Readonly<Record<string, string>>;
   } = {},
 ): SetupAccessSnapshot {
   const server = configuredServer();
   const configServer = getConfig().server;
   const persistedOrigin = (
-    key: "OPENSESSION_UI_BASE" | "OPENSESSION_WEBHOOK_BASE",
+    key: "OPENSESSION_UI_BASE",
     configValue: string | undefined,
     bootValue: string | undefined,
   ): string | null => {
@@ -120,21 +116,9 @@ export function setupAccessSnapshot(
       server.publicBaseUrl,
     ) ??
     server.publicBaseUrl;
-  const configuredWebhook =
-    options.webhookBaseUrl !== undefined
-      ? options.webhookBaseUrl
-      : persistedOrigin(
-          "OPENSESSION_WEBHOOK_BASE",
-          configServer?.webhookBaseUrl,
-          process.env.OPENSESSION_WEBHOOK_BASE,
-        );
   return {
     publicBaseUrl: publicBaseUrl.replace(/\/$/, ""),
-    webhookBaseUrl: configuredWebhook
-      ? configuredWebhook.replace(/\/$/, "")
-      : null,
     port: server.port,
-    webhookPort: server.webhookPort,
     tailnetIp: detectedTailnetIpv4(),
     caddyInstalled: Bun.which("caddy") !== null,
   };

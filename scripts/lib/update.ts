@@ -26,6 +26,7 @@
  * already moved HEAD. Otherwise it falls back to a plain service restart.
  */
 
+import { createHash } from "crypto";
 import {
   cpSync,
   existsSync,
@@ -66,6 +67,15 @@ export type UpdateOptions = {
 const RELEASE_BASE =
   process.env.OPENSESSION_RELEASE_BASE ||
   "https://github.com/tellahq/opensession/releases/latest/download";
+
+export function parseSha256Checksum(text: string): string | undefined {
+  const expected = text.trim().split(/\s+/)[0]?.toLowerCase();
+  return /^[0-9a-f]{64}$/.test(expected ?? "") ? expected : undefined;
+}
+
+function sha256File(path: string): string {
+  return createHash("sha256").update(readFileSync(path)).digest("hex");
+}
 
 interface ReleaseManifest {
   version: string;
@@ -132,6 +142,7 @@ async function updateRelease(
 
   const tmp = mkdtempSync(join(tmpdir(), "opensession-update-"));
   const tarball = join(tmp, "release.tar.gz");
+  const checksum = join(tmp, "release.tar.gz.sha256");
   try {
     if (
       (await run(["curl", "-fsSL", "--retry", "3", "-o", tarball, url]))
@@ -140,6 +151,50 @@ async function updateRelease(
       fail("could not download the release", url);
       return 1;
     }
+    const configuredChecksum = process.env.OPENSESSION_ARTIFACT_SHA256;
+    let expected = parseSha256Checksum(configuredChecksum ?? "");
+    if (configuredChecksum && !expected) {
+      fail(
+        "OPENSESSION_ARTIFACT_SHA256 is invalid",
+        "expected exactly 64 hexadecimal characters",
+      );
+      return 1;
+    }
+    if (!expected) {
+      const checksumUrl = `${url}.sha256`;
+      if (
+        (await run([
+          "curl",
+          "-fsSL",
+          "--retry",
+          "3",
+          "-o",
+          checksum,
+          checksumUrl,
+        ])).code !== 0
+      ) {
+        fail(
+          "release downloaded but its SHA-256 checksum is unavailable",
+          checksumUrl,
+        );
+        return 1;
+      }
+      expected = parseSha256Checksum(readFileSync(checksum, "utf8"));
+      if (!expected) {
+        fail("the release checksum is invalid", checksumUrl);
+        return 1;
+      }
+    }
+    const actual = sha256File(tarball);
+    if (actual !== expected) {
+      fail(
+        "the release failed SHA-256 verification",
+        `expected ${expected}, got ${actual}`,
+      );
+      return 1;
+    }
+    ok("verified release SHA-256", actual);
+
     // The tarball's single top dir is the release name. Take the first top
     // component that is not an AppleDouble sibling (`._name`, which a macOS
     // tar can emit as the first entry) or a dotfile.

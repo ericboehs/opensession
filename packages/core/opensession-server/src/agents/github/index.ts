@@ -18,6 +18,7 @@ import {
   saveAutomation,
 } from "../../server/automations";
 import { githubConfigured } from "./github-rest";
+import { githubAppCredentialHealth, githubToken } from "../../server/github-app";
 import {
   PR_EVENT_KEY,
   REVIEW_AUTOMATION_NAME,
@@ -36,11 +37,13 @@ import {
   clearRecoveryMarker,
   planRecovery,
   recoveryMarkerAt,
+  readPrState,
   type GithubPrState,
   type RecoveryKind,
 } from "./state";
 import { feedbackStats } from "./feedback";
 import type { PrRef } from "./review";
+import { isTrustedGithubLogin, isTrustedUser } from "../../server/shared/user-mappings";
 
 const GITHUB_WEBHOOK_SECRET = process.env.GITHUB_WEBHOOK_SECRET || "";
 
@@ -107,8 +110,55 @@ function ensureDocsSyncAutomation(): void {
   console.log(`[github] Seeded docs-sync automation "${DOCS_SYNC_AUTOMATION_NAME}" (enabled)`);
 }
 
+/** Who armed a recovery marker. Empty/undefined means nobody did — see below. */
+function recoveryRequester(s: GithubPrState, kind: RecoveryKind): string | undefined {
+  switch (kind) {
+    case "auto-fix":
+      return s.autoFix?.requestedBy;
+    case "pending-auto-fix":
+      return s.pendingAutoFix?.requestedBy;
+    case "run":
+      return s.activeRun?.requestedBy;
+    case "mention":
+      return s.activeMention?.author;
+    case "pending-mention":
+      return s.pendingMention?.author;
+  }
+}
+
+/**
+ * May this marker's run be resumed on boot? The gate exists so an untrusted
+ * PERSON cannot get a run replayed for them across a restart.
+ *
+ * Webhook- and reconcile-triggered reviews have no human requester by design
+ * (review.ts arms `requestedBy: ""`), so an empty requester on a review means
+ * "automation", not "untrusted person". Reading it as untrusted refused every
+ * automated review that spanned a restart and, worse, cleared the marker
+ * carrying that run's durable `reviewResult` — stranding a finished, paid-for
+ * review as a permanently spinning "🔄 Reviewing…" comment (PR #99, 2026-08-25).
+ *
+ * Only reviews get this exemption: simplify and adversarial always record their
+ * triggering human, and auto-fix/mentions are inherently person-initiated, so a
+ * missing requester there really is a marker that should not be replayed.
+ */
+export function recoveryPermitted(s: GithubPrState, kind: RecoveryKind): boolean {
+  const requester = recoveryRequester(s, kind);
+  if (kind === "mention" || kind === "pending-mention")
+    return isTrustedGithubLogin(requester);
+  if (kind === "run" && s.activeRun?.kind === "review" && !requester) return true;
+  return isTrustedUser(requester);
+}
+
 /** Fire the one recovery `planRecovery` picked for this PR. */
 async function fireRecovery(s: GithubPrState, kind: RecoveryKind): Promise<void> {
+  if (!recoveryPermitted(s, kind)) {
+    console.warn(
+      `[github] Refusing ${kind} recovery for PR #${s.prNumber} from untrusted @${recoveryRequester(s, kind) || "unknown"}`,
+    );
+    clearRecoveryMarker(s, kind);
+    return;
+  }
+
   switch (kind) {
     case "auto-fix": {
       console.log(`[github] Recovering interrupted auto-fix loop for PR #${s.prNumber}`);
@@ -161,8 +211,8 @@ async function fireRecovery(s: GithubPrState, kind: RecoveryKind): Promise<void>
         inline: p.inline,
         ghRepo: s.ghRepo,
       })
-        .catch((e) => console.error(`[github] dropped-mention recovery failed for PR #${s.prNumber}:`, e))
-        .finally(() => clearPendingMention(s.prNumber, s.ghRepo));
+        .then(() => clearPendingMention(s.prNumber, s.ghRepo))
+        .catch((e) => console.error(`[github] dropped-mention recovery remains queued for PR #${s.prNumber}:`, e));
       return;
     }
   }
@@ -181,6 +231,52 @@ async function fireRecovery(s: GithubPrState, kind: RecoveryKind): Promise<void>
  * every restart. planRecovery picks the outermost live marker; the nested ones
  * belong to runs the resumed one starts again itself.
  */
+async function retryPendingMentions(): Promise<void> {
+  const { ghRateLimited } = await import("../../server/github-limit");
+  if (ghRateLimited("rest")) return;
+  for (const s of listPrStates()) {
+    if (!s.pendingMention || s.activeMention || s.activeRun) continue;
+    const p = s.pendingMention;
+    if (!isTrustedGithubLogin(p.author)) {
+      clearPendingMention(s.prNumber, s.ghRepo);
+      continue;
+    }
+    const { dispatchMention } = await import("./mention");
+    await dispatchMention({
+      prNumber: s.prNumber,
+      kind: p.kind,
+      body: p.body,
+      author: p.author,
+      replyToId: p.replyToId,
+      inline: p.inline,
+      ghRepo: s.ghRepo,
+    }).then(
+      async () => {
+        const stillPending = readPrState(s.prNumber, s.ghRepo)?.pendingMention;
+        if (stillPending?.progressCommentId) {
+          const { editIssueComment, REPLY_MARKER } = await import("./github-rest");
+          await editIssueComment(
+            stillPending.progressCommentId,
+            `${REPLY_MARKER}
+Request accepted.`,
+            s.ghRepo,
+          ).catch(() => {});
+        }
+        clearPendingMention(s.prNumber, s.ghRepo);
+      },
+      (error) => console.warn(`[github] pending mention remains queued for PR #${s.prNumber}:`, error),
+    );
+  }
+}
+
+function startPendingMentionRetry(): void {
+  const g = globalThis as any;
+  if (g.__githubPendingMentionRetryTimer) return;
+  const timer = setInterval(() => void retryPendingMentions(), 60_000);
+  timer.unref?.();
+  g.__githubPendingMentionRetryTimer = timer;
+}
+
 async function recoverInterrupted(): Promise<void> {
   for (const s of listPrStates()) {
     const { fire, stale } = planRecovery(s);
@@ -259,7 +355,9 @@ export class GithubAgent implements AgentModule {
     // the store itself.
     loadGithubDeliveries();
     if (!githubConfigured()) {
-      console.warn("[github] no GitHub credential (App install or GITHUB_API_TOKEN) — review/fix/simplify can't post; agent idle");
+      console.warn("[github] GitHub App identity is incomplete — review/fix/simplify can't post; agent idle");
+    } else if (!(await githubToken())) {
+      console.warn("[github] GitHub App installation token is unavailable — review/fix/simplify can't post; agent idle");
     }
     if (!GITHUB_WEBHOOK_SECRET) {
       console.warn("[github] GITHUB_WEBHOOK_SECRET unset — PR webhooks won't be verified");
@@ -269,6 +367,7 @@ export class GithubAgent implements AgentModule {
     ensureReviewAutomation();
     ensureDocsSyncAutomation();
     await recoverInterrupted();
+    startPendingMentionRetry();
     // Safety net under all of the above: the webhook path is fire-once, so
     // work lost AFTER an event was consumed (debounce killed by a restart,
     // review dead on dry pools, missed delivery) is re-fired by the sweep.
@@ -289,7 +388,9 @@ export class GithubAgent implements AgentModule {
   health(): Record<string, unknown> {
     const { autoEnabled } = resolveReviewConfig();
     return {
-      status: githubConfigured() ? "operational" : "no GitHub credential",
+      status: githubAppCredentialHealth(),
+      githubCredentialMode: "app",
+      githubCredentialConfigured: githubConfigured(),
       reviewAutomationEnabled: autoEnabled,
       trackedPrs: listPrStates().length,
       activeCodeLoops: activeCodeLoops(),

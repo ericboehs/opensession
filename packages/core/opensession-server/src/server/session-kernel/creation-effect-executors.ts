@@ -9,7 +9,7 @@ import { createWorkspace, getWorkspace, type Workspace } from "../workspaces";
 import type { CreationAttachmentSource } from "../uploads";
 import type { WorktreeInfo } from "../worktree";
 import { registerSessionEffectExecutor } from "./effect-executors";
-import { sessionKernel, sessionKernelStore } from "./kernel";
+import { reconcileCreationBranchDeadLetters, sessionKernel } from "./kernel";
 import type { SessionActorEffectFor } from "./lifecycle-protocol";
 import type {
   CreationEventDecisionResult,
@@ -54,13 +54,13 @@ export class CreationEffectIndeterminateError extends Error {
 type WorkspaceExecutorDependencies = {
   getWorkspace: typeof getWorkspace;
   createWorkspace: typeof createWorkspace;
-  result: (item: CreationWorkspaceEffectItem) => CreationEventDecisionResult;
+  result: (item: CreationWorkspaceEffectItem) => CreationEventDecisionResult | Promise<CreationEventDecisionResult>;
   afterDestinationAccepted?: (workspace: Workspace) => void;
 };
 
 function defaultResult(
   item: CreationWorkspaceEffectItem,
-): CreationEventDecisionResult {
+): Promise<CreationEventDecisionResult> {
   return sessionKernel(item.sessionId).applyCreationEvent({
     identity: item.payload.creationIdentity,
     event: "preparation_started",
@@ -125,7 +125,7 @@ export async function executeCreationWorkspacePrepare(
     });
   }
   dependencies.afterDestinationAccepted?.(workspace);
-  const result = dependencies.result(item);
+  const result = await dependencies.result(item);
   if (result.accepted || result.reason === "stale_effect") return;
   throw new CreationEffectIndeterminateError(
     `Workspace effect ${item.effectId} result was rejected: ${result.reason || "unknown"}`,
@@ -154,13 +154,13 @@ type BranchExecutorDependencies = {
     project: string,
     path: string,
   ) => Promise<boolean>;
-  result: (item: CreationBranchEffectItem) => CreationEventDecisionResult;
+  result: (item: CreationBranchEffectItem) => CreationEventDecisionResult | Promise<CreationEventDecisionResult>;
   afterDestinationAccepted?: (worktreePath: string) => void;
 };
 
 function defaultBranchResult(
   item: CreationBranchEffectItem,
-): CreationEventDecisionResult {
+): Promise<CreationEventDecisionResult> {
   return sessionKernel(item.sessionId).applyCreationEvent({
     identity: item.payload.creationIdentity,
     event: "preparation_started",
@@ -280,7 +280,7 @@ export async function executeCreationBranchPrepare(
       `Branch ${payload.branch} materialized at an unexpected destination`,
     );
   dependencies.afterDestinationAccepted?.(acceptedPath);
-  const result = dependencies.result(item);
+  const result = await dependencies.result(item);
   if (result.accepted || result.reason === "stale_effect") return;
   throw new CreationEffectIndeterminateError(
     `Branch effect ${item.effectId} result was rejected: ${result.reason || "unknown"}`,
@@ -292,14 +292,14 @@ type SandboxExecutorDependencies = {
     provider: string,
     spec: SandboxSessionSpec,
   ) => Promise<Pick<Sandbox, "id" | "provider">>;
-  result: (item: CreationSandboxEffectItem, sandboxId: string) => CreationEventDecisionResult;
+  result: (item: CreationSandboxEffectItem, sandboxId: string) => CreationEventDecisionResult | Promise<CreationEventDecisionResult>;
   afterDestinationAccepted?: (sandbox: Pick<Sandbox, "id" | "provider">) => void;
 };
 
 function defaultSandboxResult(
   item: CreationSandboxEffectItem,
   sandboxId: string,
-): CreationEventDecisionResult {
+): Promise<CreationEventDecisionResult> {
   return sessionKernel(item.sessionId).applyCreationEvent({
     identity: item.payload.creationIdentity,
     event: "preparation_started",
@@ -350,7 +350,7 @@ export async function executeCreationSandboxPrepare(
       `Sandbox ${sandbox.id} was returned by another provider`,
     );
   dependencies.afterDestinationAccepted?.(sandbox);
-  const result = dependencies.result(item, sandbox.id);
+  const result = await dependencies.result(item, sandbox.id);
   if (result.accepted || result.reason === "stale_effect") return;
   throw new CreationEffectIndeterminateError(
     `Sandbox effect ${item.effectId} result was rejected: ${result.reason || "unknown"}`,
@@ -359,13 +359,13 @@ export async function executeCreationSandboxPrepare(
 
 type CredentialExecutorDependencies = {
   resolveCredential: (principal: string) => Promise<GithubCredential | null>;
-  result: (item: CreationCredentialEffectItem) => CreationEventDecisionResult;
+  result: (item: CreationCredentialEffectItem) => CreationEventDecisionResult | Promise<CreationEventDecisionResult>;
   afterResolved?: (credential: GithubCredential) => void;
 };
 
 function defaultCredentialResult(
   item: CreationCredentialEffectItem,
-): CreationEventDecisionResult {
+): Promise<CreationEventDecisionResult> {
   return sessionKernel(item.sessionId).applyCreationEvent({
     identity: item.payload.creationIdentity,
     event: "preparation_started",
@@ -397,7 +397,7 @@ export async function executeCreationCredentialResolve(
       `Credential selector ${item.payload.principal} resolved to another principal`,
     );
   dependencies.afterResolved?.(credential);
-  const result = dependencies.result(item);
+  const result = await dependencies.result(item);
   if (result.accepted || result.reason === "stale_effect") return;
   throw new CreationEffectIndeterminateError(
     `Credential effect ${item.effectId} result was rejected: ${result.reason || "unknown"}`,
@@ -411,7 +411,7 @@ type AttachmentExecutorDependencies = {
   ) =>
     | { name: string; path: string }
     | Promise<{ name: string; path: string }>;
-  result: (item: CreationAttachmentEffectItem) => CreationEventDecisionResult;
+  result: (item: CreationAttachmentEffectItem) => CreationEventDecisionResult | Promise<CreationEventDecisionResult>;
   afterDestinationAccepted?: (path: string) => void;
 };
 
@@ -439,7 +439,7 @@ export async function executeCreationAttachmentStage(
     digest: item.payload.digest,
   });
   dependencies.afterDestinationAccepted?.(staged.path);
-  const result = dependencies.result(item);
+  const result = await dependencies.result(item);
   if (result.accepted || result.reason === "stale_effect") return;
   throw new CreationEffectIndeterminateError(
     `Attachment effect ${item.effectId} result was rejected: ${result.reason || "unknown"}`,
@@ -496,7 +496,7 @@ export async function reconcileCompatibleCreationBranchEffects(): Promise<
       project: repo.id,
       worktreePath: resolve(repo.repo),
     }));
-  const retried = sessionKernelStore().retryCompatibleCreationBranchDeadLetters(
+  const retried = await reconcileCreationBranchDeadLetters(
     destinations,
   );
   for (const item of retried)

@@ -837,8 +837,9 @@ export function Reviews({
     null;
 
   // Escape backs out of the detail drawer (unless typing in a field).
+  const hasSelection = !!selected;
   useEffect(() => {
-    if (!selected) return;
+    if (!hasSelection) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
       const t = e.target as HTMLElement | null;
@@ -847,7 +848,7 @@ export function Reviews({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [!!selected, onSelect]);
+  }, [hasSelection, onSelect]);
 
   // Only label rows with their repo when the list actually spans repos.
   const multiRepo = (new Set(prSessions.map((s) => s.repo || "repository")).size > 1);

@@ -77,19 +77,3 @@ export function labelMatches(name: string, expected: string): boolean {
 export function labelAliases(label: string): string[] {
   return [label];
 }
-
-/**
- * The GitHub event types the `POST /github/webhook` handler
- * (`agents/slack/index.ts`) acts on: `pull_request_review` directly, and
- * `pull_request` / `issue_comment` / `pull_request_review_comment` /
- * `workflow_run` forwarded to the github agent. The outbound
- * `gh webhook forward` fallback subscribes to exactly these, so a no-public-URL
- * install receives the same deliveries it would over an inbound HTTP webhook.
- */
-export const WEBHOOK_FORWARD_EVENTS = [
-  "pull_request",
-  "pull_request_review",
-  "pull_request_review_comment",
-  "issue_comment",
-  "workflow_run",
-] as const;

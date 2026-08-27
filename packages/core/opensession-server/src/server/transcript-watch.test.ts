@@ -58,7 +58,7 @@ function watch(
 }
 
 describe("race-free transcript watch", () => {
-  test("reconciles an append committed synchronously while init is being sent", () => {
+  test("reconciles an append committed synchronously while init is being sent", async () => {
     const state = setup();
     const sid = `bks-race-${crypto.randomUUID()}`;
     state.store.appendTranscriptEvents(sid, [entry("a", "before")]);
@@ -69,7 +69,7 @@ describe("race-free transcript watch", () => {
       }
     };
 
-    const handle = watch(state, sid);
+    const handle = await watch(state, sid);
     cleanups.push(() => handle.unsubscribe());
 
     expect(state.frames.map((frame) => frame.type)).toEqual([
@@ -80,7 +80,7 @@ describe("race-free transcript watch", () => {
     expect(handle.changeSeq()).toBe(2);
   });
 
-  test("reconnect replays an old-seq rewrite through changeSeq", () => {
+  test("reconnect replays an old-seq rewrite through changeSeq", async () => {
     const state = setup();
     const sid = `bks-rewrite-${crypto.randomUUID()}`;
     state.store.appendTranscriptEvents(sid, [
@@ -90,7 +90,7 @@ describe("race-free transcript watch", () => {
     const cursor = state.store.getLastChangeSeq(sid);
     state.store.appendTranscriptEvents(sid, [entry("old", "v2")]);
 
-    const handle = watch(state, sid, cursor);
+    const handle = await watch(state, sid, cursor);
     cleanups.push(() => handle.unsubscribe());
 
     expect(state.frames).toHaveLength(1);
@@ -110,15 +110,15 @@ describe("race-free transcript watch", () => {
     const state = setup();
     const sid = `bks-wake-${crypto.randomUUID()}`;
     state.store.markImported(sid, "live-only");
-    const handle = watch(state, sid);
+    const handle = await watch(state, sid);
     cleanups.push(() => handle.unsubscribe());
     state.frames.length = 0;
 
     state.store.appendTranscriptEvents(sid, [entry("a", "one")]);
     // A second subscriber-style wake is represented by another upsert-free
     // notification; reconciliation reads only changeSeq > cursor.
-    await Promise.resolve();
-    await Promise.resolve();
+    await Bun.sleep(0);
+    await Bun.sleep(0);
 
     expect(state.frames).toHaveLength(1);
     expect(state.frames[0].entries.map((e: TranscriptEntry) => e.id)).toEqual(["a"]);
@@ -128,7 +128,7 @@ describe("race-free transcript watch", () => {
     const state = setup();
     const sid = `bks-feed-${crypto.randomUUID()}`;
     state.store.markImported(sid, "live-only");
-    const handle = startTranscriptWatch({
+    const handle = await startTranscriptWatch({
       sessionId: sid,
       store: state.store,
       socket: state.socket,
@@ -142,8 +142,8 @@ describe("race-free transcript watch", () => {
     state.frames.length = 0;
 
     state.store.appendTranscriptEvents(sid, [entry("a", "one")]);
-    await Promise.resolve();
-    await Promise.resolve();
+    await Bun.sleep(0);
+    await Bun.sleep(0);
 
     expect(state.frames[0]).toMatchObject({
       type: "session_feed",
@@ -156,17 +156,17 @@ describe("race-free transcript watch", () => {
     });
   });
 
-  test("unsubscribe is idempotent and releases the bus subscription", () => {
+  test("unsubscribe is idempotent and releases the bus subscription", async () => {
     const state = setup();
     const sid = `bks-unsub-${crypto.randomUUID()}`;
-    const handle = watch(state, sid);
+    const handle = await watch(state, sid);
     expect(transcriptSubscriberCount(sid)).toBe(1);
     handle.unsubscribe();
     handle.unsubscribe();
     expect(transcriptSubscriberCount(sid)).toBe(0);
   });
 
-  test("a failed handshake releases its subscription", () => {
+  test("a failed handshake releases its subscription", async () => {
     const state = setup();
     const sid = `bks-fail-${crypto.randomUUID()}`;
     state.store.appendTranscriptEvents(sid, [entry("a", "one")]);
@@ -174,7 +174,7 @@ describe("race-free transcript watch", () => {
       throw new Error("socket closed");
     };
 
-    expect(() => watch(state, sid)).toThrow("socket closed");
+    await expect(watch(state, sid)).rejects.toThrow("socket closed");
     expect(transcriptSubscriberCount(sid)).toBe(0);
   });
 
@@ -186,13 +186,13 @@ describe("race-free transcript watch", () => {
       sid,
       Array.from({ length: 30 }, (_, i) => entry(`old-${i}`, String(i)))
     );
-    const handle = watch(state, sid, undefined, () => resetSnapshots++);
+    const handle = await watch(state, sid, undefined, () => resetSnapshots++);
     cleanups.push(() => handle.unsubscribe());
     expect(resetSnapshots).toBe(0);
     state.frames.length = 0;
 
     state.store.replaceTranscriptEvents(sid, [entry("new", "replacement")]);
-    await Promise.resolve();
+    await Bun.sleep(0);
     expect(state.frames).toHaveLength(1);
     expect(state.frames[0]).toMatchObject({
       type: "transcript_init",
@@ -201,14 +201,14 @@ describe("race-free transcript watch", () => {
     expect(resetSnapshots).toBe(1);
   });
 
-  test("reconnect from before a missed replacement receives a snapshot", () => {
+  test("reconnect from before a missed replacement receives a snapshot", async () => {
     const state = setup();
     const sid = `bks-reset-resume-${crypto.randomUUID()}`;
     state.store.appendTranscriptEvents(sid, [entry("old", "old")]);
     const staleCursor = state.store.getLastChangeSeq(sid);
     state.store.replaceTranscriptEvents(sid, [entry("new", "new")]);
 
-    const handle = watch(state, sid, staleCursor);
+    const handle = await watch(state, sid, staleCursor);
     cleanups.push(() => handle.unsubscribe());
     expect(state.frames).toHaveLength(1);
     expect(state.frames[0]).toMatchObject({
@@ -217,14 +217,14 @@ describe("race-free transcript watch", () => {
     });
   });
 
-  test("large snapshots initialize in one frame", () => {
+  test("large snapshots initialize in one frame", async () => {
     const state = setup();
     const sid = `bks-stage-${crypto.randomUUID()}`;
     state.store.appendTranscriptEvents(
       sid,
       Array.from({ length: 140 }, (_, i) => entry(`e${i}`, String(i)))
     );
-    const handle = watch(state, sid);
+    const handle = await watch(state, sid);
     expect(state.frames).toHaveLength(1);
     expect(state.frames[0]).toMatchObject({
       type: "transcript_init",
@@ -242,7 +242,7 @@ describe("race-free transcript watch", () => {
     expect(state.frames).toHaveLength(1);
   });
 
-  test("an assistant-heavy tool tail reaches back to its user message", () => {
+  test("an assistant-heavy tool tail reaches back to its user message", async () => {
     // The bug this fixes: a turn's tools and intermediate assistant notes
     // collapse into ONE fold. A flat 132-entry tail, or a floor that counts
     // those notes alone, can still render as one line with no user message.
@@ -263,7 +263,7 @@ describe("race-free transcript watch", () => {
     rows.push(entry("current-answer", "current answer"));
     state.store.appendTranscriptEvents(sid, rows);
 
-    const handle = watch(state, sid);
+    const handle = await watch(state, sid);
     cleanups.push(() => handle.unsubscribe());
 
     const sent = state.frames[0].entries as TranscriptEntry[];
@@ -277,7 +277,7 @@ describe("race-free transcript watch", () => {
     expect(state.frames[0].truncated).toBe(true);
   });
 
-  test("the message floor never shrinks the window below the entry floor", () => {
+  test("the message floor never shrinks the window below the entry floor", async () => {
     // A chatty session already satisfies the message floor immediately; it
     // must still receive the 132-entry tail it always did.
     const state = setup();
@@ -286,14 +286,14 @@ describe("race-free transcript watch", () => {
       sid,
       Array.from({ length: 300 }, (_, i) => entry(`e${i}`, String(i)))
     );
-    const handle = watch(state, sid);
+    const handle = await watch(state, sid);
     cleanups.push(() => handle.unsubscribe());
 
     expect(state.frames[0].entries).toHaveLength(132);
     expect(state.frames[0]).toMatchObject({ truncated: true, lastSeq: 300 });
   });
 
-  test("a store without the window read still serves the flat tail", () => {
+  test("a store without the window read still serves the flat tail", async () => {
     // readTailWindow is optional on TranscriptWatchStore; an adapter that
     // does not implement it must degrade to the previous behaviour rather
     // than throw the whole watch.
@@ -311,7 +311,7 @@ describe("race-free transcript watch", () => {
         state.store.readChangesSince(id, since, limit),
       readTail: (id: string, limit?: number) => state.store.readTail(id, limit),
     };
-    const handle = startTranscriptWatch({
+    const handle = await startTranscriptWatch({
       sessionId: sid,
       store: legacy,
       socket: state.socket,
@@ -335,7 +335,7 @@ describe("race-free transcript watch", () => {
     const cursor = state.store.getLastChangeSeq(sid);
     state.store.appendTranscriptEvents(sid, [entry("b", "resume")]);
 
-    const handle = startTranscriptWatch({
+    const handle = await startTranscriptWatch({
       sessionId: sid,
       store: state.store,
       socket: state.socket,
@@ -347,7 +347,7 @@ describe("race-free transcript watch", () => {
     cleanups.push(() => handle.unsubscribe());
     state.store.appendTranscriptEvents(sid, [entry("c", "live")]);
     // The bus fans out on the microtask queue, never inside the write.
-    await Promise.resolve();
+    await Bun.sleep(0);
 
     const sent = state.frames.flatMap((frame) => frame.entries ?? []);
     expect(sent.map((e: any) => e.id)).toEqual(["b", "c"]);
@@ -355,7 +355,7 @@ describe("race-free transcript watch", () => {
 
     // …and the snapshot path too, for a watch that can't resume.
     state.frames.length = 0;
-    const fresh = startTranscriptWatch({
+    const fresh = await startTranscriptWatch({
       sessionId: sid,
       store: state.store,
       socket: state.socket,

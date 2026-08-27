@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { WSServerMessage } from "../lib/types";
 import { PRODUCT_NAME } from "../lib/brand";
 import { dismissToast, toast } from "../ui/toast";
@@ -170,7 +170,9 @@ export function RestartOverlay({ connected, addHandler }: Props) {
   const explicitAt = useRef(0);
   const disconnectedAt = useRef<number | null>(null);
   const phaseRef = useRef(phase);
-  phaseRef.current = phase;
+	useLayoutEffect(() => {
+		phaseRef.current = phase;
+	});
 
   const resolveRestart = () => {
     explicit.current = false;
@@ -246,7 +248,7 @@ export function RestartOverlay({ connected, addHandler }: Props) {
       }
       return;
     }
-    disconnectedAt.current ??= Date.now();
+    if (disconnectedAt.current === null) disconnectedAt.current = Date.now();
     if (phase === "crashed") return;
 
     let timer: ReturnType<typeof setTimeout> | undefined;

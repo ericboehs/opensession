@@ -1,8 +1,10 @@
+import { mergeStylexProps, mergeStylexOverrideClassName } from "../ui/cn";
+import { utilityClassName } from "../ui/cn";
 import React, { useEffect, useState } from "react";
 import { useSetupStatus } from "../hooks/useSetupStatus";
 import { DEFAULT_DOC_TITLE, docTitle } from "../lib/brand";
 import { Button } from "../ui/button";
-import { cn, mergeStylexProps, mergeStylexClassName, mergeStylexOverrideClassName } from "../ui/cn";
+import { cn } from "../ui/cn";
 import {
   SettingCard,
   SettingsHeader,
@@ -13,46 +15,32 @@ import { SetupChecklist } from "./SetupChecklist";
 import { IntegrationsList } from "./SetupIntegrations";
 import { ReposSection } from "./SetupRepos";
 import { SetupRestart } from "./SetupRestart";
-import { SetupServerAccess } from "./SetupServerAccess";
 import { TeamSection } from "./SetupTeam";
 import { OrganizationProfileSection } from "./settings/GeneralPanel";
 import { ProviderAccountsSection } from "./settings/ModelAccounts";
 import { ModelProvidersPanel } from "./ModelProviders";
 import { ModelDefaultsSection } from "./Models";
 import { IconCheck } from "./icons";
-import {
-  integrationState,
-  publicUrlState,
-  type SetupStatus,
-} from "./setup-shared";
+import { integrationState, type SetupStatus } from "./setup-shared";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
 	mt10: {
-			marginTop: "40px"
-	},
-	m0: {
-			margin: "0"
+			marginTop: "calc(4px * 10)"
 	},
 	mb2: {
-			marginBottom: "8px"
+			marginBottom: "calc(4px * 2)"
 	},
 	px4: {
-			paddingInline: "16px"
+			paddingInline: "calc(4px * 4)"
 	},
 	fontSemibold: {
 			fontWeight: "var(--font-weight-semibold)"
 	},
 	textFaint: {
 			color: "var(--text-faint)"
-	},
-	focusRing: {
-			":focus-visible": {
-					outline: "2px solid var(--accent-ink)",
-					outlineOffset: "2px"
-			}
 	},
 	flex: {
 			display: "flex"
@@ -67,43 +55,42 @@ const sx = stylex.create({
 			alignItems: "center"
 	},
 	gap25: {
-			gap: "10px"
+			gap: "calc(4px * 2.5)"
 	},
 	py3: {
-			paddingBlock: "12px"
+			paddingBlock: "calc(4px * 3)"
 	},
 	textLeft: {
 			textAlign: "left"
 	},
 	srOnly: {
-			clipPath: "inset(50%)",
-			whiteSpace: "nowrap",
-			borderWidth: "0",
+			position: "absolute",
 			width: "1px",
 			height: "1px",
-			margin: "-1px",
 			padding: "0",
-			position: "absolute",
-			overflow: "hidden"
+			margin: "-1px",
+			overflow: "hidden",
+			clipPath: "inset(50%)",
+			whiteSpace: "nowrap",
+			borderWidth: "0"
 	},
 	mb3: {
-			marginBottom: "12px"
+			marginBottom: "calc(4px * 3)"
 	},
 	px5: {
-			paddingInline: "20px"
+			paddingInline: "calc(4px * 5)"
 	},
 	fontTitle: {
-			fontWeight: "var(--title-weight)",
-		"--settings-leading": "1.1"
+			fontWeight: "var(--title-weight)"
 	},
 	tracking0015em: {
-			letterSpacing: "-.015em"
+			letterSpacing: "-0.015em"
 	},
 	textFg: {
 			color: "var(--text)"
 	},
 	mt15: {
-			marginTop: "6px"
+			marginTop: "calc(4px * 1.5)"
 	},
 	maxW62ch: {
 			maxWidth: "62ch"
@@ -132,84 +119,6 @@ const sx = stylex.create({
 	mt0: {
 			marginTop: "0"
 	},
-	statusIcon: {
-		display: "flex",
-		width: "20px",
-		height: "20px",
-		flexShrink: 0,
-		alignItems: "center",
-		justifyContent: "center",
-		borderRadius: "calc(infinity * 1px)",
-	},
-	statusComplete: {
-		backgroundColor: "var(--green-soft)",
-		color: "var(--green)",
-	},
-	statusIncomplete: {
-		backgroundColor: "var(--hover)",
-		color: "var(--text-faint)",
-	},
-	stepLabel: {
-		minWidth: 0,
-	},
-	stepComplete: {
-		fontWeight: "var(--font-weight-medium)",
-		color: "var(--text)",
-	},
-	stepIncomplete: {
-		color: "var(--text-dim)",
-	},
-	scrollMt4: {
-		scrollMarginTop: "16px",
-	},
-
-	desktopSticky: {
-		"@media (min-width: 721px)": {
-			"position": "sticky"
-		}
-	},
-	desktopTop0: {
-		"@media (min-width: 721px)": {
-			"top": "0"
-		}
-	},
-	desktopColStart2: {
-		"@media (min-width: 721px)": {
-			"gridColumnStart": "2"
-		}
-	},
-	desktopRowStart1: {
-		"@media (min-width: 721px)": {
-			"gridRowStart": "1"
-		}
-	},
-	desktopMt0: {
-		"@media (min-width: 721px)": {
-			"marginTop": "0"
-		}
-	},
-	hoverBgHover: {
-		"@media (hover: hover)": {
-			":hover": {
-				"backgroundColor": "var(--hover)"
-			}
-		}
-	},
-	desktopGridColsMinmax0720px220px: {
-		"@media (min-width: 721px)": {
-			"gridTemplateColumns": "minmax(0,720px) 220px"
-		}
-	},
-	desktopGap10: {
-		"@media (min-width: 721px)": {
-			"gap": "40px"
-		}
-	},
-	desktopColStart1: {
-		"@media (min-width: 721px)": {
-			"gridColumnStart": "1"
-		}
-	},
 });
 
 // Settings → Setup: every part of a new instance, in the order someone fills
@@ -218,7 +127,6 @@ const sx = stylex.create({
 // "set up" means.
 
 type SectionId =
-  | "server"
   | "github"
   | "organisation"
   | "providers"
@@ -251,15 +159,12 @@ function SetupSummary({
     (integration) => integration.id === "github",
   );
   const githubReady = !!github && integrationState(github).tone === "on";
-  const serverReady = publicUrlState(status.publicBaseUrl).tone === "on";
   const requiredReady =
-    serverReady &&
     githubReady &&
     status.engine.ready &&
     status.repos.length > 0 &&
     status.team.count > 0;
   const steps: { id: SectionId; label: string; complete: boolean }[] = [
-    { id: "server", label: "Server", complete: serverReady },
     { id: "github", label: "GitHub", complete: githubReady },
     { id: "organisation", label: "Organisation", complete: true },
     { id: "providers", label: "Providers", complete: status.engine.ready },
@@ -274,11 +179,12 @@ function SetupSummary({
 
   return (
     <aside
-      aria-labelledby="setup-summary-title" {...mergeStylexProps("", sx.desktopSticky, sx.desktopTop0, sx.desktopColStart2, sx.desktopRowStart1, sx.desktopMt0, sx.mt10)}
+      aria-labelledby="setup-summary-title"
+      {...mergeStylexProps("desktop:sticky desktop:top-0 desktop:col-start-2 desktop:row-start-1 desktop:mt-0", sx.mt10)}
     >
       <h2
         id="setup-summary-title"
-        {...stylex.props(sx.m0, sx.mb2, sx.px4, sx.fontSemibold, sx.textFaint, typography.label)}
+        {...mergeStylexProps("m-0", sx.mb2, sx.px4, sx.fontSemibold, sx.textFaint, typography.label)}
       >
         Summary
       </h2>
@@ -287,22 +193,22 @@ function SetupSummary({
           <button
             key={step.id}
             type="button"
-            onClick={() => onSelect(step.id)} {...mergeStylexProps("", sx.hoverBgHover, sx.focusRing, sx.flex, sx.wFull, sx.cursorPointer, sx.itemsCenter, sx.gap25, sx.px4, sx.py3, sx.textLeft)}
+            onClick={() => onSelect(step.id)}
+            {...mergeStylexProps("focus-ring hover:bg-hover", sx.flex, sx.wFull, sx.cursorPointer, sx.itemsCenter, sx.gap25, sx.px4, sx.py3, sx.textLeft)}
           >
             <span
-              {...stylex.props(
-                sx.statusIcon,
-                step.complete ? sx.statusComplete : sx.statusIncomplete,
+              className={cn(
+                utilityClassName("flex size-5 shrink-0 items-center justify-center rounded-full"),
+                step.complete ? utilityClassName("bg-green-soft text-green") : utilityClassName("bg-hover text-faint"),
               )}
               aria-hidden="true"
             >
               <IconCheck size={14} />
             </span>
             <span
-              {...stylex.props(
-                sx.stepLabel,
-                typography.label,
-                step.complete ? sx.stepComplete : sx.stepIncomplete,
+              className={cn(
+                utilityClassName("min-w-0 text-label"),
+                step.complete ? utilityClassName("font-medium text-fg") : utilityClassName("text-dim"),
               )}
             >
               {step.label}
@@ -322,7 +228,7 @@ function SetupPageSection({
   title,
   description,
   children,
-  className,
+  className = "mt-10",
 }: {
   id: SectionId;
   title: string;
@@ -331,17 +237,12 @@ function SetupPageSection({
   className?: string;
 }) {
   return (
-    <section
-      id={sectionAnchor(id)}
-      className={cn(
-        stylex.props(sx.scrollMt4, !className && sx.mt10).className,
-        className,
-      )}
-    >      <div {...stylex.props(sx.mb3, sx.px5)}>
-        <h2 {...stylex.props(sx.m0, sx.fontTitle, sx.tracking0015em, sx.textFg, typography.sectionTitle)}>
+    <section id={sectionAnchor(id)} className={cn(utilityClassName("scroll-mt-4"), className)}>
+      <div {...stylex.props(sx.mb3, sx.px5)}>
+        <h2 {...mergeStylexProps("m-0", sx.fontTitle, sx.tracking0015em, sx.textFg, typography.sectionTitle)} >
           {title}
         </h2>
-        <p {...stylex.props(sx.m0, sx.mt15, sx.maxW62ch, sx.leadingRelaxed, sx.textDim, typography.supporting)}>
+        <p {...mergeStylexProps("m-0", sx.mt15, sx.maxW62ch, sx.leadingRelaxed, sx.textDim, typography.supporting)} >
           {description}
         </p>
       </div>
@@ -372,7 +273,7 @@ export function SetupPanel({
   }
 
   return (
-    <SettingsPanel {...mergeStylexProps("[&_input]:phone:text-input-phone", sx.relative, sx.maxW980px)}>
+    <SettingsPanel className={mergeStylexOverrideClassName("[&_input]:phone:text-input-phone", sx.relative, sx.maxW980px)} >
       <SettingsHeader
         title="Workspace setup"
         actions={
@@ -386,30 +287,21 @@ export function SetupPanel({
           {failed ? "Couldn't load setup status." : "Loading…"}
         </LoadingState>
       ) : (
-        <div {...mergeStylexProps("", sx.desktopGridColsMinmax0720px220px, sx.desktopGap10, sx.grid, sx.itemsStart)}>
-          <div {...mergeStylexProps("", sx.desktopColStart1, sx.desktopRowStart1, sx.minW0)}>
-            <SetupPageSection
-              id="server"
-              title="Server access"
-              description="Add a private app domain and a separate public address for signed webhooks."
-              className={mergeStylexOverrideClassName("", sx.mt0)}
-            >
-              <SetupServerAccess
-                access={status.access}
-                onSaved={setup.applyAccess}
-              />
-            </SetupPageSection>
-
+        <div {...mergeStylexProps("desktop:grid-cols-[minmax(0,720px)_220px] desktop:gap-10", sx.grid, sx.itemsStart)} >
+          <div {...mergeStylexProps("desktop:col-start-1 desktop:row-start-1", sx.minW0)} >
             <SetupPageSection
               id="github"
               title="Connect GitHub"
-              description="Give sessions access to repositories and pull requests."
+              description="The GitHub App controls repository access. PR automation is optional."
+              className={mergeStylexOverrideClassName("", sx.mt0)}
             >
               <IntegrationsList
                 integrations={status.integrations.filter(
                   (integration) => integration.id === "github",
                 )}
                 onSaved={setup.applyIntegration}
+                github={status.github}
+                onGithubSaved={setup.applyGithub}
               />
             </SetupPageSection>
 

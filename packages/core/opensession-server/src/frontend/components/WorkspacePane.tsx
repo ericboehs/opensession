@@ -1,9 +1,17 @@
+import { mergeStylexProps, mergeStylexOverrideClassName } from "../ui/cn";
+import { utilityClassName } from "../ui/cn";
 import { AGENT_NAME } from "../lib/brand";
-import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
+import React, {
+	useCallback,
+	useEffect,
+	useEffectEvent,
+	useLayoutEffect,
+	useRef,
+	useState,
+} from "react";
 import { createPortal } from "react-dom";
 import { motion } from "motion/react";
 import type {
-	TranscriptEntry,
 	Workspace,
 	UnifiedSession,
 	WSServerMessage,
@@ -11,14 +19,12 @@ import type {
 import {
 	fetchModels,
 	fetchSession,
-	fetchTranscript,
 	fetchWorkspaceOverview,
 	updateWorkspaceApi,
 	type ModelOption,
 } from "../lib/api";
 import { Composer } from "./Composer";
 import { ConversationPane } from "./ConversationPane";
-import { SpinOffMenu } from "./SpinOffMenu";
 import { FeedWebPane, refWebPanel } from "./FeedWebPane";
 import { SlackChannelPane } from "./SlackChannelPane";
 import { MarkdownRepoProvider } from "./MarkdownBody";
@@ -33,13 +39,10 @@ import { useSidePanel } from "../hooks/useSidePanel";
 import {
 	IconArchive,
 	IconArrowUpToLine,
-	IconBranches,
 	IconChevronRight,
-	IconCopy,
 	IconDotsHorizontal,
-	IconFile,
+	IconHistory,
 	IconLink,
-	IconListCircles,
 	IconPencil,
 	IconPlus,
 	IconSidebarRight,
@@ -51,7 +54,7 @@ import { CopyCheck, useCopy } from "../ui/copy";
 import { toast } from "../ui/toast";
 import { Tooltip } from "../ui/tooltip";
 import { OverflowFadeText } from "../ui/overflow-fade-text";
-import { cn, mergeStylexProps, mergeStylexClassName, mergeStylexOverrideClassName } from "../ui/cn";
+import { cn } from "../ui/cn";
 import { TopBar, TopBarActions, TopBarLeading } from "../ui/top-bar";
 import {
 	PANEL_BODY,
@@ -63,17 +66,11 @@ import {
 	VIEWER_BRANCH_EDITABLE,
 	VIEWER_BRANCH_RENAME,
 	VIEWER_HEADER,
-	VIEWER_DELETE_CONFIRM,
 	VIEWER_HEADER_ACTIONS,
 	VIEWER_OVERFLOW,
 	VIEWER_TITLE,
 } from "../lib/session-viewer-classes";
-import {
-  loadDraft,
-  saveDraft,
-  clearDraft,
-  workspaceDraftKey,
-} from "../lib/drafts";
+import { loadDraft, saveDraft, clearDraft, workspaceDraftKey } from "../lib/drafts";
 import {
 	addStaging,
 	attachToDraft,
@@ -97,9 +94,7 @@ import { duration, ease } from "../ui/motion";
 import { mainSession } from "../lib/landing-session";
 import { sessionCarriesPr } from "../lib/session-prs";
 import type { NewTabMorphOrigin } from "./SessionTabs";
-import type { NewSessionPrefill } from "../lib/new-session-link";
-import { copySessionTranscript } from "../lib/transcript-copy";
-import { setPendingSessionFork } from "../lib/pending-session-fork";
+import { ArchivedSessionItems } from "./ArchivedSessionItems";
 import {
 	workspaceSummaryOpen,
 	WS_SUMMARY_ROOM_W,
@@ -121,20 +116,11 @@ const sx = stylex.create({
 	textFaint: {
 			color: "var(--text-faint)"
 	},
-	minW210px: {
-			minWidth: "210px"
+	maxW320px: {
+			maxWidth: "320px"
 	},
 	textRed: {
 			color: "var(--red)"
-	},
-	minH0: {
-			minHeight: "0"
-	},
-	px3: {
-			paddingInline: "12px"
-	},
-	py5px: {
-			paddingBlock: "5px"
 	},
 	flex: {
 			display: "flex"
@@ -158,28 +144,31 @@ const sx = stylex.create({
 			translate: "0 -1px"
 	},
 	truncate: {
+			overflow: "hidden",
 			textOverflow: "ellipsis",
-			whiteSpace: "nowrap",
-			overflow: "hidden"
+			whiteSpace: "nowrap"
 	},
 	Mx1: {
-			marginInline: "-4px"
+			marginInline: "calc(4px * -1)"
 	},
 	Ml1: {
-			marginLeft: "-4px"
+			marginLeft: "calc(4px * -1)"
 	},
 	flexNone: {
 			flex: "none"
 	},
 	roundedControl: {
-			borderRadius: "calc(12px * var(--rf))"
-	,
-		cornerShape: "var(--cs)"},
+			borderRadius: "calc(12px * var(--rf))",
+
+		cornerShape: "var(--cs)",},
 	textDim: {
 			color: "var(--text-dim)"
 	},
 	hFull: {
 			height: "100%"
+	},
+	minH0: {
+			minHeight: "0"
 	},
 	flex1: {
 			flex: "1"
@@ -203,7 +192,7 @@ const sx = stylex.create({
 			justifyContent: "center"
 	},
 	px6: {
-			paddingInline: "24px"
+			paddingInline: "calc(4px * 6)"
 	},
 	textCenter: {
 			textAlign: "center"
@@ -212,7 +201,7 @@ const sx = stylex.create({
 			color: "var(--text)"
 	},
 	mt4: {
-			marginTop: "16px"
+			marginTop: "calc(4px * 4)"
 	},
 	fontSemibold: {
 			fontWeight: "var(--font-weight-semibold)"
@@ -221,15 +210,15 @@ const sx = stylex.create({
 			marginTop: "4px"
 	},
 	srOnly: {
-			clipPath: "inset(50%)",
-			whiteSpace: "nowrap",
-			borderWidth: "0",
+			position: "absolute",
 			width: "1px",
 			height: "1px",
-			margin: "-1px",
 			padding: "0",
-			position: "absolute",
-			overflow: "hidden"
+			margin: "-1px",
+			overflow: "hidden",
+			clipPath: "inset(50%)",
+			whiteSpace: "nowrap",
+			borderWidth: "0"
 	},
 	overflowYAuto: {
 			overflowY: "auto"
@@ -244,60 +233,13 @@ const sx = stylex.create({
 			marginInline: "auto"
 	},
 	px5: {
-			paddingInline: "20px"
+			paddingInline: "calc(4px * 5)"
 	},
 	pb5: {
-			paddingBottom: "20px"
+			paddingBottom: "calc(4px * 5)"
 	},
-  mt25: { marginTop: "10px" },
-  menuPhone: {
-    width: "44px",
-    height: "44px",
-    minHeight: "44px",
-    borderRadius: "calc(12px * var(--rf))",
-    borderColor: "transparent",
-    color: "var(--text-dim)",
-    boxShadow: "none",
-	},
-  menuOpen: { backgroundColor: "var(--hover)", color: "var(--text)" },
-  main: {
-    display: "flex",
-    height: "100%",
-    minHeight: 0,
-    flexDirection: "column",
-  },
-  reviewMain: { height: "100%", minHeight: 0, backgroundColor: "var(--bg)" },
-
-	CornerShapeSquircle: {
-		"cornerShape": "squircle"
-	},
-	maxWMin300pxCalc100vw24px: {
-		"maxWidth": "min(300px,100vw - 24px)"
-	},
-	hoverBgHover: {
-		"@media (hover: hover)": {
-			":hover": {
-				"backgroundColor": "var(--hover)"
-			}
-		}
-	},
-	hoverTextFg: {
-		"@media (hover: hover)": {
-			":hover": {
-				"color": "var(--text)"
-			}
-		}
-	},
-	phonePtCalcVarPaneHeaderHVarStripClearance0px: {
-		"@media (max-width: 720px)": {
-			"paddingTop": "calc(var(--pane-header-h) + var(--strip-clearance,0px))"
-		}
-	},
-	bgColorMixInSrgbVarBgPanel68Transparent: {
-		"backgroundColor": "var(--bg-panel)",
-		"@supports (color: color-mix(in lab, red, red))": {
-			"backgroundColor": "color-mix(in srgb,var(--bg-panel) 68%,transparent)"
-		}
+	mt25: {
+			marginTop: "calc(4px * 2.5)"
 	},
 });
 
@@ -338,13 +280,12 @@ interface Props {
 	headerActionsEl?: HTMLElement | null;
 	/** Rename from the shared workspace menu or by double-clicking the title. */
 	onRenameWorkspace?: (name: string) => void | Promise<void>;
-	/** Session actions shown when this workspace-wide pane has a presentation session. */
-	onArchiveSession?: (session: UnifiedSession, archived: boolean) => void;
-	onDeleteSession?: (
-		session: UnifiedSession,
-		cleanWorktree: boolean,
-	) => void | Promise<void>;
-	onOpenNewSession?: (prefill: NewSessionPrefill) => void;
+	/** Closed sessions remain reachable while a workspace-wide tab is active. */
+	archivedSessions?: UnifiedSession[];
+	onRestoreSession?: (session: UnifiedSession) => void;
+	/** Workspace lifecycle belongs here; session lifecycle belongs to its tab. */
+	onArchiveWorkspace?: () => void;
+	onDeleteWorkspace?: () => void | Promise<void>;
 	/** The app's right-column slot — see the header note; the info panel portals
 	    in here so it is a full-height column rather than a box below the tabs. */
 	rightPanelEl?: HTMLElement | null;
@@ -360,7 +301,7 @@ interface Props {
  * neither, which is why this is phone-only.
  */
 const VIEW_MAIN =
-	mergeStylexClassName("", sx.phonePtCalcVarPaneHeaderHVarStripClearance0px);
+	utilityClassName("phone:pt-[calc(var(--pane-header-h)+var(--strip-clearance,0px))]");
 
 /**
  * The session-less workspace container: what a /workspace/<id> route renders when
@@ -388,9 +329,10 @@ export function WorkspacePane({
 	topbarEl,
 	headerActionsEl,
 	onRenameWorkspace,
-	onArchiveSession,
-	onDeleteSession,
-	onOpenNewSession,
+	archivedSessions,
+	onRestoreSession,
+	onArchiveWorkspace,
+	onDeleteWorkspace,
 	rightPanelEl,
 }: Props) {
 	const draftKey = workspaceDraftKey(workspace.id);
@@ -404,53 +346,41 @@ export function WorkspacePane({
 	// Workspace drafts share the ordinary composer attachment path. The server
 	// draft carries text across devices; staged attachments stay in this
 	// browser's draft store until the first session consumes them.
-  const [images, setImages] = useState<string[]>(
-    () => loadDraft(draftKey).images,
-  );
-  const [files, setFiles] = useState<FileAttachment[]>(
-    () => loadDraft(draftKey).files,
-  );
+	const [images, setImages] = useState<string[]>(() => loadDraft(draftKey).images);
+	const [files, setFiles] = useState<FileAttachment[]>(() => loadDraft(draftKey).files);
 	const [staging, setStaging] = useState(NOTHING_STAGING);
 	const [fileDragActive, setFileDragActive] = useState(false);
-  const fileDragWatchdogRef = useRef<ReturnType<typeof setTimeout> | null>(
-    null,
-  );
+	const fileDragWatchdogRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 	const [overflowOpen, setOverflowOpen] = useState(false);
 	const [renameDraft, setRenameDraft] = useState<string | null>(null);
-	const [menuEntries, setMenuEntries] = useState<TranscriptEntry[]>([]);
-  const [menuEntriesSessionId, setMenuEntriesSessionId] = useState<
-    string | null
-  >(null);
-	const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-	const [deleting, setDeleting] = useState(false);
 	const workspaceCopy = useCopy();
 	const currentUser = useCurrentUser();
 	// Only a workspace that mounted with a server draft gets autosaved back to
 	// it. Keep that ownership for this mount after the text is cleared, so typing
 	// again can restore the row instead of leaving an unreachable local draft.
 	// An ordinary sessionless workspace still never invents a server draft.
-	const parksServerDraft = useRef(!!workspace.draft).current;
+	const [parksServerDraft] = useState(() => !!workspace.draft);
 	const draftAutoNameRef = useRef(workspace.draft?.autoName);
-	if (workspace.draft) draftAutoNameRef.current = workspace.draft.autoName;
-	const draftAutoName = draftAutoNameRef.current;
 	const promptRef = useRef(prompt);
-	promptRef.current = prompt;
 	const currentUserRef = useRef(currentUser);
-	currentUserRef.current = currentUser;
+	useLayoutEffect(() => {
+		if (workspace.draft) draftAutoNameRef.current = workspace.draft.autoName;
+		promptRef.current = prompt;
+		currentUserRef.current = currentUser;
+	});
 	const serverDraftPresentRef = useRef(!!workspace.draft);
-  const serverDraftTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
-    undefined,
-  );
+	const serverDraftTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 	// Emptying a draft writes null, while typing again writes an object. Keep
 	// those requests in edit order so a slower text write cannot resurrect a
 	// draft after its later deletion has landed.
 	const serverDraftWrites = useRef<Promise<void>>(Promise.resolve());
-	const pushServerDraft = (text: string) => {
+	// Stable per workspace: refs + module fns otherwise.
+	const pushServerDraft = useCallback((text: string) => {
 			const patch = workspaceDraftPatch(
 				text,
 				new Date().toISOString(),
 				currentUserRef.current,
-				draftAutoName,
+				draftAutoNameRef.current,
 			);
 			serverDraftWrites.current = serverDraftWrites.current
 				.then(async () => {
@@ -466,7 +396,7 @@ export function WorkspacePane({
 				// Autosave must never block typing. A flaky connection just means
 				// the next keystroke's debounce tries again.
 				.catch(() => {});
-		};
+	}, [workspace.id]);
 	useEffect(() => {
 		saveDraft(draftKey, { text: prompt, images, files });
 	}, [draftKey, prompt, images, files]);
@@ -479,23 +409,21 @@ export function WorkspacePane({
 	const [starting, setStarting] = useState(false);
 	const [startError, setStartError] = useState<string | null>(null);
 	const startingRef = useRef(false);
-  const startTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
-    undefined,
-  );
+	const startTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 	// A debounced write in flight when the pane unmounts (navigating away)
 	// would otherwise be dropped entirely. Flush it instead of losing the
 	// last few keystrokes. Not when a session start is what unmounted the
 	// pane, though: the server consumed the draft at create, and a flush
 	// would park the just-sent prompt back on the workspace as a stale draft.
-	useEffect(() => {
-		return () => {
-			if (serverDraftTimer.current) {
-				clearTimeout(serverDraftTimer.current);
-				if (parksServerDraft && !startingRef.current)
-					pushServerDraft(promptRef.current);
-			}
-		};
-	}, []);
+	// The exit flush is not reactive: it reads the latest refs at teardown.
+	const flushServerDraftOnExit = useEffectEvent(() => {
+		if (serverDraftTimer.current) {
+			clearTimeout(serverDraftTimer.current);
+			if (parksServerDraft && !startingRef.current)
+				pushServerDraft(promptRef.current);
+		}
+	});
+	useEffect(() => () => flushServerDraftOnExit(), []);
 	const [models, setModels] = useState<ModelOption[]>([]);
 	const [defaultModel, setDefaultModel] = useState("");
 	const [model, setModel] = useState(""); // "" = default
@@ -507,12 +435,10 @@ export function WorkspacePane({
 	const [reviewPanelOpen, setReviewPanelOpen] = useState(false);
 	const [reviewPage, setReviewPage] = useState<PrReviewPage>("files");
 	const panelOpen = tab === "review" ? reviewPanelOpen : sidePanel.open;
-  const setPanelOpen =
-    tab === "review" ? setReviewPanelOpen : sidePanel.setOpen;
+	const setPanelOpen = tab === "review" ? setReviewPanelOpen : sidePanel.setOpen;
 
 	useEffect(() => {
-    const load = () =>
-      fetchModels(workspace.id)
+		const load = () => fetchModels(workspace.id)
 			.then(async (m) => {
 				setModels(m.models);
 				setDefaultModel(m.default);
@@ -524,8 +450,7 @@ export function WorkspacePane({
 			.catch(() => {});
 		void load();
 		window.addEventListener("opensession:workspaces-changed", load);
-    return () =>
-      window.removeEventListener("opensession:workspaces-changed", load);
+		return () => window.removeEventListener("opensession:workspaces-changed", load);
 	}, [workspace.id]);
 
 	// Success navigates away on session_created (App handles it); on failure the
@@ -551,7 +476,7 @@ export function WorkspacePane({
 	}, [addHandler, draftKey]);
 	useEffect(() => () => clearTimeout(startTimer.current), []);
 
-	const addWorkspaceAttachments = async (picked: FileList | File[]) => {
+	const addWorkspaceAttachments = useCallback(async (picked: FileList | File[]) => {
 			const selected = Array.from(picked);
 			const batch = countStaging(selected);
 			setStaging((current) => addStaging(current, batch));
@@ -570,7 +495,7 @@ const { rejected, applied } = await attachToDraft(draftKey, selected);
 })().finally(async () => {
 setStaging((current) => subtractStaging(current, batch));
 });
-		};
+		}, [draftKey]);
 
 	useEffect(() => {
 		if (tab !== null || !connected || starting) {
@@ -597,8 +522,7 @@ setStaging((current) => subtractStaging(current, batch));
 		function handleDragLeave(event: DragEvent) {
 			if (!hasDraggedFiles(event.dataTransfer)) return;
 			const next = event.relatedTarget;
-      if (next instanceof Node && document.documentElement.contains(next))
-        return;
+			if (next instanceof Node && document.documentElement.contains(next)) return;
 			resetFileDrag();
 		}
 		function handleDragOver(event: DragEvent) {
@@ -647,10 +571,7 @@ setStaging((current) => subtractStaging(current, batch));
 		: workspace.branch
 			? { repo: workspace.repo || "repository", branch: workspace.branch }
 			: null;
-  useEffect(
-    () => setReviewPage("files"),
-    [reviewTarget?.repo, reviewTarget?.branch],
-  );
+	useEffect(() => setReviewPage("files"), [reviewTarget?.repo, reviewTarget?.branch]);
 	const reviewSessions = (() => {
 		if (!reviewTarget) return [];
 		return sessions.filter(
@@ -662,16 +583,14 @@ setStaging((current) => subtractStaging(current, batch));
 	// to the human conversation that produced the change. Keeping those roles
 	// separate prevents a newer bks-ghpr automation session from replacing the
 	// walkthrough, assets and summary of the implementation session.
-  const reviewSession =
-    [...reviewSessions].sort((a, b) =>
+	const reviewSession = ([...reviewSessions].sort((a, b) =>
 				(b.lastActivity || "").localeCompare(a.lastActivity || ""),
-    )[0] || null;
-  const listedPresentationSession =
-    mainSession(
+			)[0] || null);
+	const listedPresentationSession = (mainSession(
 				[...reviewSessions].sort((a, b) =>
 					(a.createdAt || "").localeCompare(b.createdAt || ""),
 				),
-    ) ?? null;
+			) ?? null);
 	const [hydratedPresentationSession, setHydratedPresentationSession] =
 		useState<UnifiedSession | null>(null);
 	useEffect(() => {
@@ -684,10 +603,7 @@ setStaging((current) => subtractStaging(current, batch));
 				// archived/filtered members. Its opening prompt identifies the human
 				// session even when the sidebar's live slice cannot see that session.
 				const overview = await fetchWorkspaceOverview(workspace.id);
-        const ids = [
-          overview.prompt?.sessionId,
-          overview.lastMessage?.sessionId,
-        ];
+				const ids = [overview.prompt?.sessionId, overview.lastMessage?.sessionId];
 				for (const id of ids) {
 					if (!id) continue;
 					const candidate = await fetchSession(id);
@@ -707,23 +623,6 @@ setStaging((current) => subtractStaging(current, batch));
 	}, [listedPresentationSession, tab, workspace.id]);
 	const presentationSession =
 		listedPresentationSession ?? hydratedPresentationSession ?? reviewSession;
-	useEffect(() => {
-		if (!overflowOpen || !presentationSession) return;
-		if (menuEntriesSessionId === presentationSession.id) return;
-		let stale = false;
-		void fetchTranscript(presentationSession.id)
-			.then((entries) => {
-				if (stale) return;
-				setMenuEntries((entries as TranscriptEntry[]) || []);
-				setMenuEntriesSessionId(presentationSession.id);
-			})
-			.catch(() => {
-				if (!stale) setMenuEntriesSessionId(presentationSession.id);
-			});
-		return () => {
-			stale = true;
-		};
-	}, [overflowOpen, presentationSession?.id, menuEntriesSessionId]);
 
 	function handleStart() {
 		const q = prompt.trim();
@@ -775,8 +674,7 @@ setStaging((current) => subtractStaging(current, batch));
 	// The session-scoped APIs the panel's PR / diff / git rows read through. A
 	// session-less workspace has none, and the panel simply shows what the
 	// workspace record and its overview already say.
-  const anchorSession =
-    presentationSession ?? workspaceSessions[0] ?? reviewSession;
+	const anchorSession = presentationSession ?? workspaceSessions[0] ?? reviewSession;
 
 	// The workspace's right column: the same panel a session shows, with the
 	// same Info block in it. A workspace is a first-class surface, so the chrome
@@ -815,8 +713,7 @@ setStaging((current) => subtractStaging(current, batch));
 	const headerRef = useRef<HTMLDivElement>(null);
 	const headerActionsRef = useRef<HTMLDivElement>(null);
 	const [headerW, setHeaderW] = useState(0);
-  const [reviewSummaryOpen, setReviewSummaryOpen] =
-    useState(workspaceSummaryOpen);
+	const [reviewSummaryOpen, setReviewSummaryOpen] = useState(workspaceSummaryOpen);
 	useLayoutEffect(() => {
 		const el = headerRef.current;
 		if (!el) return;
@@ -846,30 +743,6 @@ setStaging((current) => subtractStaging(current, batch));
 		if (name && name !== workspace.name) void onRenameWorkspace?.(name);
 	}
 
-	const sessionMenuEntries =
-		presentationSession?.id === menuEntriesSessionId ? menuEntries : [];
-	const lastAssistantId = sessionMenuEntries.findLast(
-		(entry) => entry.type === "assistant",
-	)?.id;
-
-	async function deletePresentationSession(cleanWorktree: boolean) {
-		if (!presentationSession || !onDeleteSession || deleting) return;
-		setDeleting(true);
-		await (async () => {
-await onDeleteSession(presentationSession, cleanWorktree);
-			setOverflowOpen(false);
-			setShowDeleteConfirm(false);
-    })()
-      .catch(async (error) => {
-toast(error instanceof Error ? error.message : "Delete failed", {
-				variant: "error",
-			});
-      })
-      .finally(async () => {
-setDeleting(false);
-});
-	}
-
 	// One workspace menu, placed in the title cluster on desktop and portaled
 	// into the phone's trailing nav slot. Its trigger is the same Button/Menu
 	// composition as SessionViewer's ⋯, so the bar does not change controls when
@@ -885,14 +758,19 @@ setDeleting(false);
 							icon={<IconDotsHorizontal size={22} />}
 						/>
 					}
-          {...mergeStylexProps("", sx.CornerShapeSquircle, isPhone && sx.menuPhone, overflowOpen && sx.menuOpen)}
+					className={cn(
+						"[corner-shape:squircle]",
+						isPhone &&
+							utilityClassName("size-11 min-h-11 rounded-control border-transparent text-dim shadow-none [corner-shape:squircle]"),
+						overflowOpen && utilityClassName("bg-hover text-fg"),
+					)}
 					title="More actions"
 					aria-label="More actions"
 				/>
 				<Menu.Popup
 					align={isPhone ? "end" : "start"}
 					sideOffset={6}
-          {...mergeStylexProps("", sx.maxWMin300pxCalc100vw24px, sx.minW240px)}
+					className={mergeStylexOverrideClassName("max-w-[min(300px,calc(100vw-24px))]", sx.minW240px)}
 				>
 					{onRenameWorkspace && (
 						<Menu.Item onClick={() => setRenameDraft(workspace.name)}>
@@ -900,19 +778,17 @@ setDeleting(false);
 							<span {...stylex.props(sx.grow)}>Rename workspace</span>
 						</Menu.Item>
 					)}
-					{isPhone && (
-						<Menu.Item onClick={() => workspaceCopy.copy(window.location.href)}>
-							<CopyCheck
-								copied={workspaceCopy.copied}
-								idle={<IconLink size={20} />}
-								size={20}
-								className={MENU_ICON}
-							/>
-							<span {...stylex.props(sx.grow)}>
-								{workspaceCopy.copied ? "Copied" : "Share"}
-							</span>
-						</Menu.Item>
-					)}
+					<Menu.Item onClick={() => workspaceCopy.copy(window.location.href)}>
+						<CopyCheck
+							copied={workspaceCopy.copied}
+							idle={<IconLink size={20} />}
+							size={20}
+							className={MENU_ICON}
+						/>
+						<span {...stylex.props(sx.grow)}>
+							{workspaceCopy.copied ? "Copied" : "Share workspace"}
+						</span>
+					</Menu.Item>
 					{isPhone && onNewSession && (
 						<>
 							<Menu.Separator />
@@ -922,131 +798,46 @@ setDeleting(false);
 							</Menu.Item>
 						</>
 					)}
-					{presentationSession?.source === "opensession" &&
-						presentationSession.ran &&
-						lastAssistantId && (
-							<Menu.Item
-								onClick={() => {
-									setPendingSessionFork(
-										presentationSession.id,
-										lastAssistantId,
-									);
-									onOpenSession(presentationSession.id);
-								}}
-							>
-								<IconBranches size={20} className={MENU_ICON} />
-								<span {...stylex.props(sx.grow)}>Fork session</span>
-							</Menu.Item>
-						)}
-					{presentationSession && onOpenNewSession && (
-						<SpinOffMenu
-							session={presentationSession}
-							entries={sessionMenuEntries}
-							send={send}
-							connected={connected}
-							onOpenNewSession={onOpenNewSession}
-						/>
-					)}
-					{presentationSession && (
+					{!!archivedSessions?.length && onRestoreSession && (
 						<Menu.SubmenuRoot>
-							<Menu.SubmenuTrigger title="Copy this session's transcript">
-								<IconCopy size={20} className={MENU_ICON} />
-								<span {...stylex.props(sx.grow)}>Copy transcript</span>
+							<Menu.SubmenuTrigger title="Closed sessions in this workspace">
+								<IconHistory size={20} className={MENU_ICON} />
+								<span {...stylex.props(sx.grow)}>Archived sessions</span>
 								<IconChevronRight size={16} className={mergeStylexOverrideClassName("", sx.textFaint)} />
 							</Menu.SubmenuTrigger>
-							<Menu.Popup className={mergeStylexOverrideClassName("", sx.minW210px)}>
-								<Menu.Item
-									onClick={() =>
-										void copySessionTranscript(
-											presentationSession,
-											"concise",
-											toast,
-										)
-									}
-								>
-									<IconListCircles size={20} className={MENU_ICON} />
-									<span {...stylex.props(sx.grow)}>Concise</span>
-								</Menu.Item>
-								<Menu.Item
-									onClick={() =>
-										void copySessionTranscript(
-											presentationSession,
-											"full",
-											toast,
-										)
-									}
-								>
-									<IconFile size={20} className={MENU_ICON} />
-									<span {...stylex.props(sx.grow)}>Full</span>
-								</Menu.Item>
+							<Menu.Popup className={mergeStylexOverrideClassName("", sx.minW240px, sx.maxW320px)}>
+								<ArchivedSessionItems
+									sessions={archivedSessions}
+									onSelect={(session) => {
+										setOverflowOpen(false);
+										onOpenSession(session.id);
+									}}
+									onRestore={onRestoreSession}
+								/>
 							</Menu.Popup>
 						</Menu.SubmenuRoot>
 					)}
-					{presentationSession && (onArchiveSession || onDeleteSession) && (
-						<Menu.Separator />
-					)}
-					{!isPhone && presentationSession && onArchiveSession && (
-						<Menu.Item
-							onClick={() =>
-								onArchiveSession(
-									presentationSession,
-									!presentationSession.archived,
-								)
-							}
-						>
+					{(onArchiveWorkspace || onDeleteWorkspace) && <Menu.Separator />}
+					{onArchiveWorkspace && workspaceSessions.length > 0 && (
+						<Menu.Item onClick={onArchiveWorkspace}>
 							<IconArchive size={20} className={MENU_ICON} />
-							<span {...stylex.props(sx.grow)}>
-								{presentationSession.archived
-									? "Unarchive session"
-									: "Archive session"}
-							</span>
+							<span {...stylex.props(sx.grow)}>Archive workspace</span>
 						</Menu.Item>
 					)}
-          {presentationSession &&
-            onDeleteSession &&
-						(!showDeleteConfirm ? (
-							<Menu.Item
-								closeOnClick={false}
-                {...mergeStylexProps("data-[highlighted]:bg-red-soft data-[highlighted]:text-red", sx.textRed)}
-								onClick={() => setShowDeleteConfirm(true)}
-							>
-								<IconTrash size={20} />
-								<span {...stylex.props(sx.grow)}>Delete session</span>
-							</Menu.Item>
-						) : (
-							<div className={VIEWER_DELETE_CONFIRM}>
-								{presentationSession.worktreeDir &&
-									presentationSession.mode !== "ask" && (
-										<Button
-											variant="danger"
-											size="sm"
-                      className={mergeStylexOverrideClassName("", sx.minH0, sx.px3, sx.py5px, typography.label)}
-											onClick={() => void deletePresentationSession(true)}
-											disabled={deleting}
-										>
-											{deleting ? "…" : "+ Worktree"}
-										</Button>
-									)}
-								<Button
-									variant="warning"
-									size="sm"
-                  className={mergeStylexOverrideClassName("", sx.minH0, sx.px3, sx.py5px, typography.label)}
-									onClick={() => void deletePresentationSession(false)}
-									disabled={deleting}
-								>
-									{deleting ? "…" : "Session"}
-								</Button>
-								<Button
-									variant="soft"
-									size="sm"
-                  className={mergeStylexOverrideClassName("", sx.minH0, sx.px3, sx.py5px, typography.label)}
-									onClick={() => setShowDeleteConfirm(false)}
-									disabled={deleting}
-								>
-									Cancel
-								</Button>
-							</div>
-						))}
+					{onDeleteWorkspace && (
+						<Menu.Item
+							className={mergeStylexOverrideClassName("data-[highlighted]:bg-red-soft data-[highlighted]:text-red", sx.textRed)}
+							onClick={() => {
+								const message = workspaceSessions.length
+									? `Delete workspace "${workspace.name}"? Its sessions become standalone.`
+									: `Delete workspace "${workspace.name}"?`;
+								if (window.confirm(message)) void onDeleteWorkspace();
+							}}
+						>
+							<IconTrash size={20} />
+							<span {...stylex.props(sx.grow)}>Delete workspace</span>
+						</Menu.Item>
+					)}
 				</Menu.Popup>
 			</div>
 		</Menu.Root>
@@ -1056,15 +847,7 @@ setDeleting(false);
 		<TopBar ref={headerRef} className={VIEWER_HEADER}>
 			<TopBarLeading className={VIEWER_TITLE}>
 				{workspace.repo && (
-          <span
-            {...stylex.props(
-              sx.flex,
-              sx.minW0,
-              sx.shrink0,
-              sx.itemsCenter,
-              sx.gap7px,
-            )}
-          >
+					<span {...stylex.props(sx.flex, sx.minW0, sx.shrink0, sx.itemsCenter, sx.gap7px)}>
 						<RepoTile name={workspace.repo} />
 						<span {...stylex.props(sx.maxW180px, sx.TranslateYPx, sx.truncate)}>
 							{repoLabel(workspace.repo)}
@@ -1123,8 +906,7 @@ setDeleting(false);
 								const reduceMotion = window.matchMedia(
 									"(prefers-reduced-motion: reduce)",
 								).matches;
-                const rect =
-                  event.detail > 0 && !reduceMotion
+								const rect = event.detail > 0 && !reduceMotion
 									? event.currentTarget.getBoundingClientRect()
 									: null;
 								onNewSession(
@@ -1167,7 +949,7 @@ setDeleting(false);
 					<Button
 						variant="ghost"
 						size="md"
-            {...mergeStylexProps("", sx.hoverBgHover, sx.hoverTextFg, sx.roundedControl, sx.textDim)}
+						className={mergeStylexOverrideClassName("hover:bg-hover hover:text-fg", sx.roundedControl, sx.textDim)}
 						onClick={() => setPanelOpen(!panelOpen)}
 						aria-label="Toggle side panel"
 						icon={<IconSidebarRight size={22} />}
@@ -1196,7 +978,7 @@ setDeleting(false);
 
 	if (tab === "review" && reviewTarget) {
 		return withPanel(
-      <div {...mergeStylexProps(VIEW_MAIN, sx.reviewMain)}>
+			<div className={cn(VIEW_MAIN, utilityClassName("h-full min-h-0 bg-surface"))}>
 				<PrPanel
 					onOpenPr={onOpenPr}
 					key={`${reviewTarget.repo}:${reviewTarget.branch}`}
@@ -1222,7 +1004,7 @@ setDeleting(false);
 
 	if (tab === "conversation" && workspace.plainThreadId) {
 		return withPanel(
-      <div {...mergeStylexProps(VIEW_MAIN, sx.main)}>
+			<div className={utilityClassName(`${VIEW_MAIN} flex flex-col h-full min-h-0`)}>
 				<ConversationPane
 					threadId={workspace.plainThreadId}
 					onOpenSession={onOpenSession}
@@ -1238,7 +1020,7 @@ setDeleting(false);
 	const webPanel = webRef ? refWebPanel(webRef) : null;
 	if (tab === "video" && webPanel) {
 		return withPanel(
-      <div {...mergeStylexProps(VIEW_MAIN, sx.main)}>
+			<div className={utilityClassName(`${VIEW_MAIN} flex flex-col h-full min-h-0`)}>
 				{webPanel.component === "slack-channel" ? (
 					<SlackChannelPane channelId={webPanel.refId} />
 				) : (
@@ -1259,12 +1041,12 @@ setDeleting(false);
 	// it doesn't narrate that there are no sessions yet, and the header row and
 	// info panel already say which workspace it belongs to.
 	return withPanel(
-    <div {...mergeStylexProps(VIEW_MAIN, sx.main)}>
+		<div className={utilityClassName(`${VIEW_MAIN} flex flex-col h-full min-h-0`)}>
 			{fileDragActive &&
 				createPortal(
 					<>
 						<motion.div
-              {...mergeStylexProps("", sx.bgColorMixInSrgbVarBgPanel68Transparent, sx.pointerEventsNone, sx.fixed, sx.inset0, sx.z12000, sx.flex, sx.flexCol, sx.itemsCenter, sx.justifyCenter, sx.px6, sx.textCenter)}
+							{...mergeStylexProps("bg-[color-mix(in_srgb,var(--bg-panel)_68%,transparent)]", sx.pointerEventsNone, sx.fixed, sx.inset0, sx.z12000, sx.flex, sx.flexCol, sx.itemsCenter, sx.justifyCenter, sx.px6, sx.textCenter)}
 							initial={{ opacity: 0 }}
 							animate={{ opacity: 1 }}
 							transition={{ type: "tween", duration: duration.base, ease }}
@@ -1272,11 +1054,7 @@ setDeleting(false);
 							data-file-drop-overlay
 						>
 							<IconArrowUpToLine size={40} className={mergeStylexOverrideClassName("", sx.textFg)} />
-              <div
-                {...mergeStylexProps("text-title", sx.mt4, sx.fontSemibold, sx.textFg)}
-              >
-                Add files
-              </div>
+							<div {...mergeStylexProps("text-title", sx.mt4, sx.fontSemibold, sx.textFg)} >Add files</div>
 							<div {...stylex.props(sx.mt1, sx.textDim, typography.label)}>
 								Drop here to attach them to your message.
 							</div>
@@ -1288,23 +1066,12 @@ setDeleting(false);
 					document.body,
 				)}
 			<div {...stylex.props(sx.flex1, sx.minH0, sx.overflowYAuto)} />
-      <div
-        {...stylex.props(
-          sx.wFull,
-          sx.maxW760px,
-          sx.mxAuto,
-          sx.px5,
-          sx.pb5,
-          sx.shrink0,
-        )}
-      >
+			<div {...stylex.props(sx.wFull, sx.maxW760px, sx.mxAuto, sx.px5, sx.pb5, sx.shrink0)}>
 				<Composer
 					value={prompt}
 					onChange={setPrompt}
 					onSend={handleStart}
-          placeholder={
-            starting ? "Starting…" : "Start a session in this workspace…"
-          }
+					placeholder={starting ? "Starting…" : "Start a session in this workspace…"}
 					disabled={starting}
 					sendDisabled={
 						starting ||
@@ -1325,9 +1092,7 @@ setDeleting(false);
 					staging={staging}
 					onAddAttachments={addWorkspaceAttachments}
 				/>
-        {startError && (
-          <InlineAlert className={mergeStylexOverrideClassName("", sx.mt25)}>{startError}</InlineAlert>
-        )}
+				{startError && <InlineAlert className={mergeStylexOverrideClassName("", sx.mt25)}>{startError}</InlineAlert>}
 			</div>
 		</div>,
 	);

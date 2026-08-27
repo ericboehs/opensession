@@ -793,7 +793,7 @@ export function PreviewButton({
     `${BASE_PATH}/preview-wait/${encodeURIComponent(session.id)}` +
     (session.previewPath ? `?path=${encodeURIComponent(session.previewPath)}` : "");
 
-  async function start() {
+  const start = async () => {
     // In-app tab flow: opening the tab both starts the preview (the pane
     // kicks the claim) and shows its progress — no popup, no interstitial.
     if (onOpenTab) {
@@ -830,9 +830,9 @@ const s = await startPreviewApi(session.id);
 setStarting(false);
       wait?.close();
 });
-  }
+  };
 
-  async function stop() {
+  const stop = async () => {
     setStopping(true);
     await (async () => {
 setStatus(await stopPreviewApi(session.id));
@@ -842,7 +842,7 @@ setStatus(await stopPreviewApi(session.id));
 }).finally(async () => {
 setStopping(false);
 });
-  }
+  };
 
   async function snap() {
     if (snapping) return;

@@ -1,5 +1,5 @@
 import React, {
-	
+	useCallback,
 	useEffect,
 	useImperativeHandle,
 	useLayoutEffect,
@@ -283,10 +283,6 @@ export function NewSessionPrompt({
 	onMentionOpenChange,
 }: Props) {
 	const [text, setText] = useState(initialText);
-	// Written during render, the way the projection hook holds its own: every
-	// handler the palette runs after a commit (Create or dismiss) reads the draft
-	// from here, so it has to be the committed value and not one frame old.
-	valueRef.current = text;
 	// The palette re-renders far less often than this field does now, so its
 	// callbacks are held rather than depended on: a repo switch mid-sentence
 	// would otherwise restart the settle timer.
@@ -296,12 +292,6 @@ export function NewSessionPrompt({
 		onEdgesChange,
 		onMentionOpenChange,
 	});
-	callbacks.current = {
-		onHasTextChange,
-		onDraftSettled,
-		onEdgesChange,
-		onMentionOpenChange,
-	};
 
 	// The draft store, so a dismissed palette can restore the work. Written on a
 	// debounce rather than per character, and flushed by every way out of the
@@ -316,21 +306,33 @@ export function NewSessionPrompt({
 	// outlives the palette; a second writer here would put the pre-upload array
 	// back over a completion that landed between the last render and the flush.
 	const draft = useRef({ text });
-	draft.current = { text };
+	// Publish one coherent committed snapshot for every event path that reads
+	// outside this field. Speculative concurrent renders never leak into refs.
+	useLayoutEffect(() => {
+		valueRef.current = text;
+		callbacks.current = {
+			onHasTextChange,
+			onDraftSettled,
+			onEdgesChange,
+			onMentionOpenChange,
+		};
+		draft.current = { text };
+	});
 	// Non-null exactly while the store is behind the field, which is what makes
 	// "nothing pending" a safe reason for a flush to do nothing.
 	const draftTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-	const writeDraftNow = () => {
+	// Stable identity: only refs and the module-level draft store are touched.
+	const writeDraftNow = useCallback(() => {
 		if (draftTimer.current == null) return;
 		clearTimeout(draftTimer.current);
 		draftTimer.current = null;
 		saveDraft(DRAFT_KEY, draft.current);
-	};
-	const dropPendingDraftWrite = () => {
+	}, []);
+	const dropPendingDraftWrite = useCallback(() => {
 		if (draftTimer.current == null) return;
 		clearTimeout(draftTimer.current);
 		draftTimer.current = null;
-	};
+	}, []);
 
 	useEffect(() => {
 		if (draftTimer.current != null) clearTimeout(draftTimer.current);
@@ -452,9 +454,9 @@ export function NewSessionPrompt({
 	// prefilled or restored prompt clipped at its 132px minimum and unscrollable.
 	const [promptBody, setPromptBody] = useState<HTMLDivElement | null>(null);
 	const attachPromptBody = (node: HTMLDivElement | null) => {
-			mentions.inputWrapRef.current = node;
-			setPromptBody(node);
-		};
+		mentions.setInputWrap(node);
+		setPromptBody(node);
+	};
 
 	useLayoutEffect(() => {
 		const textarea = textareaRef.current;
@@ -462,7 +464,7 @@ export function NewSessionPrompt({
 		textarea.style.height = "0px";
 		textarea.style.height = `${textarea.scrollHeight}px`;
 		updatePromptFade(promptBody);
-	}, [promptBody, sessionNames.displayText, images.length, files.length]);
+	}, [promptBody, sessionNames.displayText, images.length, files.length, textareaRef]);
 
 	useEffect(() => {
 		if (!promptBody) return;

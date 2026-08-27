@@ -3,14 +3,17 @@ import { mkdtempSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { getPrViewedFiles } from "./pr-viewed";
+import { __setGhBackoffForTest } from "./github-limit";
 import type { RouteContext } from "./routes/context";
 
 const savedConfig = process.env.OPENSESSION_CONFIG;
 const savedStore = process.env.OPENSESSION_GITHUB_AUTH_STORE;
 const realFetch = globalThis.fetch;
 let dir = "";
+let savedGraphqlBackoff = 0;
 
 beforeEach(() => {
+  savedGraphqlBackoff = __setGhBackoffForTest(0, "graphql");
   dir = mkdtempSync(join(tmpdir(), "os-pr-viewed-test-"));
   process.env.OPENSESSION_CONFIG = join(dir, "config.json");
   process.env.OPENSESSION_GITHUB_AUTH_STORE = join(dir, "github-auth.json");
@@ -25,6 +28,7 @@ beforeEach(() => {
         alice: {
           login: "alice",
           token: "ghu_simple_alice",
+          source: "device",
           connectedAt: "2026-08-20T00:00:00.000Z",
         },
       },
@@ -33,6 +37,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  __setGhBackoffForTest(savedGraphqlBackoff, "graphql");
   globalThis.fetch = realFetch;
   rmSync(dir, { recursive: true, force: true });
   if (savedConfig === undefined) delete process.env.OPENSESSION_CONFIG;

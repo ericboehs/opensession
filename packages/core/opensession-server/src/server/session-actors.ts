@@ -95,6 +95,24 @@ export function isMachineActor(createdBy?: string | null): boolean {
 }
 
 /**
+ * Identity whose personal provider subscription may serve this turn.
+ *
+ * Human-authored messages use the prompter's account. Machine-authored
+ * continuations (worker reports, auto-continue, restart recovery) inherit the
+ * interactive session owner's account instead of becoming an unknown user and
+ * incorrectly declaring the shared pool dry. A machine-owned session stays
+ * pool-only: never turn one synthetic actor into another person's authority.
+ */
+export function providerAccountUser(
+	promptUser?: string | null,
+	sessionOwner?: string | null,
+): string | undefined {
+	if (promptUser && !isMachineActor(promptUser)) return promptUser;
+	if (sessionOwner && !isMachineActor(sessionOwner)) return sessionOwner;
+	return undefined;
+}
+
+/**
  * Display label for a machine actor. A delegated sender collapses to its kind
  * — one "Worker sessions" row rather than a row per spawned session id, which
  * is what made the owner tables unreadable.

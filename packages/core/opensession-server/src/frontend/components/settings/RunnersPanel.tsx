@@ -149,7 +149,8 @@ const sx = stylex.create({
 		paddingBlock: "2px",
 		fontWeight: "var(--font-weight-medium)",
 		textTransform: "capitalize",
-	},
+
+		cornerShape: "var(--cs)",},
 	capitalize: {
 		textTransform: "capitalize",
 	},
@@ -263,12 +264,18 @@ toast("Copy the command from this page", { variant: "error" });
 	};
 	const change = async (runner: RunnerInfo, patch: Parameters<typeof updateRunner>[1]) => {
 		setBusyId(runner.id);
-		try {
-			const next = await updateRunner(runner.id, patch);
-			setRunners((items) => items.map((item) => item.id === next.id ? next : item));
-			return true;
-		} catch (error) { toast(error instanceof Error ? error.message : "Could not update Runner", { variant: "error" }); return false; }
-		finally { setBusyId(null); }
+		setBusyId(runner.id);
+		const updated = await updateRunner(runner.id, patch)
+			.then((next) => {
+				setRunners((items) => items.map((item) => item.id === next.id ? next : item));
+				return true;
+			})
+			.catch((error: unknown) => {
+				toast(error instanceof Error ? error.message : "Could not update Runner", { variant: "error" });
+				return false;
+			})
+			.finally(() => setBusyId(null));
+		return updated;
 	};
 	const revoke = async (runner: RunnerInfo) => {
 		if (!confirm(`Revoke ${runner.label || runner.name}? It disconnects immediately.`)) return;

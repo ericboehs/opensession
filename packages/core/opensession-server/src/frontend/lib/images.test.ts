@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { splitAttachments } from "./images";
+import { preparePromptImages, splitAttachments } from "./images";
 
 // `bun test` has no DOM FileReader, and the inline fallback path needs one.
 // Filled in only when absent, so a real one is never clobbered for other files
@@ -65,12 +65,15 @@ describe("splitAttachments", () => {
 		expect(staged[0]?.name).toMatch(/^pasted-\d+\.jpg$/);
 	});
 
-	test("keeps a type the server cannot stage inline", async () => {
+	test("rejects an unsupported image the browser cannot convert", async () => {
 		uploadServer([]);
-		const { images } = await splitAttachments([
+		const { images, rejected } = await splitAttachments([
 			imageFile("diagram.svg", "image/svg+xml"),
 		]);
-		expect(images[0]).toStartWith("data:");
+		expect(images).toEqual([]);
+		expect(rejected).toEqual([
+			"diagram.svg (use PNG, JPEG, GIF, or WebP)",
+		]);
 	});
 
 	test("falls back to inline when staging fails for a small image", async () => {
@@ -108,5 +111,48 @@ describe("splitAttachments", () => {
 		expect(files).toMatchObject([
 			{ name: "notes.txt", path: "/uploads/staged/notes.txt" },
 		]);
+	});
+});
+
+describe("preparePromptImages", () => {
+	test("keeps supported image data byte-for-byte identical", async () => {
+		const png = "data:image/png;base64,aGVsbG8=";
+		expect(await preparePromptImages([png])).toEqual([png]);
+	});
+
+	test("converts an older unsupported inline image before retrying it", async () => {
+		const originalBitmap = globalThis.createImageBitmap;
+		const originalDocument = globalThis.document;
+		globalThis.createImageBitmap = (async () => ({
+			width: 2,
+			height: 1,
+			close() {},
+		})) as typeof createImageBitmap;
+		Object.defineProperty(globalThis, "document", { configurable: true, writable: true, value: {
+			createElement: () => ({
+				width: 0,
+				height: 0,
+				getContext: () => ({ drawImage() {} }),
+				toBlob: (callback: BlobCallback) => callback(
+					new Blob([new Uint8Array([1, 2, 3])], { type: "image/jpeg" }),
+				),
+			}),
+		} as unknown as Document });
+		try {
+			const result = await preparePromptImages([
+				"data:image/heic;base64,aGVsbG8=",
+			]);
+			expect(result?.[0]).toStartWith("data:image/jpeg;base64,");
+		} finally {
+			globalThis.createImageBitmap = originalBitmap;
+			if (originalDocument === undefined) delete (globalThis as { document?: Document }).document;
+			else Object.defineProperty(globalThis, "document", { configurable: true, writable: true, value: originalDocument });
+		}
+	});
+
+	test("makes an unconvertible old image a terminal delivery error", async () => {
+		await expect(
+			preparePromptImages(["data:image/heic;base64,bm90LWFuLWltYWdl"]),
+		).rejects.toMatchObject({ status: 400 });
 	});
 });

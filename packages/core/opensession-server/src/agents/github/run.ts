@@ -23,7 +23,7 @@ import {
   type ActiveRunRecord,
 } from "../../server/run-journal";
 import { listAutomations } from "../../server/automations";
-import { providerFor, DEFAULT_FALLBACK_MODEL, modelLabel } from "../../server/models";
+import { automaticFallbackModel, providerFor, modelLabel } from "../../server/models";
 import { engineSessionPatch } from "../../server/sessions";
 import { STRIPE_CONFIRM_TOOLS } from "../../server/runner-shared";
 import { gitIdentityFor, type GitIdentity } from "../../server/shared/user-mappings";
@@ -316,7 +316,7 @@ async function discardGithubRunRecord(
     throw new GithubRunRecoveryUncertainError(run.hostId || run.runKey);
   }
   if (events) {
-    cancelAgentRun(bksId, run.claudeSessionId, run.runKey);
+    void cancelAgentRun(bksId, run.claudeSessionId, run.runKey);
     for await (const _event of events) {}
   }
   journalClearIfLineage(run);
@@ -472,7 +472,7 @@ export async function runGithubAgent(opts: GithubRunOpts): Promise<GithubRunResu
           confirmTools: STRIPE_CONFIRM_TOOLS,
           aws: true,
           author: opts.author,
-          fallbackModel: DEFAULT_FALLBACK_MODEL,
+          fallbackModel: automaticFallbackModel(effectiveModel),
           mcpServers: githubFlowMcpServers(),
           trustProfile: "automation",
           journalKind: `github-${opts.kind}`,
@@ -492,7 +492,7 @@ export async function runGithubAgent(opts: GithubRunOpts): Promise<GithubRunResu
         confirmTools: STRIPE_CONFIRM_TOOLS,
         aws: true,
         author: opts.author,
-        fallbackModel: DEFAULT_FALLBACK_MODEL,
+        fallbackModel: automaticFallbackModel(effectiveModel),
         mcpServers: githubFlowMcpServers(),
         trustProfile: "automation",
         journalKind: `github-${opts.kind}`,
@@ -507,7 +507,7 @@ export async function runGithubAgent(opts: GithubRunOpts): Promise<GithubRunResu
         confirmTools: STRIPE_CONFIRM_TOOLS,
         aws: true,
         author: opts.author,
-        fallbackModel: DEFAULT_FALLBACK_MODEL,
+        fallbackModel: automaticFallbackModel(effectiveModel),
         mcpServers: githubFlowMcpServers(),
         githubEnv,
         journal: { osSessionId: bksId, kind: `github-${opts.kind}` },
@@ -551,14 +551,16 @@ export async function runGithubAgent(opts: GithubRunOpts): Promise<GithubRunResu
     }
   } catch (e: any) {
     errorMsg = e.message || String(e);
-  } finally {
-    if (recoveredRun && !recoveryUncertain) journalClearIfLineage(recoveredRun);
   }
 
   await persist(engineSessionId);
   // An uncertain host still owns the turn. Settling the visible run or clearing
-  // its journal here would let a retry overlap it.
-  if (!recoveryUncertain) recordRunOutcome(bksId, errorMsg || null);
+  // its journal here would let a retry overlap it. A settled run keeps its
+  // recovery record until durable outcome projection completes.
+  if (!recoveryUncertain) {
+    await recordRunOutcome(bksId, errorMsg || null);
+    if (recoveredRun) journalClearIfLineage(recoveredRun);
+  }
   return {
     bksId,
     text,

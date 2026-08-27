@@ -10,7 +10,7 @@ const prevDir = __setSessionsDirForTest(scratch);
 // Import AFTER repointing the sessions dir isn't required (the module reads the
 // live binding per call), but cache-bust anyway for isolation.
 const { migrateSessionEngine, isAutomationOwnedSession, sessionHasJournaledRun } =
-  await import(`./migrate-engine.ts?test=${crypto.randomUUID()}`);
+  await import("./session-model-migration");
 
 function writeSession(id: string, extra: Record<string, unknown> = {}) {
   writeFileSync(
@@ -47,9 +47,9 @@ afterAll(() => {
   rmSync(scratch, { recursive: true, force: true });
 });
 
-describe("migrateSessionEngine", () => {
-  test("flips the model and records modelHistory", () => {
-    const res = migrateSessionEngine(
+describe("migrateSessionEngine", async () => {
+  test("flips the model and records modelHistory", async () => {
+    const res = await migrateSessionEngine(
       "bks-mig-ok",
       "pi/anthropic/claude-haiku-4-5",
       "tester"
@@ -69,50 +69,43 @@ describe("migrateSessionEngine", () => {
       by: "tester",
     });
     // Idempotent: same target again is ok, no duplicate history entry.
-    const again = migrateSessionEngine("bks-mig-ok", "pi/anthropic/claude-haiku-4-5");
+    const again = await migrateSessionEngine("bks-mig-ok", "pi/anthropic/claude-haiku-4-5");
     expect(again.ok).toBe(true);
     expect(
       JSON.parse(readFileSync(join(scratch, "bks-mig-ok.json"), "utf-8")).modelHistory
     ).toHaveLength(1);
   });
 
-  test("rejects targets that name a model rather than an engine", () => {
+  test("rejects targets that name a model rather than an engine", async () => {
     // A bare native slug dispatches to whatever the default engine is — it is
     // not an engine choice, so it can't be a migration target.
     for (const target of ["claude-sonnet-5", "gpt-5.6-sol", "nonsense"]) {
-      const res = migrateSessionEngine("bks-mig-ok", target);
+      const res = await migrateSessionEngine("bks-mig-ok", target);
       expect(res.ok).toBe(false);
       if (!res.ok) expect(res.error).toContain("not an engine model id");
     }
   });
 
-  test("accepts any enabled engine, not just pi", () => {
+  test("accepts any enabled engine, not just pi", async () => {
     // pi ids need no extra switch here: the pi runner reports its own config
     // gate at run time.
-    const pi = migrateSessionEngine("bks-mig-ok", "pi/anthropic/claude-opus-5");
+    const pi = await migrateSessionEngine("bks-mig-ok", "pi/anthropic/claude-opus-5");
     expect(pi.ok).toBe(true);
     if (pi.ok) expect(pi.to).toBe("pi/anthropic/claude-opus-5");
 
     // A legacy direct-engine id normalizes onto pi (the engines are
     // removed), so the flip lands the session on a runnable engine rather
     // than failing or bricking it.
-    const legacy = migrateSessionEngine("bks-mig-ok", "claude/anthropic/claude-opus-5");
+    const legacy = await migrateSessionEngine("bks-mig-ok", "claude/anthropic/claude-opus-5");
     expect(legacy.ok).toBe(true);
     if (legacy.ok) expect(legacy.to).toBe("pi/anthropic/claude-opus-5");
     // Leave the session where the other tests expect it.
-    migrateSessionEngine("bks-mig-ok", "pi/anthropic/claude-haiku-4-5");
+    await migrateSessionEngine("bks-mig-ok", "pi/anthropic/claude-haiku-4-5");
   });
 
-  test("allows automation-owned sessions to migrate only to Pi", () => {
+  test("allows automation-owned sessions to migrate to Pi", async () => {
     for (const id of ["bks-mig-automation", "bks-mig-automation2"]) {
-      const blocked = migrateSessionEngine(
-        id,
-        "pi/anthropic/claude-haiku-4-5"
-      );
-      expect(blocked.ok).toBe(false);
-      if (!blocked.ok) expect(blocked.error).toContain("automation-owned");
-
-      const pi = migrateSessionEngine(id, "pi/anthropic/claude-haiku-4-5");
+      const pi = await migrateSessionEngine(id, "pi/anthropic/claude-haiku-4-5");
       expect(pi.ok).toBe(true);
       if (pi.ok) expect(pi.to).toBe("pi/anthropic/claude-haiku-4-5");
     }
@@ -120,9 +113,9 @@ describe("migrateSessionEngine", () => {
     expect(isAutomationOwnedSession({ createdBy: "Alex" })).toBe(false);
   });
 
-  test("can preserve last activity during a fleet migration", () => {
+  test("can preserve last activity during a fleet migration", async () => {
     writeSession("bks-mig-preserve");
-    const res = migrateSessionEngine(
+    const res = await migrateSessionEngine(
       "bks-mig-preserve",
       "pi/anthropic/claude-haiku-4-5",
       "fleet",
@@ -136,15 +129,15 @@ describe("migrateSessionEngine", () => {
     expect(data.modelHistory.at(-1)).toMatchObject({ by: "fleet" });
   });
 
-  test("rejects sessions with an in-flight journaled run", () => {
+  test("rejects sessions with an in-flight journaled run", async () => {
     expect(sessionHasJournaledRun("bks-mig-busy")).toBe(true);
-    const res = migrateSessionEngine("bks-mig-busy", "pi/anthropic/claude-haiku-4-5");
+    const res = await migrateSessionEngine("bks-mig-busy", "pi/anthropic/claude-haiku-4-5");
     expect(res.ok).toBe(false);
     if (!res.ok) expect(res.error).toContain("in-flight");
   });
 
-  test("rejects unknown sessions", () => {
-    const res = migrateSessionEngine("bks-nope", "pi/anthropic/claude-haiku-4-5");
+  test("rejects unknown sessions", async () => {
+    const res = await migrateSessionEngine("bks-nope", "pi/anthropic/claude-haiku-4-5");
     expect(res.ok).toBe(false);
   });
 });

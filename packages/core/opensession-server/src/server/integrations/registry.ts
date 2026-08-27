@@ -196,30 +196,8 @@ export const INTEGRATIONS: IntegrationSpec[] = [
     doc: "docs/setup/github.md",
     enableFlag: "ENABLE_GITHUB_AGENT",
     env: [
-      {
-        name: "GITHUB_API_TOKEN",
-        required: true,
-        description: "token for PR reads/writes via the gh CLI",
-      },
-      { name: "GITHUB_WEBHOOK_SECRET", description: "verifies inbound webhook signatures (and signs the outbound gh-forwarded deliveries)" },
-      {
-        name: "GITHUB_WEBHOOK_FORWARD",
-        description:
-          "\"true\"/\"false\" to force the outbound `gh webhook forward` delivery on/off. Unset auto-selects: on when no public webhook URL is configured (simple mode), off when one is",
-      },
-      {
-        name: "GITHUB_WEBHOOK_FORWARD_ORG",
-        description:
-          "forward org-wide with one `gh webhook forward --org` process instead of one per configured repo",
-      },
-      { name: "GITHUB_BOT_LOGIN", description: "login PRs are attributed to" },
-      { name: "GITHUB_MENTION_HANDLES", description: "handles that trigger the PR agent" },
-    ],
-    links: [
-      {
-        label: "Create fine-grained token",
-        url: "https://github.com/settings/personal-access-tokens/new",
-      },
+      { name: "GITHUB_WEBHOOK_SECRET", description: "verifies inbound webhook signatures" },
+      { name: "GITHUB_MENTION_HANDLES", description: "additional handles that trigger the PR agent" },
     ],
     load: async (ctx) => {
       const { GithubAgent } = await import("../../agents/github/index");

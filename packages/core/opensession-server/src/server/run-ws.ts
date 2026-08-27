@@ -48,6 +48,7 @@ import { cpus, loadavg } from "node:os";
 import { audit } from "./audit";
 import { dispatchRunRpc, timingSafeEqStr } from "./run-rpc";
 import type { HostConnection, HostConnectionHandlers, HostConnector } from "./host-client";
+import { stateDir } from "./paths";
 
 const g = globalThis as any;
 
@@ -623,7 +624,7 @@ function escalateTimerPoison(staleMs: number): void {
   // too, so unbounded auto-exits would flap forever. Track recent auto-exits
   // in a state file; after 3 in 30 minutes stop exiting and just scream — at
   // that point the tree needs a human (or a fixing agent), not a restart.
-  const guardPath = `${process.env.HOME}/.opensession-timer-poison.json`;
+  const guardPath = stateDir("timer-poison.json");
   let exits: string[] = [];
   try {
     exits = (JSON.parse(readFileSync(guardPath, "utf8")).exits ?? []) as string[];

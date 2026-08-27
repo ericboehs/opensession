@@ -16,6 +16,7 @@ import { shellQuoteWord } from "./sandbox/adapters/bootstrap";
 import { sandboxHttpsPortFor } from "./sandbox/preview-ports";
 import { cacheSandboxPortalRecords } from "./sandbox-portals";
 import { REPO_ROOT } from "../runner-host/protocol";
+import { sessionScratchRoot } from "./session-scratch";
 import type { Sandbox } from "./sandbox/provider";
 import type { UnifiedSession } from "./types";
 
@@ -567,7 +568,7 @@ export async function ensureRemoteSandboxPortalAgent(input: {
 		const grant = mintSandboxPortalGrant(relayIdentity);
 		const callbackBase = remoteSandboxCallbackBaseUrl().replace(/\/$/, "");
 		const endpoint = `${callbackBase}/sandbox-portal-ws?session=${encodeURIComponent(input.sessionId)}&sandbox=${encodeURIComponent(input.sandbox.id)}&port=${input.port}`;
-		const logDir = `/home/ubuntu/.opensession-session-scratch/${input.sessionId}`;
+		const logDir = join(sessionScratchRoot(), input.sessionId);
 		const logPath = `${logDir}/sandbox-portal-${input.port}.log`;
 		// Portal transport fixes must not wait for a repository image refresh or
 		// mutate the prepared project. Copy this small, self-contained sidecar
@@ -637,7 +638,7 @@ async function startSandboxPortalServiceInner(input: SandboxPortalStartInput): P
 		},
 		urlFor: (port) => `https://${configuredServer().previewHost}:${sandboxHttpsPortFor(input.sandbox.id, port)}`,
 		launch: async ({ name, command, port, url }) => {
-			const runtimeDir = `/home/ubuntu/.opensession-session-scratch/${input.sessionId}/portals`;
+			const runtimeDir = join(sessionScratchRoot(), input.sessionId, "portals");
 			const legacyLogPath = `.opensession-portal-${name}.log`;
 			const legacyPidPath = `.opensession-portal-${name}.pid`;
 			const logPath = `${runtimeDir}/${name}.log`;

@@ -1,3 +1,5 @@
+import type { PromptOutboxItem } from "./prompt-outbox";
+
 /**
  * Which optimistic "just sent" bubbles the server has accounted for.
  *
@@ -20,6 +22,84 @@ export interface PendingPrompt {
 	content: string;
 	user?: string;
 	sentAt: number;
+	/** The delivery response says this prompt started a turn. A transient queue
+	 *  receipt must not retire its transcript bubble before the real entry lands. */
+	serverStarted?: true;
+}
+
+export interface OptimisticPendingPrompt extends PendingPrompt {
+	images?: string[];
+	busyMode?: "queue" | "steer";
+}
+
+/**
+ * A pristine idle outbox item is the same optimistic message even when React's
+ * local pending row has already reconciled or has not committed yet. Project it
+ * onto the transcript instead of exposing the outbox's transport status.
+ */
+export function optimisticOutboxFallbacks(
+	items: readonly PromptOutboxItem[],
+	pendingIds: ReadonlySet<string>,
+	landedIds: ReadonlySet<string>,
+): OptimisticPendingPrompt[] {
+	return items
+		.filter((item) => {
+			const id = `outbox-${item.clientId}`;
+			return (
+				item.state !== "failed" &&
+				item.attempts === 0 &&
+				!item.busyMode &&
+				!pendingIds.has(id) &&
+				!landedIds.has(id)
+			);
+		})
+		.map((item) => ({
+			id: `outbox-${item.clientId}`,
+			content: item.content,
+			user: item.user,
+			sentAt: item.createdAt,
+			...(item.images?.length ? { images: item.images } : {}),
+		}));
+}
+
+/**
+ * The composer places a new optimistic prompt from its last-known running
+ * state. The server can make the opposite decision in the send race: a run
+ * that looked busy may finish before intake, so the authoritative result is
+ * `started`. Move that prompt back to the transcript surface. If a transient
+ * queue echo already claimed and removed it, restore the bubble until its real
+ * transcript entry arrives.
+ */
+export function markPendingStarted(
+	pending: OptimisticPendingPrompt[],
+	started: OptimisticPendingPrompt,
+): OptimisticPendingPrompt[] {
+	const index = pending.findIndex((item) => item.id === started.id);
+	if (index < 0) return [...pending, { ...started, serverStarted: true }];
+	if (pending[index].serverStarted && !pending[index].busyMode) return pending;
+	const next = pending.slice();
+	const transcriptBubble = { ...pending[index], serverStarted: true as const };
+	delete transcriptBubble.busyMode;
+	next[index] = transcriptBubble;
+	return next;
+}
+
+/** The authoritative delivery result says a prompt joined the running turn or
+ *  its queue. Keep the optimistic row on that surface until its live echo lands. */
+export function markPendingBusy(
+	pending: OptimisticPendingPrompt[],
+	delivered: OptimisticPendingPrompt,
+	busyMode: "queue" | "steer",
+): OptimisticPendingPrompt[] {
+	const index = pending.findIndex((item) => item.id === delivered.id);
+	if (index < 0) return [...pending, { ...delivered, busyMode }];
+	if (pending[index].busyMode === busyMode && !pending[index].serverStarted)
+		return pending;
+	const next = pending.slice();
+	const busyPrompt = { ...pending[index], busyMode };
+	delete busyPrompt.serverStarted;
+	next[index] = busyPrompt;
+	return next;
 }
 
 export interface ReconcileResult {
@@ -30,9 +110,9 @@ export interface ReconcileResult {
 }
 
 export function reconcilePending(
-	pending: readonly PendingPrompt[],
+	pending: readonly OptimisticPendingPrompt[],
 	entries: readonly { type: string; content: string; timestamp: string }[],
-	echoes: readonly { content: string }[],
+	echoes: readonly { id?: string; content: string }[],
 	now: number,
 ): ReconcileResult {
 	const landed = new Set<string>();
@@ -46,14 +126,35 @@ export function reconcilePending(
 		}));
 	// A just-sent message is confirmed by a queued echo, a steer receipt
 	// (busy/fold-in path), or a real transcript user entry.
-	const echoPool = echoes.map((q) => q.content.trim());
+	const echoPool = echoes.map((q) => ({ id: q.id, content: q.content.trim() }));
 	for (const p of pending) {
 		const c = p.content.trim();
-		const qi = echoPool.indexOf(c);
-		if (qi >= 0) {
-			echoPool.splice(qi, 1);
-			landed.add(p.id);
-			continue;
+		const deliveryId = p.id.startsWith("outbox-")
+			? p.id.slice("outbox-".length)
+			: undefined;
+		const exactEcho = deliveryId
+			? echoPool.findIndex((q) => q.id === deliveryId)
+			: -1;
+		// Every idle send is durably queued before dispatch. Its queue_update can
+		// therefore beat the HTTP admission result even though the server is about
+		// to return `started`. Do not turn that transient ownership record into a
+		// visible "Waiting to send" row. The delivery observer first marks an
+		// authoritative queued/steered result as busy; a started result waits only
+		// for its transcript entry. Reserve an exact echo even when ignoring it so
+		// identical prompts cannot claim each other's receipt by content.
+		if (exactEcho >= 0) {
+			echoPool.splice(exactEcho, 1);
+			if (p.busyMode && !p.serverStarted) {
+				landed.add(p.id);
+				continue;
+			}
+		} else if (!p.serverStarted && (p.busyMode || !deliveryId)) {
+			const qi = echoPool.findIndex((q) => q.content === c);
+			if (qi >= 0) {
+				echoPool.splice(qi, 1);
+				landed.add(p.id);
+				continue;
+			}
 		}
 		// Interrupt/steer-path sends land in the transcript with a "[user] "
 		// attribution prefix (added server-side), while the optimistic bubble

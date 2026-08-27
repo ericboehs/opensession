@@ -135,6 +135,31 @@ describe("removeTombstonedSessionArtifacts", () => {
 });
 
 describe("getAllSessions", () => {
+	it("refreshes the legacy transcript index without blocking sync reads", async () => {
+		const sessionId = `legacy-transcript-${crypto.randomUUID()}`;
+		const projectDir = join(home, ".claude", "projects", "-legacy-worktree");
+		const transcriptPath = join(projectDir, `${sessionId}.jsonl`);
+		mkdirSync(projectDir, { recursive: true });
+		writeFileSync(transcriptPath, "");
+		writeSession("bks-legacy-transcript-index", {
+			claudeSessionId: sessionId,
+			model: "claude-fable-5",
+			worktreeDir: null,
+		});
+
+		const { getAllSessionsAsync, readNativeSession } = await import(
+			`./sessions.ts?legacy-index=${crypto.randomUUID()}`
+		);
+		// A cold synchronous lookup starts the cooperative refresh but never
+		// traverses every project directory on the caller's stack.
+		expect(readNativeSession("bks-legacy-transcript-index")?.transcriptPath).toBeNull();
+
+		await getAllSessionsAsync();
+		expect(readNativeSession("bks-legacy-transcript-index")?.transcriptPath).toBe(
+			transcriptPath,
+		);
+	});
+
 	it("reads one native session without scanning the directory", async () => {
 		writeSession("os-direct-detail", {
 			title: "Direct detail",

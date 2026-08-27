@@ -20,6 +20,7 @@
  *         node_modules/               sharp + @img/sharp-<target> sidecar
  *         opensession*.service        system service templates
  *         deploy/                     fixed executor credential/helper policy
+ *         LICENSE + notices + SBOM    project and third-party licensing
  *         release.json                version, commit, target, kind
  *       `bun build --compile --target=bun-<os>-<arch>` cross-compiles from any
  *       host, so one runner builds every target.
@@ -31,6 +32,7 @@
 
 import { chmodSync, cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "fs";
 import { dirname, join, relative, resolve } from "path";
+import { generateReleaseMetadata } from "./generate-release-metadata";
 
 const REPO_ROOT = resolve(import.meta.dir, "..");
 const EMBED_MODULE = join(REPO_ROOT, "packages", "core", "opensession-server", "src", "server", "embedded-frontend.ts");
@@ -211,12 +213,15 @@ async function compileBinary(
 			join(REPO_ROOT, "packages", "core", "opensession-server", "src", "main.ts"),
 			"--outfile",
 			outfile,
-			// sharp's platform native is resolved at runtime and can't be embedded;
-			// keep it (and its @img/* backends) out of the trace.
+			// Native dependencies cannot be embedded. Sharp ships as a runtime
+			// sidecar; the React compiler is build-only and compileAssets loads it
+			// lazily, a path embedded releases never execute.
 			"--external",
 			"sharp",
 			"--external",
 			"@img/*",
+			"--external",
+			"oxc-transform-react",
 		];
 		console.log(`[compile] ${cmd.join(" ")}`);
 		const proc = Bun.spawn(cmd, { cwd: REPO_ROOT, stdout: "inherit", stderr: "inherit" });
@@ -264,6 +269,7 @@ async function buildSharpSidecar(stage: string, sharpVersion: string): Promise<v
  */
 const WORKER_SIDECARS: Array<{ entry: string; name: string }> = [
 	{ entry: "packages/core/opensession-server/src/session-kernel-worker.ts", name: "session-kernel-worker.js" },
+	{ entry: "packages/core/opensession-server/src/session-kernel-transport-worker.ts", name: "session-kernel-transport-worker.js" },
 	{ entry: "packages/core/opensession-server/src/server/workflow-worker.ts", name: "workflow-worker.js" },
 	{ entry: "packages/core/opensession-server/src/server/code-flow-worker.ts", name: "code-flow-worker.js" },
 ];
@@ -317,7 +323,9 @@ async function main(): Promise<void> {
 	for (const rel of [
 		"opensession.service",
 		"opensession-executor.service",
+		"opensession-session-kernel.service",
 		"deploy/install-executor-credential.sh",
+		"deploy/install-session-kernel-credential.sh",
 		"deploy/install-run-host-helper.sh",
 		"deploy/opensession-run-host",
 	]) {
@@ -331,6 +339,18 @@ async function main(): Promise<void> {
 	await buildWorkerSidecars(stage);
 	console.log("\n== sharp sidecar");
 	await buildSharpSidecar(stage, sharpVersion);
+
+	console.log("\n== licenses and SBOM");
+	for (const rel of ["LICENSE", "THIRD-PARTY-NOTICES.md", "THIRD-PARTY-LICENSES"]) {
+		cpSync(join(REPO_ROOT, rel), join(stage, rel), { recursive: true });
+	}
+	generateReleaseMetadata({
+		lockPath: join(REPO_ROOT, "bun.lock"),
+		nodeModules: join(REPO_ROOT, "node_modules"),
+		outDir: stage,
+		name: "opensession",
+		version,
+	});
 
 	writeFileSync(
 		join(stage, "release.json"),

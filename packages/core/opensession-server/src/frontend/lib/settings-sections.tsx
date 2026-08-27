@@ -1,6 +1,7 @@
 import React from "react";
 import {
 	IconArchive,
+	IconArrowDown,
 	IconBandAid,
 	IconBell,
 	IconBolt,
@@ -13,6 +14,7 @@ import {
 	IconDatabase,
 	IconFileText2,
 	IconHome,
+	IconGlobe,
 	IconKeyboard,
 	IconPeople,
 	IconPlug,
@@ -45,19 +47,21 @@ export type SettingsSectionKey =
 	| "setup"
 	| "repos"
 	| "members"
+	| "authentication"
 	| "providers"
 	| "sandboxes"
 	| "runners"
-	| "reliability"
 	| "library"
 	| "integrations"
 	| "connections"
 	| "memory"
 	| "storage"
+	| "ingress"
 	| "prewarming"
 	| "deploys"
 	| "papercuts"
 	| "audit"
+	| "downloads"
 	| ToolSectionKey;
 
 export const TOOL_SECTIONS = new Set<SettingsSectionKey>([
@@ -126,6 +130,13 @@ export const SECTIONS: {
 		icon: <IconPeople />,
 	},
 	{
+		key: "authentication",
+		label: "Authentication",
+		group: "Organization",
+		adminOnly: true,
+		icon: <IconShieldCheck />,
+	},
+	{
 		key: "providers",
 		label: "Providers",
 		group: "Organization",
@@ -142,13 +153,6 @@ export const SECTIONS: {
 		label: "Runners",
 		group: "Organization",
 		icon: <IconServer />,
-	},
-	{
-		key: "reliability",
-		label: "Reliability",
-		group: "Organization",
-		adminOnly: true,
-		icon: <IconBandAid />,
 	},
 	{
 		key: "library",
@@ -195,6 +199,13 @@ export const SECTIONS: {
 		icon: <IconShieldCheck />,
 	},
 	{
+		key: "ingress",
+		label: "Domains and ingress",
+		group: "Infrastructure",
+		adminOnly: true,
+		icon: <IconGlobe />,
+	},
+	{
 		key: "storage",
 		label: "Storage",
 		group: "Infrastructure",
@@ -224,6 +235,12 @@ export const SECTIONS: {
 		label: "Audit log",
 		group: "Activity",
 		icon: <IconFileText2 />,
+	},
+	{
+		key: "downloads",
+		label: "Downloads",
+		group: "Activity",
+		icon: <IconArrowDown />,
 	},
 ];
 

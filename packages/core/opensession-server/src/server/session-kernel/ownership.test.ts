@@ -1,11 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { existsSync, readdirSync, readFileSync, statSync } from "fs";
 import { join, resolve } from "path";
-import {
-	LEGACY_GATEWAY_EFFECT_OPERATIONS,
-	LEGACY_GATEWAY_EFFECT_SITE_BASELINE,
-} from "./lifecycle-protocol";
-
 const serverDir = resolve(import.meta.dir, "..");
 const read = (relative: string) => readFileSync(join(serverDir, relative), "utf8");
 
@@ -20,25 +15,28 @@ function sourceFiles(dir: string): string[] {
 }
 
 describe("single session ownership", () => {
-	test("legacy gateway effects cannot grow without changing the migration fence", () => {
-		const production = sourceFiles(serverDir).filter(
-			(path) => !path.endsWith(".test.ts"),
-		);
-		const sites = production.reduce((count, path) => {
-			const source = readFileSync(path, "utf8");
-			return count + (source.match(/\.dispatchLegacy\(/g)?.length ?? 0);
-		}, 0);
-		expect(sites).toBe(LEGACY_GATEWAY_EFFECT_SITE_BASELINE);
-		expect(LEGACY_GATEWAY_EFFECT_OPERATIONS).toEqual([
-			"answer_question",
-			"cancel_session",
-			"delete_session",
-			"session_file_updated",
-			"submit_prompt",
-			"timer_fired",
-			"websocket_command",
-		]);
-		expect(read("session-kernel/kernel.ts")).not.toContain("async dispatch<");
+	test("runtime metadata readers do not run the synchronous full-history scanner", () => {
+		for (const file of [
+			"runner-portals.ts",
+			"session-control-wiring.ts",
+			"transcript-orphan-sweep.ts",
+			"routes/mention-palette.ts",
+			"routes/sessions.ts",
+			"routes/workspace.ts",
+		]) {
+			expect(read(file)).not.toContain("getAllSessions(");
+		}
+	});
+
+	test("production has no legacy gateway mailbox", () => {
+		const production = sourceFiles(serverDir).map((path) =>
+      readFileSync(path, "utf8"),
+    ).join("\n");
+    expect(production).not.toContain(".dispatchLegacy(");
+    expect(production).not.toContain("legacyGatewayEffect(");
+    expect(production).not.toContain(".runExclusive(");
+    expect(read("session-kernel/actor-protocol.ts")).not.toContain('t: "begin"');
+    expect(read("session-kernel/actor-worker.ts")).not.toContain("waiters");
 	});
 
 	test("run, queue, ask and session-file state delegate to SessionKernel", () => {
@@ -49,11 +47,14 @@ describe("single session ownership", () => {
 		expect(read("queue-state.ts")).toContain("new EphemeralSessionSet");
 		expect(read("asks.ts")).toContain("new AskOwnedMap");
 		expect(read("asks.ts")).toContain("new EphemeralSessionMap");
+		// A committed durable answer survives restore: the projection maps it
+		// to answered state and the rewrite carries its retry identity.
+		expect(read("asks.ts")).toContain("saved.answer ? { answer: saved.answer }");
 		expect(read("queue-state.ts") + read("asks.ts")).not.toContain("SessionOwnedMap");
 		expect(read("session-kernel/kernel.ts")).not.toContain("getRuntime<");
 		expect(read("session-kernel/kernel.ts")).not.toContain("setRuntime<");
 		expect(read("session-cache.ts")).toContain(
-			'runExclusive("session_file_updated"',
+			"sessionGatewayCommand",
 		);
 		expect(read("session-cache.ts")).toContain("sessionDeliveryProjection");
 		expect(read("session-cache.ts")).not.toContain("__promptQueues");
@@ -63,13 +64,13 @@ describe("single session ownership", () => {
 		const queue = read("queue-state.ts");
 		const asks = read("asks.ts");
 		expect(queue).toContain("removeLegacyQueueStore(storePath)");
-		expect(queue).toContain("deliveryMigrationComplete()");
+		expect(queue).toContain("sessionDeliveryMigrationComplete()");
 		expect(asks).toContain("removeLegacyAskStore(storePath)");
-		expect(asks).toContain("askMigrationComplete()");
-		expect(queue.indexOf("deliveryMigrationComplete()"))
-			.toBeLessThan(queue.indexOf("writeJsonAtomic("));
-		expect(asks.indexOf("askMigrationComplete()"))
-			.toBeLessThan(asks.indexOf("writeJsonAtomic("));
+		expect(asks).toContain("sessionAskMigrationComplete()");
+		// Once the actor acknowledges either one-time import, production JSON
+		// persistence stays fail-closed instead of becoming a second writer.
+		expect(queue).toContain("queueMigrationState.complete");
+		expect(asks).toContain("askMigrationState.complete");
 	});
 
 	test("delivery and ask writes fail closed without the actor in production", () => {
@@ -77,7 +78,8 @@ describe("single session ownership", () => {
 		expect(kernel).toContain("compatibilityStoreForTest");
 		expect(kernel).toContain('process.env.NODE_ENV !== "test"');
 		expect(kernel).toContain("requires the authoritative actor");
-		expect(kernel).toContain("projection.delete(request.sessionId)");
+		expect(kernel).toContain("actor.decideAskAsync(request)");
+		expect(kernel).toContain("actor.decideDeliveryAsync(request)");
 		expect(kernel).not.toContain(
 			'actor.decideDelivery({ op: "snapshot", sessionId: request.sessionId })',
 		);
@@ -198,27 +200,40 @@ describe("single session ownership", () => {
 
 	test("every transcript mutation enters the session owner", () => {
 		const source = read("transcript-store.ts");
+		expect(source).toContain("executeDestinationIdempotentSessionProjection(");
+		expect(source).toContain('"transcript_destination_append"');
 		for (const operation of [
 			"transcript_append",
 			"transcript_import",
 			"transcript_replace",
 			"transcript_delete",
 		]) {
-			expect(source).toContain(`applySync("${operation}"`);
+			expect(source).toContain(`executeSessionProjection(sessionId, "${operation}"`);
 		}
+    expect(read("session-kernel/kernel.ts")).not.toContain("applySync");
 	});
 
-	test("all shared prompt delivery uses the durable command mailbox", () => {
+	test("all shared prompt delivery uses the typed delivery actor", () => {
 		const control = read("session-control-wiring.ts");
-		expect(control).toContain('legacyGatewayEffect("submit_prompt"');
-		expect(control).toContain("sessionKernel(id).dispatchLegacy");
+		expect(control).not.toContain('legacyGatewayEffect("submit_prompt"');
+		expect(control).toContain('op: "request_submit_command"');
+		expect(control).toContain('op: "complete_submit_command"');
+		expect(control).toContain('op: "fail_submit_command"');
 		expect(read("routes/sessions.ts")).not.toContain("promptReceipt(");
 		expect(existsSync(join(serverDir, "prompt-receipts.ts"))).toBe(false);
 		const steerEligibility = control.indexOf('opts?.busy !== "queue"');
 		const steerItem = control.indexOf("const steerItem = durableQueueItem(id");
 		expect(steerEligibility).toBeGreaterThan(-1);
 		expect(steerItem).toBeGreaterThan(steerEligibility);
-		expect(control.indexOf("prepareQueuedSteer(id", steerItem)).toBeGreaterThan(steerItem);
+		expect(control.indexOf("await prepareAndSteerQueuedPrompt({", steerItem))
+      .toBeGreaterThan(steerItem);
+    const queuedSteer = read("queued-steer.ts");
+    expect(queuedSteer).toContain("await deps.prepare(");
+    expect(queuedSteer).toContain("steerAgentRunToken");
+    expect(queuedSteer).toContain("interruptAndSteerAgentRunToken");
+    const runSession = read("run-session.ts");
+    expect(runSession).toContain("await prepareAndInterruptQueuedPrompt({");
+    expect(runSession).not.toContain("!interruptAndSteerAgentRun(");
 	});
 
 	test("sandbox prompts are visible before remote startup can fail", () => {
@@ -256,11 +271,32 @@ describe("single session ownership", () => {
 		expect(entry.indexOf("await startSessionKernelActor()")).toBeLessThan(
 			entry.indexOf("initHumanAsks()"),
 		);
-		const actor = read("session-kernel/actor-worker.ts");
-		expect(actor).toContain("const store = new SessionKernelStore()");
-		expect(read("session-kernel/actor-client.ts")).toContain(
-			"SharedArrayBuffer",
+		expect(entry).toContain("await restorePendingAsks()");
+		expect(entry).toContain("await hydratePersistedQueueState()");
+		expect(entry).toContain("await restorePromptQueues(new Set(resumedIds))");
+		const queueRestore = entry.indexOf(
+			"await restorePromptQueues(new Set(resumedIds))",
 		);
+		expect(queueRestore).toBeLessThan(
+			entry.indexOf("reconcileSessionKernelOwnership(", queueRestore),
+		);
+		const actor = read("session-kernel/actor-worker.ts");
+		expect(actor).toContain("const host = new SessionKernelStoreHost()");
+		expect(actor).not.toContain("const store = new SessionKernelStore()");
+		const forbidden = ["Atomics.wait", "SharedArrayBuffer", "callSync", "KernelActorSyncRequest"];
+		const offenders: string[] = [];
+		for (const path of sourceFiles(serverDir)) {
+			if (path.endsWith(".test.ts")) continue;
+			const source = readFileSync(path, "utf8");
+			for (const token of forbidden) {
+				if (source.includes(token)) offenders.push(`${path}:${token}`);
+			}
+		}
+		const transport = read("../session-kernel-transport-worker.ts");
+		for (const token of forbidden) {
+			if (transport.includes(token)) offenders.push(`session-kernel-transport-worker.ts:${token}`);
+		}
+		expect(offenders).toEqual([]);
 	});
 
 	test("Slack ask delivery is a durable production outbox effect", () => {
@@ -274,7 +310,7 @@ describe("single session ownership", () => {
 
 	test("creation uses its FSM without nesting inside a legacy mailbox", () => {
 		const ws = read("ws-handlers.ts");
-		expect(ws).toContain('legacyGatewayEffect("websocket_command"');
+		expect(ws).toContain('operation: "websocket_command"');
 		expect(ws).toContain("sessionIdForRequest");
 		expect(ws).toContain('typeof msg.sessionId === "string"');
 		const mailboxCommands = ws.slice(
@@ -353,12 +389,10 @@ describe("single session ownership", () => {
 		expect(create).toContain("actorWorktreeMaterializer({");
 		expect(create).toContain("await requestCreationCredential({");
 		expect(create).toContain("await requestCreationBranch({");
-		expect(create).toContain("await requestCreationSandbox({");
-		expect(create).toContain("requestCreationOpening({");
-		expect(create).toContain("executeCreationOpeningEffect(");
-		expect(create.indexOf("await requestCreationSandbox({")).toBeLessThan(
-			create.indexOf("await maybeLaunchSandboxedRun("),
-		);
+		expect(create).not.toContain("requestCreationSandbox");
+		// The opening effect holds the creation fence, so provisioning rides
+		// the launch-time idempotent provider.ensure instead of a second
+		// durable effect that could never be admitted.
 		expect(create).not.toContain("markCreationOpeningDispatched");
 		expect(create).toMatch(
 			/executeCreationOpeningEffect\([\s\S]*?openCreatedSession\(/,
@@ -373,8 +407,16 @@ describe("single session ownership", () => {
 		expect(create).not.toMatch(/\bcreateWorktree\(/);
 		expect(create).not.toMatch(/\bcreateWorktreeForExistingBranch\(/);
 		expect(create).toContain("spec.openingPromptEntryId");
-		expect(wiring).toContain('legacyGatewayEffect("cancel_session"');
-		expect(wiring).toContain('legacyGatewayEffect("answer_question"');
+		expect(wiring).not.toContain('legacyGatewayEffect("cancel_session"');
+		expect(wiring).toContain('op: "request_cancel_command"');
+		// Ask answers settle through the typed actor aggregate, not the
+		// compatibility mailbox.
+		expect(wiring).not.toContain('legacyGatewayEffect("answer_question"');
+		expect(wiring).toContain('op: "answer",');
+		expect(wiring).not.toContain('legacyGatewayEffect("submit_prompt"');
+		expect(wiring).toContain('op: "request_submit_command"');
+		expect(wiring).toContain('op: "complete_submit_command"');
+		expect(wiring).toContain('op: "fail_submit_command"');
 		const tools = read("../agents/slack/sessions-tools.ts");
 		expect(tools).toContain("durableToolRequestId");
 		expect(tools).toContain('durableToolRequestId(ctx, "create_session", extra');
@@ -425,13 +467,13 @@ describe("single session ownership", () => {
 		expect(ws).toContain('`stop-${msg.requestId}`');
     expect(ws).toContain("requestTurnCancel(sessionId, session");
     expect(ws.indexOf("const persistedCancel =")).toBeLessThan(
-      ws.indexOf('legacyGatewayEffect("websocket_command"'),
+      ws.indexOf('operation: "websocket_command"'),
     );
-    expect(ws.indexOf("const priorCommandPayload = durableSessionCommand(")).toBeLessThan(
-      ws.indexOf('legacyGatewayEffect("websocket_command"'),
+    expect(ws.indexOf("durableSessionCommand(")).toBeLessThan(
+      ws.indexOf('operation: "websocket_command"'),
     );
     expect(ws.indexOf("const persistedInterrupt =")).toBeLessThan(
-      ws.indexOf('legacyGatewayEffect("websocket_command"'),
+      ws.indexOf('operation: "websocket_command"'),
     );
     expect(ws).not.toContain("cancelAgentRun(");
     const runSession = read("run-session.ts");
@@ -470,7 +512,7 @@ describe("single session ownership", () => {
       /if \(cancelOwnership === "unknown"\) \{[\s\S]*?return true;/,
     );
     expect(agentRunner).toContain(
-      'while (ownership === "unknown")',
+      'while (ownership === "unknown" && Date.now() < ownershipDeadline)',
     );
     expect(agentRunner).toContain(
       "ownershipBackoffMs = Math.min(5_000, ownershipBackoffMs * 2)",
@@ -485,13 +527,18 @@ describe("single session ownership", () => {
     expect(runnerSession).toContain("journalClearIfLineage(run)");
     expect(runnerSession).not.toContain("journalClear(session.id)");
     const wiring = read("session-control-wiring.ts");
-    expect(wiring).toContain("requestTurnCancel(id, session");
-    expect(wiring.indexOf("const persistedCancel =")).toBeLessThan(
-      wiring.indexOf('legacyGatewayEffect("cancel_session"'),
+    expect(wiring).toContain("requestTurnCancel(id, currentSession");
+    expect(wiring).not.toContain('legacyGatewayEffect("cancel_session"');
+    expect(wiring.indexOf('op: "request_cancel_command"')).toBeLessThan(
+      wiring.indexOf("requestTurnCancel(id, currentSession"),
     );
-    expect(wiring.indexOf("const priorCommandPayload = durableSessionCommand(")).toBeLessThan(
-      wiring.indexOf('legacyGatewayEffect("cancel_session"'),
+    const cancelContinuation = wiring.indexOf(
+      "requestTurnCancel(id, currentSession",
     );
+    expect(cancelContinuation).toBeLessThan(
+      wiring.indexOf('op: "complete_cancel_command"', cancelContinuation),
+    );
+    expect(wiring).toContain('op: "fail_cancel_command"');
     expect(wiring).not.toContain("cancelAgentRun(");
 		const routes = read("routes/sessions.ts");
 		expect(routes).toContain("await cancelAgentRunAndWait(runIds)");
@@ -499,7 +546,8 @@ describe("single session ownership", () => {
     const prRoutes = read("routes/pr.ts");
     expect(prRoutes).toContain("requestTurnCancel(bksId, reviewSession");
     expect(prRoutes).not.toContain("cancelAgentRun(");
-		expect(routes).toMatch(/\.runExclusive\(\s*"delete_session"/);
+		expect(routes).toContain('operation: "delete_session"');
+    expect(routes).toContain("withSessionMutationLock(session.id");
 	});
 
 	test("create and sandbox recovery establish one execution owner", () => {
@@ -512,7 +560,7 @@ describe("single session ownership", () => {
     expect(boot).toContain("runId: recoveredRun.runKey");
     expect(boot).toContain("projectionId: `outcome:${recoveredRun.runKey}`");
     expect(boot).toContain(
-      "runGeneration: sessionKernel(bksSessionId).runState().generation",
+      "runGeneration: sessionKernel(bksSessionId).runStateProjection().generation",
     );
     const cache = read("session-cache.ts");
     expect(cache).toContain('op: "prepare_outcome_projection"');
@@ -613,7 +661,7 @@ describe("single session ownership", () => {
 			'throw new Error("Opening run ended without a terminal event")',
 		);
 		expect(create).toContain("openingJournal?.terminalFailure");
-		expect(create).toContain("startToken = markSessionStarting(");
+		expect(create).toContain("startToken = await markSessionStarting(");
 		expect(create).toContain("hostId: startToken");
 		expect(create).toContain("isAgentSessionCancelled(bksId, startToken)");
 		// Sandbox launches bind the physical host to the admitted token so
@@ -627,7 +675,7 @@ describe("single session ownership", () => {
 		const runSession = read("run-session.ts");
 		const cancelPrepared = runSession.indexOf('op: "prepare_cancel"');
 		const settleGuarded = runSession.indexOf(
-			"try {\n    settleCreationOpeningForStop(sessionId);",
+			"try {\n    await settleCreationOpeningForStop(sessionId);",
 			cancelPrepared,
 		);
 		const bookkeeping = runSession.indexOf("} finally {", settleGuarded);
@@ -696,6 +744,46 @@ describe("single session ownership", () => {
     expect(settleProjection).toBeGreaterThan(applyProjection);
     expect(run).toContain("projectionId: `outcome:${startToken}`");
     expect(create).toContain("projectionId: `outcome:${startToken}`");
+
+    const terminalOutcome = run.indexOf(
+      "await recordRunOutcome(session.id, runFailure",
+    );
+    expect(terminalOutcome).toBeGreaterThan(0);
+    expect(run.indexOf("await clearSteerReceipts", terminalOutcome))
+      .toBeGreaterThan(terminalOutcome);
+    expect(run.indexOf('type: "stream_done"', terminalOutcome))
+      .toBeGreaterThan(terminalOutcome);
+
+    const openingOutcome = create.indexOf(
+      "await recordRunOutcome(bksId, runFailure",
+    );
+    expect(openingOutcome).toBeGreaterThan(0);
+    expect(create.indexOf("await settleCreation", openingOutcome))
+      .toBeGreaterThan(openingOutcome);
+    const setupOutcome = create.lastIndexOf("await recordRunOutcome(");
+    expect(create.indexOf('type: "stream_done"', setupOutcome))
+      .toBeGreaterThan(setupOutcome);
+    expect(create.indexOf("await settleCreationFailed(", setupOutcome))
+      .toBeGreaterThan(setupOutcome);
+
+    const boot = read("../../opensession.ts");
+    const recoveredOutcome = boot.indexOf("await recordRunOutcome(");
+    expect(boot.indexOf("await settleRecoveredCreationOpening(", recoveredOutcome))
+      .toBeGreaterThan(recoveredOutcome);
+
+    const github = read("../agents/github/run.ts");
+    const githubOutcome = github.indexOf("await recordRunOutcome(");
+    expect(github.indexOf("journalClearIfLineage(", githubOutcome))
+      .toBeGreaterThan(githubOutcome);
+
+    const journal = read("run-journal.ts");
+    expect(journal).toContain(
+      'await transition(record.osSessionId, "run_registered"',
+    );
+    expect(journal).toContain(
+      'await transition(r.osSessionId, "boot_journal_found"',
+    );
+    expect(journal).not.toContain("void transitionRunState(");
 	});
 
 	test("WebSocket session mutations enter the mailbox before dispatch", () => {
@@ -705,6 +793,8 @@ describe("single session ownership", () => {
 		expect(source).toContain("kernelDispatchTokens.delete(kernelToken)");
 		expect(source).toContain("__sessionKernelToken");
 		expect(source).not.toContain("__sessionKernelOwned");
-		expect(source).toContain('source: "websocket"');
+		expect(source).toContain('operation: "websocket_command"');
+    expect(source).toContain('op: "complete"');
+    expect(source).toContain('op: "fail"');
 	});
 });

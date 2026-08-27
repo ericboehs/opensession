@@ -300,8 +300,6 @@ export async function savePersonalPrompt(
 
 export interface OrganizationSettingsDto {
 	organizationName: string;
-	/** "" when nobody has set one: a domain is never guessed. */
-	organizationDomain: string;
 	organizationIconUrl: string | null;
 	organizationIconRevision: string | null;
 	configPath: string;
@@ -313,11 +311,9 @@ export async function fetchOrganizationSettings(): Promise<OrganizationSettingsD
 	});
 }
 
-/** Empty string resets the name to the instance's product name, and clears the
- *  domain. The server normalizes whatever domain shape was typed. */
+/** Empty string resets the name to the instance's product name. */
 export async function saveOrganizationSettings(patch: {
 	organizationName?: string;
-	organizationDomain?: string;
 }): Promise<OrganizationSettingsDto> {
 	return request("/settings/general", { method: "PUT", body: patch });
 }
@@ -352,7 +348,6 @@ export async function removeOrganizationIcon(): Promise<OrganizationSettingsDto>
 export interface GithubOrganizationProfileDto {
 	login: string;
 	name: string;
-	domain: string;
 	avatarUrl: string;
 }
 

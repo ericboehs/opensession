@@ -602,28 +602,8 @@ function isGithubHttpsUrl(httpsUrl: string): boolean {
   }
 }
 
-/** Pick clone authority without crossing the operator's credential cutover.
- * In App mode a missing live GitHub token fails closed; the persisted token may
- * be the retired PAT. Non-GitHub hosts retain their explicit clone credential. */
-export function selectedCloneToken(
-  liveToken: string | undefined,
-  persistedToken: string | undefined,
-  github: boolean,
-  mode: "pat" | "app",
-): string | undefined {
-  return liveToken || (github && mode === "app" ? undefined : persistedToken);
-}
-
-/** App sandboxes require a repository-scoped mint. Never widen a failed mint
- * to an installation-wide token; PAT mode uses only its selected PAT. */
-export function selectedGithubCloneLiveToken(
-  mode: "pat" | "app",
-  repositoryToken: string | undefined,
-  patToken: string | undefined,
-): string | undefined {
-  return mode === "app" ? repositoryToken : patToken;
-}
-
+/** GitHub clones receive only a fresh repository-scoped App token. Persisted
+ * clone credentials are never valid GitHub authority. */
 export async function injectCloneCredential(httpsUrl: string): Promise<string> {
   const cred = sandboxConfig().cloneCredential;
   let parsed: URL;
@@ -642,25 +622,8 @@ export async function injectCloneCredential(httpsUrl: string): Promise<string> {
     parsed.username = "";
     parsed.password = "";
     const repository = parsed.pathname.replace(/^\/+|\.git$/g, "");
-    const {
-      githubAppRepositoryToken,
-      githubBotCredentialMode,
-      githubToken,
-    } = await import("../../github-app");
-    const mode = githubBotCredentialMode();
-    const liveToken = selectedGithubCloneLiveToken(
-      mode,
-      mode === "app"
-        ? (await githubAppRepositoryToken(repository)) || undefined
-        : undefined,
-      mode === "pat" ? (await githubToken()) || undefined : undefined,
-    );
-    token = selectedCloneToken(
-      liveToken,
-      cred?.type === "https-token" ? cred.token : undefined,
-      true,
-      mode,
-    );
+    const { githubAppRepositoryToken } = await import("../../github-app");
+    token = (await githubAppRepositoryToken(repository)) || undefined;
   } else if (cred?.type === "https-token") {
     // Explicit credentials for non-GitHub hosts keep their existing behavior.
     token = cred.token;
@@ -2042,7 +2005,7 @@ async function* withRunJournal(
   record: ActiveRunRecord,
   touch: () => void,
 ): AsyncGenerator<StreamEvent> {
-  journalSet(record);
+  await journalSet(record);
   touch();
   let sourceCompleted = false;
   let sawTerminal = false;
@@ -2050,13 +2013,13 @@ async function* withRunJournal(
     for await (const ev of events) {
       if (ev.type === "init" && ev.sessionId && ev.sessionId !== record.claudeSessionId) {
         record.claudeSessionId = ev.sessionId;
-        journalSet(record);
+        await journalSet(record);
       }
       if (ev.type === "model_switch" && ev.toModel) {
         record.model = ev.toModel;
         record.transientFallback = ev.temporaryFallback === true;
         if (shouldPersistModelSwitch(ev)) record.selectedModel = ev.toModel;
-        journalSet(record);
+        await journalSet(record);
       }
       if (ev.type === "done" || ev.type === "error") sawTerminal = true;
       yield ev;
@@ -2064,7 +2027,7 @@ async function* withRunJournal(
     sourceCompleted = true;
   } finally {
     if (sourceCompleted && sawTerminal) journalClear(record.runKey);
-    else if (sourceCompleted) journalRecordAbnormalCompletion(record);
+    else if (sourceCompleted) await journalRecordAbnormalCompletion(record);
     touch();
   }
 }
@@ -2156,18 +2119,18 @@ export function makeRemoteSandbox(parts: RemoteSandboxParts): Sandbox {
         await launcher.writeSpec!(dir, spec);
         mark("spec written");
         // A crash after journal admission must recover from the full spec.
-        journalSet(record);
+        await journalSet(record);
         // Construct (and register) the control BEFORE dispatch so exact-token
         // Stop reaches the launching host: cancelAgentRunTokenAndWait sees
         // hostRunBusy(token) during the launch await, and cancelHost's stop
         // backstop plus the cancelled startup marker fence the dispatch race.
         handle = new HostHandle(dir, spec, callbacks, launcher);
-        await launcher.launch(spec.hostId, dir, () => {
+        await launcher.launch(spec.hostId, dir, async () => {
           record.launchPhase = "launching";
-          journalSet(record);
+          await journalSet(record);
         });
         record.launchPhase = "started";
-        journalSet(record);
+        await journalSet(record);
         if (handle.cancelled)
           throw new HostLaunchNotDispatchedError(
             `${spec.hostId} was cancelled while launching`,

@@ -28,9 +28,10 @@ export function githubCredentialHelperCommand(
 }
 
 /**
- * Authentication for one trusted server-owned Git subprocess. The token stays
- * in the child environment. Git receives only a process-local, non-secret
- * helper command, so existing checkouts work without mutating .git/config.
+ * Authentication for one trusted Git subprocess. The token stays in the child
+ * environment. Git receives only process-local helper and URL-rewrite config,
+ * so existing SSH checkouts use the projected HTTPS identity without mutating
+ * .git/config or falling through to a host SSH key.
  */
 export function githubGitCredentialEnv(
   token: string,
@@ -40,10 +41,14 @@ export function githubGitCredentialEnv(
     GH_TOKEN: token,
     GITHUB_TOKEN: token,
     GIT_TERMINAL_PROMPT: "0",
-    GIT_CONFIG_COUNT: "2",
+    GIT_CONFIG_COUNT: "4",
     GIT_CONFIG_KEY_0: "credential.https://github.com.helper",
     GIT_CONFIG_VALUE_0: "",
     GIT_CONFIG_KEY_1: "credential.https://github.com.helper",
     GIT_CONFIG_VALUE_1: helper,
+    GIT_CONFIG_KEY_2: "url.https://github.com/.insteadOf",
+    GIT_CONFIG_VALUE_2: "git@github.com:",
+    GIT_CONFIG_KEY_3: "url.https://github.com/.insteadOf",
+    GIT_CONFIG_VALUE_3: "ssh://git@github.com/",
   };
 }

@@ -2,10 +2,11 @@ import { repoLabel } from "../lib/repo-label";
 import { AGENT_NAME } from "../lib/brand";
 import { randomUUID } from "../lib/random-uuid";
 import React, {
+  useCallback,
   useEffect,
+  useEffectEvent,
+  useLayoutEffect,
   useState,
-  
-  
   useRef,
 } from "react";
 import type {
@@ -1008,36 +1009,13 @@ export function PrPanel({
     () => (targets.find((t) => t.primary) ?? targets[0])?.key,
   );
   const active = targets.find((t) => t.key === activeKey) ?? targets[0];
-  // A PR chip — in the Workspace strip, or a `repo#123` mention in prose —
-  // opened the Review tab on a specific PR. Keyed on `seq` so re-clicking the
-  // same chip re-focuses it, and so a re-render never fights a tab the reader
-  // picked by hand.
-  //
-  // A request waits for the target it names instead of being dropped: the PRs
-  // arrive with the session, so a `/pr/<number>` link followed cold resolves
-  // long before there is anything to select, and giving up on the first pass
-  // is exactly what leaves the reader on the primary PR.
-  const focusApplied = useRef<{ target?: number; checks?: number }>({});
-  useEffect(() => {
-    if (!focusTarget) return;
-    const { seq } = focusTarget;
-    if (focusTarget.repo && focusApplied.current.target !== seq) {
-      const match = matchFocusTarget(targets, focusTarget);
-      if (match) {
-        focusApplied.current.target = seq;
-        setActiveKey(match.key);
-      }
-    }
-    // Checks stopped being a page of their own: reveal them where they live.
-    if (focusTarget.view === "checks" && focusApplied.current.checks !== seq) {
-      focusApplied.current.checks = seq;
-      setPage("overview");
-      setFocusChecksSeq((prev) => prev + 1);
-    }
-  }, [focusTarget?.seq, targets]);
   const loadTargetKey = previewTarget
     ? `preview:${previewTarget.repo}:${previewTarget.branch}`
     : active?.key || sessionId;
+  // Scalars so the loaders below can be useCallback'd on stable values
+  // instead of the per-render preview object.
+  const previewRepo = previewTarget?.repo;
+  const previewBranch = previewTarget?.branch;
   // `#5528` in a PR body or review comment means a PR in the repo THIS panel is
   // showing — which is the attached repo's, not the session's, when the strip
   // is on a sibling PR. Only fall back to the surrounding surface's repo.
@@ -1117,6 +1095,28 @@ export function PrPanel({
   useEffect(() => setDiffSource("pull-request"), [loadTargetKey]);
   /** A check chip elsewhere in the app asked for the checks (focusTarget). */
   const [focusChecksSeq, setFocusChecksSeq] = useState(0);
+  // A PR chip or prose link can request a target before session PRs arrive.
+  // Apply each request once after both the page setters and targets exist.
+  const focusApplied = useRef<{ target?: number; checks?: number }>({});
+  const applyFocusTarget = useEffectEvent(() => {
+    if (!focusTarget) return;
+    const { seq } = focusTarget;
+    if (focusTarget.repo && focusApplied.current.target !== seq) {
+      const match = matchFocusTarget(targets, focusTarget);
+      if (match) {
+        focusApplied.current.target = seq;
+        setActiveKey(match.key);
+      }
+    }
+    if (focusTarget.view === "checks" && focusApplied.current.checks !== seq) {
+      focusApplied.current.checks = seq;
+      setPage("overview");
+      setFocusChecksSeq((prev) => prev + 1);
+    }
+  });
+  useEffect(() => {
+    applyFocusTarget();
+  }, [focusTarget?.seq, targets]);
   /** A file picked on Overview, waiting for the code page to have its diff. */
   const [pendingReveal, setPendingReveal] = useState<string | null>(null);
   const phoneLayout = window.matchMedia("(max-width: 720px)").matches;
@@ -1164,7 +1164,9 @@ export function PrPanel({
     viewed: ReadonlySet<string>;
   } | null>(null);
   const prViewedRef = useRef(prViewed);
-  prViewedRef.current = prViewed;
+  useLayoutEffect(() => {
+    prViewedRef.current = prViewed;
+  }, [prViewed]);
   const [reviewThreads, setReviewThreads] = useState<{
     key: string;
     threads: PrReviewThread[];
@@ -1205,9 +1207,12 @@ export function PrPanel({
     key: string;
     promise: Promise<void>;
   } | null>(null);
-  activeLoadTargetRef.current = loadTargetKey;
+  useLayoutEffect(() => {
+    activeLoadTargetRef.current = loadTargetKey;
+  }, [loadTargetKey]);
 
-  const load = (force = false): Promise<void> => {
+  const load = useCallback(
+    (force = false): Promise<void> => {
       if (loadTargetKey !== activeLoadTargetRef.current)
         return Promise.resolve();
     const existing = loadInFlightRef.current;
@@ -1230,8 +1235,8 @@ export function PrPanel({
       setDiffLoading(false);
     };
       const prRequest = (
-        previewTarget
-      ? fetchPrPreview(previewTarget.repo, previewTarget.branch)
+        previewRepo && previewBranch
+      ? fetchPrPreview(previewRepo, previewBranch)
       : fetchPr(sessionId, active?.repo, active?.branch)
     )
       .then((data) => {
@@ -1254,8 +1259,8 @@ export function PrPanel({
         if (isCurrent()) setLoading(false);
       });
       const diffRequest = (
-        previewTarget
-      ? fetchPrPreviewDiff(previewTarget.repo, previewTarget.branch)
+        previewRepo && previewBranch
+      ? fetchPrPreviewDiff(previewRepo, previewBranch)
       : fetchPrDiff(sessionId, active?.repo, active?.branch)
     )
       .then((data) => {
@@ -1273,7 +1278,7 @@ export function PrPanel({
       });
     // A linked PR has no local worktree in this session — no git state.
       const gitRequest = (
-        previewTarget || active?.linked
+        previewRepo || active?.linked
       ? Promise.resolve(null)
       : fetchGitStatus(sessionId, active?.repo)
     )
@@ -1304,12 +1309,14 @@ const threads = await fetchPrReviewThreads(
         reviewThreadsRequest,
       ]).then(() => undefined);
     loadInFlightRef.current = { key: loadTargetKey, promise };
-    void promise.then(() => {
+      void promise.then(() => {
         if (loadInFlightRef.current?.promise === promise)
           loadInFlightRef.current = null;
-    });
-    return promise;
-    };
+      });
+      return promise;
+    },
+    [sessionId, loadTargetKey, previewRepo, previewBranch, active?.repo, active?.branch, active?.linked],
+  );
 
   useEffect(() => {
     setLoading(true);
@@ -1341,6 +1348,7 @@ const threads = await fetchPrReviewThreads(
   // match those through the loaded PR number/head branch instead.
   // The server invalidated its caches before broadcasting, so this reads
   // fresh data.
+  const hasLoadedPr = pr !== null;
   useEffect(() => {
     if (!addHandler) return;
     return addHandler((msg) => {
@@ -1351,7 +1359,7 @@ const threads = await fetchPrReviewThreads(
         msg.repo === repo &&
         (branch
           ? msg.branch === branch
-          : !pr || msg.number === pr.number || msg.branch === pr.headRefName)
+          : !hasLoadedPr || msg.number === pr?.number || msg.branch === pr?.headRefName)
       )
         void load(true);
     });
@@ -1362,11 +1370,12 @@ const threads = await fetchPrReviewThreads(
     previewTarget?.branch,
     active?.repo,
     active?.branch,
+    hasLoadedPr,
     pr?.number,
     pr?.headRefName,
   ]);
 
-  useEffect(() => {
+  const loadDiffGroups = useEffectEvent(() => {
     const files = pr?.files || [];
     if (!diff?.patch || files.length < 3 || !diffLoadPolicy.groupFiles) {
       setDiffGroups(null);
@@ -1407,7 +1416,8 @@ const threads = await fetchPrReviewThreads(
       live = false;
       if (retryTimer) clearTimeout(retryTimer);
     };
-  }, [
+  });
+  useEffect(() => loadDiffGroups(), [
     sessionId,
     active?.repo,
     active?.branch,
@@ -1420,14 +1430,14 @@ const threads = await fetchPrReviewThreads(
   // A guide belongs to one target's head commit: the key is what makes a
   // guide from the PR the panel just left read as absent rather than current.
   const guideKey = diff ? `${loadTargetKey}\0${diff.headRefOid}` : "";
-  const loadGuide = async () => {
+  const loadGuide = useCallback(async () => {
     if (!guideKey) return;
     const generation = ++guideGenerationRef.current;
     setGuideLoading(true);
     setGuideFailed(false);
     await (async () => {
-const data = previewTarget
-        ? await fetchPrPreviewGuide(previewTarget.repo, previewTarget.branch)
+const data = previewRepo && previewBranch
+        ? await fetchPrPreviewGuide(previewRepo, previewBranch)
         : await fetchReviewGuide(sessionId, active?.repo, active?.branch);
       if (generation !== guideGenerationRef.current) return;
       if (data) setGuide({ key: guideKey, data });
@@ -1437,21 +1447,21 @@ if (generation === guideGenerationRef.current) setGuideFailed(true);
 }).finally(async () => {
 if (generation === guideGenerationRef.current) setGuideLoading(false);
 });
-  };
+  }, [guideKey, sessionId, previewRepo, previewBranch, active?.repo, active?.branch]);
 
   const prPatchVersion = diff?.diffVersion || "";
   const codeFlowKey =
     diff && prPatchVersion
       ? `${loadTargetKey}\0${diff.headRefOid}\0${prPatchVersion}`
       : "";
-  const loadCodeFlow = async () => {
+  const loadCodeFlow = useCallback(async () => {
     if ((!diff?.patch && !diff?.skippedFiles) || !codeFlowKey) return;
     const generation = ++codeFlowGenerationRef.current;
     setCodeFlowLoading(true);
     setCodeFlowError(null);
     await (async () => {
-const data = previewTarget
-        ? await fetchPrPreviewCodeFlow(previewTarget.repo, previewTarget.branch)
+const data = previewRepo && previewBranch
+        ? await fetchPrPreviewCodeFlow(previewRepo, previewBranch)
         : await fetchPrCodeFlow(sessionId, active?.repo, active?.branch);
       if (!data)
         throw new Error("Code flow isn't available for this pull request.");
@@ -1472,7 +1482,7 @@ if (generation === codeFlowGenerationRef.current)
 if (generation === codeFlowGenerationRef.current)
         setCodeFlowLoading(false);
 });
-  };
+  }, [diff, codeFlowKey, sessionId, prPatchVersion, previewRepo, previewBranch, active?.repo, active?.branch]);
 
   const refreshCodeFlow = async () => {
     codeFlowGenerationRef.current += 1;
@@ -1488,6 +1498,7 @@ if (generation === codeFlowGenerationRef.current)
   // refetch when a new push moves the head commit.
   const showingGuide = page === "files" && codeView === "guide";
   const showingFlow = page === "files" && codeView === "flow";
+  const hasSkippedFiles = !!diff?.skippedFiles;
   // A different PR or a new head commit is a different guide: drop the in-flight
   // and failed flags with it, or one failure would disable auto-load for the
   // rest of the panel's life. The keyed `guide` itself goes stale on its own.
@@ -1514,7 +1525,7 @@ if (generation === codeFlowGenerationRef.current)
 
   useEffect(() => {
     if (!showingFlow || codeFlowLoading || codeFlowError) return;
-    if (!diff?.patch && !diff?.skippedFiles) {
+    if (!diff?.patch && !hasSkippedFiles) {
       if (diffLoading || diffOutOfDate) return;
       setCodeView("all");
       return;
@@ -1529,6 +1540,7 @@ if (generation === codeFlowGenerationRef.current)
   }, [
     showingFlow,
     diff?.patch,
+    hasSkippedFiles,
     diffLoading,
     diffOutOfDate,
     codeFlow,
@@ -1864,10 +1876,11 @@ setClosing(false);
   // Hosts without viewed state never fetch — prViewed stays unset, so the
   // checkboxes stay hidden.
   const viewedKey = diff ? `${activeRepoId || "pr"}#${diff.number}` : null;
+  const viewedPrNumber = diff?.number;
   useEffect(() => {
-    if (!caps.viewedState || !viewedKey || !diff) return;
+    if (!caps.viewedState || !viewedKey || viewedPrNumber === undefined) return;
     let live = true;
-    fetchPrViewedFiles(activeRepoId, diff.number, getCurrentUser())
+    fetchPrViewedFiles(activeRepoId, viewedPrNumber, getCurrentUser())
       .then((res) => {
         if (!live) return;
         setPrViewed({
@@ -1882,7 +1895,7 @@ setClosing(false);
     return () => {
       live = false;
     };
-  }, [viewedKey, diff?.headRefOid, caps.viewedState]);
+  }, [viewedKey, viewedPrNumber, diff?.headRefOid, activeRepoId, caps.viewedState]);
 
   const handleToggleViewed = (path: string, next: boolean) => {
     const info = prViewedRef.current;

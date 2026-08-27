@@ -5,28 +5,24 @@ import { join } from "path";
 import { selectedGithubCredentialIssues } from "./account-health";
 
 const originalConfig = process.env.OPENSESSION_CONFIG;
-const originalPat = process.env.GITHUB_API_TOKEN;
 const originalFetch = globalThis.fetch;
 
 afterEach(() => {
   if (originalConfig === undefined) delete process.env.OPENSESSION_CONFIG;
   else process.env.OPENSESSION_CONFIG = originalConfig;
-  if (originalPat === undefined) delete process.env.GITHUB_API_TOKEN;
-  else process.env.GITHUB_API_TOKEN = originalPat;
   globalThis.fetch = originalFetch;
 });
 
 describe("GitHub account health credential selection", () => {
-  test("App mode ignores a retired PAT", async () => {
+  test("an unconfigured App makes no external request", async () => {
     const dir = mkdtempSync(join(tmpdir(), "opensession-account-health-"));
     try {
       const config = join(dir, "config.json");
       writeFileSync(
         config,
-        JSON.stringify({ integrations: { github: { botCredential: "app" } } }),
+        JSON.stringify({ integrations: { github: {} } }),
       );
       process.env.OPENSESSION_CONFIG = config;
-      process.env.GITHUB_API_TOKEN = "retired-pat";
       let requests = 0;
       globalThis.fetch = (async () => {
         requests += 1;

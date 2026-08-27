@@ -5,7 +5,6 @@ import {
 	type MouseEvent,
 	type PointerEvent as ReactPointerEvent,
 } from "react";
-import { TAB_ITEM, TAB_ITEM_DRAGGING } from "../../lib/session-tab-classes";
 
 type Point = { x: number; y: number };
 
@@ -151,41 +150,33 @@ export function useTabReorder({
 
 	useEffect(() => () => stopPointerTracking.current?.(), []);
 
-	function itemProps(key: string, nextActive: boolean) {
-		const draggable = enabled && editingId !== key;
-		return {
-			as: "div" as const,
-			value: key,
-			"data-tab-key": key,
-			"data-next-active": nextActive ? "" : undefined,
-			dragListener: draggable,
-			onPointerDown: (event: ReactPointerEvent) => {
-				if (draggable) trackPointer(key, event);
-			},
-			onDragStart: () => beginDrag(key),
-			onDragEnd: () => {
-				cancelSplitDragFrame();
-				onSplitDrag?.(null);
-				const point = dragPoint.current;
-				dragPoint.current = null;
-				if (point && onSplitDrop?.(key, point)) {
-					draftOrderRef.current = null;
-					setDraftOrder(null);
-					clearDrag();
-					swallowTrailingClick();
-					return;
-				}
-				finishReorder();
-			},
-			whileDrag: { scale: 1.02, zIndex: 3 },
-			onClickCapture: (event: MouseEvent) => {
-				if (!justDragged.current) return;
-				event.stopPropagation();
-				event.preventDefault();
-			},
-			className:
-				dropSlot?.key === key ? `${TAB_ITEM} ${TAB_ITEM_DRAGGING}` : TAB_ITEM,
-		};
+	function handleItemPointerDown(key: string, event: ReactPointerEvent) {
+		if (enabled && editingId !== key) trackPointer(key, event);
+	}
+
+	function handleItemDragStart(key: string) {
+		beginDrag(key);
+	}
+
+	function handleItemDragEnd(key: string) {
+		cancelSplitDragFrame();
+		onSplitDrag?.(null);
+		const point = dragPoint.current;
+		dragPoint.current = null;
+		if (point && onSplitDrop?.(key, point)) {
+			draftOrderRef.current = null;
+			setDraftOrder(null);
+			clearDrag();
+			swallowTrailingClick();
+			return;
+		}
+		finishReorder();
+	}
+
+	function handleItemClickCapture(event: MouseEvent) {
+		if (!justDragged.current) return;
+		event.stopPropagation();
+		event.preventDefault();
 	}
 
 	return {
@@ -193,6 +184,9 @@ export function useTabReorder({
 		dropSlot,
 		groupRef,
 		handleReorder,
-		itemProps,
+		handleItemPointerDown,
+		handleItemDragStart,
+		handleItemDragEnd,
+		handleItemClickCapture,
 	};
 }

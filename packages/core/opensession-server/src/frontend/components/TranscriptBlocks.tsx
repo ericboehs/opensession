@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useEffectEvent, useRef } from "react";
 import type { SessionNote, SessionWalkthrough, TranscriptEntry } from "../lib/types";
 import type { TranscriptIndexEntry } from "@tellahq/opensession-protocol/session";
 import {
@@ -37,37 +37,7 @@ import {
 	type ShippedChangeComposerProps,
 } from "./ShippedChangeComposer";
 import { SessionContextMessage } from "./SessionContextMessage";
-import * as stylex from "@stylexjs/stylex";
-import { motionStyles } from "../styles/animations.stylex";
-
-/* Converted from Tailwind utilities; names mirror the original class tokens. */
-const sx = stylex.create({
-	mxAuto: {
-			marginInline: "auto"
-	},
-	mb3: {
-			marginBottom: "12px"
-	},
-	h12: {
-			height: "48px"
-	},
-	wFull: {
-			width: "100%"
-	},
-	maxWVarSessionCol: {
-			maxWidth: "var(--session-col)"
-	},
-	animatePulse: {
-			animation: "var(--animate-pulse)"
-	},
-	roundedLg: {
-			borderRadius: "calc(14px * var(--rf))"
-	,
-		cornerShape: "var(--cs)"},
-	bgHover45: {
-			backgroundColor: "var(--hover)"
-	},
-});
+import { visibleTranscriptHydrationDemand } from "./session-viewer/transcript-hydration";
 
 type RenderBlock =
 	| { kind: "entry"; entry: TranscriptEntry }
@@ -120,11 +90,10 @@ interface Props {
 	onReviewLoopOpenChange?: (open: boolean) => void;
 	/** Complete content-free outline. When present, ranges hydrate on demand. */
 	transcriptIndex?: TranscriptIndexEntry[];
-	/** Changes only to re-arm visible range demand after a dropped response. */
+	/** Changes to re-arm top-range demand after index setup or a dropped response. */
 	transcriptRangeRetryGeneration?: number;
 	onLoadTranscriptRanges?: (ranges: TranscriptIndexedRange[]) => void;
-	/** Fired once every range near the viewport renders from real payload
-	 *  rather than an outline placeholder — the open-settle curtain's release. */
+	/** Fired once the opening viewport renders from real payload. */
 	onVisibleRangesSettled?: () => void;
 	/** Indexed range rows reuse this renderer without nesting a virtualizer. */
 	virtualize?: boolean;
@@ -220,6 +189,11 @@ function isRenderlessUserEntry(entry: TranscriptEntry): boolean {
 // on the biggest session in the store (9,689 entries, 3 review loops), the
 // trailing window came out as 1 block instead of 24.
 const TRAILING_MOUNTED_BLOCKS = 24;
+
+// How many outline ranges one top approach asks for. Each batch prepends real
+// content and grows the scrollable area upward; the next approach (after the
+// reader climbs through it) asks for more.
+const TOP_APPROACH_BATCH = 10;
 
 function renderBlockEntries(block: RenderBlock): TranscriptEntry[] {
 	if (block.kind === "turn") return block.items;
@@ -604,13 +578,7 @@ type IndexedTimelineItem =
 	  };
 
 function IndexedTranscriptBlocks(props: Props) {
-	const {
-		entries,
-		transcriptIndex = [],
-		notes,
-		walkthrough,
-		onLoadTranscriptRanges,
-	} = props;
+	const { entries, transcriptIndex = [], notes, walkthrough } = props;
 	const [openedReviewKeys, setOpenedReviewKeys] = React.useState(
 		() => new Set<string>(),
 	);
@@ -713,120 +681,176 @@ function IndexedTranscriptBlocks(props: Props) {
 	}
 	atoms = sortIndexedTimelineAtoms(atoms);
 	const timeline = groupIndexedReviewLoops(atoms);
-	const lastIndex = timeline.length - 1;
+	// Only payload-backed rows occupy scroll space. Unloaded history contributes
+	// no estimated placeholders: the scrollable area starts at the loaded tail
+	// and grows upward as older ranges hydrate (handleTopApproach below), so
+	// every height on screen is a real measurement.
+	const renderedTimeline = timeline
+		.map((item, index) => ({ item, index }))
+		.filter(
+			({ item }) =>
+				indexedItemRanges(item).length === 0 ||
+				indexedItemEntryIds(item).some((id) => payloadById.has(id)),
+		);
 	// Nothing to window (an empty or fully-absent outline): the curtain lifts
-	// immediately instead of waiting for a demand pass that will never run.
-	useEffect(() => {
-		if (timeline.length === 0) props.onVisibleRangesSettled?.();
-	}, [timeline.length, props.onVisibleRangesSettled]);
-	const items: VirtualTranscriptItem[] = timeline.map((item, index) => {
-		const itemRanges = indexedItemRanges(item);
-		const entryIds = indexedItemEntryIds(item);
-		const loaded = itemRanges.every((range) =>
-			range.entryIds.every((id) => payloadById.has(id)),
-		);
-		const itemEntries = orderTranscriptEntries(
-			entryIds.flatMap((id) => {
-				const entry = payloadById.get(id);
-				return entry ? [entry] : [];
-			}),
-		);
-		// The opening tail can begin midway through one structural range. When the
-		// complete index arrives, keep rendering the payload already on screen
-		// while its missing prefix hydrates. Replacing real content with a 48px
-		// placeholder for that round trip makes the transcript flash and briefly
-		// remaps scrollTop into an older part of the conversation.
-		const rendersPartialRange = item.kind === "range" && itemEntries.length > 0;
-		const rendersPayload = loaded || rendersPartialRange;
-		const key = indexedItemKey(item, index);
-		const estimateSize = indexedItemEstimate(item);
-		const isLast = index === lastIndex;
-		return {
-			key,
-			anchorId: key,
-			entryIds,
-			estimateSize,
-			measure: rendersPayload || item.kind !== "range",
-			content:
-				item.kind === "note" ? (
-					<NoteBubble note={item.note} sessionId={props.sessionId} />
-				) : item.kind === "walkthrough" ? (
-					<WalkthroughCard walkthrough={item.walkthrough} variant="session" />
-				) : item.kind === "entry" ? (
-					<LoadedTranscriptBlocks
-						{...props}
-						onVisibleRangesSettled={undefined}
-						entries={[item.entry]}
-						transcriptIndex={undefined}
-						notes={undefined}
-						walkthrough={undefined}
-						virtualize={false}
-						live={Boolean(props.live && isLast)}
-						onContinue={isLast ? props.onContinue : undefined}
-					/>
-				) : rendersPayload ? (
-					<LoadedTranscriptBlocks
-						{...props}
-						entries={itemEntries}
-						transcriptIndex={undefined}
-						notes={indexedItemNotes(item)}
-						walkthrough={indexedItemWalkthrough(item)}
-						virtualize={false}
-						live={Boolean(props.live && isLast)}
-						reviewLoopsOpen={
-							item.kind === "review" && openedReviewKeys.has(key)
-								? true
-								: props.reviewLoopsOpen
-						}
-						onReviewLoopOpenChange={
-							item.kind === "review"
-								? (open) => setReviewOpen(key, open)
-								: undefined
-						}
-						onContinue={isLast ? props.onContinue : undefined}
-					/>
-				) : item.kind === "review" ? (
-					<ReviewLoopBlock
-						prNumber={item.prNumber}
-						rounds={item.rounds}
-						live={Boolean(props.live && isLast)}
-						result={isLast ? props.reviewResult : undefined}
-						onOpenChange={(open) => {
-							setReviewOpen(key, open);
-							if (open) onLoadTranscriptRanges?.(itemRanges);
-						}}
-					>
-						<TranscriptRangeLoading />
-					</ReviewLoopBlock>
-				) : (
-					<TranscriptRangeLoading />
-				),
-		};
+	// instead of waiting for a demand pass that will never run. Recheck when the
+	// full outline replaces the bounded init even if both happen to be empty: the
+	// parent deliberately rejects the init's earlier, unproven ready signal.
+	const settleEmptyTimeline = useEffectEvent(() => {
+		props.onVisibleRangesSettled?.();
 	});
+	useEffect(() => {
+		if (renderedTimeline.length === 0) settleEmptyTimeline();
+	}, [renderedTimeline.length, transcriptIndex]);
+	// Latest outline position of the mounted RANGE window's head row, read by
+	// handleTopApproach below. Standalone decorations (for example a model
+	// switch placed before the loaded tail by timestamp) must not become the
+	// demand head or they strand every indexed range after them. A content-free
+	// opening has no range head yet, so demand starts from the outline tail.
+	const firstRenderedRange = renderedTimeline.find(
+		({ item }) => indexedItemRanges(item).length > 0,
+	);
+	const firstRenderedRangeKey = firstRenderedRange
+		? indexedItemKey(firstRenderedRange.item, firstRenderedRange.index)
+		: null;
+	const firstRenderedRangeIds = firstRenderedRange
+		? indexedItemEntryIds(firstRenderedRange.item)
+		: [];
+	const firstRenderedRangeLoaded = firstRenderedRangeIds.filter((id) =>
+		payloadById.has(id),
+	).length;
+	const firstRenderedRangePartial =
+		firstRenderedRangeLoaded > 0 &&
+		firstRenderedRangeLoaded < firstRenderedRangeIds.length;
+	// Fired when the reader nears the top of the mounted window: collect the
+	// next batch of missing ranges walking backwards from the window's head.
+	// Start AT the head because the bounded opening payload can begin partway
+	// through a structural range. Hydrating the missing rows prepends real
+	// content; VirtualTranscriptList holds the reader's place while the area
+	// above grows. SessionViewer owns in-flight/completed deduplication so a
+	// timed-out request remains retryable here.
+	const handleTopApproach = () => {
+		const onLoad = props.onLoadTranscriptRanges;
+		if (!onLoad) return;
+		let head = firstRenderedRangeKey
+			? timeline.findIndex(
+					(item, index) =>
+						indexedItemKey(item, index) === firstRenderedRangeKey,
+				)
+			: timeline.length - 1;
+		if (head === -1) head = timeline.length - 1;
+		const wanted: TranscriptIndexedRange[] = [];
+		for (let i = head; i >= 0 && wanted.length < TOP_APPROACH_BATCH; i--) {
+			const item = timeline[i];
+			if (!item) break;
+			for (const range of indexedItemRanges(item)) {
+				if (range.entryIds.some((id) => !payloadById.has(id))) wanted.push(range);
+			}
+		}
+		if (wanted.length) onLoad(wanted.reverse());
+	};
+	// SessionViewer enables range demand one frame after positioning the complete
+	// index. The first top check can happen before that gate opens, so replay it
+	// when the generation advances instead of waiting for a scroll event that a
+	// short opening page may not be able to produce.
+	const retryTopApproach = useEffectEvent(() => handleTopApproach());
+	useEffect(() => {
+		if (props.transcriptRangeRetryGeneration === undefined) return;
+		retryTopApproach();
+	}, [props.transcriptRangeRetryGeneration]);
+	const hydrationOutline = timeline.map((item, index) => ({
+		key: indexedItemKey(item, index),
+		ranges: indexedItemRanges(item),
+	}));
+	const items: VirtualTranscriptItem[] = renderedTimeline.map(
+		({ item, index }, position) => {
+			const entryIds = indexedItemEntryIds(item);
+			const itemEntries = orderTranscriptEntries(
+				entryIds.flatMap((id) => {
+					const entry = payloadById.get(id);
+					return entry ? [entry] : [];
+				}),
+			);
+			// Keys come from the full-outline position so a row keeps its identity
+			// while older siblings hydrate in above it.
+			const key = indexedItemKey(item, index);
+			const estimateSize = indexedItemEstimate(item);
+			const isLast = position === renderedTimeline.length - 1;
+			return {
+				key,
+				anchorId: key,
+				entryIds,
+				estimateSize,
+				measure: true,
+				content:
+					item.kind === "note" ? (
+						<NoteBubble note={item.note} sessionId={props.sessionId} />
+					) : item.kind === "walkthrough" ? (
+						<WalkthroughCard walkthrough={item.walkthrough} variant="session" />
+					) : item.kind === "entry" ? (
+						<LoadedTranscriptBlocks
+							{...props}
+							onVisibleRangesSettled={undefined}
+							entries={[item.entry]}
+							transcriptIndex={undefined}
+							notes={undefined}
+							walkthrough={undefined}
+							virtualize={false}
+							live={Boolean(props.live && isLast)}
+							onContinue={isLast ? props.onContinue : undefined}
+						/>
+					) : (
+						// Ranges and review groups always render from real payload now;
+						// unloaded ones were dropped by the renderedTimeline filter and
+						// grow in when their hydration lands.
+						<LoadedTranscriptBlocks
+							{...props}
+							entries={itemEntries}
+							transcriptIndex={undefined}
+							notes={indexedItemNotes(item)}
+							walkthrough={indexedItemWalkthrough(item)}
+							virtualize={false}
+							live={Boolean(props.live && isLast)}
+							reviewLoopsOpen={
+								item.kind === "review" && openedReviewKeys.has(key)
+									? true
+									: props.reviewLoopsOpen
+							}
+							onReviewLoopOpenChange={
+								item.kind === "review"
+									? (open) => setReviewOpen(key, open)
+									: undefined
+							}
+							onContinue={isLast ? props.onContinue : undefined}
+						/>
+					),
+			};
+		},
+	);
 
 	return (
 		<VirtualTranscriptList
 			items={items}
 			trailingMounted={TRAILING_MOUNTED_BLOCKS}
 			sizeCacheKey={props.sessionId}
+			onTopApproach={handleTopApproach}
+			topApproachGeneration={props.transcriptRangeRetryGeneration}
+			topGrowthKey={firstRenderedRangeKey}
+			topGrowthVersion={
+				firstRenderedRangePartial ? firstRenderedRangeLoaded : undefined
+			}
 			onVisibleItems={(visible) => {
-				if (!onLoadTranscriptRanges) return;
-				const keys = new Set(visible.map((item) => item.key));
-				const wanted = timeline
-					.filter(
-						(item, index) =>
-							(item.kind !== "review" || indexedItemHasDecoration(item)) &&
-							keys.has(indexedItemKey(item, index)),
-					)
-					.flatMap(indexedItemRanges)
-					.filter((range) =>
-						range.entryIds.some((id) => !payloadById.has(id)),
-					);
-				if (wanted.length) {
-					onLoadTranscriptRanges?.(wanted);
-				} else if (visible.length > 0) {
-					props.onVisibleRangesSettled?.();
+				const wanted = visibleTranscriptHydrationDemand(
+					hydrationOutline,
+					new Set(visible.map((item) => item.key)),
+					(entryId) => payloadById.has(entryId),
+				);
+				if (wanted === null) return;
+				if (wanted.length > 0) {
+					props.onLoadTranscriptRanges?.(wanted);
+					return;
 				}
+				props.onVisibleRangesSettled?.();
 			}}
 		/>
 	);
@@ -951,10 +975,6 @@ function indexedItemWalkthrough(
 	return undefined;
 }
 
-function indexedItemHasDecoration(item: IndexedTimelineItem): boolean {
-	return Boolean(indexedItemNotes(item)?.length || indexedItemWalkthrough(item));
-}
-
 function indexedItemKey(item: IndexedTimelineItem, index: number): string {
 	if (item.kind === "entry") return item.entry.id;
 	if (item.kind === "range") return item.range.key;
@@ -969,15 +989,6 @@ function indexedItemEstimate(item: IndexedTimelineItem): number {
 	if (item.kind === "note") return 96;
 	if (item.kind === "walkthrough") return 320;
 	return 48;
-}
-
-function TranscriptRangeLoading() {
-	return (
-		<div
-			{...stylex.props(sx.mxAuto, sx.mb3, sx.h12, sx.wFull, sx.maxWVarSessionCol, motionStyles.pulse, sx.roundedLg, sx.bgHover45)}
-			aria-label="Loading messages"
-		/>
-	);
 }
 
 /** Review work uses the same grouped step rows as a normal turn, without

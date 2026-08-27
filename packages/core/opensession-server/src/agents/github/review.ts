@@ -8,10 +8,9 @@
 import { isGithubBotLogin, personaName } from "../../server/config";
 import { isShuttingDown } from "../../server/shutdown-state";
 import {
-  getPrDetails,
-  getPrDetailsFresh,
+  getPrAutomationDetails,
   getPrDiff,
-  type PrDetails,
+  type PrAutomationDetails,
 } from "../../server/pr-info";
 import {
   activeRunCancellationRequested,
@@ -112,6 +111,40 @@ interface ReviewOutput {
   /** Optional mermaid diagram for changes that warrant one (schema/flow). */
   diagram?: { type?: string; mermaid?: string };
   findings?: Finding[];
+}
+
+/**
+ * Derive the contract's 1-5 merge-safety score when a model returns a usable
+ * review in another schema. Codex's `overall_confidence_score` is a 0-1 measure
+ * of certainty, not merge safety, so severity + verdict are the honest fallback.
+ */
+function deriveMergeSafetyScore(verdict: string | undefined, findings: Finding[]): number | undefined {
+  if (!verdict) return undefined;
+
+  let score = verdict === "approve" ? 5 : verdict === "comment" ? 4 : 2;
+  for (const finding of findings) {
+    switch ((finding.severity || "").toLowerCase()) {
+      case "p0":
+        score = Math.min(score, 1);
+        break;
+      case "p1":
+      case "high":
+        score = Math.min(score, 2);
+        break;
+      case "p2":
+      case "medium":
+        score = Math.min(score, 3);
+        break;
+      case "p3":
+      case "low":
+        score = Math.min(score, 4);
+        break;
+      default:
+        // A structured finding with unknown severity is still an unresolved risk.
+        score = Math.min(score, 3);
+    }
+  }
+  return score;
 }
 
 /** What a review concluded, so callers (e.g. auto-fix) can gate on it. */
@@ -219,7 +252,7 @@ export async function runReview(
 
     // Look up by number before publishing the session link. If details are
     // unavailable, no worker exists and the next delivery remains retryable.
-    const details = await getPrDetails(pr.number ? String(pr.number) : pr.headRef, pr.ghRepo || undefined);
+    const details = await getPrAutomationDetails(pr.number ? String(pr.number) : pr.headRef, pr.ghRepo || undefined);
     if (!details) {
       console.warn(`[github] no PR details for #${pr.number} (${pr.headRef}); review not started`);
       return null;
@@ -496,8 +529,8 @@ export async function runReview(
     // Never publish an assessment against a different commit from the one the
     // worktree and prompt were pinned to. A push while the review was running
     // gets its own webhook/reconcile review; this result is now stale.
-    const latestPr = await getPrDetailsFresh(
-      pr.headRef,
+    const latestPr = await getPrAutomationDetails(
+      pr.number ? String(pr.number) : pr.headRef,
       pr.ghRepo || undefined,
     );
     if (
@@ -619,7 +652,7 @@ function composeInlineBody(f: Finding): string {
 
 async function postReview(
   pr: PrRef,
-  details: PrDetails,
+  details: PrAutomationDetails,
   parsed: ReviewOutput | null,
   rawText: string,
   runError?: string,
@@ -888,10 +921,10 @@ export function parseReviewOutput(text: string, cwd?: string): ReviewOutput | nu
               suggestion: typeof f.suggestion === "string" && f.suggestion.trim() ? f.suggestion : undefined,
             }))
         : [];
-      // Contract confidence is merge-safety on a 1-5 scale. An out-of-range value
-      // (typically a 0-1 self-certainty probability) measures a different quantity
-      // — drop it instead of rendering "0.98/5" or letting a scaled-up fraction
-      // satisfy the ≥4/5 "safe to merge" gates on a request_changes review.
+      // Contract confidence is integer merge-safety on a 1-5 scale. An invalid
+      // value (typically Codex's 0-1 self-certainty probability) measures a
+      // different quantity. Derive merge safety from the normalized verdict and
+      // finding severities instead, so every postable review still has a score.
       const rawConfidence = typeof obj.confidence === "number" ? obj.confidence : undefined;
       const verdict =
         typeof obj.verdict === "string"
@@ -901,9 +934,13 @@ export function parseReviewOutput(text: string, cwd?: string): ReviewOutput | nu
             : obj.overall_correctness === "patch is incorrect"
               ? "request_changes"
               : undefined;
+      const confidence =
+        rawConfidence !== undefined && Number.isInteger(rawConfidence) && rawConfidence >= 1 && rawConfidence <= 5
+          ? rawConfidence
+          : deriveMergeSafetyScore(verdict, findings);
       return {
         verdict,
-        confidence: rawConfidence !== undefined && rawConfidence >= 1 && rawConfidence <= 5 ? rawConfidence : undefined,
+        confidence,
         summary_markdown:
           typeof obj.summary_markdown === "string"
             ? obj.summary_markdown

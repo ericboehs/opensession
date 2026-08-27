@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef } from "react";
 
 import { PHONE_QUERY } from "../lib/breakpoints";
 
@@ -339,21 +339,24 @@ export function useBackSwipe({ active, onBack, paneRef, priority = 0 }: Opts) {
   // (any re-render, e.g. a WebSocket session update), the manager would drop
   // the in-flight drag and strand the pane on its inline transform.
   const activeRef = useRef(active);
-  activeRef.current = active;
   const onBackRef = useRef(onBack);
-  onBackRef.current = onBack;
+  useLayoutEffect(() => {
+    activeRef.current = active;
+    onBackRef.current = onBack;
+  });
 
   useEffect(() => {
     const layer: Layer = {
-      seq: ++seqCounter,
+      seq: (seqCounter += 1),
       priority,
       activeRef,
       onBackRef,
       paneRef,
     };
     layers.add(layer);
-    syncListeners();
-    return () => {
+    // Setup-scope helper so teardown reads the latest pane node without
+    // touching `.current` inside the cleanup body itself.
+    const releaseLayer = () => {
       layers.delete(layer);
       // If teardown lands mid-gesture on this layer (route change, unmount),
       // hand the pane back to the CSS class instead of leaving it stuck
@@ -364,6 +367,10 @@ export function useBackSwipe({ active, onBack, paneRef, priority = 0 }: Opts) {
         endGestureState();
       }
       syncListeners();
+    };
+    syncListeners();
+    return () => {
+      releaseLayer();
     };
   }, [paneRef, priority]);
 }
