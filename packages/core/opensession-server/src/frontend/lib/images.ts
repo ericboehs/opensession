@@ -28,7 +28,10 @@ export interface FileAttachment {
 export const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
 
 /** Stream one file to the server upload endpoint; resolves to its staged path. */
-export async function uploadFile(file: File): Promise<{ name: string; path: string }> {
+export async function uploadFile(
+  file: File,
+  signal?: AbortSignal,
+): Promise<{ name: string; path: string }> {
   const res = await fetch(`${BASE_PATH}/api/upload`, {
     method: "POST",
     headers: {
@@ -36,6 +39,7 @@ export async function uploadFile(file: File): Promise<{ name: string; path: stri
       "content-type": file.type || "application/octet-stream",
     },
     body: file,
+    signal,
   });
   const body = await res.json().catch(() => ({}));
   if (!res.ok || !body?.ok || !body?.path) {
@@ -141,7 +145,11 @@ function unsupportedPromptImage(): Error & { status: number } {
  * message parked in the outbox blocks plain-text sends everywhere until it is
  * discarded.
  */
-async function stageImage(file: File, rejected: string[]): Promise<string | null> {
+async function stageImage(
+  file: File,
+  rejected: string[],
+  signal?: AbortSignal,
+): Promise<string | null> {
   if (file.size > MAX_UPLOAD_BYTES) {
     rejected.push(`${file.name || "image"} (too large, max ${Math.floor(MAX_UPLOAD_BYTES / (1024 * 1024))} MB)`);
     return null;
@@ -162,9 +170,11 @@ async function stageImage(file: File, rejected: string[]): Promise<string | null
   try {
     const { path } = await uploadFile(
       new File([stageable], imageUploadName(stageable), { type: stageable.type }),
+      signal,
     );
     return `/media?path=${encodeURIComponent(path)}`;
   } catch (e) {
+    if (signal?.aborted) return null;
     if (file.size <= MAX_INLINE_IMAGE_BYTES) return inline();
     rejected.push(`${file.name || "image"} (${(e as Error)?.message || "upload failed"})`);
     return null;
@@ -182,6 +192,7 @@ async function stageImage(file: File, rejected: string[]): Promise<string | null
  */
 export async function splitAttachments(
   files: FileList | File[],
+  signal?: AbortSignal,
 ): Promise<{ images: string[]; files: FileAttachment[]; rejected: string[] }> {
   const all = Array.from(files);
   const imageFiles = all.filter((f) => f.type.startsWith("image/"));
@@ -189,7 +200,7 @@ export async function splitAttachments(
 
   const rejected: string[] = [];
   const images = (
-    await Promise.all(imageFiles.map((f) => stageImage(f, rejected)))
+    await Promise.all(imageFiles.map((f) => stageImage(f, rejected, signal)))
   ).filter((u): u is string => u !== null);
 
   const uploaded = await Promise.all(
@@ -199,9 +210,10 @@ export async function splitAttachments(
         return null;
       }
       try {
-        const { name, path } = await uploadFile(f);
+        const { name, path } = await uploadFile(f, signal);
         return { name, type: f.type, path };
       } catch (e) {
+        if (signal?.aborted) return null;
         rejected.push(`${f.name} (${(e as Error)?.message || "upload failed"})`);
         return null;
       }

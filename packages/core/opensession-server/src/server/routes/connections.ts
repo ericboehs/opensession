@@ -899,20 +899,19 @@ export async function handleConnectionsRoutes(
 			github.oauthClientId = clientId;
 			github.appSlug = slug;
 			github.oauthClientSecret = secret;
-			// An org-owned App also records the intent to turn on per-user sign-in
-			// at the first connect; a personal App is single-user, so any stale
-			// intent is cleared. Deliberately never writes userPrAuth — the gate is
-			// flipped only when someone actually connects (device/poll below), so a
-			// box carrying authOnConnect set-but-unconsumed still behaves as simple
-			// mode.
+			// Connecting through App setup should also sign that verified GitHub
+			// account into Open Session, regardless of who owns the App. Record only
+			// the intent here. Deliberately never write userPrAuth before a real
+			// account connects, or setup would lock the operator out. The device poll
+			// rosters the connected account, flips the gate, and mints its session in
+			// that order.
+			github.authOnConnect = true;
 			if (appOrg) {
 				github.appOrg = appOrg;
 				github.installationOwner = appOrg;
-				github.authOnConnect = true;
 			} else {
 				delete github.appOrg;
 				delete github.installationOwner;
-				delete github.authOnConnect;
 			}
 			try {
 				const { commitGithubAppKeyMutation } = await import("../github-app");

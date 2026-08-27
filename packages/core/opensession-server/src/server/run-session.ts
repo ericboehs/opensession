@@ -1184,6 +1184,15 @@ function notifyShutdownPark(sessionId: string): void {
 	});
 }
 
+/** Report and retain accepted queue intake once graceful shutdown has fenced
+ * new turns. Delivery callers use the result to acknowledge the real queued
+ * placement instead of claiming that a parked prompt started. */
+export function parkQueueForShutdown(sessionId: string): boolean {
+	if (!isShuttingDown()) return false;
+	notifyShutdownPark(sessionId);
+	return true;
+}
+
 /**
  * Serialize queue draining per session. A sleeping Sandbox may take seconds
  * to resume, during which later composer sends must stay behind the first
@@ -1211,10 +1220,7 @@ async function drainQueueInner(sessionId: string): Promise<void> {
 		// the sender's socket dies mid-stream either way. The queue is already
 		// persisted, so the next boot's restorePromptQueues delivers this
 		// message cleanly instead.
-		if (isShuttingDown()) {
-			notifyShutdownPark(sessionId);
-			return;
-		}
+		if (parkQueueForShutdown(sessionId)) return;
 		// A racing run can own the session by the time we loop again (e.g. our
 		// last batch lost the start race and got re-queued) — hand off to the
 		// idle-watcher instead of busy-spinning runs that immediately bounce.

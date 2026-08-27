@@ -21,12 +21,17 @@ function setupFiles(account?: { login: string; name?: string }) {
 	writeFileSync(appKey, privateKey.export({ format: "pem", type: "pkcs8" }), { mode: 0o600 });
 	writeFileSync(
 		config,
-		JSON.stringify({ integrations: { github: {
-			oauthClientId: "client-id",
-			oauthClientSecret: "client-secret",
-			appSlug: "open-session-acme",
-			installationOwner: "acme",
-		} } }),
+		JSON.stringify({
+			integrations: {
+				github: {
+					oauthClientId: "client-id",
+					oauthClientSecret: "client-secret",
+					appSlug: "open-session-acme",
+					installationOwner: "acme",
+				},
+			},
+			identity: { team: [{ name: "Local User" }] },
+		}),
 	);
 	writeFileSync(
 		authStore,
@@ -101,7 +106,7 @@ describe("enabling GitHub sign-in", () => {
 		});
 		const written = JSON.parse(readFileSync(config, "utf8"));
 		expect(written.integrations.github.userPrAuth).toBeUndefined();
-		expect(written.identity).toBeUndefined();
+		expect(written.identity.team).toEqual([{ name: "Local User" }]);
 	});
 
 	test("saves the mention handle used by the GitHub agent", async () => {

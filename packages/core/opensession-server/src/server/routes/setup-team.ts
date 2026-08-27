@@ -31,6 +31,8 @@ const BOOLEAN_FIELDS = ["githubToSlack", "directory"] as const;
 
 type MemberPatch = Record<string, unknown>;
 
+export const LOCAL_USER_NAME = "Local User";
+
 /** Validate one request body field; returns an error string or null. A field
  *  not present in the body is untouched. `null` means "delete the field"
  *  (PUT-merge only; `name` can never be deleted). */
@@ -95,6 +97,25 @@ function memberName(entry: MemberPatch): string {
 
 function memberGithub(entry: MemberPatch): string {
   return typeof entry.github === "string" ? entry.github.trim().toLowerCase() : "";
+}
+
+/** The untouched first-run identity. Once it gains any real identity field or
+ * is renamed, it is an ordinary member and must never be removed implicitly. */
+export function isDisposableLocalMember(entry: MemberPatch): boolean {
+  return entry.name === LOCAL_USER_NAME && Object.keys(entry).length === 1;
+}
+
+/** Materialize the local identity for an installer-era incomplete config that
+ * still has an empty roster. Returns whether the config needs persisting. */
+export function ensureLocalOnboardingMember(
+  config: Record<string, unknown>,
+): boolean {
+  if (config.onboardingCompleted !== false) return false;
+  const team = rawTeam(config);
+  if (team.some((entry) => parseTeamMember(entry))) return false;
+  team.push({ name: LOCAL_USER_NAME });
+  (config.identity as Record<string, unknown>).team = team;
+  return true;
 }
 
 /** Prefer the explicit App installation owner, then the most common owner

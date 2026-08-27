@@ -127,6 +127,18 @@ test("an upload that lands after the draft was used is dropped", async () => {
 	expect(loadDraft(KEY).images).toEqual([]);
 });
 
+test("canceling an upload prevents the image from reappearing", async () => {
+	const server = stagingServer();
+	const controller = new AbortController();
+	const attaching = attachToDraft(KEY, [png("removed.png")], controller.signal);
+
+	controller.abort();
+	server.release();
+
+	expect((await attaching).applied).toBe(false);
+	expect(loadDraft(KEY).images).toEqual([]);
+});
+
 test("removing an image goes through the store", async () => {
 	const server = stagingServer();
 	server.release();

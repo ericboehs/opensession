@@ -60,6 +60,10 @@ describe("instance onboarding flag", () => {
 
 		const before = await handleSetupRoutes(request("GET"));
 		expect(await before?.json()).toEqual({ completed: false });
+		expect(JSON.parse(readFileSync(config, "utf8"))).toMatchObject({
+			onboardingCompleted: false,
+			identity: { team: [{ name: "Local User" }] },
+		});
 
 		const completed = await handleSetupRoutes(request("PUT", { completed: true }));
 		expect(completed?.status).toBe(200);

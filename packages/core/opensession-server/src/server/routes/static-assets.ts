@@ -9,7 +9,7 @@
 import { existsSync, statSync } from "fs";
 import type { RouteContext } from "./context";
 import { configuredIntegration, configuredRepos, productMark, productName } from "../config";
-import { FRONTEND_SRC, REPO_ROOT, frontend, frontendDistFile, frontendStaticFile } from "../frontend-build";
+import { REPO_ROOT, frontend, frontendDistFile, frontendSourcePath, frontendStaticFile } from "../frontend-build";
 import { trimIconMargin } from "../png-trim";
 import { resolveRepoIcon } from "../repo-appearance";
 import { organizationIconBytes } from "../organization-settings";
@@ -203,7 +203,7 @@ export async function handleStaticAssetsRoutes(
 		// serves generically.
 		if (/^[a-z0-9][a-z0-9_-]{0,40}$/i.test(id)) {
 			const generic = await localIcon(
-				`${FRONTEND_SRC}/${id}-icon.png`,
+				frontendSourcePath(`${id}-icon.png`),
 				`${id}-icon.png`,
 			);
 			if (generic) return generic;

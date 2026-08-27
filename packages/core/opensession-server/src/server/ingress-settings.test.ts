@@ -3,6 +3,8 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
 import { dirname, join } from "path";
 import { tmpdir } from "os";
 import {
+  configuredPrivateAppOrigin,
+  configuredPublicIngress,
   directHttpsBindAddress,
   displayedServerAddresses,
   normalizeCustomIngressOrigin,
@@ -20,6 +22,8 @@ import {
 
 const previous = process.env.OPENSESSION_CONFIG;
 const previousEnvFile = process.env.OPENSESSION_ENV_FILE;
+const previousUiBase = process.env.OPENSESSION_UI_BASE;
+const previousIngressBase = process.env.OPENSESSION_INGRESS_BASE;
 const previousPublicIpv4 = process.env.OPENSESSION_PUBLIC_IPV4;
 const previousPublicIpv6 = process.env.OPENSESSION_PUBLIC_IPV6;
 const dirs: string[] = [];
@@ -50,6 +54,10 @@ afterEach(() => {
   else process.env.OPENSESSION_CONFIG = previous;
   if (previousEnvFile === undefined) delete process.env.OPENSESSION_ENV_FILE;
   else process.env.OPENSESSION_ENV_FILE = previousEnvFile;
+  if (previousUiBase === undefined) delete process.env.OPENSESSION_UI_BASE;
+  else process.env.OPENSESSION_UI_BASE = previousUiBase;
+  if (previousIngressBase === undefined) delete process.env.OPENSESSION_INGRESS_BASE;
+  else process.env.OPENSESSION_INGRESS_BASE = previousIngressBase;
   if (previousPublicIpv4 === undefined) delete process.env.OPENSESSION_PUBLIC_IPV4;
   else process.env.OPENSESSION_PUBLIC_IPV4 = previousPublicIpv4;
   if (previousPublicIpv6 === undefined) delete process.env.OPENSESSION_PUBLIC_IPV6;
@@ -187,12 +195,31 @@ describe("public ingress settings", () => {
     expect(displayedServerAddresses({ a: [], aaaa: [] }, dns, "unreachable")).toEqual({ a: [], aaaa: [] });
   });
 
-  test("saves a bare private app domain to config and the service environment", async () => {
+  test("saves a bare private app domain and keeps status on the persisted value", async () => {
     const { path, envPath } = fixture();
+    process.env.OPENSESSION_UI_BASE = "https://app.example.test";
     expect(normalizePrivateAppOrigin("team.example.test")).toBe("https://team.example.test");
     await savePrivateAppOrigin("team.example.test");
     expect(JSON.parse(readFileSync(path, "utf8")).server.publicBaseUrl).toBe("https://team.example.test");
     expect(readFileSync(envPath, "utf8")).toContain("OPENSESSION_UI_BASE=https://team.example.test");
+    expect(process.env.OPENSESSION_UI_BASE).toBe("https://app.example.test");
+    expect(configuredPrivateAppOrigin()).toBe("https://team.example.test");
+  });
+
+  test("persists and immediately activates the public callback origin", async () => {
+    const { path, envPath } = fixture();
+    process.env.OPENSESSION_INGRESS_BASE = "https://old-ingress.example.test";
+    await savePublicIngress({
+      publicBaseUrl: "https://ingress.example.test",
+      exposure: "custom",
+    });
+    expect(JSON.parse(readFileSync(path, "utf8")).ingress.publicBaseUrl)
+      .toBe("https://ingress.example.test");
+    expect(readFileSync(envPath, "utf8"))
+      .toContain("OPENSESSION_INGRESS_BASE=https://ingress.example.test");
+    expect(process.env.OPENSESSION_INGRESS_BASE).toBe("https://ingress.example.test");
+    process.env.OPENSESSION_INGRESS_BASE = "https://old-ingress.example.test";
+    expect(configuredPublicIngress().publicBaseUrl).toBe("https://ingress.example.test");
   });
 
   test("saves a public address override for direct HTTPS", async () => {

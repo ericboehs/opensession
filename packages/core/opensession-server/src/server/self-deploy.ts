@@ -2,13 +2,12 @@
  * opensession-self-deploy — agent-callable self-deploy of THIS Open Session
  * instance. One action tool (deploy_self) plus a read tool (deploy_status).
  *
- * The tool itself only pre-validates and LAUNCHES: the actual
- * fetch → immutable release worktree → pointer swap → health-gated rollback
+ * Frontend-only targets are prepared, bundled, validated and atomically
+ * promoted in process without a service restart. Every other ordinary target
+ * is only pre-validated and LAUNCHED here: pointer swap → health-gated rollback
  * lives in deploy/self-deploy.sh, spawned as a transient SYSTEM unit via the
- * root-owned validating runtime helper so it
- * survives the service restart it triggers — any of that logic living in this
- * process would die mid-deploy. Results land as JSON in the deploy state dir
- * (~/.opensession-deploy by default), which deploy_status reads back.
+ * root-owned validating runtime helper so it survives the restart it triggers.
+ * Results land as JSON in the deploy state dir, which deploy_status reads back.
  *
  * Trust model: interactive-only + isAdmin, wired EXCLUSIVELY through
  * interactiveMcpServers (src/server/interactive-mcp.ts) like its siblings.
@@ -26,6 +25,11 @@ import { createSdkMcpServer, tool } from "./inprocess-mcp";
 import { RUN_HOST_HELPER } from "../executor/host-unit";
 import { homeDir, stateDir } from "./paths";
 import { isDevInstance } from "./dev-mode";
+import { activateFrontendRelease, type FrontendReleasePointer } from "./frontend-build";
+import { writeFileAtomic } from "./shared/atomic-write";
+import { broadcastToAll } from "./ws-hub";
+
+const g = globalThis as any;
 
 const REPO_ROOT = resolvePath(import.meta.dir, "../../../../..");
 
@@ -79,6 +83,8 @@ export interface DeployState {
 	pin: string | null;
 	markerAgeMs: number | null;
 	result: SelfDeployResult | null;
+	frontend?: FrontendReleasePointer | null;
+	frontendResult?: SelfDeployResult | null;
 }
 
 /** Read the script's state files (best-effort — every file is optional). */
@@ -92,10 +98,23 @@ export function readDeployState(stateDir: string = deployStateDir(), nowMs: numb
 	};
 	const marker = readText(`${stateDir}/last-deploy-marker`);
 	const resultRaw = readText(`${stateDir}/last-result.json`);
+	const frontendRaw = readText(`${stateDir}/frontend-current.json`);
+	const frontendResultRaw = readText(`${stateDir}/last-frontend-result.json`);
+	let frontend: FrontendReleasePointer | null = null;
+	try {
+		const parsed = frontendRaw ? JSON.parse(frontendRaw) : null;
+		if (parsed && typeof parsed.sha === "string" && typeof parsed.baseSha === "string" && typeof parsed.releaseRoot === "string") {
+			frontend = parsed as FrontendReleasePointer;
+		}
+	} catch {}
+	const backendSha = readText(`${stateDir}/current/.opensession-release`)?.trim();
+	if (frontend && frontend.baseSha !== backendSha) frontend = null;
 	return {
 		pin: readText(`${stateDir}/last-known-good`)?.trim() || null,
 		markerAgeMs: marker === null ? null : markerAgeMs(marker, nowMs),
 		result: resultRaw === null ? null : parseDeployResult(resultRaw),
+		frontend,
+		frontendResult: frontendResultRaw === null ? null : parseDeployResult(frontendResultRaw),
 	};
 }
 
@@ -120,6 +139,20 @@ export function formatDeployStatus(state: DeployState, stateDir: string = deploy
 			? `Last-known-good pin: ${state.pin.slice(0, 10)}`
 			: "Last-known-good pin: none recorded",
 	);
+	if (state.frontend) {
+		lines.push(
+			`Frontend pin: ${state.frontend.sha.slice(0, 10)} (restart-free promotion over backend ${state.frontend.baseSha.slice(0, 10)})`,
+		);
+	} else {
+		lines.push("Frontend pin: follows the backend release");
+	}
+	if (state.frontendResult) {
+		lines.push(
+			`Last frontend promotion: ${state.frontendResult.ok ? "OK" : "FAILED"}` +
+				(state.frontendResult.sha ? ` (${state.frontendResult.sha.slice(0, 10)})` : "") +
+				(state.frontendResult.message ? ` — ${state.frontendResult.message}` : ""),
+		);
+	}
 	if (state.markerAgeMs !== null && state.markerAgeMs >= 0) {
 		const mins = Math.round(state.markerAgeMs / 60000);
 		lines.push(`Watchdog window: OPEN (last deploy restart ~${mins} min ago; auto-rollback armed for 15 min)`);
@@ -142,6 +175,130 @@ async function git(cwd: string, args: string[]): Promise<{ code: number; out: st
 		proc.exited,
 	]);
 	return { code, out: out.trim(), err: err.trim() };
+}
+
+const FRONTEND_PREFIX = "packages/core/opensession-server/src/frontend/";
+
+/** Strict allowlist: if any runtime path outside the web frontend changes, use
+ * the health-gated service rollout. Documentation may ride with a UI commit. */
+export function isFrontendOnlyRelease(paths: string[]): boolean {
+	let hasFrontend = false;
+	for (const path of paths) {
+		if (path.startsWith(FRONTEND_PREFIX)) {
+			hasFrontend = true;
+			continue;
+		}
+		if (path === "AGENTS.md" || path.startsWith("docs/")) continue;
+		return false;
+	}
+	return hasFrontend;
+}
+
+async function run(
+	command: string[],
+	opts: { cwd?: string; env?: Record<string, string | undefined> } = {},
+): Promise<string> {
+	const proc = Bun.spawn(command, {
+		cwd: opts.cwd,
+		env: opts.env ? { ...process.env, ...opts.env } : process.env,
+		stdout: "pipe",
+		stderr: "pipe",
+	});
+	const [out, err, code] = await Promise.all([
+		new Response(proc.stdout).text(),
+		new Response(proc.stderr).text(),
+		proc.exited,
+	]);
+	if (code !== 0) {
+		throw new Error(`${command[0]} exited ${code}: ${(err || out).trim().slice(0, 800)}`);
+	}
+	return out.trim();
+}
+
+async function acquireDeployLock(state: string): Promise<() => Promise<void>> {
+	mkdirSync(state, { recursive: true });
+	const proc = Bun.spawn(
+		["flock", "-n", `${state}/.lock`, "/bin/sh", "-c", "printf 'LOCKED\\n'; cat >/dev/null"],
+		{ stdin: "pipe", stdout: "pipe", stderr: "pipe" },
+	);
+	const reader = proc.stdout.getReader();
+	const first = await reader.read();
+	reader.releaseLock();
+	if (first.done || !new TextDecoder().decode(first.value).includes("LOCKED")) {
+		const err = await new Response(proc.stderr).text();
+		await proc.exited;
+		throw new Error(`another deploy or rollback is already in flight${err.trim() ? `: ${err.trim()}` : ""}`);
+	}
+	return async () => {
+		proc.stdin.end();
+		await proc.exited;
+	};
+}
+
+async function promoteFrontendRelease(
+	targetSha: string,
+	baseSha: string,
+	user?: string,
+): Promise<{ releaseRoot: string; version: string }> {
+	if (g.__opensessionFrontendPromotion) {
+		throw new Error("another frontend promotion is already running");
+	}
+	g.__opensessionFrontendPromotion = true;
+	const state = deployStateDir();
+	const startedAt = new Date().toISOString();
+	let releaseLock: (() => Promise<void>) | null = null;
+	try {
+		releaseLock = await acquireDeployLock(state);
+		const releaseScript = `${REPO_ROOT}/deploy/release-checkout.sh`;
+		const env = {
+			OPENSESSION_DEPLOY_CHECKOUT: deployCheckout(),
+			OPENSESSION_DEPLOY_STATE: state,
+			OPENSESSION_BUN_BIN: process.execPath,
+		};
+		const releaseRoot = await run(["bash", releaseScript, "prepare", targetSha], { env });
+		await run([process.execPath, "run", "scripts/build-frontend.ts"], {
+			cwd: releaseRoot,
+			env,
+		});
+		const pointer: FrontendReleasePointer = {
+			sha: targetSha,
+			baseSha,
+			releaseRoot,
+			promotedAt: new Date().toISOString(),
+		};
+		const version = activateFrontendRelease(pointer);
+		const result: SelfDeployResult = {
+			ok: true,
+			action: "frontend-promote",
+			sha: targetSha,
+			previousSha: baseSha,
+			target: targetSha,
+			startedAt,
+			finishedAt: new Date().toISOString(),
+			durationSecs: Math.round((Date.now() - Date.parse(startedAt)) / 1000),
+			message: `frontend promoted without restarting services${user ? ` by ${user}` : ""}`,
+		};
+		writeFileAtomic(`${state}/last-frontend-result.json`, `${JSON.stringify(result, null, 2)}\n`, 0o600);
+		broadcastToAll({ type: "frontend_updated", version, ...(user ? { by: user } : {}) });
+		return { releaseRoot, version };
+	} catch (error) {
+		const result: SelfDeployResult = {
+			ok: false,
+			action: "frontend-promote",
+			sha: targetSha,
+			previousSha: baseSha,
+			target: targetSha,
+			startedAt,
+			finishedAt: new Date().toISOString(),
+			durationSecs: Math.round((Date.now() - Date.parse(startedAt)) / 1000),
+			message: error instanceof Error ? error.message : String(error),
+		};
+		writeFileAtomic(`${state}/last-frontend-result.json`, `${JSON.stringify(result, null, 2)}\n`, 0o600);
+		throw error;
+	} finally {
+		await releaseLock?.();
+		g.__opensessionFrontendPromotion = false;
+	}
 }
 
 /**
@@ -204,7 +361,7 @@ export function createSelfDeployMcpServer(ctx: SelfDeployToolContext) {
 	const tools = [
 		tool(
 			"deploy_self",
-			"Standard (light) deploy of THIS Open Session instance to an immutable git release. Use for ordinary frontend, backend, protocol, and dependency changes only. It DOES NOT install changed root-owned artifacts. If the target changes the live deploy controllers, opensession*.service, credential installers, the fixed run-host helper/installer, or root-deploy-managed systemd units/drop-ins, do not use this tool: run the documented full root deploy instead. The target must advance from the running release; stale or parallel targets are refused. The shared WIP checkout is only an object source and is never changed. Prepares locked dependencies, atomically switches the runtime pointer, restarts and health-gates the gateway/kernel/executor release, and switches back to last-known-good on failure. Detached engine turns survive and sessions reattach, but the UI blips. Requires confirm: true.",
+			"Deploy THIS Open Session instance to an immutable git release. Deployment may be autonomous, but it is shared across sessions: check deploy_status, batch a burst of commits, and deploy the newest fast-forward target once. A strictly frontend-only diff is bundled in the prepared target release, atomically promoted, and announced to clients without restarting any service. Any server, protocol, dependency, or other runtime change automatically uses the standard health-gated gateway/kernel/executor restart path. /api/rebuild-frontend only rebuilds the already pinned source and is not a promotion path. This tool DOES NOT install changed root-owned artifacts. If the target changes the live deploy controllers, opensession*.service, credential installers, the fixed run-host helper/installer, or root-deploy-managed systemd units/drop-ins, use the documented full root deploy instead. Stale or parallel targets are refused; the shared WIP checkout is only a git object source and is never changed.",
 			{
 				sha: z
 					.string()
@@ -215,7 +372,7 @@ export function createSelfDeployMcpServer(ctx: SelfDeployToolContext) {
 				confirm: z
 					.boolean()
 					.describe(
-						"Must be exactly true. This restarts the live Open Session instance for everyone — confirm deliberately, never as a default.",
+						"Must be exactly true. This deliberately acknowledges a shared live rollout; frontend-only promotion is restart-free, while other ordinary changes restart the services. No separate human approval is required.",
 					),
 			},
 			async (args: { sha?: string; confirm: boolean }) => {
@@ -229,7 +386,7 @@ export function createSelfDeployMcpServer(ctx: SelfDeployToolContext) {
 				}
 				if (args.confirm !== true) {
 					return text(
-						"Refusing: deploy_self restarts the live Open Session instance. Call again with confirm: true once you actually mean to deploy.",
+						"Refusing: deploy_self changes the shared live Open Session release. Call again with confirm: true once you actually mean to deploy.",
 					);
 				}
 				const checkout = deployCheckout();
@@ -250,20 +407,36 @@ export function createSelfDeployMcpServer(ctx: SelfDeployToolContext) {
 					}
 					const targetSha = rev.out;
 					const runtime = `${stateDir}/current`;
+					let currentSha: string | null = null;
 					if (existsSync(runtime)) {
 						const current = await git(runtime, ["rev-parse", "HEAD"]);
-						if (current.code === 0 && current.out !== targetSha) {
+						if (current.code === 0) currentSha = current.out;
+						if (currentSha && currentSha !== targetSha) {
 							const advance = await git(checkout, [
 								"merge-base",
 								"--is-ancestor",
-								current.out,
+								currentSha,
 								targetSha,
 							]);
 							if (advance.code !== 0) {
 								return text(
-									`Refusing stale or parallel release ${targetSha.slice(0, 10)}: it does not advance current ${current.out.slice(0, 10)}. Use the explicit rollback path for rollback, or the root deploy for an operator-selected history line.`,
+									`Refusing stale or parallel release ${targetSha.slice(0, 10)}: it does not advance current ${currentSha.slice(0, 10)}. Use the explicit rollback path for rollback, or the root deploy for an operator-selected history line.`,
 								);
 							}
+						}
+					}
+					if (currentSha && currentSha !== targetSha) {
+						const changed = await git(checkout, ["diff", "--name-only", "-z", currentSha, targetSha, "--"]);
+						if (changed.code !== 0) {
+							return text(`Refusing: cannot classify target diff: ${changed.err.slice(0, 300)}`);
+						}
+						const paths = changed.out.split("\0").filter(Boolean);
+						if (isFrontendOnlyRelease(paths)) {
+							const promoted = await promoteFrontendRelease(targetSha, currentSha, ctx.user);
+							return text(
+								`Frontend promoted${ctx.user ? ` by ${ctx.user}` : ""}: ${targetSha.slice(0, 10)} (bundle ${promoted.version}).\n` +
+								`No service restarted; clients were notified. Backend remains pinned to ${currentSha.slice(0, 10)} until the next standard deploy.`,
+							);
 						}
 					}
 					const unit = `opensession-self-deploy-${Date.now()}`;
@@ -280,7 +453,7 @@ export function createSelfDeployMcpServer(ctx: SelfDeployToolContext) {
 		),
 		tool(
 			"deploy_status",
-			"Read the most recent self-deploy result, the last-known-good pin, and whether the watchdog auto-rollback window is open. Read-only.",
+			"Read the backend and frontend release pins, the most recent standard deploy/frontend-promotion results, and whether the watchdog auto-rollback window is open. Read-only.",
 			{},
 			async () => {
 				try {

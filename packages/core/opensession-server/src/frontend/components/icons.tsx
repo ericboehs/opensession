@@ -266,6 +266,57 @@ export function IconCheckCircle(p: IconProps) {
   );
 }
 
+/** Solid status dot whose check is genuinely knocked out, so translucent
+ * surfaces and artwork show through instead of being imitated with a fixed
+ * background color. */
+export function IconCheckCircleFilled(p: IconProps) {
+  const maskId = React.useId();
+  return (
+    <Svg {...p}>
+      <defs>
+        <mask
+          id={maskId}
+          maskUnits="userSpaceOnUse"
+          x="0"
+          y="0"
+          width="24"
+          height="24"
+        >
+          <rect width="24" height="24" fill="white" />
+          <path
+            d="M8.5 12.25L10.75 14.25L15.5 9.5"
+            fill="none"
+            stroke="black"
+            strokeWidth="1.75"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </mask>
+      </defs>
+      <circle
+        cx="12"
+        cy="12"
+        r="8"
+        fill="currentColor"
+        mask={`url(#${maskId})`}
+      />
+    </Svg>
+  );
+}
+
+export function IconQuestionCircle(p: IconProps) {
+  return (
+    <Svg {...p}>
+      <circle {...stroke} cx="12" cy="12" r="7.25" />
+      <path
+        {...stroke}
+        d="M9.75 9.75C9.75 8.50736 10.7574 7.5 12 7.5C13.2426 7.5 14.25 8.50736 14.25 9.75C14.25 11.25 12 11.5 12 13"
+      />
+      <path {...stroke} d="M12 16.25H12.01" />
+    </Svg>
+  );
+}
+
 // Enter/return key glyph: a corner-down-left arrow. Used as the keyboard hint
 // on the Create button (replaces the bare ↵ character).
 export function IconReturn(p: IconProps) {

@@ -307,6 +307,7 @@ export function ReposSection({
 				actions={
 					<Button
 						size="sm"
+						variant="primary"
 						icon={pendingRepo ? <Spinner /> : <IconPlus size={16} />}
 						disabled={pendingRepo !== null}
 						onClick={() => setPickerOpen(true)}
@@ -1041,10 +1042,10 @@ function AddRepoPicker({
 						setError(null);
 					}}
 				>
-					<SegmentedOption value="remote" className={mergeStylexOverrideClassName("", sx.flex1, sx.justifyCenter)}>
+					<SegmentedOption value="remote" className={mergeStylexOverrideClassName("", sx.flex, sx.flex1, sx.justifyCenter)}>
 						Remote
 					</SegmentedOption>
-					<SegmentedOption value="local" className={mergeStylexOverrideClassName("", sx.flex1, sx.justifyCenter)}>
+					<SegmentedOption value="local" className={mergeStylexOverrideClassName("", sx.flex, sx.flex1, sx.justifyCenter)}>
 						Local folder
 					</SegmentedOption>
 				</Segmented>

@@ -77,6 +77,9 @@ const sx = stylex.create({
 	itemsCenter: {
 			alignItems: "center"
 	},
+	itemsStretch: {
+		alignItems: "stretch",
+	},
 	gap2: {
 			gap: "calc(4px * 2)"
 	},
@@ -408,7 +411,7 @@ function OverviewStats({
       }
       aria-label="Open Analytics"
       aria-busy={!stats}
-      {...mergeStylexProps("focus-ring tabular-nums desktop:grid-cols-4", sx.grid, sx.wFull, sx.cursorPointer, sx.gridCols2, sx.gap3, sx.roundedXl, sx.textLeft)}
+      {...mergeStylexProps("focus-ring tabular-nums desktop:grid-cols-4", sx.grid, sx.wFull, sx.itemsStretch, sx.cursorPointer, sx.gridCols2, sx.gap3, sx.roundedXl, sx.textLeft)}
     >
       <OverviewTile
         label="Agents running"

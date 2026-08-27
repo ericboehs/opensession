@@ -226,10 +226,18 @@ export async function handleSetupRoutes(
     // Read the file directly rather than the mtime-cached resolved config: a GET
     // immediately after the completion PUT must observe that write even on a
     // filesystem whose timestamp resolution folds both operations together.
-    const { rawConfig } = await import("../config-mutation");
-    // Older instances predate the flag and have already been in use. Only the
-    // installer-written explicit false represents a first run.
-    return Response.json({ completed: rawConfig().onboardingCompleted !== false });
+    const { rawConfig, persistRawConfig, withConfigMutationLock } =
+      await import("../config-mutation");
+    const { ensureLocalOnboardingMember } = await import("./setup-team");
+    return withConfigMutationLock(async () => {
+      const config = rawConfig();
+      // Older instances predate the flag and have already been in use. Only the
+      // installer-written explicit false represents a first run. Materialize
+      // the default local identity for incomplete configs created before the
+      // installer began seeding it itself.
+      if (ensureLocalOnboardingMember(config)) persistRawConfig(config);
+      return Response.json({ completed: config.onboardingCompleted !== false });
+    });
   }
 
   const forbidden = requireWorkspaceAdmin(ctx);
@@ -252,27 +260,43 @@ export async function handleSetupRoutes(
         const { connectedGithubAccounts, soleGithubLogin } = await import(
           "../github-auth"
         );
-        const { rawTeam } = await import("./setup-team");
+        const { isDisposableLocalMember, LOCAL_USER_NAME, rawTeam } =
+          await import("./setup-team");
         const team = rawTeam(config);
-        if (!team.some((member) => parseTeamMember(member))) {
-          const connectedLogin = ctx.authUser?.login || soleGithubLogin() || "";
+        const connectedLogin = ctx.authUser?.login || soleGithubLogin() || "";
+        const disposableLocal = team.findIndex(isDisposableLocalMember);
+        const hasMember = team.some((member) => parseTeamMember(member));
+        // A verified GitHub identity replaces the untouched first-run local
+        // placeholder. Any renamed or enriched local member is real roster data
+        // and is preserved, as is every explicitly added teammate.
+        if (!hasMember || (connectedLogin && disposableLocal !== -1)) {
+          if (disposableLocal !== -1) team.splice(disposableLocal, 1);
           const connectedAccount = connectedLogin
             ? connectedGithubAccounts().find(
                 (account) =>
                   account.login.toLowerCase() === connectedLogin.toLowerCase(),
               )
             : undefined;
-          const name =
-            ctx.authUser?.name?.trim() ||
-            connectedAccount?.name?.trim() ||
-            connectedLogin ||
-            "Local User";
-          team.push({
-            name,
-            ...(connectedLogin
-              ? { github: connectedLogin, admin: true }
-              : {}),
-          });
+          const existingGithub = connectedLogin
+            ? team.find(
+                (member) =>
+                  typeof member.github === "string" &&
+                  member.github.trim().toLowerCase() === connectedLogin.toLowerCase(),
+              )
+            : undefined;
+          if (!existingGithub) {
+            const name =
+              ctx.authUser?.name?.trim() ||
+              connectedAccount?.name?.trim() ||
+              connectedLogin ||
+              LOCAL_USER_NAME;
+            team.push({
+              name,
+              ...(connectedLogin
+                ? { github: connectedLogin, admin: true }
+                : {}),
+            });
+          }
           (config.identity as Record<string, unknown>).team = team;
         }
         config.onboardingCompleted = true;
@@ -600,7 +624,7 @@ export async function handleSetupRoutes(
       // SAME config write as userPrAuth. If neither a sign-in-capable admin nor a
       // connected account exists, refuse the flip and leave the instance open.
       if (body.userPrAuth === true && github.userPrAuth !== true) {
-        const { rawTeam } = await import("./setup-team");
+        const { isDisposableLocalMember, rawTeam } = await import("./setup-team");
         const team = rawTeam(config);
         const explicitRoles = team.some((member) => member.admin !== undefined);
         const hasSigninAdmin = team.some(
@@ -630,6 +654,9 @@ export async function handleSetupRoutes(
           }
           const key = login.toLowerCase();
           const displayName = account.name?.trim() || login;
+          for (let index = team.length - 1; index >= 0; index--) {
+            if (isDisposableLocalMember(team[index]!)) team.splice(index, 1);
+          }
           const existing = team.find(
             (member) =>
               (typeof member.github === "string" &&

@@ -6,6 +6,7 @@ import {
 	deployCheckout,
 	deployStateDir,
 	formatDeployStatus,
+	isFrontendOnlyRelease,
 	markerAgeMs,
 	parseDeployResult,
 	readDeployState,
@@ -151,6 +152,34 @@ describe("formatDeployStatus", () => {
 	});
 });
 
+describe("isFrontendOnlyRelease", () => {
+	test("accepts frontend source plus documentation", () => {
+		expect(isFrontendOnlyRelease([
+			"packages/core/opensession-server/src/frontend/App.tsx",
+			"packages/core/opensession-server/src/frontend/styles/base.css",
+			"docs/self-development.md",
+		])).toBe(true);
+	});
+
+	test("requires a frontend change", () => {
+		expect(isFrontendOnlyRelease(["docs/self-development.md", "AGENTS.md"])).toBe(false);
+	});
+
+	test("falls back for any server, dependency, protocol, or deploy path", () => {
+		for (const path of [
+			"packages/core/opensession-server/src/server/routes/system.ts",
+			"package.json",
+			"bun.lock",
+			"deploy/self-deploy.sh",
+		]) {
+			expect(isFrontendOnlyRelease([
+				"packages/core/opensession-server/src/frontend/App.tsx",
+				path,
+			])).toBe(false);
+		}
+	});
+});
+
 describe("deploy/self-deploy.sh", () => {
 	test("passes bash -n (syntax)", () => {
 		const script = resolve(import.meta.dir, "../../../../../deploy/self-deploy.sh");
@@ -174,6 +203,12 @@ describe("deploy/self-deploy.sh", () => {
 	test("the server launches through the fixed privileged helper", async () => {
 		const source = await Bun.file(resolve(import.meta.dir, "self-deploy.ts")).text();
 		expect(source).toContain('RUN_HOST_HELPER, "self-deploy"');
+		expect(source).toContain("Deployment may be autonomous");
+		expect(source).toContain("deploy the newest fast-forward target once");
+		expect(source).toContain("strictly frontend-only diff");
+		expect(source).toContain("without restarting any service");
+		expect(source).toContain("only rebuilds the already pinned source");
+		expect(source).toContain("No separate human approval is required");
 		expect(source).toContain("Migration path for instances upgrading");
 		expect(source).toContain("Environment=OPENSESSION_BUN_BIN=${process.execPath}");
 		expect(source).toContain("Environment=OPENSESSION_STATE_DIR=");

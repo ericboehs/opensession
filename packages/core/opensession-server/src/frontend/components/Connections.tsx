@@ -634,8 +634,8 @@ interface GithubAuthData {
   /** Captured install/app-setup intent: the org the App is owned by, so the
    *  wizard prefills the org owner. null for a single-user install. */
   appOrg?: string | null;
-  /** Connecting should also turn on per-user sign-in (set at install with an
-   *  org). Inert until the connect handler consumes it. */
+  /** Connecting should also turn on per-user sign-in. Inert until the connect
+   *  handler consumes it, so setup cannot lock the operator out. */
   authOnConnect?: boolean;
   /** Simple mode: the single connected login, if exactly one. */
   soleLogin?: string | null;
@@ -772,10 +772,9 @@ function GithubAppWizard({
   error: string | null;
   flow: DeviceFlow | null;
   onCancelFlow: () => void;
-  /** Org captured at install (config appOrg): prefills the owner and shows the
-   *  wizard is finishing sign-in setup. null for a single-user install. */
+  /** Org captured at install (config appOrg): prefills the App owner. */
   intentOrg?: string | null;
-  /** Clear the captured org intent (switch the owner back to single-user). */
+  /** Clear the captured org owner when switching to a personal App. */
   onClearIntent: () => void;
 }) {
   const [step, setStep] = useState(1);
@@ -866,10 +865,10 @@ function GithubAppWizard({
                 size="sm"
                 value={appOwner}
                 onValueChange={(next) => {
-                  // Switching back to single-user drops the captured org intent:
-                  // no org App, no sign-in. Confirm it, then clear it upstream.
+                  // Switching to a personal App drops the captured org owner,
+                  // but sign-in is still enabled only after GitHub connects.
                   if (next === "you" && intentOrg) {
-                    if (!confirm("Stays single-user, no sign-in.")) return;
+                    if (!confirm("Switch the App owner to your personal account?")) return;
                     onClearIntent();
                   }
                   setAppOwner(next as "you" | "org");
@@ -1167,7 +1166,20 @@ function GithubAppWizard({
 export function GithubAccounts({
   personal = false,
   showHeading = true,
-}: { personal?: boolean; showHeading?: boolean } = {}) {
+  showHint = true,
+  loadingFallback = null,
+  onConnectRequest,
+  cardClassName,
+}: {
+  personal?: boolean;
+  showHeading?: boolean;
+  showHint?: boolean;
+  loadingFallback?: React.ReactNode;
+  /** Replace the first sign-in action while a parent flow moves the user to a
+   * dedicated authorization step. Reconnect actions stay local. */
+  onConnectRequest?: () => void;
+  cardClassName?: string;
+} = {}) {
   const [data, setData] = useState<GithubAuthData | null>(null);
   const [flow, setFlow] = useState<DeviceFlow | null>(null);
   const [flowState, setFlowState] = useState<"idle" | "starting" | "waiting">("idle");
@@ -1275,9 +1287,9 @@ setError(e.message);
 const res = await fetch(`${BASE_PATH}/api/connections/github/app`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        // An org owner also records the sign-in intent server-side; a blank org
-        // is a personal, single-user App. The private key is optional but is
-        // what lets the bot/agent and checks-read mint installation tokens.
+        // App setup records connect-time sign-in intent for either owner. The
+        // private key is optional but lets the bot/agent and checks-read mint
+        // installation tokens.
         body: JSON.stringify({ clientId, slug, secret, appOrg, privateKey }),
       });
       const body = await res.json();
@@ -1316,9 +1328,8 @@ setError(e.message);
 });
   }
 
-  // Switching the wizard owner back to "You" clears the captured org intent
-  // (appOrg + authOnConnect) so a later connect stays single-user. The DELETE
-  // /app route clears both; at intent stage there are no App keys yet to remove.
+  // Switching the wizard owner back to "You" clears the captured org owner.
+  // The subsequent personal App setup arms its own connect-time sign-in intent.
   async function clearOrgIntent() {
     await (async () => {
 const res = await fetch(`${BASE_PATH}/api/connections/github/app`, {
@@ -1349,7 +1360,7 @@ setError(e.message);
 });
   }
 
-  if (!data) return null;
+  if (!data) return loadingFallback;
 
   // The device-flow well and the just-connected note render the same in both
   // the operator roster and the simple-mode card, so they're built once here.
@@ -1415,7 +1426,7 @@ setError(e.message);
       <>
         {showHeading && <SectionHeading>GitHub</SectionHeading>}
         {error && <InlineAlert onDismiss={() => setError(null)}>{error}</InlineAlert>}
-        <SettingCard>
+        <SettingCard className={cardClassName}>
           <SettingRow className={mergeStylexOverrideClassName("", sx.itemsStart, sx.gapX3)}>
             {connected ? (
               <span {...stylex.props(sx.flex, sx.size30px, sx.shrink0, sx.itemsCenter, sx.justifyCenter)}>
@@ -1495,7 +1506,7 @@ setError(e.message);
                     <div {...stylex.props(sx.flex, sx.flexWrap, sx.itemsCenter, sx.gap25)}>
                       <Button
                         variant="primary"
-                        onClick={startConnect}
+                        onClick={onConnectRequest ?? startConnect}
                         disabled={flowState !== "idle"}
                       >
                         {flowState === "starting" ? "Starting…" : "Sign in with GitHub"}
@@ -1641,7 +1652,7 @@ setError(e.message);
       {error && (
         <InlineAlert onDismiss={() => setError(null)}>{error}</InlineAlert>
       )}
-      <SettingCard>
+      <SettingCard className={cardClassName}>
         {/* The shared row primitives, not a local flex row: their `flex-wrap`
             plus the text column's min width is what drops the chip and button
             to their own line on a phone instead of squeezing the description
@@ -1716,7 +1727,7 @@ setError(e.message);
             {active && showConnect && flowState !== "waiting" && (
               <Button
                 size="sm"
-                onClick={startConnect}
+                onClick={onConnectRequest ?? startConnect}
                 disabled={flowState === "starting"}
               >
                 {flowState === "starting"
@@ -1832,7 +1843,7 @@ setError(e.message);
             );
           })}
       </SettingCard>
-      {personal && (
+      {personal && showHint && (
         <SettingsHint>
           {active
             ? "Sign in with GitHub to open pull requests as yourself in interactive sessions. Automations and unconnected teammates use the workspace bot."

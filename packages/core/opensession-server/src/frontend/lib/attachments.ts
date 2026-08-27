@@ -103,10 +103,11 @@ export interface AttachResult {
 export async function attachToDraft(
   key: string,
   picked: FileList | File[],
+  signal?: AbortSignal,
 ): Promise<AttachResult> {
   const generation = generations.get(key) ?? 0;
-  const { images, files, rejected } = await splitAttachments(picked);
-  if ((generations.get(key) ?? 0) !== generation) {
+  const { images, files, rejected } = await splitAttachments(picked, signal);
+  if (signal?.aborted || (generations.get(key) ?? 0) !== generation) {
     return { rejected, applied: false };
   }
   if (images.length || files.length) {

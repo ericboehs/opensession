@@ -572,7 +572,13 @@ describe("single session ownership", () => {
 		expect(boot).toContain("!!(run.runnerId || run.sandboxId)");
 		expect(boot).toContain("settleRecoveredCreationOpening(");
 		const create = read("session-create.ts");
-		expect(create).toContain("const openingJournal = activeRunRecords().find(");
+		expect(create).toContain("const openingJournal =");
+		expect(create).toContain(
+			"const claimedRecovery = activeAgentRecoveryRecord(openingRunKey)",
+		);
+		expect(create).toContain(
+			"claimedRecovery.promptEntryId === item.payload.openingPromptEntryId",
+		);
 		expect(create).toContain("Recovered local opening lost durable ownership");
 		const runner = read("runner-session.ts");
 		expect(runner).toContain("promptEntryId: opts.promptEntryId");

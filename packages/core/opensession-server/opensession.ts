@@ -792,42 +792,51 @@ if (!g.__opensessionBooted) {
 					const failed =
 						terminalEvent.type === "error" ||
 						!!terminalEvent.usageLimitExhausted;
-					await recordRunOutcome(
-						bksSessionId,
-						failed
-							? terminalEvent.content ||
-								terminalEvent.result ||
-								"Recovered run failed"
-							: null,
-						// A resumed run can land in a fresh engine session (reattach
-						// failed and the re-prompt rotated), and the error path never
-						// persists that id — so name it here, or the failure chip is
-						// written into the transcript the conversation left behind.
-						{
-              ...(recoveredRun?.runKey
-                ? {
-                    runId: recoveredRun.runKey,
-                    runGeneration: sessionKernel(bksSessionId).runStateProjection().generation,
-                    projectionId: `outcome:${recoveredRun.runKey}`,
-                  }
-                : {}),
-							engineSessionId: terminalEvent.sessionId,
-							noticeLabel: terminalEvent.usageLimitExhausted
-								? "Run stopped"
-								: undefined,
-						},
-					);
-					if (recoveredRun?.promptEntryId) {
-						await settleRecoveredCreationOpening(
+					const settlementErrors: unknown[] = [];
+					try {
+						await recordRunOutcome(
 							bksSessionId,
-							recoveredRun.promptEntryId,
 							failed
 								? terminalEvent.content ||
 									terminalEvent.result ||
-									"Recovered opening run failed"
-								: undefined,
-							recoveredRun.runKey,
+									"Recovered run failed"
+								: null,
+							// A resumed run can land in a fresh engine session (reattach
+							// failed and the re-prompt rotated), and the error path never
+							// persists that id — so name it here, or the failure chip is
+							// written into the transcript the conversation left behind.
+							{
+                ...(recoveredRun?.runKey
+                  ? {
+                      runId: recoveredRun.runKey,
+                      runGeneration: sessionKernel(bksSessionId).runStateProjection().generation,
+                      projectionId: `outcome:${recoveredRun.runKey}`,
+                    }
+                  : {}),
+								engineSessionId: terminalEvent.sessionId,
+								noticeLabel: terminalEvent.usageLimitExhausted
+									? "Run stopped"
+									: undefined,
+							},
 						);
+					} catch (error) {
+						settlementErrors.push(error);
+					}
+					if (recoveredRun?.promptEntryId) {
+						try {
+							await settleRecoveredCreationOpening(
+								bksSessionId,
+								recoveredRun.promptEntryId,
+								failed
+									? terminalEvent.content ||
+										terminalEvent.result ||
+										"Recovered opening run failed"
+									: undefined,
+								recoveredRun.runKey,
+							);
+						} catch (error) {
+							settlementErrors.push(error);
+						}
 					}
 					// The in-process settleRun died with the restart — close the
 					// automation ledger entry here or it stays "running" forever.
@@ -839,6 +848,11 @@ if (!g.__opensessionBooted) {
 								"Recovered run failed"
 							: null,
 					);
+					if (settlementErrors.length)
+						throw new AggregateError(
+							settlementErrors,
+							"Recovered run settlement was incomplete",
+						);
 				}
 				invalidateSessionsCache();
 			},

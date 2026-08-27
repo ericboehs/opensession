@@ -13,6 +13,7 @@ import {
 	durableSessionCommand,
 	passivateIdleSessionKernels,
 	DeliveryOwnedMap,
+	type CreationOpeningEffectItem,
   deliveryInterruptForAnchor,
 	sessionKernel,
 	tombstoneSessionKernel,
@@ -1117,6 +1118,88 @@ describe("SessionKernel", () => {
 			state: "cancelled",
 			completedEffectIds: [effectId],
 		});
+	});
+
+	test("settles a recovered opening when its journal retires after durable turn completion", async () => {
+		const sessionId = `local-opening-retired-${crypto.randomUUID()}`;
+		const identity = `local-opening-request-${crypto.randomUUID()}`;
+		const promptEntryId = `local-opening-prompt-${crypto.randomUUID()}`;
+		const effectId = `opening:${promptEntryId}`;
+		const runId = `rh-opening-${crypto.randomUUID()}`;
+		const item: CreationOpeningEffectItem = {
+			id: 1,
+			effectId: `${sessionId}:creation_opening_turn:${effectId}`,
+			effectKey: effectId,
+			sessionId,
+			kind: "creation_opening_turn",
+			payload: {
+				creationIdentity: identity,
+				creationGeneration: 1,
+				openingPromptEntryId: promptEntryId,
+				runId: `opening:${sessionId}:${promptEntryId}`,
+				runGeneration: 1,
+				mode: "adopt_or_launch",
+			},
+			attempts: 0,
+			nextAttemptAt: 0,
+			createdAt: Date.now(),
+		};
+		store.claimDeliveryDispatch({
+			sessionId,
+			items: [{ id: "opening", content: "start" }],
+			promptEntryId,
+			kind: "create",
+		});
+		store.applyCreationEvent({ sessionId, identity, event: "plan" });
+		store.applyCreationEvent({
+			sessionId,
+			identity,
+			event: "preparation_started",
+		});
+		store.applyCreationEvent({
+			sessionId,
+			identity,
+			event: "opening_dispatched",
+			openingPlan: { id: sessionId, openingPrompt: "start" },
+			nextEffectId: effectId,
+			effect: {
+				kind: item.kind,
+				effectKey: item.effectKey,
+				payload: item.payload,
+			},
+		});
+		store.applyRunEvent({ sessionId, event: "prompt", runKey: runId });
+		const { journalClear, journalSet } = await import("../run-journal");
+		const { executeCreationOpeningEffect } = await import("../session-create");
+		try {
+			await journalSet({
+				runKey: runId,
+				hostId: runId,
+				osSessionId: sessionId,
+				promptEntryId,
+				cwd: "/tmp",
+				model: "pi/openai/gpt-5.6-sol",
+				kind: "create",
+				startedAt: new Date().toISOString(),
+			});
+			const settling = executeCreationOpeningEffect(item);
+			await Bun.sleep(20);
+			store.applyRunEvent({ sessionId, event: "turn_end", runKey: runId });
+			journalClear(runId);
+			await Promise.race([
+				settling,
+				Bun.sleep(2_000).then(() => {
+					throw new Error("recovered opening did not reconcile");
+				}),
+			]);
+			expect(store.creationState(sessionId)).toMatchObject({
+				state: "ready",
+				completedEffectIds: [effectId],
+			});
+			expect(store.deliverySnapshot(sessionId).dispatch).toBeUndefined();
+		} finally {
+			journalClear(runId);
+		}
 	});
 
 	test("clears an accepted creation effect so replay is a stale no-op", async () => {

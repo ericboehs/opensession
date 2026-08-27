@@ -12,6 +12,7 @@ import { EMBEDDED_FRONTEND } from "./embedded-frontend";
 import { activeRunRecords } from "./run-journal";
 import { newStylexCollector, stylexTransform, stylexCss } from "./stylex-build";
 import { writeFileAtomic } from "./shared/atomic-write";
+import { stateDir } from "./paths";
 import { gitIdentityFor } from "./shared/user-mappings";
 import { broadcastToAll } from "./ws-hub";
 import { configuredServer, defaultRepo, githubBotLogins, personaName, plainWorkspaceId, productMark, productName } from "./config";
@@ -23,6 +24,44 @@ const SERVER_ROOT = join(import.meta.dir, "..", "..");
 export const REPO_ROOT = resolve(SERVER_ROOT, "../../..");
 export const FRONTEND_DIST = join(REPO_ROOT, ".frontend-dist");
 export const FRONTEND_SRC = join(SERVER_ROOT, "src", "frontend");
+const FRONTEND_REL = "packages/core/opensession-server/src/frontend";
+
+export type FrontendReleasePointer = {
+	sha: string;
+	baseSha: string;
+	releaseRoot: string;
+	promotedAt: string;
+};
+
+function frontendDeployStateDir(): string {
+	return process.env.OPENSESSION_DEPLOY_STATE || stateDir("deploy");
+}
+
+export function frontendReleasePointerPath(): string {
+	return join(frontendDeployStateDir(), "frontend-current.json");
+}
+
+/** The release whose SPA shell/assets are currently served. Backend modules
+ * remain pinned to REPO_ROOT; only this root can advance without a restart. */
+export function activeFrontendReleaseRoot(): string {
+	return (g.__opensessionFrontendReleaseRoot as string | undefined) ?? REPO_ROOT;
+}
+
+export function frontendSourcePath(name: string): string {
+	return join(activeFrontendReleaseRoot(), FRONTEND_REL, name);
+}
+
+export function activeFrontendDist(): string {
+	return join(activeFrontendReleaseRoot(), ".frontend-dist");
+}
+
+function frontendAssetRoots(): string[] {
+	return [
+		activeFrontendReleaseRoot(),
+		...((g.__opensessionFrontendFallbackRoots as string[] | undefined) ?? []),
+		REPO_ROOT,
+	].filter((root, index, roots) => roots.indexOf(root) === index);
+}
 
 export type FrontendBundle = {
 	indexHtml: string;
@@ -43,7 +82,11 @@ export function frontendDistFile(name: string): BunFile | null {
 		const path = EMBEDDED_FRONTEND.assets[name];
 		return path ? Bun.file(path) : null;
 	}
-	return Bun.file(join(FRONTEND_DIST, name));
+	for (const root of frontendAssetRoots()) {
+		const path = join(root, ".frontend-dist", name);
+		if (existsSync(path)) return Bun.file(path);
+	}
+	return Bun.file(join(activeFrontendDist(), name));
 }
 
 /**
@@ -52,13 +95,13 @@ export function frontendDistFile(name: string): BunFile | null {
  */
 export function frontendStaticFile(
 	name: string,
-	sourcePath = join(FRONTEND_SRC, name),
+	sourcePath?: string,
 ): BunFile | null {
 	if (EMBEDDED_FRONTEND) {
 		const path = EMBEDDED_FRONTEND.staticAssets[name];
 		return path ? Bun.file(path) : null;
 	}
-	return Bun.file(sourcePath);
+	return Bun.file(sourcePath ?? frontendSourcePath(name));
 }
 
 // ── Prebuilt mode ────────────────────────────────────────────────────────────
@@ -325,13 +368,16 @@ function frontendInstance() {
 	};
 }
 
-export function renderIndexHtml(meta: BundleMeta): string {
+export function renderIndexHtml(
+	meta: BundleMeta,
+	sourceRoot: string = join(activeFrontendReleaseRoot(), FRONTEND_REL),
+): string {
 	// A compiled binary has no src tree, so the neutral index.html shell is
 	// embedded and parked here at boot; otherwise read it from src/frontend.
 	// Either way the instance blob below is stitched from the LIVE config, so
 	// the served page reflects THIS install, not the machine that built it.
 	const embeddedShell = g.__opensessionFrontendShell as string | undefined;
-	let indexHtml = embeddedShell ?? readFileSync(`${FRONTEND_SRC}/index.html`, "utf8");
+	let indexHtml = embeddedShell ?? readFileSync(join(sourceRoot, "index.html"), "utf8");
 	const instance = JSON.stringify(frontendInstance()).replace(/</g, "\\u003c");
 	const htmlProductName = productName()
 		.replaceAll("&", "&amp;")
@@ -376,6 +422,117 @@ function applyBundle(meta: BundleMeta): string {
 	return store.version;
 }
 
+function readReleaseSha(releaseRoot: string): string | null {
+	try {
+		const sha = readFileSync(join(releaseRoot, ".opensession-release"), "utf8").trim();
+		return /^[0-9a-f]{40,64}$/i.test(sha) ? sha : null;
+	} catch {
+		return null;
+	}
+}
+
+function parseFrontendReleasePointer(raw: string): FrontendReleasePointer | null {
+	try {
+		const pointer = JSON.parse(raw) as Partial<FrontendReleasePointer>;
+		if (
+			typeof pointer.sha !== "string" ||
+			typeof pointer.baseSha !== "string" ||
+			typeof pointer.releaseRoot !== "string" ||
+			typeof pointer.promotedAt !== "string"
+		) return null;
+		return pointer as FrontendReleasePointer;
+	} catch {
+		return null;
+	}
+}
+
+function validatedFrontendRelease(
+	pointer: FrontendReleasePointer,
+): { root: string; meta: BundleMeta; indexHtml: string } {
+	const root = resolve(pointer.releaseRoot);
+	const releases = resolve(frontendDeployStateDir(), "releases");
+	if (root !== join(releases, pointer.sha) || !root.startsWith(`${releases}${sep}`)) {
+		throw new Error("frontend release path is outside the immutable releases directory");
+	}
+	if (readReleaseSha(root) !== pointer.sha) {
+		throw new Error(`frontend release ${pointer.sha.slice(0, 10)} is not prepared`);
+	}
+	const dist = join(root, ".frontend-dist");
+	const meta = readBundleMeta(dist);
+	if (!meta) throw new Error(`frontend bundle metadata is missing in ${dist}`);
+	const missing = meta.assets.filter((asset) => !existsSync(join(dist, asset)));
+	if (missing.length) throw new Error(`frontend bundle is incomplete (missing ${missing[0]})`);
+	const indexHtml = renderIndexHtml(meta, join(root, FRONTEND_REL));
+	return { root, meta, indexHtml };
+}
+
+/** Atomically publish a bundle that was compiled in a prepared immutable
+ * release. The pointer is persisted before the synchronous in-memory swap, so
+ * a crash sees either the old complete release or the new complete release. */
+export function activateFrontendRelease(pointer: FrontendReleasePointer): string {
+	if (EMBEDDED_FRONTEND || IS_DEV) {
+		throw new Error("frontend release promotion is unavailable in this install mode");
+	}
+	const prepared = validatedFrontendRelease(pointer);
+	writeFileAtomic(frontendReleasePointerPath(), `${JSON.stringify(pointer, null, 2)}\n`, 0o600);
+	const previousRoot = activeFrontendReleaseRoot();
+	g.__opensessionFrontendFallbackRoots = [
+		previousRoot,
+		...((g.__opensessionFrontendFallbackRoots as string[] | undefined) ?? []),
+	].filter((root, index, roots) => roots.indexOf(root) === index).slice(0, 3);
+	g.__opensessionFrontendReleaseRoot = prepared.root;
+	const store = frontendStore();
+	store.indexHtml = prepared.indexHtml;
+	store.gzip.clear();
+	store.version = bundleVersion(prepared.meta);
+	g.__opensessionFrontendMeta = prepared.meta;
+	console.log(`[frontend] promoted immutable release ${pointer.sha.slice(0, 10)} (v=${store.version})`);
+	return store.version;
+}
+
+/** Test-only restoration seam for the global bundle/root state. */
+export function __setFrontendReleaseRootForTest(root: string): () => void {
+	const previousRoot = g.__opensessionFrontendReleaseRoot;
+	const previousFallbacks = g.__opensessionFrontendFallbackRoots;
+	const previousMeta = g.__opensessionFrontendMeta;
+	const store = frontendStore();
+	const previousStore = {
+		indexHtml: store.indexHtml,
+		gzip: new Map(store.gzip),
+		version: store.version,
+	};
+	g.__opensessionFrontendReleaseRoot = root;
+	return () => {
+		g.__opensessionFrontendReleaseRoot = previousRoot;
+		g.__opensessionFrontendFallbackRoots = previousFallbacks;
+		g.__opensessionFrontendMeta = previousMeta;
+		store.indexHtml = previousStore.indexHtml;
+		store.gzip = previousStore.gzip;
+		store.version = previousStore.version;
+	};
+}
+
+/** Load a restart-free frontend promotion only while its backend base is still
+ * the running release. A later full deploy or rollback changes that base and
+ * automatically reunifies the frontend with the backend release. */
+function tryLoadPromotedFrontend(): boolean {
+	try {
+		const pointer = parseFrontendReleasePointer(
+			readFileSync(frontendReleasePointerPath(), "utf8"),
+		);
+		if (!pointer) return false;
+		const backendSha = readReleaseSha(REPO_ROOT);
+		if (!backendSha || pointer.baseSha !== backendSha || pointer.sha === backendSha) return false;
+		activateFrontendRelease(pointer);
+		return true;
+	} catch (error) {
+		if (existsSync(frontendReleasePointerPath())) {
+			console.warn("[frontend] ignoring invalid promoted release:", error);
+		}
+		return false;
+	}
+}
+
 // Build (or rebuild) the prod SPA bundle in-process. The result object on
 // globalThis is MUTATED in place (never reassigned) so the long-lived `frontend`
 // reference + route closures pick up a rebuild without a process restart,
@@ -387,6 +544,9 @@ export async function buildFrontend(): Promise<string> {
 		throw new Error(
 			"frontend is prebuilt (release.json / OPENSESSION_PREBUILT_FRONTEND): rebuilding is not available",
 		);
+	}
+	if (activeFrontendReleaseRoot() !== REPO_ROOT) {
+		throw new Error("a promoted immutable frontend is active; publish another release with deploy_self");
 	}
 	return applyBundle(await compileAssets());
 }
@@ -463,9 +623,9 @@ export function frontendInputsHash(): string {
 	return Bun.hash(parts.join("\n")).toString(36);
 }
 
-function readBundleMeta(): BundleMeta | null {
+function readBundleMeta(dist: string = FRONTEND_DIST): BundleMeta | null {
 	try {
-		const meta = JSON.parse(readFileSync(BUNDLE_META, "utf8")) as Partial<BundleMeta>;
+		const meta = JSON.parse(readFileSync(join(dist, ".bundle-meta.json"), "utf8")) as Partial<BundleMeta>;
 		if (
 			meta.styleEngine !== "stylex-v1" ||
 			!meta.inputsHash ||
@@ -569,6 +729,10 @@ export function ensureFrontendBuilt(): Promise<void> {
 				);
 				return;
 			}
+			if (tryLoadPromotedFrontend()) return;
+			// A promotion is tied to one exact backend base. A later full deploy
+			// changes that base and reunifies the UI with the backend release.
+			g.__opensessionFrontendReleaseRoot = REPO_ROOT;
 			// Release tarball: the prebuilt .frontend-dist is on disk.
 			if (isPrebuiltFrontend()) {
 				loadPrebuiltFrontendDist();

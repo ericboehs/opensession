@@ -25,8 +25,8 @@ import {
 	ingressHostname,
 	privateAppCaddyConfig,
 	privateAppDnsRecord,
-	publicUrlForMethod,
 } from "../../lib/ingress-ui";
+import { useIsPhone } from "../../hooks/useIsPhone";
 import { useSetupStatus, type SetupController } from "../../hooks/useSetupStatus";
 import { Button } from "../../ui/button";
 import { cn } from "../../ui/cn";
@@ -37,22 +37,23 @@ import {
 	SettingCard,
 	SettingCardSkeleton,
 	SettingRow,
+	SettingRowControl,
 	SettingRowDescription,
 	SettingRowText,
 	SettingRowTitle,
 	SettingsField,
 	SettingsForm,
 	SettingsFormActions,
-	SettingsGroupLabel,
 	SettingsHeader,
 	SettingsHint,
 	SettingsPanel,
 	StatusChip,
 } from "../../ui/settings";
+import { ResponsiveDialog } from "../../ui/sheet";
 import { InlineAlert, LoadingState } from "../../ui/state";
 import { toast } from "../../ui/toast";
 import { markTileClass, markTileGradient, markTileInk, markTileShadow, type MarkTone } from "../../lib/mark-tile";
-import { IconCopy, IconGlobe, IconServer, IconShieldCheck } from "../icons";
+import { IconCopy, IconGlobe, IconServer, IconShieldCheck, IconX } from "../icons";
 import { SetupRestart } from "../SetupRestart";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../../styles/typography.stylex";
@@ -400,68 +401,6 @@ function IngressWaitingState({
 	return <LoadingState placement="card">{message} This page checks automatically.</LoadingState>;
 }
 
-function DomainSetupSteps({
-	value,
-	onValueChange,
-	appStatus,
-	callbackStatus,
-}: {
-	value: "domain" | "callbacks";
-	onValueChange: (value: "domain" | "callbacks") => void;
-	appStatus: PublicIngressSettings["app"]["domain"]["health"];
-	callbackStatus: PublicIngressSettings["health"];
-}) {
-	const steps = [
-		{
-			value: "domain" as const,
-			number: 1,
-			title: "Friendly domain",
-			description: "Give your team a memorable address while keeping the app private.",
-			status: appStatus,
-		},
-		{
-			value: "callbacks" as const,
-			number: 2,
-			title: "Public callbacks",
-			description: "Required for GitHub webhooks and remote Sandbox callbacks. The public endpoint never exposes the app.",
-			status: callbackStatus,
-		},
-	];
-	return (
-		<SettingCard className={mergeStylexOverrideClassName("", sx.mb5)}>
-			<ol {...mergeStylexProps("m-0 phone:grid-cols-1", sx.grid, sx.listNone, sx.gridCols2, sx.p0)} >
-				{steps.map((step, index) => {
-					const active = value === step.value;
-					return (
-						<li key={step.value} className={cn(index > 0 && utilityClassName("border-l border-line phone:border-t phone:border-l-0"))}>
-							<button
-								type="button"
-								aria-current={active ? "step" : undefined}
-								className={cn(
-									utilityClassName("flex min-h-28 w-full items-start gap-3.5 px-5 py-4 text-left transition-[background-color] hover:bg-hover phone:min-h-0 phone:py-4"),
-									active && utilityClassName("bg-pressed"),
-								)}
-								onClick={() => onValueChange(step.value)}
-							>
-								<span className={cn(utilityClassName("mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full bg-surface text-label font-semibold text-dim"), active && utilityClassName("bg-fg text-panel"))}>
-									{step.number}
-								</span>
-								<span {...stylex.props(sx.minW0, sx.flex1)}>
-									<span {...mergeStylexProps("gap-y-1", sx.flex, sx.flexWrap, sx.itemsCenter, sx.justifyBetween, sx.gapX3)} >
-										<span {...stylex.props(sx.fontSemibold, sx.textFg, typography.itemTitle)}>{step.title}</span>
-										<StatusChip label={ingressHealthLabel(step.status)} dot={ingressHealthDot(step.status)} />
-									</span>
-									<span {...stylex.props(sx.mt15, sx.block, sx.leadingRelaxed, sx.textDim, typography.supporting)}>{step.description}</span>
-								</span>
-							</button>
-						</li>
-					);
-				})}
-			</ol>
-		</SettingCard>
-	);
-}
-
 function PrivateAppSetup({
 	settings,
 	domain,
@@ -644,19 +583,22 @@ function PrivateAppSetup({
 
 export function IngressPanel({
 	onboarding = false,
+	embedded = false,
 	onChanged,
 	onStatusChange,
 	setup: parentSetup,
 }: {
 	onboarding?: boolean;
+	embedded?: boolean;
 	onChanged?: () => void | Promise<void>;
 	onStatusChange?: (settings: PublicIngressSettings) => void;
 	setup?: SetupController;
 } = {}) {
 	const localSetup = useSetupStatus();
 	const setup = parentSetup || localSetup;
+	const isPhone = useIsPhone();
 	const [settings, setSettings] = useState<PublicIngressSettings | null>(null);
-	const [surface, setSurface] = useState<"domain" | "callbacks">("domain");
+	const [surface, setSurface] = useState<"domain" | "callbacks" | null>(null);
 	const [method, setMethod] = useState<IngressExposure>("custom");
 	const [appDomain, setAppDomain] = useState("");
 	const [certificateEmail, setCertificateEmail] = useState("");
@@ -685,7 +627,6 @@ export function IngressPanel({
 		if (!loaded.current) {
 			setAppDomain(configuredAppDomain(next));
 			setPrivateProvider(next.app.domain.dnsProvider || "cloudflare");
-			if (onboarding && next.app.domain.health === "ready") setSurface("callbacks");
 			setDrafts(configuredIngressDrafts(next));
 			setPublicAddress(next.server.ipv4[0] || next.server.ipv6[0] || "");
 			loaded.current = true;
@@ -838,32 +779,76 @@ export function IngressPanel({
 		method === "cloudflare" && (!tunnelId.trim() || (!tunnelToken.trim() && !settings?.cloudflare.tokenConfigured));
 	const selectedMethod = INGRESS_METHODS.find((option) => option.value === method)!;
 	const selectedHealth = settings?.exposure === method ? settings.health : "not_configured";
-	const selectedPublicUrl = settings ? publicUrlForMethod(settings, method, url) : "";
 	const privateDomain = settings ? configuredAppDomain(settings) : "";
 
 	return (
 		<SettingsPanel className={onboarding ? utilityClassName("mx-auto max-w-[1120px]") : utilityClassName("relative")}>
-			{!onboarding && (
+			{!onboarding && !embedded && (
 				<SettingsHeader
 					title="Domains and callbacks"
 					description="Set a friendly private address, then add the public endpoint external services need."
 				/>
 			)}
 
-			{error && <InlineAlert onDismiss={() => setError(null)}>{error}</InlineAlert>}
+			{error && !surface && <InlineAlert onDismiss={() => setError(null)}>{error}</InlineAlert>}
 			{!settings ? (
 				<SettingCardSkeleton rows={3} label="Loading public ingress" />
 			) : (
 				<>
-					<DomainSetupSteps
-						value={surface}
-						onValueChange={setSurface}
-						appStatus={settings.app.domain.health}
-						callbackStatus={settings.health}
-					/>
-					{surface === "domain" ? (
-						<>
-							<PrivateAppSetup
+					<SettingCard>
+						<SettingRow>
+							<SettingRowText>
+								<SettingRowTitle>Domain</SettingRowTitle>
+								<SettingRowDescription className={utilityClassName("selectable break-all font-mono")}>
+									{settings.app.publicBaseUrl || "No domain configured"}
+								</SettingRowDescription>
+							</SettingRowText>
+							<SettingRowControl className={utilityClassName("flex items-center gap-2")}>
+								<StatusChip label={ingressHealthLabel(settings.app.domain.health)} dot={ingressHealthDot(settings.app.domain.health)} />
+								<Button size="sm" className={utilityClassName("phone:min-h-11")} onClick={() => setSurface("domain")}>Configure</Button>
+							</SettingRowControl>
+						</SettingRow>
+						<SettingRow>
+							<SettingRowText>
+								<SettingRowTitle>Public callback</SettingRowTitle>
+								<SettingRowDescription className={utilityClassName("selectable break-all font-mono")}>
+									{settings.publicBaseUrl || "No public callback configured"}
+								</SettingRowDescription>
+							</SettingRowText>
+							<SettingRowControl className={utilityClassName("flex items-center gap-2")}>
+								<StatusChip label={ingressHealthLabel(settings.health)} dot={ingressHealthDot(settings.health)} />
+								<Button size="sm" className={utilityClassName("phone:min-h-11")} onClick={() => setSurface("callbacks")}>Configure</Button>
+							</SettingRowControl>
+						</SettingRow>
+					</SettingCard>
+
+					<ResponsiveDialog
+						open={surface !== null}
+						onClose={() => setSurface(null)}
+						phone={isPhone}
+						label={surface === "domain" ? "Configure domain" : "Configure public callback"}
+						modalClassName={utilityClassName("h-[min(840px,calc(100dvh-32px))] max-h-[calc(100dvh-32px)] w-[min(1040px,calc(100vw-32px))] max-w-[1040px]")}
+						sheetClassName={utilityClassName("h-[94dvh]")}
+					>
+						{(dismiss) => (
+							<>
+								<header className={utilityClassName("flex shrink-0 items-start gap-3 border-b border-line px-5 py-4 phone:px-4")}>
+									<div className={utilityClassName("min-w-0 flex-1")}>
+										<h2 className={utilityClassName("m-0 text-dialog-title font-semibold text-fg")}>
+											{surface === "domain" ? "Configure domain" : "Configure public callback"}
+										</h2>
+										<p className={utilityClassName("m-0 mt-1 text-supporting leading-relaxed text-dim")}>
+											{surface === "domain"
+												? "Give your team a memorable private address."
+												: "Connect the public endpoint used by webhooks and remote services."}
+										</p>
+									</div>
+									<Button variant="ghost" aria-label="Close" icon={<IconX size={20} />} className={utilityClassName("size-10 shrink-0 justify-center p-0 phone:size-11")} onClick={dismiss} />
+								</header>
+								<div className={utilityClassName("min-h-0 flex-1 overflow-y-auto overscroll-contain p-5 phone:p-4")}>
+									{error && <InlineAlert onDismiss={() => setError(null)}>{error}</InlineAlert>}
+									{surface === "domain" ? (
+										<PrivateAppSetup
 								settings={settings}
 								domain={appDomain}
 								onboarding={onboarding}
@@ -888,64 +873,32 @@ export function IngressPanel({
 								onVerify={() => void verifyAppDomain()}
 								onSaveManual={() => void runPrivateApp("save", () => savePrivateAppDomain(appDomain), "Private app domain saved")}
 							/>
-						</>
 					) : (
-					<>
-					{!onboarding && (
-						<>
-							<SettingsGroupLabel
-								actions={<StatusChip label={busy === "apply" ? "Setting up" : ingressHealthLabel(selectedHealth)} dot={busy === "apply" ? "var(--yellow)" : ingressHealthDot(selectedHealth)} />}
-							>
-								Status
-							</SettingsGroupLabel>
-							<SettingCard>
-								<SettingRow>
-									<SettingRowText>
-										<SettingRowTitle>Public URL</SettingRowTitle>
-										<SettingRowDescription className={mergeStylexOverrideClassName("selectable", sx.breakAll, sx.fontMono)} >
-											{selectedPublicUrl || "No public origin configured"}
-										</SettingRowDescription>
-									</SettingRowText>
-								</SettingRow>
-								<SettingRow>
-									<SettingRowText>
-										<SettingRowTitle>Public services</SettingRowTitle>
-										<SettingRowDescription>Webhooks, remote Sandbox callbacks, and workload identity. Never the app.</SettingRowDescription>
-									</SettingRowText>
-								</SettingRow>
-							</SettingCard>
-						</>
-					)}
-
-					<div
-						className={cn(
-							utilityClassName("grid items-start gap-3.5 phone:grid-cols-1"),
-							onboarding
-								? utilityClassName("grid-cols-2")
-								: utilityClassName("grid-cols-[minmax(0,300px)_minmax(0,1fr)]"),
-						)}
-					>
-						<SettingsForm className={cn(utilityClassName("m-0 min-w-0 gap-2"), onboarding && utilityClassName("gap-2.5 p-6 phone:p-4"))}>
-							<div {...stylex.props(sx.px1, sx.fontMedium, sx.textDim, typography.label)}>Connection method</div>
+					<div className={utilityClassName("grid items-start gap-4")}>
+						<SettingsForm className={utilityClassName("m-0 min-w-0 gap-4 p-6 phone:p-4")}>
+							<div className={utilityClassName("px-1")}>
+								<div className={utilityClassName("text-item-title font-semibold text-fg")}>Connection method</div>
+								<p className={utilityClassName("mt-1 mb-0 text-supporting leading-relaxed text-dim")}>Choose how external services reach Open Session.</p>
+							</div>
 							<RadioGroup
 								aria-label="Public callback method"
 								value={method}
 								disabled={!!busy || !settings.canManage}
 								onValueChange={(next) => setMethod(next as IngressExposure)}
-								className={mergeStylexOverrideClassName("", sx.grid, sx.gap2)}
+								className={utilityClassName("grid grid-cols-3 gap-2.5 phone:grid-cols-1")}
 							>
 								{INGRESS_METHODS.map((option) => (
 									<label
 										key={option.value}
 										className={cn(
-											utilityClassName("flex min-h-20 cursor-pointer items-center gap-3.5 rounded-xl px-4 py-3.5 transition-[background-color] hover:bg-hover [&:has([data-checked])]:bg-pressed"),
-											onboarding && utilityClassName("bg-hover/50 hover:bg-hover"),
+											utilityClassName("flex min-h-24 cursor-pointer items-center gap-3 rounded-xl bg-surface px-4 py-3 transition-[background-color] hover:bg-hover [&:has([data-checked])]:bg-pressed"),
+											onboarding && utilityClassName("hover:bg-hover"),
 										)}
 									>
 										<MethodMark method={option.value} />
-										<span {...stylex.props(sx.minW0, sx.flex1)}>
-											<span {...stylex.props(sx.block, sx.fontMedium, sx.textFg, typography.itemTitle)}>{option.label}</span>
-											<span {...stylex.props(sx.mt1, sx.block, sx.textDim, typography.supporting)}>{option.description}</span>
+										<span className={utilityClassName("min-w-0 flex-1")}>
+											<span className={utilityClassName("block text-item-title font-medium text-fg")}>{option.label}</span>
+											<span className={utilityClassName("mt-1 block text-meta leading-snug text-dim")}>{option.description}</span>
 										</span>
 										<Radio
 											value={option.value}
@@ -959,12 +912,14 @@ export function IngressPanel({
 							</RadioGroup>
 						</SettingsForm>
 
-						<SettingsForm className={cn(utilityClassName("m-0 min-w-0"), onboarding && utilityClassName("p-6 phone:p-4"))}>
-							<div {...stylex.props(sx.flex, sx.itemsCenter, sx.gap3)}>
-								<MethodMark method={method} size={40} />
-								<div {...stylex.props(sx.minW0)}>
-									<div {...stylex.props(sx.fontSemibold, sx.textFg, typography.itemTitle)}>{selectedMethod.label}</div>
-									<p {...stylex.props(sx.mt05, sx.mb0, sx.leadingRelaxed, sx.textDim, typography.supporting)}>{selectedMethod.description}</p>
+						<SettingsForm className={utilityClassName("m-0 min-w-0 gap-4 p-6 phone:p-4")}>
+							<div className={utilityClassName("flex items-center justify-between gap-4")}>
+								<div className={utilityClassName("flex min-w-0 items-center gap-3")}>
+									<MethodMark method={method} size={40} />
+									<div className={utilityClassName("text-item-title font-semibold text-fg")}>Set up {selectedMethod.label}</div>
+								</div>
+								<div className={utilityClassName("shrink-0")}>
+									<StatusChip label={busy === "apply" ? "Setting up" : ingressHealthLabel(selectedHealth)} dot={busy === "apply" ? "var(--yellow)" : ingressHealthDot(selectedHealth)} />
 								</div>
 							</div>
 							<div {...stylex.props(sx.grid, sx.minW0, sx.contentStart, sx.gap35)}>
@@ -1125,9 +1080,12 @@ export function IngressPanel({
 							</div>
 						</SettingsForm>
 					</div>
-					</>
 					)}
-					{!onboarding && <SetupRestart setup={setup} />}
+								</div>
+							</>
+						)}
+					</ResponsiveDialog>
+					{!onboarding && !embedded && <SetupRestart setup={setup} />}
 				</>
 			)}
 		</SettingsPanel>

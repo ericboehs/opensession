@@ -19,19 +19,15 @@ import {
   workspaceDraftKey,
 } from "../lib/drafts";
 import {
-  addStaging,
   attachToDraft,
-  countStaging,
   dropStagingAttachments,
   isStaging,
-  NOTHING_STAGING,
   removeDraftFile,
   removeDraftImage,
   sameFiles,
   sameImages,
-  subtractStaging,
-  type StagingCount,
 } from "../lib/attachments";
+import { useAttachmentUploads } from "../hooks/useAttachmentUploads";
 import { resolveNewSessionModel } from "../lib/default-model-pref";
 import { projectComposerSessions } from "../lib/composer-session-projection";
 import { baseModelId, modelEngine } from "./ModelEffortSelect";
@@ -1396,7 +1392,8 @@ export function NewSession({ onBack, inline, focusSeq, send, addHandler, connect
   // before the card closed.
   const [images, setImages] = useState<string[]>(() => loadDraft(DRAFT_KEY).images);
   const [files, setFiles] = useState<FileAttachment[]>(() => loadDraft(DRAFT_KEY).files);
-  const [staging, setStaging] = useState<StagingCount>(NOTHING_STAGING);
+  const uploads = useAttachmentUploads();
+  const staging = uploads.staging;
   const [fileDragActive, setFileDragActive] = useState(false);
   const fileDragWatchdogRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Stable identity: module loader + setters only.
@@ -1824,19 +1821,16 @@ export function NewSession({ onBack, inline, focusSeq, send, addHandler, connect
   }, [connected, send]);
 
   async function addAttachments(picked: FileList | File[]) {
-    const staging = countStaging(picked);
-    setStaging((current) => addStaging(current, staging));
-    await (async () => {
-// The staging commits to the draft store itself, so a screenshot pasted
-      // while the app is still loading survives this palette closing before
-      // its upload lands. Adopt the store rather than the result: it is the
-      // one place that has both these files and anything else that arrived.
-      const { rejected } = await attachToDraft(DRAFT_KEY, picked);
-      adoptDraftAttachments();
-      if (rejected.length) alert(`Couldn't attach:\n${rejected.join("\n")}`);
-})().finally(async () => {
-setStaging((current) => subtractStaging(current, staging));
-});
+    // The staging commits to the draft store itself, so a screenshot pasted
+    // while the app is still loading survives this palette closing before
+    // its upload lands. Adopt the store rather than the result: it is the
+    // one place that has both these files and anything else that arrived.
+    const results = await uploads.upload(picked, (file, signal) =>
+      attachToDraft(DRAFT_KEY, [file], signal),
+    );
+    adoptDraftAttachments();
+    const rejected = results.flatMap((result) => result.rejected);
+    if (rejected.length) alert(`Couldn't attach:\n${rejected.join("\n")}`);
   }
 
   const addDroppedAttachments = useEffectEvent((picked: FileList | File[]) => {
@@ -2445,6 +2439,8 @@ pendingDraftParks.delete(operation);
           images={images}
           files={files}
           staging={staging}
+          onRemovePendingImage={uploads.cancelPendingImage}
+          onRemovePendingFile={uploads.cancelPendingFile}
           onRemoveImage={(i) => {
             removeDraftImage(DRAFT_KEY, i);
             adoptDraftAttachments();

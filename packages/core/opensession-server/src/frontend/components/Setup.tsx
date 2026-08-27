@@ -17,6 +17,7 @@ import { ReposSection } from "./SetupRepos";
 import { SetupRestart } from "./SetupRestart";
 import { TeamSection } from "./SetupTeam";
 import { OrganizationProfileSection } from "./settings/GeneralPanel";
+import { IngressPanel } from "./settings/IngressPanel";
 import { ProviderAccountsSection } from "./settings/ModelAccounts";
 import { ModelProvidersPanel } from "./ModelProviders";
 import { ModelDefaultsSection } from "./Models";
@@ -129,6 +130,7 @@ const sx = stylex.create({
 type SectionId =
   | "github"
   | "organisation"
+  | "domains"
   | "providers"
   | "repositories"
   | "members"
@@ -150,9 +152,11 @@ function scrollToSection(id: SectionId) {
 
 function SetupSummary({
   status,
+  domainsReady,
   onSelect,
 }: {
   status: SetupStatus;
+  domainsReady: boolean;
   onSelect: (id: SectionId) => void;
 }) {
   const github = status.integrations.find(
@@ -167,6 +171,7 @@ function SetupSummary({
   const steps: { id: SectionId; label: string; complete: boolean }[] = [
     { id: "github", label: "GitHub", complete: githubReady },
     { id: "organisation", label: "Organisation", complete: true },
+    { id: "domains", label: "Domains", complete: domainsReady },
     { id: "providers", label: "Providers", complete: status.engine.ready },
     {
       id: "repositories",
@@ -259,6 +264,7 @@ export function SetupPanel({
   const setup = useSetupStatus();
   const { status, failed, refetch } = setup;
   const [aiRevision, setAiRevision] = useState(0);
+  const [domainsReady, setDomainsReady] = useState(false);
 
   useEffect(() => {
     document.title = docTitle("Setup");
@@ -314,6 +320,24 @@ export function SetupPanel({
             </SetupPageSection>
 
             <SetupPageSection
+              id="domains"
+              title="Domains"
+              description="Connect the private domain your team uses and the public callback external services need."
+            >
+              <IngressPanel
+                embedded
+                setup={setup}
+                onChanged={refetch}
+                onStatusChange={(settings) =>
+                  setDomainsReady(
+                    settings.app.domain.health === "ready" &&
+                      settings.health === "ready",
+                  )
+                }
+              />
+            </SetupPageSection>
+
+            <SetupPageSection
               id="providers"
               title="Providers"
               description="All providers available to runs, with the accounts connected to each one."
@@ -351,7 +375,11 @@ export function SetupPanel({
               <SetupChecklist status={status} onChanged={refetch} />
             </SetupPageSection>
           </div>
-          <SetupSummary status={status} onSelect={scrollToSection} />
+          <SetupSummary
+            status={status}
+            domainsReady={domainsReady}
+            onSelect={scrollToSection}
+          />
         </div>
       )}
       <SetupRestart setup={setup} />

@@ -16,14 +16,11 @@ import { splitAttachments, imageFilesFromPaste, type FileAttachment } from "../l
 import { clearDraft, loadDraft, onDraftsChanged, saveDraft } from "../lib/drafts";
 import { appendDictation } from "../lib/dictation";
 import {
-  addStaging,
   attachingLabel,
-  countStaging,
   isStaging,
-  NOTHING_STAGING,
-  subtractStaging,
   type StagingCount,
 } from "../lib/attachments";
+import { useAttachmentUploads } from "../hooks/useAttachmentUploads";
 import {
   composerHighlightHtml,
   composerMentionRanges,
@@ -472,6 +469,8 @@ interface Props {
    * composer's attachment path. Omit both props for Composer-owned staging. */
   staging?: StagingCount;
   onAddAttachments?: (picked: FileList | File[]) => void | Promise<void>;
+  onRemovePendingImage?: (index: number) => void;
+  onRemovePendingFile?: (index: number) => void;
   /** The transcript selection currently attached as ephemeral context. */
   quote?: Quote | null;
   onQuoteClear?: () => void;
@@ -712,6 +711,8 @@ export function Composer({
   onFilesChange,
   staging,
   onAddAttachments,
+  onRemovePendingImage,
+  onRemovePendingFile,
   quote,
   onQuoteClear,
   mentionFetch,
@@ -738,8 +739,8 @@ export function Composer({
   const [pastedTexts, setPastedTexts] = useState(() =>
     draftKey ? loadDraft(draftKey).pastedTexts : [],
   );
-  const [localStaging, setLocalStaging] = useState<StagingCount>(NOTHING_STAGING);
-  const activeStaging = staging ?? localStaging;
+  const localUploads = useAttachmentUploads();
+  const activeStaging = staging ?? localUploads.staging;
   const isPhone = useIsPhone();
   const noteChord = useShortcutLabel("composer-note");
   const attachChord = useShortcutLabel("composer-attach");
@@ -1137,28 +1138,25 @@ export function Composer({
     const accepted = canAttachFiles
       ? selected
       : selected.filter(allowed);
-    const batch = countStaging(accepted);
-    setLocalStaging((current) => addStaging(current, batch));
-    await (async () => {
-const { images: newImgs, files: newFls, rejected } =
-        await splitAttachments(accepted);
-      // Images ride the vision channel; other files need a dedicated file channel
-      // (if the parent only wired images, non-image files are simply ignored).
-      if (newImgs.length) onImagesChange?.([...imgs, ...newImgs]);
-      if (newFls.length && canAttachFiles) onFilesChange?.([...fls, ...newFls]);
-      // Fail loudly rather than dropping oversized/failed uploads silently.
-      const failures = [
-        ...rejected,
-        ...disallowed.map((file) =>
-          noteMode
-            ? `${file.name} (notes accept PNG, JPEG, GIF, or WebP images)`
-            : `${file.name} (only images are supported)`,
-        ),
-      ];
-      if (failures.length) alert(`Couldn't attach:\n${failures.join("\n")}`);
-})().finally(async () => {
-setLocalStaging((current) => subtractStaging(current, batch));
-});
+    const results = await localUploads.upload(accepted, (file, signal) =>
+      splitAttachments([file], signal),
+    );
+    const newImgs = results.flatMap((result) => result.images);
+    const newFls = results.flatMap((result) => result.files);
+    // Images ride the vision channel; other files need a dedicated file channel
+    // (if the parent only wired images, non-image files are simply ignored).
+    if (newImgs.length) onImagesChange?.([...imgs, ...newImgs]);
+    if (newFls.length && canAttachFiles) onFilesChange?.([...fls, ...newFls]);
+    // Fail loudly rather than dropping oversized/failed uploads silently.
+    const failures = [
+      ...results.flatMap((result) => result.rejected),
+      ...disallowed.map((file) =>
+        noteMode
+          ? `${file.name} (notes accept PNG, JPEG, GIF, or WebP images)`
+          : `${file.name} (only images are supported)`,
+      ),
+    ];
+    if (failures.length) alert(`Couldn't attach:\n${failures.join("\n")}`);
   }
 
   function handlePaste(e: React.ClipboardEvent) {
@@ -1806,12 +1804,14 @@ setLocalStaging((current) => subtractStaging(current, batch));
           images={imgs}
           pending={activeStaging.images}
           onRemove={removeImage}
+          onRemovePending={staging ? onRemovePendingImage : localUploads.cancelPendingImage}
           disabled={disabled}
         />
         <FileChips
           files={fls}
           pending={activeStaging.files}
           onRemove={removeFile}
+          onRemovePending={staging ? onRemovePendingFile : localUploads.cancelPendingFile}
           disabled={disabled}
         />
         {attachingLabel(activeStaging) && (

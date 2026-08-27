@@ -117,6 +117,64 @@ describe("GitHub App manifest", () => {
 		});
 	});
 
+	test("a personal App waits for the verified connection before enabling sign-in", async () => {
+		const start = await handleSetupRoutes(
+			context("/api/setup/github/manifest", "POST", {
+				owner: "personal",
+				returnTo: "welcome",
+			}),
+		);
+		expect(start?.status).toBe(200);
+		const started = (await start?.json()) as { action: string };
+		const action = new URL(started.action);
+		expect(action.pathname).toBe("/settings/apps/new");
+		const state = action.searchParams.get("state");
+		expect(state).toBeTruthy();
+
+		const { privateKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
+		const pem = privateKey.export({ format: "pem", type: "pkcs8" }).toString();
+		globalThis.fetch = (async (input, init) => {
+			expect(String(input)).toBe(
+				"https://api.github.com/app-manifests/temporary-code/conversions",
+			);
+			expect(init?.method).toBe("POST");
+			return Response.json(
+				{
+					id: 42,
+					slug: "open-session-personal",
+					client_id: "Iv1.personal",
+					client_secret: "client-secret-value",
+					webhook_secret: "webhook-secret-value",
+					pem,
+					owner: { login: "octocat" },
+				},
+				{ status: 201 },
+			);
+		}) as typeof fetch;
+
+		const completed = await handleSetupRoutes(
+			context(
+				`/api/setup/github/manifest/callback?code=temporary-code&state=${encodeURIComponent(state!)}`,
+				"GET",
+			),
+		);
+		expect(completed?.status).toBe(303);
+		expect(completed?.headers.get("location")).toBe(
+			"http://100.90.80.70:3850/backstage/welcome?step=github&github_manifest=created",
+		);
+
+		const config = JSON.parse(readFileSync(configPath, "utf8"));
+		expect(config.integrations.github).toMatchObject({
+			oauthClientId: "Iv1.personal",
+			installationOwner: "octocat",
+			authOnConnect: true,
+		});
+		expect(config.integrations.github.appOrg).toBeUndefined();
+		// The sign-in gate stays open until device flow returns the account that
+		// can be rostered and receive the new session.
+		expect(config.integrations.github.userPrAuth).toBeUndefined();
+	});
+
 	test("creates, converts, and stores an organization-owned App without exposing secrets", async () => {
 		const start = await handleSetupRoutes(
 			context("/api/setup/github/manifest", "POST", {

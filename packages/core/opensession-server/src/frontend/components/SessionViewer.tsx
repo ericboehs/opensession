@@ -174,15 +174,12 @@ import {
 } from "../lib/image-region-comment-registry";
 import { loadDraft, saveDraft, clearDraft } from "../lib/drafts";
 import {
-	addStaging,
 	attachToDraft,
-	countStaging,
 	dropStagingAttachments,
-	NOTHING_STAGING,
 	sameFiles,
 	sameImages,
-	subtractStaging,
 } from "../lib/attachments";
+import { useAttachmentUploads } from "../hooks/useAttachmentUploads";
 import {
 	foregroundFileComposerOpen,
 	hasDraggedFiles,
@@ -198,6 +195,7 @@ import {
 	type OptimisticPendingPrompt,
 	optimisticOutboxFallbacks,
 	reconcilePending,
+	withoutPendingTranscriptEchoes,
 } from "../lib/pending-reconcile";
 import {
 	promptOutbox,
@@ -313,6 +311,7 @@ import {
 } from "../lib/source-chip-classes";
 import { sessionWasAgentStarted } from "../lib/sidebar-placement";
 import { Button } from "../ui/button";
+import { useConfirm } from "../ui/confirm";
 import {
 	TopBar,
 	TopBarAction,
@@ -767,6 +766,9 @@ const sx = stylex.create({
 	},
 	maxWVarSessionCol: {
 			maxWidth: "var(--session-col)"
+	},
+	maxW2xl: {
+		maxWidth: "42rem",
 	},
 	transitionTransform: {
 			transitionProperty: "transform, translate, scale, rotate",
@@ -1689,7 +1691,8 @@ export function SessionViewer({
 	const draftKey = `session:${session.id}`;
 	const [images, setImages] = useState<string[]>(() => loadDraft(draftKey).images);
 	const [files, setFiles] = useState<FileAttachment[]>(() => loadDraft(draftKey).files);
-	const [uploadStaging, setUploadStaging] = useState(NOTHING_STAGING);
+	const uploads = useAttachmentUploads();
+	const uploadStaging = uploads.staging;
 	const dragDepthRef = useRef(0);
 	const fileDragPresentRef = useRef(false);
 	const cancelledFileDragRef = useRef(false);
@@ -2103,30 +2106,26 @@ export function SessionViewer({
 		const accepted = noteMode
 			? selected.filter((file) => noteImageTypes.has(file.type))
 			: selected;
-		const batch = countStaging(accepted);
-		setUploadStaging((current) => addStaging(current, batch));
-		await (async () => {
-			const { rejected, applied } = await attachToDraft(draftKey, accepted);
-			if (applied) {
-				const stored = loadDraft(draftKey);
-				setImages((current) =>
-					sameImages(current, stored.images) ? current : stored.images,
-				);
-				setFiles((current) =>
-					sameFiles(current, stored.files) ? current : stored.files,
-				);
-			}
-			const failures = [
-				...rejected,
-				...disallowed.map(
-					(file) =>
-						`${file.name} (notes accept PNG, JPEG, GIF, or WebP images)`,
-				),
-			];
-			if (failures.length) alert(`Couldn't attach:\n${failures.join("\n")}`);
-		})().finally(() => {
-			setUploadStaging((current) => subtractStaging(current, batch));
-		});
+		const results = await uploads.upload(accepted, (file, signal) =>
+			attachToDraft(draftKey, [file], signal),
+		);
+		if (results.some((result) => result.applied)) {
+			const stored = loadDraft(draftKey);
+			setImages((current) =>
+				sameImages(current, stored.images) ? current : stored.images,
+			);
+			setFiles((current) =>
+				sameFiles(current, stored.files) ? current : stored.files,
+			);
+		}
+		const failures = [
+			...results.flatMap((result) => result.rejected),
+			...disallowed.map(
+				(file) =>
+					`${file.name} (notes accept PNG, JPEG, GIF, or WebP images)`,
+			),
+		];
+		if (failures.length) alert(`Couldn't attach:\n${failures.join("\n")}`);
 	}
 
 	function resetFileDrag() {
@@ -5109,20 +5108,16 @@ export function SessionViewer({
 			? session.lastRunError
 			: null;
 	// Server-side filtering is authoritative; this guard keeps model-routing
-	// plumbing out of the message surface during a rolling deploy.
-	// A `started` delivery is temporarily present in the server queue while its
-	// dispatch is claimed. Keep that receipt from duplicating the authoritative
-	// optimistic transcript bubble. If the bubble expires, the durable queue row
-	// becomes visible again rather than hiding a genuinely stalled message.
-	const startedPendingDeliveryIds = new Set(
-		pendingBubbles
-			.filter((item) => item.serverStarted)
-			.map((item) => item.id.replace(/^outbox-/, "")),
-	);
-	const shownQueued = queued.filter(
-		(item) =>
-			!startedPendingDeliveryIds.has(item.id || "") &&
+	// plumbing out of the message surface during a rolling deploy. An idle send
+	// is durably queued before actor admission, so its queue echo can arrive before
+	// the REST result says whether it started or parked. Keep that receipt off the
+	// queue surface for as long as the same message is an optimistic transcript
+	// bubble. If the bubble expires, the durable row becomes visible again.
+	const shownQueued = withoutPendingTranscriptEchoes(
+		queued.filter((item) =>
 			isClientVisibleQueuedContent(item.content, item.user),
+		),
+		pendingBubbles,
 	);
 	// Classified once, read by both the counts and the rows, so the chip's
 	// tally and what each row renders as can't disagree.
@@ -5612,6 +5607,7 @@ export function SessionViewer({
 	}
 
 	const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+	const [confirm, confirmDialog] = useConfirm();
 	const [deleting, setDeleting] = useState(false);
 	const [archiving, setArchiving] = useState(false);
 	const [deleteLabel, setDeleteLabel] = useState("");
@@ -6311,6 +6307,7 @@ export function SessionViewer({
 					</div>
 				</div>
 			)}
+			{confirmDialog}
 			<DeleteSessionDialog
 				open={showDeleteConfirm}
 				onOpenChange={setShowDeleteConfirm}
@@ -6690,10 +6687,15 @@ export function SessionViewer({
 						{onDeleteWorkspace && (
 							<Menu.Item
 								className={mergeStylexOverrideClassName("data-[highlighted]:bg-red-soft data-[highlighted]:text-red", sx.textRed)}
-								onClick={() => {
-									const message = `Delete workspace "${workspaceName || session.title}"? Its sessions become standalone.`;
-									if (window.confirm(message)) void onDeleteWorkspace();
-								}}
+								onClick={() =>
+									confirm({
+										title: `Delete workspace "${workspaceName || session.title}"?`,
+										description: "All sessions in this workspace will be permanently deleted.",
+										confirmLabel: "Delete",
+										destructive: true,
+										onConfirm: () => void onDeleteWorkspace(),
+									})
+								}
 								title="Delete workspace"
 							>
 								<IconTrash size={20} />
@@ -8067,7 +8069,7 @@ export function SessionViewer({
 							{inlineRunFailure && (
 								<InlineAlert
 									title="Run failed"
-									className={mergeStylexOverrideClassName("", sx.mxAuto, sx.mt3, sx.maxWVarSessionCol, sx.rounded2xl, sx.border0, sx.textCenter)}
+									className={mergeStylexOverrideClassName("[&>div>div]:leading-snug [&>div>div+div]:mt-0", sx.mxAuto, sx.mt3, sx.maxW2xl, sx.rounded2xl, sx.border0, sx.textCenter)}
 								>
 									{inlineRunFailure.message}
 								</InlineAlert>
@@ -8374,6 +8376,8 @@ export function SessionViewer({
 									onFilesChange={setFiles}
 									staging={uploadStaging}
 									onAddAttachments={addSessionAttachments}
+									onRemovePendingImage={uploads.cancelPendingImage}
+									onRemovePendingFile={uploads.cancelPendingFile}
 									attachmentShortcutActive={focused}
 									quote={quote}
 									onQuoteClear={clearQuote}

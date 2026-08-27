@@ -307,6 +307,12 @@ const sx = stylex.create({
 	maxW200px: {
 		"maxWidth": "200px"
 	},
+	maxWMin200px100cqw: {
+		maxWidth: "min(200px, 100cqw)",
+	},
+	containerTypeInlineSize: {
+		containerType: "inline-size",
+	},
 	cursorPointer: {
 		"cursor": "pointer"
 	},
@@ -800,7 +806,7 @@ export const TAB_STRIP =
 export const TAB_SCROLL =
 	// `flex-[1_1_auto]`, not `flex-1`: Tailwind's shorthand is `1 1 0%`, and a
 	// zero basis sizes the scroll from nothing rather than from its tabs.
-	mergeStylexClassName("", sx.flex, sx.minW0, sx.flex11Auto, sx.itemsCenter, sx.gap3px, sx.overflowXAuto, sx.overscrollXContain) + " " +
+	mergeStylexClassName("", sx.flex, sx.minW0, sx.flex11Auto, sx.itemsCenter, sx.gap3px, sx.overflowXAuto, sx.overscrollXContain, sx.containerTypeInlineSize) + " " +
 	mergeStylexClassName("[&::-webkit-scrollbar]:hidden", sx.ScrollbarWidthNone) +
 	// Hug the content on desktop so the pinned "+" sits right after the last tab
 	// rather than being pushed to the far right. The group keeps its intrinsic
@@ -865,7 +871,7 @@ export const TAB_ACTIONS = mergeStylexClassName("", sx.mlAuto, sx.flex, sx.flexN
  * instead of differing by a pixel.
  */
 const TAB_BASE =
-	mergeStylexClassName("", sx.relative, sx.inlineFlex, sx.maxW200px, sx.shrink0, sx.cursorPointer, sx.itemsCenter, sx.gap15, sx.whitespaceNowrap) +
+	mergeStylexClassName("", sx.relative, sx.inlineFlex, sx.maxWMin200px100cqw, sx.shrink0, sx.cursorPointer, sx.itemsCenter, sx.gap15, sx.whitespaceNowrap) +
 	" " + [TAB_SHAPE, mergeStylexClassName("", sx.border0, sx.px25, sx.py15, typography.label, sx.shadowNone)].filter(Boolean).join(" ") +
 	" " + mergeStylexClassName("", sharedClassStyles.transitionBackgroundColorColor) +
 	" " + mergeStylexClassName("", sx.phoneRoundedFull, sx.phoneBorder, sx.phoneBorderColorVarMobileHeaderControlBorder) +

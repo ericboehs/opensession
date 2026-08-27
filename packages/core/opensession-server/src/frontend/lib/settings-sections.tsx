@@ -200,7 +200,7 @@ export const SECTIONS: {
 	},
 	{
 		key: "ingress",
-		label: "Domains and ingress",
+		label: "Domains",
 		group: "Infrastructure",
 		adminOnly: true,
 		icon: <IconGlobe />,

@@ -24,10 +24,11 @@ import { SESSION_EFFORTS, type SessionEffort, providerFor, resolveModel } from "
 import { configuredInteractiveDefaultModel } from "./model-catalog";
 import { deliveryQueueState, durableQueueItem, liftUserStop } from "./queue-state";
 import { prepareAndSteerQueuedPrompt } from "./queued-steer";
-import { drainQueue, enqueuePrompt, requestTurnCancel, runSessionPrompt, sessionMentionsNote, watchExternalRunAndDrain } from "./run-session";
+import { drainQueue, enqueuePrompt, parkQueueForShutdown, requestTurnCancel, runSessionPrompt, sessionMentionsNote, watchExternalRunAndDrain } from "./run-session";
 import { creationAttachmentPath, parseImageDataUrls, prepareCreationAttachmentSources, withUploadsNote } from "./uploads";
 import { type Sandbox } from "./sandbox";
 import { isRemoteSandboxProvider, resolveRequestedSandbox } from "./sandbox/config";
+import { isShuttingDown } from "./shutdown-state";
 import { resolveInteractiveSandbox } from "./sandbox/defaults";
 import { findSession, getCachedSessions, getCachedSessionsAsync, getSessionListSnapshotAsync, invalidateSessionsCache, touchNativeSession } from "./session-cache";
 import { nameKnownSessionReferencesForTitle } from "./session-reference-title";
@@ -315,6 +316,30 @@ registerSessionControl({
 			// Disk-staged files can only be supplied to a fresh turn. Never fold them
 			// into a steer request, where the runner has no file staging channel.
 			const hasFiles = Array.isArray(opts?.files) && opts.files.length > 0;
+			const queuedItem = {
+				id: deliveryId,
+				content,
+				user,
+				images: opts?.imageUrls,
+				files: opts?.files,
+				contextSessions: opts?.contextSessions,
+				slackReplyTo: opts?.slackReplyTo,
+				...(opts?.hold ? { hold: true } : {}),
+				...(opts?.reviewHandoff ? { reviewHandoff: true } : {}),
+			};
+
+			// A draining server accepts durable intake but must not steer it into an
+			// old turn or start a new one. Check before the busy route, then check
+			// again after enqueue below to close a shutdown that begins during it.
+			if (isShuttingDown()) {
+				await enqueuePrompt(id, queuedItem);
+				parkQueueForShutdown(id);
+				return {
+					status: "queued" as const,
+					message: "Queued while the server restarts.",
+					deliveryId,
+				};
+			}
 
 			if (
 				isAgentSessionBusy(
@@ -366,17 +391,7 @@ registerSessionControl({
 						};
 					}
 				}
-				await enqueuePrompt(id, {
-					id: deliveryId,
-					content,
-					user,
-					images: opts?.imageUrls,
-					files: opts?.files,
-					contextSessions: opts?.contextSessions,
-					slackReplyTo: opts?.slackReplyTo,
-					...(opts?.hold ? { hold: true } : {}),
-					...(opts?.reviewHandoff ? { reviewHandoff: true } : {}),
-				});
+				await enqueuePrompt(id, queuedItem);
 				watchExternalRunAndDrain(id);
 				return {
 					status: "queued" as const,
@@ -400,15 +415,17 @@ registerSessionControl({
 
 			// Every accepted prompt is durable before any engine or workspace wake.
 			// A crash after this write but before dispatch replays the same queue id.
-			await enqueuePrompt(id, {
-				id: deliveryId,
-				content,
-				user,
-				images: opts?.imageUrls,
-				files: opts?.files,
-				contextSessions: opts?.contextSessions,
-				slackReplyTo: opts?.slackReplyTo,
-			});
+			await enqueuePrompt(id, queuedItem);
+			// Intake stays available during graceful shutdown because the queue is
+			// durable, but no new turn may start after the drain snapshot. Tell the
+			// client where the message actually landed so it stays on one surface.
+			if (parkQueueForShutdown(id)) {
+				return {
+					status: "queued" as const,
+					message: "Queued while the server restarts.",
+					deliveryId,
+				};
+			}
 			void drainQueue(id).catch((error) =>
 				console.error(`[sessions-mcp] deliver to ${id} failed:`, error),
 			);

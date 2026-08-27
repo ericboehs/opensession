@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import type { TranscriptEntry } from "../lib/types";
 import { useWebSocket } from "../hooks/useWebSocket";
@@ -23,12 +23,7 @@ import { msgBubbleUser, msgOwnTurn, msgRow } from "../lib/msg-classes";
 import { SessionTranscript } from "./SessionTranscript";
 import { TypingIndicator } from "./TypingIndicator";
 import { duration, ease } from "../ui/motion";
-import {
-	addStaging,
-	countStaging,
-	NOTHING_STAGING,
-	subtractStaging,
-} from "../lib/attachments";
+import { useAttachmentUploads } from "../hooks/useAttachmentUploads";
 import {
 	foregroundFileComposerOwns,
 	hasDraggedFiles,
@@ -200,7 +195,8 @@ export function DeskConversation({
 	// does; both ride along on the prompt.
 	const [images, setImages] = useState<string[]>([]);
 	const [files, setFiles] = useState<FileAttachment[]>([]);
-	const [dropStaging, setDropStaging] = useState(NOTHING_STAGING);
+	const uploads = useAttachmentUploads();
+	const dropStaging = uploads.staging;
 	const [fileDragActive, setFileDragActive] = useState(false);
 	const fileDragWatchdogRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 	// The model pill's catalog. Empty until it loads — the pill falls back to
@@ -250,21 +246,21 @@ export function DeskConversation({
 	}
 
 	async function addDeskAttachments(picked: FileList | File[]) {
-		const selected = Array.from(picked);
-		const batch = countStaging(selected);
-		setDropStaging((current) => addStaging(current, batch));
-		await (async () => {
-const { images: addedImages, files: addedFiles, rejected } =
-				await splitAttachments(selected);
-			if (addedImages.length)
-				setImages((current) => [...current, ...addedImages]);
-			if (addedFiles.length)
-				setFiles((current) => [...current, ...addedFiles]);
-			if (rejected.length) alert(`Couldn't attach:\n${rejected.join("\n")}`);
-})().finally(async () => {
-setDropStaging((current) => subtractStaging(current, batch));
-});
+		const results = await uploads.upload(picked, (file, signal) =>
+			splitAttachments([file], signal),
+		);
+		const addedImages = results.flatMap((result) => result.images);
+		const addedFiles = results.flatMap((result) => result.files);
+		if (addedImages.length)
+			setImages((current) => [...current, ...addedImages]);
+		if (addedFiles.length)
+			setFiles((current) => [...current, ...addedFiles]);
+		const rejected = results.flatMap((result) => result.rejected);
+		if (rejected.length) alert(`Couldn't attach:\n${rejected.join("\n")}`);
 	}
+	const addDroppedAttachments = useEffectEvent((picked: FileList | File[]) => {
+		void addDeskAttachments(picked);
+	});
 
 	function resetFileDrag() {
 		if (fileDragWatchdogRef.current) clearTimeout(fileDragWatchdogRef.current);
@@ -323,7 +319,7 @@ setDropStaging((current) => subtractStaging(current, batch));
 			event.stopPropagation();
 			const dropped = event.dataTransfer?.files;
 			resetFileDrag();
-			if (dropped?.length) void addDeskAttachments(dropped);
+			if (dropped?.length) addDroppedAttachments(dropped);
 		}
 		window.addEventListener("dragenter", handleDragEnter, true);
 		window.addEventListener("dragleave", handleDragLeave, true);
@@ -707,6 +703,8 @@ setDropStaging((current) => subtractStaging(current, batch));
 						onFilesChange={setFiles}
 						staging={dropStaging}
 						onAddAttachments={addDeskAttachments}
+						onRemovePendingImage={uploads.cancelPendingImage}
+						onRemovePendingFile={uploads.cancelPendingFile}
 						prefill={prefill}
 						models={models}
 						defaultModel={defaultModel}

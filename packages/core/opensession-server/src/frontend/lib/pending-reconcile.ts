@@ -33,6 +33,26 @@ export interface OptimisticPendingPrompt extends PendingPrompt {
 }
 
 /**
+ * An idle send briefly appears in the server queue before its delivery result
+ * says whether it really started or parked. Keep that echo off the queue
+ * surface while the same prompt is still rendered as an optimistic transcript
+ * bubble, so actor admission cannot show one message in both places.
+ */
+export function withoutPendingTranscriptEchoes<T extends { id?: string }>(
+	items: readonly T[],
+	pendingBubbles: readonly OptimisticPendingPrompt[],
+): T[] {
+	const pendingDeliveryIds = new Set(
+		pendingBubbles.flatMap((item) =>
+			item.id.startsWith("outbox-") ? [item.id.slice("outbox-".length)] : [],
+		),
+	);
+	return items.filter(
+		(item) => !item.id || !pendingDeliveryIds.has(item.id),
+	);
+}
+
+/**
  * A pristine idle outbox item is the same optimistic message even when React's
  * local pending row has already reconciled or has not committed yet. Project it
  * onto the transcript instead of exposing the outbox's transport status.

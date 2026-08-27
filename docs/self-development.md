@@ -79,23 +79,49 @@ preview.
 ## Deploying a source change
 
 A system-scope source installation bootstrapped by `deploy/deploy.sh`, including
-Tella's live instance, has two immutable-release rollout paths. Both deploy one
-release containing the gateway, session kernel, and executor. “Light” and
-“full” describe whether root-owned installation artifacts are refreshed, not
-which runtime process restarts. A plain source service installed directly from a
-checkout still follows
+Tella's live instance, has two immutable-release rollout commands, and the
+standard command automatically selects a restart-free frontend promotion when
+the complete diff is frontend-only. “Light” and “full” describe whether
+root-owned installation artifacts are refreshed. A plain source service
+installed directly from a checkout still follows
 [the checkout watcher/restart behavior](setup/install.md#10-frontend-rebuilds-vs-restart)
 until an operator deliberately adopts the immutable-release deploy path.
 
 | Path | Use it for | Entry point |
 | --- | --- | --- |
-| Standard (light) | Ordinary frontend, backend, protocol, and dependency changes that can reuse the installed units, credentials, and helper | interactive MCP `deploy_self({ sha, confirm: true })` |
+| Standard (light) | Ordinary frontend, backend, protocol, and dependency changes that can reuse the installed units, credentials, and helper. Frontend-only targets are promoted without a restart; other targets restart and health-gate the three services. | interactive MCP `deploy_self({ sha, confirm: true })` |
 | Full (root) | Changes to the live deploy controllers, `opensession*.service`, credential installers, the fixed run-host helper/installer, or systemd artifacts managed by the root script | `sudo deploy/deploy.sh <sha>` |
 
 A docs-only commit does not need a live rollout. A frontend-only commit does.
 The production frontend watcher follows the pinned release worktree, not the
 shared WIP checkout, so editing `src/frontend` in the shared checkout cannot
-change the live bundle.
+change the live bundle. `/api/rebuild-frontend` also rebuilds the already pinned
+source; it cannot publish frontend source from the shared checkout.
+
+`deploy_self` is that publication path. It compares the running backend commit
+to the requested target. When every runtime file in the diff is under
+`packages/core/opensession-server/src/frontend/` (documentation may ride with
+it), it prepares the target release, bundles the SPA there, validates every
+listed asset, atomically records `frontend-current.json`, swaps the in-memory
+shell/asset root, and broadcasts `frontend_updated`. The gateway, session
+kernel, and executor keep running. Old release asset roots remain readable for
+long-open tabs that request a lazy chunk after promotion.
+
+The frontend pointer records the exact backend commit it advances from. A later
+standard/full deploy or rollback changes that backend base, so boot ignores the
+old frontend pointer and serves the new backend release's own UI. This prevents
+a newer UI from accidentally surviving across an incompatible backend move.
+
+Deployment may be autonomous when the task calls for making a change live, but
+it is a shared operation across every coding session. Before deploying, call
+`deploy_status`. If a deploy is active or just completed, or multiple sessions
+are landing a burst of related commits, do not launch or repeatedly retry
+another deploy. Wait for the burst to settle and deploy the newest
+fast-forward commit once. The lock protects the release pointer but does not
+batch callers; independent retries otherwise become a serial restart train.
+This coordination still applies to UI work: promotion is non-disruptive, but
+preparing and bundling the same succession of targets wastes shared resources
+and creates needless refresh churn.
 
 Do not substitute `systemctl restart opensession`. That restarts the currently
 pinned release, does not pick up the new commit, and bypasses the coordinated
@@ -105,10 +131,18 @@ executor/kernel/gateway rollout.
 
 The `opensession-self-deploy` in-process MCP server is available only to
 interactive admin sessions, never automations or dev instances.
-`deploy_self({ sha?, confirm: true })` launches the controller from the running
-release as a transient system unit so it survives the gateway restart.
+`deploy_self({ sha?, confirm: true })` first classifies the complete diff. The
+`confirm` flag deliberately acknowledges a shared live rollout; it is not a
+requirement for separate human approval. An agent may deploy autonomously,
+subject to the coordination and batching rule above.
 
-The controller:
+For a frontend-only target, the gateway performs the preparation, bundle,
+validation, pointer swap, and client notification in process. `deploy_status`
+shows both the backend pin and any active restart-free frontend pin.
+
+For every other ordinary target, it launches the controller from the running
+release as a transient system unit so the rollout survives the gateway restart.
+That controller:
 
 1. fetches `origin` and resolves the requested target (`origin/main` by
    default),

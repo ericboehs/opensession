@@ -38,7 +38,8 @@ import {
   toolLineStats,
   unwrapMcpDispatcher,
 } from "@tellahq/opensession-protocol/tool-presentation";
-import { formatDuration } from "../lib/time";
+import { formatDuration, fullTime } from "../lib/time";
+import { Tooltip } from "../ui/tooltip";
 import { ExtBadge, fileExt } from "./lang-marks";
 import { openGalleryFrom } from "./MediaLightbox";
 import { useOpenAsset, useOpenAssetPaths } from "../lib/open-asset";
@@ -636,6 +637,9 @@ export const ToolCallBlock = function ToolCallBlock({
 
   return (
     <div {...stylex.props(sx.relative)} data-eid={entry.id}>
+      {/* Tool rows have no spare inline space for a timestamp, so reveal the
+          call's wall-clock time on hover or keyboard focus. */}
+      <Tooltip label={fullTime(entry.timestamp)}>
       <button
         type="button"
         aria-expanded={expanded}
@@ -782,6 +786,7 @@ export const ToolCallBlock = function ToolCallBlock({
           <span {...stylex.props(sx.flexShrink0, sx.textFaint, typography.meta)}>–</span>
         ) : null}
       </button>
+      </Tooltip>
 
       {expanded && (
         <div {...mergeStylexProps("space-y-1.5", sx.relative, sx.z1, sx.mb15, sx.ml30px, sx.mt1)}>

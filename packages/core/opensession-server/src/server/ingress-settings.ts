@@ -9,6 +9,7 @@ import { resolve4, resolve6 } from "dns/promises";
 import {
   configuredIngress,
   configuredServer,
+  getConfig,
   type IngressExposure,
 } from "./config";
 import {
@@ -21,7 +22,11 @@ import { caddyIngressSnippet, upsertCaddyIngress } from "./sandbox/caddy-ingress
 import { stateDir } from "./paths";
 import { writeFileAtomic } from "./shared/atomic-write";
 import { prepareEnvFileEdits } from "./env-file-edit";
-import { detectedTailnetIpv4, normalizeAppOrigin } from "./setup-access";
+import {
+  detectedTailnetIpv4,
+  normalizeAppOrigin,
+  setupAccessSnapshot,
+} from "./setup-access";
 import {
   configurePrivateAppDomain,
   privateAppCaddyUpstream,
@@ -85,6 +90,29 @@ export interface IngressStatus {
   custom: { caddyInstalled: boolean; generatedConfig: string };
 }
 
+/** The configured private app origin as persisted by the setup flow.
+ *
+ * `configuredServer()` intentionally gives the boot environment precedence,
+ * but that value remains stale until a requested restart. Settings status must
+ * use the freshly persisted config so a saved friendly domain does not
+ * disappear on the next poll.
+ */
+export function configuredPrivateAppOrigin(): string {
+  return setupAccessSnapshot().publicBaseUrl;
+}
+
+/** The public ingress origin persisted by Settings. The boot environment may
+ * still contain the prior value until restart, so status and validation use
+ * the freshly saved config first while ordinary config keeps env precedence. */
+export function configuredPublicIngress(): ReturnType<typeof configuredIngress> {
+  const configured = configuredIngress();
+  return {
+    ...configured,
+    publicBaseUrl: (getConfig().ingress?.publicBaseUrl || configured.publicBaseUrl)
+      .replace(/\/+$/, ""),
+  };
+}
+
 export function normalizeIngressOrigin(value: string): string {
   const trimmed = value.trim();
   if (!trimmed) throw new Error("Public ingress URL is required");
@@ -115,7 +143,7 @@ export function normalizeIngressOrigin(value: string): string {
     throw new Error("Public ingress must be reachable from the public internet");
   }
   const appHost = (() => {
-    try { return new URL(configuredServer().publicBaseUrl).hostname.toLowerCase(); }
+    try { return new URL(configuredPrivateAppOrigin()).hostname.toLowerCase(); }
     catch { return ""; }
   })();
   if (host === appHost) {
@@ -182,7 +210,7 @@ export function normalizePrivateAppOrigin(value: string): string {
   const origin = normalizeAppOrigin(trimmed.includes("://") ? trimmed : `https://${trimmed}`);
   if (new URL(origin).protocol !== "https:") throw new Error("Private app domain must use HTTPS");
   const ingressHost = (() => {
-    try { return new URL(configuredIngress().publicBaseUrl).hostname.toLowerCase(); }
+    try { return new URL(configuredPublicIngress().publicBaseUrl).hostname.toLowerCase(); }
     catch { return ""; }
   })();
   if (new URL(origin).hostname.toLowerCase() === ingressHost) {
@@ -471,8 +499,8 @@ export async function publicIngressStatus(
   canManage: boolean,
   options: { appBaseUrl?: string } = {},
 ): Promise<IngressStatus> {
-  const configured = configuredIngress();
-  const appBaseUrl = options.appBaseUrl || configuredServer().publicBaseUrl;
+  const configured = configuredPublicIngress();
+  const appBaseUrl = options.appBaseUrl || configuredPrivateAppOrigin();
   let appHostname = "";
   try { appHostname = new URL(appBaseUrl).hostname; } catch {}
   let hostname = "";
@@ -568,7 +596,7 @@ export async function setupPrivateAppDomain(input: {
 }
 
 export async function verifyPrivateAppDomain(): Promise<PrivateAppDomainStatus> {
-  return testPrivateAppDomain(configuredServer().publicBaseUrl, detectedTailnetIpv4());
+  return testPrivateAppDomain(configuredPrivateAppOrigin(), detectedTailnetIpv4());
 }
 
 export async function savePrivateAppOrigin(value: string): Promise<string> {
@@ -625,15 +653,22 @@ export async function savePublicIngress(input: {
       delete (raw.server as Record<string, unknown>).webhookPort;
     }
     const envKey = publicIpFamily === 4 ? "OPENSESSION_PUBLIC_IPV4" : "OPENSESSION_PUBLIC_IPV6";
-    const envEdit = publicIp ? prepareEnvFileEdits({ [envKey]: publicIp }) : null;
-    envEdit?.commit();
+    const envEdit = prepareEnvFileEdits({
+      OPENSESSION_INGRESS_BASE: publicBaseUrl,
+      ...(publicIp ? { [envKey]: publicIp } : {}),
+    });
+    envEdit.commit();
     try {
       persistRawConfig(raw);
     } catch (error) {
-      envEdit?.rollback();
+      envEdit.rollback();
       throw error;
     }
   });
+  // Public ingress always binds the same isolated local listener, so changing
+  // its published origin can take effect immediately. Keep dynamic config
+  // readers truthful now while the env-file edit makes it survive a restart.
+  process.env.OPENSESSION_INGRESS_BASE = publicBaseUrl;
   if (publicIpFamily === 4) process.env.OPENSESSION_PUBLIC_IPV4 = publicIp;
   if (publicIpFamily === 6) process.env.OPENSESSION_PUBLIC_IPV6 = publicIp;
   if (input.exposure !== "cloudflare") {

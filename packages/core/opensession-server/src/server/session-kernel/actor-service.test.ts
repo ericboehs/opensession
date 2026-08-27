@@ -1134,6 +1134,88 @@ describe("session kernel actor service", () => {
     }
   });
 
+  test("acknowledges a completed command receipt while the session is quarantined", async () => {
+    const sessionId = "quarantined-ack-session";
+    expect(await rpc({
+      t: "call",
+      rpcId: "quarantined-ack-request",
+      outputBytes: 256 * 1024,
+      request: {
+        t: "reduce",
+        command: {
+          kind: "gateway",
+          commandId: "quarantined-ack-request-command",
+          request: {
+            op: "request",
+            sessionId,
+            requestId: "quarantined-ack-write",
+            operation: "websocket_command",
+            identity: { command: "prompt" },
+          },
+        },
+      },
+    })).toMatchObject({ t: "call_result", status: 1 });
+    expect(await rpc({
+      t: "call",
+      rpcId: "quarantined-ack-complete",
+      outputBytes: 256 * 1024,
+      request: {
+        t: "reduce",
+        command: {
+          kind: "gateway",
+          commandId: "quarantined-ack-complete-command",
+          request: {
+            op: "complete",
+            sessionId,
+            requestId: "quarantined-ack-write",
+            operation: "websocket_command",
+            result: "done",
+          },
+        },
+      },
+    })).toMatchObject({ t: "call_result", status: 1 });
+    expect(await rpc({
+      t: "call",
+      rpcId: "quarantined-ack-quarantine",
+      outputBytes: 256 * 1024,
+      request: {
+        t: "store",
+        method: "quarantineSession",
+        args: [sessionId, "actor restarted after execution began", "transcript:append"],
+      },
+    })).toMatchObject({ t: "call_result", status: 1 });
+
+    // Acknowledging only stamps acknowledged_at on an already-completed
+    // receipt, so the quarantine fence must not reject it: fencing it turned
+    // every quarantined session into an endless client ack-retry loop
+    // (`Internal error handling "command_ack"` on every reconnect).
+    expect(await rpc({
+      t: "acknowledge",
+      rpcId: "quarantined-ack",
+      sessionId,
+      requestId: "quarantined-ack-write",
+    })).toMatchObject({ t: "acknowledge_result" });
+
+    const record = await rpc({
+      t: "call",
+      rpcId: "quarantined-ack-readback",
+      outputBytes: 256 * 1024,
+      request: {
+        t: "store",
+        method: "command",
+        args: [sessionId, "quarantined-ack-write"],
+      },
+    });
+    expect(record).toMatchObject({ t: "call_result", status: 1 });
+    const body = JSON.parse(record.body) as {
+      ok: boolean;
+      result: { status: string; acknowledgedAt?: number };
+    };
+    expect(body.ok).toBe(true);
+    expect(body.result.status).toBe("completed");
+    expect(body.result.acknowledgedAt).toBeGreaterThan(0);
+  });
+
   test("keeps reductions responsive while an executor owns physical work", async () => {
     const active = await rpc({
       t: "call",

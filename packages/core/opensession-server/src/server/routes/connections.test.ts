@@ -221,13 +221,14 @@ describe("GitHub App config (simple mode)", () => {
     expect(res?.status).toBe(200);
     expect(await res?.json()).toEqual({ ok: true });
 
-    // On disk: the three keys are set and userPrAuth was never introduced —
-    // configuring the repo App must not flip the sign-in gate.
+    // On disk: the App and connect-time sign-in intent are set, but userPrAuth
+    // is not introduced until a verified account connects.
     const written = JSON.parse(readFileSync(process.env.OPENSESSION_CONFIG!, "utf-8"));
     expect(written.integrations.github.oauthClientId).toBe("Iv1.abc");
     expect(written.integrations.github.appSlug).toBe("my-app");
     expect(written.integrations.github.oauthClientSecret).toBe("shh");
     expect(written.integrations.github.installationOwner).toBe("acme");
+    expect(written.integrations.github.authOnConnect).toBe(true);
     expect(written.integrations.github.userPrAuth).toBeUndefined();
 
     // Live, no restart: the App now reads as configured-from-config, and the
@@ -237,6 +238,24 @@ describe("GitHub App config (simple mode)", () => {
     expect(body.connectAvailable).toBe(true);
     expect(body.appConfigSource).toBe("config");
     expect(body.webAuthRequired).toBe(false);
+  });
+
+  test("a personal App arms sign-in for its first verified connection", async () => {
+    const res = await handleConnectionsRoutes(
+      context(APP, "POST", null, {
+        clientId: "Iv1.personal",
+        slug: "personal-app",
+        secret: "shh",
+        privateKey: validPrivateKey(),
+      }),
+    );
+    expect(res?.status).toBe(200);
+
+    const written = JSON.parse(readFileSync(process.env.OPENSESSION_CONFIG!, "utf-8"));
+    expect(written.integrations.github.authOnConnect).toBe(true);
+    expect(written.integrations.github.appOrg).toBeUndefined();
+    expect(written.integrations.github.installationOwner).toBeUndefined();
+    expect(written.integrations.github.userPrAuth).toBeUndefined();
   });
 
   test("POST without a client id, slug, or secret is rejected (400)", async () => {
@@ -385,10 +404,9 @@ function stubGithubDeviceFetch(login: string, name?: string): () => void {
 }
 
 describe("connect-time auth bootstrap", () => {
-  test("authOnConnect: rosters admin, flips userPrAuth, sets a session cookie, clears the intent", async () => {
+  test("personal authOnConnect: rosters admin, flips userPrAuth, sets a session cookie, clears the intent", async () => {
     const cfg = writeGithubConfig({
       oauthClientId: "cid",
-      appOrg: "acme-inc",
       authOnConnect: true,
     });
     const restore = stubGithubDeviceFetch("octocat", "Octo Cat");
@@ -415,9 +433,10 @@ describe("connect-time auth bootstrap", () => {
       expect(admin.admin).toBe(true);
       expect(admin.name).toBe("Octo Cat");
       expect(written.integrations.github.userPrAuth).toBe(true);
-      // Intent consumed; the App identity survives.
+      // Intent consumed; the personal App learns its verified installation owner.
       expect(written.integrations.github.authOnConnect).toBeUndefined();
-      expect(written.integrations.github.appOrg).toBe("acme-inc");
+      expect(written.integrations.github.appOrg).toBeUndefined();
+      expect(written.integrations.github.installationOwner).toBe("octocat");
       expect(written.integrations.github.oauthClientId).toBe("cid");
 
       // A web session exists for the just-connected login.

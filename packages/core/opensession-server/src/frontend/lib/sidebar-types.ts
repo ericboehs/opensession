@@ -101,9 +101,9 @@ export interface Props {
 	onOpenWorkspace: (id: string, preferredSessionId?: string) => void;
 	/** Rename a project folder. */
 	onRenameWorkspace: (id: string, name: string) => void;
-	/** Delete a project folder (its sessions become standalone, or for a
-	 *  sessionless draft, just gone). May reject; callers that need to react
-	 *  to failure (a swipe or long-press commit) await it. */
+	/** Delete a project folder and all of its sessions. A sessionless draft is
+	 *  simply removed. May reject; callers that need to react to failure (a swipe
+	 *  or long-press commit) await it. */
 	onDeleteWorkspace: (id: string) => void | Promise<void>;
 	onOpenArchived: () => void;
 	/** True while the archived view is open — highlights the Archived row. */

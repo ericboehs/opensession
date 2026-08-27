@@ -1,5 +1,11 @@
 import { describe, expect, it, afterEach } from "bun:test";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
+import { tmpdir } from "os";
+import { join } from "path";
 import {
+	__setFrontendReleaseRootForTest,
+	activateFrontendRelease,
+	activeFrontendReleaseRoot,
 	bundleVersion,
 	editorName,
 	frontendInputsHash,
@@ -10,9 +16,15 @@ import {
 import { __setIdentitiesForTest } from "./shared/user-mappings";
 
 let restore: (() => void) | null = null;
+let scratch: string | null = null;
+const previousDeployState = process.env.OPENSESSION_DEPLOY_STATE;
 afterEach(() => {
 	restore?.();
 	restore = null;
+	if (scratch) rmSync(scratch, { recursive: true, force: true });
+	scratch = null;
+	if (previousDeployState === undefined) delete process.env.OPENSESSION_DEPLOY_STATE;
+	else process.env.OPENSESSION_DEPLOY_STATE = previousDeployState;
 });
 
 function roster() {
@@ -119,5 +131,47 @@ describe("isPrebuiltFrontend", () => {
 		expect(isPrebuiltFrontend()).toBe(true);
 		process.env.OPENSESSION_PREBUILT_FRONTEND = "0";
 		expect(isPrebuiltFrontend()).toBe(false);
+	});
+});
+
+describe("activateFrontendRelease", () => {
+	it("validates and atomically promotes a prepared release bundle", async () => {
+		scratch = mkdtempSync(join(tmpdir(), "opensession-frontend-release-"));
+		process.env.OPENSESSION_DEPLOY_STATE = scratch;
+		const sha = "a".repeat(40);
+		const baseSha = "b".repeat(40);
+		const releaseRoot = join(scratch, "releases", sha);
+		const sourceRoot = join(releaseRoot, "packages/core/opensession-server/src/frontend");
+		const dist = join(releaseRoot, ".frontend-dist");
+		mkdirSync(sourceRoot, { recursive: true });
+		mkdirSync(dist, { recursive: true });
+		writeFileSync(join(releaseRoot, ".opensession-release"), `${sha}\n`);
+		writeFileSync(
+			join(sourceRoot, "index.html"),
+			'<html><head><title>Open Session</title></head><body><script>window.__OPENSESSION_INSTANCE__ = window.__OPENSESSION_INSTANCE__ || {};</script><script type="module" src="./App.tsx"></script></body></html>',
+		);
+		for (const name of ["App-new.js", "global-new.css", "stylex-new.css"]) writeFileSync(join(dist, name), name);
+		writeFileSync(
+			join(dist, ".bundle-meta.json"),
+			JSON.stringify({
+				inputsHash: "inputs",
+				entryName: "App-new.js",
+				cssName: "global-new.css",
+				styleEngine: "stylex-v1",
+				sxName: "stylex-new.css",
+				assets: ["App-new.js", "global-new.css", "stylex-new.css"],
+			}),
+		);
+		const restoreRoot = __setFrontendReleaseRootForTest(process.cwd());
+		const version = activateFrontendRelease({
+			sha,
+			baseSha,
+			releaseRoot,
+			promotedAt: "2026-08-27T10:00:00.000Z",
+		});
+		restore = restoreRoot;
+		expect(version).toBe("App-new.js|global-new.css|stylex-new.css");
+		expect(activeFrontendReleaseRoot()).toBe(releaseRoot);
+		expect(JSON.parse(readFileSync(join(scratch, "frontend-current.json"), "utf8"))).toMatchObject({ sha, baseSha });
 	});
 });

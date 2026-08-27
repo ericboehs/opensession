@@ -143,7 +143,7 @@ export function RepoTile({
 	const letter = repoLetter(name);
 	return (
 		<span className={cn(TILE, className)} style={style}>
-			<span {...stylex.props(sx.translateYPx)}>{letter}</span>
+			<span>{letter}</span>
 		</span>
 	);
 }

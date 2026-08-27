@@ -531,6 +531,9 @@ const sx = stylex.create({
 	bgPanel: {
 			backgroundColor: "var(--bg-panel)"
 	},
+	bgPopup: {
+			backgroundColor: "var(--popup-surface)"
+	},
 	bgPopupGlass: {
 			backgroundColor: "var(--popup-glass)"
 	},
@@ -664,8 +667,14 @@ const sx = stylex.create({
 	bottomCalc24pxVarSuggestionsUnder0px: {
 			bottom: "calc(24px + var(--suggestions-under,0px))"
 	},
+	bottomMax12pxEnvSafeAreaInsetBottom0px: {
+			bottom: "max(12px, env(safe-area-inset-bottom,0px))"
+	},
 	bottomFull: {
 			bottom: "100%"
+	},
+	breakAll: {
+			wordBreak: "break-all"
 	},
 	breakWords: {
 			overflowWrap: "break-word"
@@ -1276,11 +1285,17 @@ const sx = stylex.create({
 	h52px: {
 			height: "52px"
 	},
+	h94dvh: {
+			height: "94dvh"
+	},
 	hMin500px76vh: {
 			height: "min(500px, 76vh)"
 	},
 	hMin820px85vh: {
 			height: "min(820px, 85vh)"
+	},
+	hMin840pxCalc100dvh32px: {
+			height: "min(840px, calc(100dvh - 32px))"
 	},
 	hVarDesktopHeaderH: {
 			height: "var(--desktop-header-h)"
@@ -1490,6 +1505,9 @@ const sx = stylex.create({
 	left2: {
 			left: "calc(4px * 2)"
 	},
+	left3: {
+			left: "calc(4px * 3)"
+	},
 	leftCalc1VarComposerInsetLeft17px: {
 			left: "calc(-1 * var(--composer-inset-left,17px))"
 	},
@@ -1551,6 +1569,9 @@ const sx = stylex.create({
 	maxH320px: {
 			maxHeight: "320px"
 	},
+	maxHCalc100dvh32px: {
+			maxHeight: "calc(100dvh - 32px)"
+	},
 	maxHMin72vh640px: {
 			maxHeight: "min(72vh, 640px)"
 	},
@@ -1574,6 +1595,9 @@ const sx = stylex.create({
 			"@media (max-width: 39.999rem)": {
 					minWidth: "55%"
 			}
+	},
+	maxW1040px: {
+			maxWidth: "1040px"
 	},
 	maxW1160px: {
 			maxWidth: "1160px"
@@ -2505,6 +2529,9 @@ const sx = stylex.create({
 	pl15: {
 			paddingLeft: "calc(4px * 1.5)"
 	},
+	pl2: {
+			paddingLeft: "calc(4px * 2)"
+	},
 	pl25: {
 			paddingLeft: "calc(4px * 2.5)"
 	},
@@ -2731,11 +2758,17 @@ const sx = stylex.create({
 	right14: {
 			right: "calc(4px * 14)"
 	},
+	right3: {
+			right: "calc(4px * 3)"
+	},
 	right4: {
 			right: "calc(4px * 4)"
 	},
 	right3px: {
 			right: "-3px"
+	},
+	right5px: {
+			right: "5px"
 	},
 	right7px: {
 			right: "7px"
@@ -2830,6 +2863,10 @@ const sx = stylex.create({
 			width: "calc(4px * 1.5)",
 			height: "calc(4px * 1.5)"
 	},
+	size10: {
+			width: "calc(4px * 10)",
+			height: "calc(4px * 10)"
+	},
 	size11: {
 			width: "calc(4px * 11)",
 			height: "calc(4px * 11)"
@@ -2912,6 +2949,9 @@ const sx = stylex.create({
 	},
 	text10px: {
 			fontSize: "10px"
+	},
+	text15px: {
+			fontSize: "15px"
 	},
 	text20px: {
 			fontSize: "20px"
@@ -2997,6 +3037,11 @@ const sx = stylex.create({
 	},
 	transitionBackgroundColorBorderColorColorFilterScale: {
 			transitionProperty: "background-color,border-color,color,filter,scale",
+			transitionTimingFunction: "var(--tw-ease, var(--ease))",
+			transitionDuration: "var(--tw-duration, var(--dur-micro))"
+	},
+	transitionBackgroundColorScale: {
+			transitionProperty: "background-color,scale",
 			transitionTimingFunction: "var(--tw-ease, var(--ease))",
 			transitionDuration: "var(--tw-duration, var(--dur-micro))"
 	},
@@ -3137,6 +3182,9 @@ const sx = stylex.create({
 	},
 	wCalc10016px: {
 			width: "calc(100% - 16px)"
+	},
+	wMin1040pxCalc100vw32px: {
+			width: "min(1040px, calc(100vw - 32px))"
 	},
 	wMin1280px92vw: {
 			width: "min(1280px, 92vw)"
@@ -3331,6 +3379,7 @@ export const utilityStyles = {
 	"bg-line": sx.bgLine,
 	"bg-palette-glass": sx.bgPaletteGlass,
 	"bg-panel": sx.bgPanel,
+	"bg-popup": sx.bgPopup,
 	"bg-popup-glass": sx.bgPopupGlass,
 	"bg-pressed": sx.bgPressed,
 	"bg-raised": sx.bgRaised,
@@ -3373,7 +3422,9 @@ export const utilityStyles = {
 	"bottom-[72px]": sx.bottom72px,
 	"bottom-[calc(100%+6px)]": sx.bottomCalc1006px,
 	"bottom-[calc(24px+var(--suggestions-under,0px))]": sx.bottomCalc24pxVarSuggestionsUnder0px,
+	"bottom-[max(12px,env(safe-area-inset-bottom,0px))]": sx.bottomMax12pxEnvSafeAreaInsetBottom0px,
 	"bottom-full": sx.bottomFull,
+	"break-all": sx.breakAll,
 	"break-words": sx.breakWords,
 	"caret-[var(--text)]": sx.caretVarText,
 	"contents": sx.contents,
@@ -3527,8 +3578,10 @@ export const utilityStyles = {
 	"h-[31px]": sx.h31px,
 	"h-[34px]": sx.h34px,
 	"h-[52px]": sx.h52px,
+	"h-[94dvh]": sx.h94dvh,
 	"h-[min(500px,76vh)]": sx.hMin500px76vh,
 	"h-[min(820px,85vh)]": sx.hMin820px85vh,
+	"h-[min(840px,calc(100dvh-32px))]": sx.hMin840pxCalc100dvh32px,
 	"h-[var(--desktop-header-h)]": sx.hVarDesktopHeaderH,
 	"h-full": sx.hFull,
 	"hidden": sx.hidden,
@@ -3573,6 +3626,7 @@ export const utilityStyles = {
 	"left-1/2": sx.left12,
 	"left-14": sx.left14,
 	"left-2": sx.left2,
+	"left-3": sx.left3,
 	"left-[calc(-1*var(--composer-inset-left,17px))]": sx.leftCalc1VarComposerInsetLeft17px,
 	"line-clamp-4": sx.lineClamp4,
 	"m-0": sx.m0,
@@ -3586,12 +3640,14 @@ export const utilityStyles = {
 	"max-[900px]:hidden": sx.max900pxHidden,
 	"max-[900px]:inline-flex": sx.max900pxInlineFlex,
 	"max-h-[320px]": sx.maxH320px,
+	"max-h-[calc(100dvh-32px)]": sx.maxHCalc100dvh32px,
 	"max-h-[min(72vh,640px)]": sx.maxHMin72vh640px,
 	"max-h-full": sx.maxHFull,
 	"max-h-none": sx.maxHNone,
 	"max-sm:grid-cols-1": sx.maxSmGridCols1,
 	"max-sm:min-h-10": sx.maxSmMinH10,
 	"max-sm:min-w-[55%]": sx.maxSmMinW55,
+	"max-w-[1040px]": sx.maxW1040px,
 	"max-w-[1160px]": sx.maxW1160px,
 	"max-w-[240px]": sx.maxW240px,
 	"max-w-[25rem]": sx.maxW25rem,
@@ -3819,6 +3875,7 @@ export const utilityStyles = {
 	"pl-0": sx.pl0,
 	"pl-0.5": sx.pl05,
 	"pl-1.5": sx.pl15,
+	"pl-2": sx.pl2,
 	"pl-2.5": sx.pl25,
 	"pl-3": sx.pl3,
 	"pl-[19px]": sx.pl19px,
@@ -3893,8 +3950,10 @@ export const utilityStyles = {
 	"resize-y": sx.resizeY,
 	"right-0": sx.right0,
 	"right-14": sx.right14,
+	"right-3": sx.right3,
 	"right-4": sx.right4,
 	"right-[-3px]": sx.right3px,
+	"right-[5px]": sx.right5px,
 	"right-[7px]": sx.right7px,
 	"rotate-180": sx.rotate180,
 	"rounded-2xl": sx.rounded2xl,
@@ -3920,6 +3979,7 @@ export const utilityStyles = {
 	"shrink": sx.shrink,
 	"shrink-0": sx.shrink0,
 	"size-1.5": sx.size15,
+	"size-10": sx.size10,
 	"size-11": sx.size11,
 	"size-14": sx.size14,
 	"size-16": sx.size16,
@@ -3942,6 +4002,7 @@ export const utilityStyles = {
 	"text-[#5eead4]": sx.text5eead4,
 	"text-[#7b86e8]": sx.text7b86e8,
 	"text-[10px]": sx.text10px,
+	"text-[15px]": sx.text15px,
 	"text-[20px]": sx.text20px,
 	"text-[22px]": sx.text22px,
 	"text-[color-mix(in_srgb,var(--text)_88%,#1f9e8a)]": sx.textColorMixInSrgbVarText881f9e8a,
@@ -3970,6 +4031,7 @@ export const utilityStyles = {
 	"tracking-[0.02em]": sx.tracking002em2,
 	"transform-[translateX(var(--swipe-x,0))]": sx.transformTranslateXVarSwipeX0,
 	"transition-[background-color,border-color,color,filter,scale]": sx.transitionBackgroundColorBorderColorColorFilterScale,
+	"transition-[background-color,scale]": sx.transitionBackgroundColorScale,
 	"transition-[background-color]": sx.transitionBackgroundColor,
 	"transition-[border-color,box-shadow]": sx.transitionBorderColorBoxShadow,
 	"transition-[border-color,scale]": sx.transitionBorderColorScale,
@@ -4004,6 +4066,7 @@ export const utilityStyles = {
 	"w-[calc((100%_-_30px)/2)]": sx.wCalc10030px2,
 	"w-[calc(100%+12px)]": sx.wCalc10012px,
 	"w-[calc(100%_-_16px)]": sx.wCalc10016px,
+	"w-[min(1040px,calc(100vw-32px))]": sx.wMin1040pxCalc100vw32px,
 	"w-[min(1280px,92vw)]": sx.wMin1280px92vw,
 	"w-[min(640px,100%)]": sx.wMin640px100,
 	"w-[var(--sidebar-w,280px)]": sx.wVarSidebarW280px,

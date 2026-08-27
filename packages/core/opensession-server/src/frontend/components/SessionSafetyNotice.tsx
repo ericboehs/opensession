@@ -1,8 +1,7 @@
-import { mergeStylexProps } from "../ui/cn";
+import { mergeStylexProps, utilityClassName } from "../ui/cn";
 import { useState } from "react";
 import type { SessionSafetyState } from "../lib/types";
 import { Button } from "../ui/button";
-import { IconShieldCheck } from "./icons";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
 
@@ -106,20 +105,15 @@ export function SessionSafetyNotice({
   return (
     <section
       aria-labelledby="session-safety-title"
-      {...mergeStylexProps("phone:my-3 phone:rounded-lg", sx.mxAuto, sx.my4, sx.wFull, sx.maxW52rem, sx.roundedXl, sx.bgYellowSoft, sx.p4, sx.textFg)}
+      className={utilityClassName("mx-auto my-4 w-full max-w-[46rem] rounded-2xl bg-yellow-soft p-4 text-fg phone:my-3 phone:rounded-xl")}
     >
-      <div {...stylex.props(sx.flex, sx.itemsCenter, sx.gap3)}>
-        <div {...stylex.props(sx.flex, sx.size10, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.roundedControl, sx.bgPanel, sx.textYellow)}>
-          <IconShieldCheck size={22} />
-        </div>
-        <h2
-          id="session-safety-title"
-          {...mergeStylexProps("m-0", sx.fontSemibold, typography.itemTitle)}
-        >
-          Paused for safety
-        </h2>
-      </div>
-      <p {...stylex.props(sx.mt3, sx.textPretty, sx.leadingRelaxed, sx.textDim, typography.body)}>
+      <h2
+        id="session-safety-title"
+        className={utilityClassName("m-0 text-body font-semibold")}
+      >
+        Paused for safety
+      </h2>
+      <p className={utilityClassName("mt-1 text-pretty text-body leading-relaxed text-dim")}>
         {safety.explanation}
       </p>
       {repairError && (

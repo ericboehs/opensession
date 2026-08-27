@@ -479,7 +479,7 @@ const PILL_BASE = utilityClassName(`${PILL_SHAPE} bg-popup-glass [backdrop-filte
  * Tailwind's output order, and `bg-popup` is emitted BEFORE `bg-popup-glass`,
  * so writing it after would silently lose.
  */
-const PILL_LID = `${PILL_SHAPE} bg-popup`;
+const PILL_LID = utilityClassName(`${PILL_SHAPE} bg-popup`);
 
 export const TRANSCRIPT_PILL = utilityClassName(`${PILL_BASE} gap-1.5`);
 export const FLOATING_PILL = utilityClassName(`${PILL_LID} gap-1.5`);

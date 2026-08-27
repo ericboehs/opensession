@@ -7,6 +7,7 @@
  */
 
 import { requestUser, type RouteContext } from "./context";
+import { handleSessionsRoutes } from "./sessions";
 import { searchRepoEntries } from "../file-index";
 import {
 	RepoAppearanceError,
@@ -79,6 +80,26 @@ function parseWorkspaceDraft(
 		...(body.by !== undefined ? { by: body.by as string } : {}),
 		...(body.autoName !== undefined ? { autoName: body.autoName as boolean } : {}),
 	};
+}
+
+export async function deleteWorkspaceMemberSessions(
+	ctx: RouteContext,
+	sessionIds: readonly string[],
+	handleSessionRoute: typeof handleSessionsRoutes = handleSessionsRoutes,
+): Promise<Response | undefined> {
+	for (const sessionId of sessionIds) {
+		const sessionPath = `/api/sessions/${encodeURIComponent(sessionId)}`;
+		const sessionUrl = new URL(ctx.url);
+		sessionUrl.pathname = sessionPath;
+		sessionUrl.search = "";
+		const response = await handleSessionRoute({
+			...ctx,
+			req: new Request(sessionUrl, { method: "DELETE" }),
+			url: sessionUrl,
+			path: sessionPath,
+		});
+		if (response && !response.ok && response.status !== 404) return response;
+	}
 }
 
 function findNativeSessionForFileMentions(
@@ -573,13 +594,22 @@ export async function handleWorkspaceRoutes(
 
 	if (workspaceMatch && req.method === "DELETE") {
 		const id = decodeURIComponent(workspaceMatch[1]);
-		// Membership is derived from each session's workspaceId — clear it so member
-		// sessions fall back to standalone rather than pointing at a dead folder.
-		for (const s of await getSessionListSnapshotAsync()) {
-			if (s.workspaceId === id)
-				touchNativeSession(s.id, { workspaceId: null });
-		}
-		const ok = deleteWorkspace(id);
+		if (!getWorkspace(id)) return Response.json({ ok: false });
+
+		// A workspace owns its sessions. Delete each through the normal session route
+		// so running agents, transcripts, sandboxes, and tombstones receive the same
+		// cleanup as an individual session deletion. Worktree cleanup stays opt-in.
+		const members = (await getSessionListSnapshotAsync()).filter(
+			(session) => session.workspaceId === id,
+		);
+		const failure = await deleteWorkspaceMemberSessions(
+			ctx,
+			members.map((member) => member.id),
+		);
+		if (failure) return failure;
+
+		// Deleting the last non-PR session may already remove the workspace.
+		const ok = deleteWorkspace(id) || !getWorkspace(id);
 		return Response.json({ ok });
 	}
 

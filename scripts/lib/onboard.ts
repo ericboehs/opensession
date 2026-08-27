@@ -257,10 +257,10 @@ export function buildConfig(a: Answers): Record<string, unknown> {
       },
     },
     integrations,
-    // Populate with teammates to enable commit attribution, per-user MCP
-    // `allowedUsers` gating and human-ask routing. An empty roster makes every
-    // identity-dependent feature a no-op.
-    identity: { team: [] },
+    // The local identity is immediately active on first launch. It is an
+    // untouched placeholder only: once GitHub sign-in verifies the first real
+    // user, the connect-time bootstrap replaces it atomically.
+    identity: { team: [{ name: "Local User" }] },
   };
 }
 

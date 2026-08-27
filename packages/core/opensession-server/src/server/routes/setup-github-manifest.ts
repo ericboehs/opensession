@@ -340,12 +340,15 @@ export async function handleSetupGithubManifestRoutes(
 				github.oauthClientSecret = converted.clientSecret;
 				github.appSlug = converted.slug;
 				github.installationOwner = converted.ownerLogin;
+				// App setup is also sign-in setup. Arm the connect-time bootstrap for
+				// both personal and organization-owned Apps, but do not enable the gate
+				// yet: the device-flow account must be rostered and receive its session
+				// first, or the operator would be locked out.
+				github.authOnConnect = true;
 				if (pending.owner.type === "organization") {
 					github.appOrg = converted.ownerLogin;
-					github.authOnConnect = true;
 				} else {
 					delete github.appOrg;
-					delete github.authOnConnect;
 				}
 				const envEdit = prepareEnvFileEdits({
 					GITHUB_WEBHOOK_SECRET: converted.webhookSecret,

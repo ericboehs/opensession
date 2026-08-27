@@ -589,9 +589,8 @@ export function restampWorkspaceWorktree(
 }
 
 /**
- * Delete a workspace. Every session belongs to exactly one workspace, so the caller
- * is responsible for re-homing member sessions first (never orphan them). This only
- * removes the workspace metadata file.
+ * Remove a workspace's metadata file. The caller must handle member sessions first
+ * so none retain a reference to a workspace that no longer exists.
  */
 export function deleteWorkspace(id: string): boolean {
   if (!safeId(id)) return false;

@@ -437,9 +437,13 @@ export function startSessionKernelActorWorker(): void {
     }
     try {
       if (request.t === "acknowledge") {
-        const quarantine = host.quarantinedSession(request.sessionId);
-        if (quarantine)
-          throw new SessionQuarantinedError(request.sessionId, quarantine.reason);
+        // Deliberately NOT fenced by quarantine: acknowledging a command only
+        // stamps acknowledged_at on an already-completed receipt (monotonic,
+        // idempotent, touches no semantic session state), so it cannot deepen
+        // whatever ambiguity caused the quarantine. Failing it closed turned
+        // every quarantined session into an endless client ack-retry loop that
+        // surfaced to users as `Internal error handling "command_ack"` on
+        // every reconnect for as long as the quarantine stood.
         host.call("acknowledgeCommand", [request.sessionId, request.requestId]);
         post({ t: "acknowledge_result", rpcId: request.rpcId });
       } else if (request.t === "stats") {

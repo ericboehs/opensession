@@ -199,6 +199,10 @@ import {
 	sessionOwners,
 } from "../lib/session-owner";
 import {
+	PERSON_RECENT_ACTIVITY_MS,
+	sidebarPersonSessions,
+} from "../lib/sidebar-people";
+import {
 	placeSidebarRows,
 	rowAutoCreatedInLens,
 	rowOriginSource,
@@ -319,6 +323,7 @@ import { WorkspaceDraftIndicator } from "./sidebar/WorkspaceDraftIndicator";
 import { SidebarCtxMenu } from "./sidebar/SidebarCtxMenu";
 import { SidebarToolRows, SidebarToolsMenu } from "./sidebar/SidebarToolsMenu";
 import { SidebarCustomizeDialog } from "./sidebar/SidebarCustomizeDialog";
+import { SetupWidget } from "./sidebar/SetupWidget";
 import { OrganizationSwitcher } from "./OrganizationSwitcher";
 import { EmptyState, ListSkeleton } from "../ui/state";
 import {
@@ -836,6 +841,27 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 }, ref) {
 	const isPhone = useIsPhone();
 	const [search, setSearch] = useState("");
+	// The compact People list has one real-time boundary: an idle run leaves it
+	// fifteen minutes after its last activity. Wake only at the next boundary
+	// rather than polling and rebuilding this large sidebar every minute.
+	const [peopleActivityNow, setPeopleActivityNow] = useState(Date.now);
+	useEffect(() => {
+		const now = Date.now();
+		let nextExpiry = Number.POSITIVE_INFINITY;
+		for (const session of sessions) {
+			if (session.isRunning || !session.ran) continue;
+			const lastActivity = Date.parse(session.lastActivity || "");
+			if (!Number.isFinite(lastActivity)) continue;
+			const expiry = lastActivity + PERSON_RECENT_ACTIVITY_MS;
+			if (expiry > now && expiry < nextExpiry) nextExpiry = expiry;
+		}
+		if (!Number.isFinite(nextExpiry)) return;
+		const timer = window.setTimeout(
+			() => setPeopleActivityNow(Date.now()),
+			Math.min(2_147_483_647, Math.max(0, nextExpiry - now + 50)),
+		);
+		return () => window.clearTimeout(timer);
+	}, [sessions, peopleActivityNow]);
 	// Groups are collapsed by default; the expanded set persists per browser
 	const [expanded, setExpanded] = useState<Set<string>>(readExpanded);
 	const [hiddenTools, setHiddenTools] = useState(readHiddenSidebarTools);
@@ -1675,6 +1701,15 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 			(a, b) => new Date(b[key]).getTime() - new Date(a[key]).getTime(),
 		);
 	})();
+
+	// The bottom People list is the other half of the default "Me" lens: only
+	// directory teammates with a live or just-finished run earn a heading. The
+	// selected repo/search/sort still apply, and expanding a heading reveals the
+	// rest of that person's matching sessions. Borrowed lenses stay focused on
+	// the one person named at the top instead of appending everybody again.
+	const activePersonGroups = borrowedLens
+		? []
+		: sidebarPersonSessions(sorted, roster, currentUser, peopleActivityNow);
 
 	// PRs with an automated Open Session review in flight, keyed `repo\nbranch`
 	// — the same signal the PR rows spell out as "Review running". The review
@@ -3057,6 +3092,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 	}
 	const automationsOpen = bandOpen("automations");
 	const visibleAutomationGroups = automationsOpen ? groups : [];
+	const peopleOpen = bandOpen("people");
 	function toggleBand(band: GroupBand | "tools" | "workspaces") {
 		const key = `collapsed:band:${band}`;
 		setExpanded((prev) => {
@@ -6098,7 +6134,13 @@ fetchFeedItems("plain")
 
 				{/* ── Automations (one collapsible band, one group per automation) ── */}
 				{groups.length > 0 && (
-					<div className={cn(SIDEBAR_INDEPENDENT_SECTION, utilityClassName("mt-2 pb-7"))}>
+					<div
+						className={cn(
+							SIDEBAR_INDEPENDENT_SECTION,
+							utilityClassName("mt-2"),
+							activePersonGroups.length > 0 ? utilityClassName("pb-2") : utilityClassName("pb-7"),
+						)}
+					>
 						<div
 							className={cn(
 								SIDEBAR_BAND_LABEL,
@@ -6282,9 +6324,150 @@ fetchFeedItems("plain")
 						)}
 					</div>
 				)}
+
+			{/* ── People: teammates with a running or just-finished session. Each
+			    person starts with only that active window visible; their chevron
+			    expands the same heading to every matching session they own. ── */}
+			{activePersonGroups.length > 0 && (
+				<div className={cn(SIDEBAR_INDEPENDENT_SECTION, utilityClassName("mt-2 pb-7"))}>
+					<div
+						className={cn(
+							SIDEBAR_BAND_LABEL,
+							utilityClassName("py-0 pl-0 pr-2 desktop:pr-0"),
+							SIDEBAR_STICKY_BAND,
+							SIDEBAR_STICKY_BAND_ROW,
+							SIDEBAR_STUCK_BACKING,
+						)}
+						data-sticky-head
+					>
+						<button
+							className={cn(SIDEBAR_BAND_TOGGLE, SIDEBAR_BAND_TOGGLE_INSET)}
+							onClick={() => toggleBand("people")}
+							title={peopleOpen ? "Collapse people" : "Expand people"}
+							aria-expanded={peopleOpen}
+						>
+							<span className={utilityClassName("min-w-0 truncate")}>People</span>
+							<span className={SIDEBAR_GROUP_COUNT}>
+								{activePersonGroups.reduce(
+									(count, group) => count + group.activeSessions.length,
+									0,
+								)}
+							</span>
+							<IconChevronDown
+								className={cn(
+									SIDEBAR_BAND_CHEVRON,
+									"group-hover/band:visible group-hover/band:text-dim",
+									!peopleOpen && SIDEBAR_BAND_CHEVRON_COLLAPSED,
+								)}
+								size={18}
+								style={{ transform: peopleOpen ? "none" : "rotate(-90deg)" }}
+							/>
+						</button>
+					</div>
+					{peopleOpen && (
+						<div className={SIDEBAR_INDEPENDENT_SCROLL}>
+							{activePersonGroups.map((group) => {
+								const groupKey = `person:${group.key}`;
+								const hasMore =
+									group.allSessions.length > group.activeSessions.length;
+								const showAll = hasMore && isOpen(groupKey);
+								const visibleSessions = showAll
+									? group.allSessions
+									: group.activeSessions;
+								const personHeaderBody = (
+									<>
+										<span className={SIDEBAR_RAIL}>
+											<UserAvatar name={group.label} size={20} />
+										</span>
+										<span className={SIDEBAR_GROUP_NAME}>{group.label}</span>
+										<span className={cn(SIDEBAR_GROUP_COUNT, utilityClassName("shrink-0"))}>
+											{group.allSessions.length}
+										</span>
+										{hasMore && (
+											<IconChevronDown
+												className={cn(
+													SIDEBAR_GROUP_CHEVRON,
+													!showAll && SIDEBAR_GROUP_CHEVRON_COLLAPSED,
+												)}
+												size={22}
+												style={{
+													transform: showAll ? "none" : "rotate(-90deg)",
+												}}
+											/>
+										)}
+									</>
+								);
+								const personHeaderClass = cn(
+									SIDEBAR_GROUP_HEADER,
+									SIDEBAR_GROUP_HEADER_INSET,
+									SIDEBAR_HEADER_ROW,
+								);
+								return (
+									<React.Fragment key={group.key}>
+										{hasMore ? (
+											<button
+												className={personHeaderClass}
+												onClick={() => toggleGroup(groupKey)}
+												aria-expanded={showAll}
+												title={
+													showAll
+														? `Show only ${group.label}'s active sessions`
+														: `Show all ${group.label}'s sessions`
+												}
+											>
+												{personHeaderBody}
+											</button>
+										) : (
+											<div className={personHeaderClass}>{personHeaderBody}</div>
+										)}
+										<div className={SIDEBAR_AUTOMATION_RUNS}>
+											{visibleSessions.map((session) => {
+												const pin = sessionPinState(session);
+												return (
+													<SidebarItem
+														key={session.id}
+														session={session}
+														selected={session.id === selectedId}
+														unread={
+															session.id !== selectedId &&
+															isUnread(session.id, session.lastActivity, reads)
+														}
+														mention={
+															session.id !== selectedId
+																? mentionFor(session.id)?.by
+																: undefined
+														}
+														mine={false}
+														showOwner={false}
+														onClick={() => onSelect(session)}
+														onArchive={(current) =>
+															archiveWithNext(session, current)
+														}
+														pinned={pin.pinned}
+														onTogglePin={pin.toggle}
+														shipsDirectlyToMain={shipsDirectlyToMain(
+															session.repo,
+															session.branch,
+														)}
+														onRename={(title) => onRename(session, title)}
+														onSetStatus={(status) =>
+															onSetStatus([session], status)
+														}
+													/>
+												);
+											})}
+										</div>
+									</React.Fragment>
+								);
+							})}
+						</div>
+					)}
+				</div>
+			)}
+
 			{/* Archived closes the sidebar, below every section rather than inside
 			    the workspace list. It is the end of the list, so anything ordered
-			    after the workspaces (the Automations band) used to render past it,
+			    after the workspaces (Automations and People) used to render past it,
 			    which read as "the sidebar ended, and then there was more". */}
 			{(!isPhone || !productEmpty || hasWorkspaceFilter) && (
 				<div
@@ -6413,8 +6596,13 @@ fetchFeedItems("plain")
 												confirmDeleteDraft(() => onDeleteWorkspace(ws.id));
 												return;
 											}
-											const message = `Delete workspace "${ws.name}"? Its sessions become standalone.`;
-											if (window.confirm(message)) onDeleteWorkspace(ws.id);
+											confirm({
+												title: `Delete workspace "${ws.name}"?`,
+												description: "All sessions in this workspace will be permanently deleted.",
+												confirmLabel: "Delete",
+												destructive: true,
+												onConfirm: () => onDeleteWorkspace(ws.id),
+											});
 										}
 									: null
 							}
@@ -6431,6 +6619,11 @@ fetchFeedItems("plain")
 			onCustomize={() => setCustomizeOpen(true)}
 		/>
 		</ContextMenu.Root>
+		<SetupWidget
+			hasCreatedSession={sessions.length > 0}
+			onOpenSettings={onOpenSettings}
+			onNewSession={onNewSession}
+		/>
 		<SidebarCustomizeDialog
 			open={customizeOpen}
 			onOpenChange={setCustomizeOpen}

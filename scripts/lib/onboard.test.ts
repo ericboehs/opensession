@@ -33,8 +33,10 @@ function github(config: Record<string, unknown>): Record<string, unknown> {
 }
 
 describe("onboard buildConfig org intent", () => {
-  test("marks the web onboarding as incomplete", () => {
-    expect(buildConfig(answers()).onboardingCompleted).toBe(false);
+  test("starts incomplete with an active local identity", () => {
+    const config = buildConfig(answers());
+    expect(config.onboardingCompleted).toBe(false);
+    expect(config.identity).toEqual({ team: [{ name: "Local User" }] });
   });
 
   test("--org writes appOrg + authOnConnect, never userPrAuth", () => {

@@ -526,7 +526,7 @@ setSaving(false);
 				{remote && (
 					<>
 						<p {...mergeStylexProps("m-0", sx.textDim, typography.supporting)} >
-							Remote providers use Public callbacks under Domains and ingress for callbacks and workload identity.
+							Remote providers use Public callback under Domains for webhooks and workload identity.
 						</p>
 						{connection.provider !== "box" && (
 							<details {...stylex.props(sx.roundedLg, sx.bgSurface, sx.p3, sx.textDim, typography.supporting)}>

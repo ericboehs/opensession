@@ -118,10 +118,17 @@ interface Props {
    * picture replaces it.
    */
   pending?: number;
+  onRemovePending?: (index: number) => void;
 }
 
 /** Removable thumbnail row for pasted/dropped image attachments. */
-export function ImageThumbs({ images, onRemove, disabled, pending = 0 }: Props) {
+export function ImageThumbs({
+  images,
+  onRemove,
+  disabled,
+  pending = 0,
+  onRemovePending,
+}: Props) {
   if (images.length === 0 && pending < 1) return null;
   return (
     <div {...stylex.props(sx.mb2, sx.flex, sx.flexWrap, sx.gap2)}>
@@ -164,10 +171,21 @@ export function ImageThumbs({ images, onRemove, disabled, pending = 0 }: Props) 
           a 16:9 screenshot at this height, so the common paste barely moves
           when the real thumbnail lands. */}
       {Array.from({ length: pending }, (_, i) => (
-        <div
-          key={`staging-${i}`}
-          {...stylex.props(sx.h14, sx.w100px, motionStyles.pulse, sx.roundedControl, sx.border, sx.borderLineStrong, sx.bgHover)}
-        />
+        <div key={`staging-${i}`} {...stylex.props(sx.relative)}>
+          <div {...stylex.props(sx.h14, sx.w100px, motionStyles.pulse, sx.roundedControl, sx.border, sx.borderLineStrong, sx.bgHover)} />
+          {onRemovePending && (
+            <button
+              type="button"
+              {...stylex.props(sx.absolute, sx.Top15, sx.Right15, sx.flex, sx.size18px, sx.itemsCenter, sx.justifyCenter, sx.roundedFull, sx.bgFg, sx.p0, sx.textPanel)}
+              onClick={() => onRemovePending(i)}
+              disabled={disabled}
+              aria-label="Cancel image upload"
+              title="Cancel image upload"
+            >
+              <IconX className={mergeStylexOverrideClassName("", sx.block)} size={12} dense />
+            </button>
+          )}
+        </div>
       ))}
     </div>
   );

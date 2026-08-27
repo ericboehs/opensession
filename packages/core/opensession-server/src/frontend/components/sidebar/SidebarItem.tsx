@@ -402,6 +402,7 @@ export function SidebarItem({
 	unread,
 	mention,
 	mine,
+	showOwner = !mine,
 	onClick,
 	onArchive: onArchiveRequest,
 	pinned,
@@ -422,6 +423,9 @@ export function SidebarItem({
 	/** The current user's own session — the owner name is redundant, so it's
 	    dropped and the timestamp moves up onto the title line. */
 	mine: boolean;
+	/** Show the starter below the title. Person-group rows set this false because
+	    their heading already names the starter without claiming the session as mine. */
+	showOwner?: boolean;
 	onClick: () => void;
 	onArchive: (current: HTMLButtonElement | null) => void;
 	pinned: boolean;
@@ -608,10 +612,12 @@ export function SidebarItem({
 	}
 
 	const metaParts: React.ReactNode[] = [];
-	// In "My sessions" the owner is always the current user, so hide it.
-	if (!mine && session.startedBy && !session.automation) {
+	// In "My sessions" and under a person's own heading, the owner is already
+	// stated by the surrounding list, so repeating it makes every row two lines.
+	if (showOwner && session.startedBy && !session.automation) {
 		metaParts.push(<span key="u">{session.startedBy}</span>);
 	}
+	const compactMeta = mine || !showOwner;
 	// No idle "time since" here: times only appear while a run is live. The
 	// hover card dropped its "Updated 8m ago" for the same reason, and the Info
 	// tab is where an exact last-activity stamp belongs.
@@ -869,7 +875,7 @@ export function SidebarItem({
 				    badge) rides to the right of the title, flush with the row edge. On
 				    hover it fades and the archive button takes its place — but not on a
 				    phone, where there is no archive button. */}
-				{mine && !editing && metaParts.length > 0 && (
+				{compactMeta && !editing && metaParts.length > 0 && (
 					<span
 						className={cn(
 							mergeStylexClassName("group-data-[unread]:text-dim", sx.mlAuto, sx.flex, sx.minW10, sx.shrink0, sx.itemsCenter, sx.justifyEnd, sx.gap1, sx.pl25, sx.whitespaceNowrap, typography.meta, sx.textFaint, sx.phoneTextLabel),
@@ -897,7 +903,7 @@ export function SidebarItem({
 			{/* The block meta lives on its own line below the title. The row itself
 			    clears the hover-revealed buttons, so this line needs no reserve of
 			    its own. */}
-			{!mine && (
+			{!compactMeta && (
 				<div {...mergeStylexProps("group-data-[unread]:text-dim", sx.phoneTextLabel, sx.mt3px, sx.flex, sx.itemsCenter, sx.gap1, sx.overflowHidden, sx.pl7, sx.whitespaceNowrap, sx.textFaint, typography.meta)}>
 					{metaParts.map((part, i) => (
 						<React.Fragment key={i}>

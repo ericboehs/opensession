@@ -1,7 +1,9 @@
 import { utilityClassName } from "../ui/cn";
 import React, { useCallback, useEffect, useRef, useState } from "react";
+import { BASE_PATH } from "../lib/base";
 import { githubLoginFromInput } from "../lib/github-login";
 import { refreshPeople } from "../lib/people";
+import { copyToClipboard } from "../lib/share-link";
 import { Button } from "../ui/button";
 import { Field, FieldGrid, Input } from "../ui/input";
 import { MENU_ICON, Menu } from "../ui/menu";
@@ -20,7 +22,14 @@ import {
 	SettingsHint,
 } from "../ui/settings";
 import { toast } from "../ui/toast";
-import { IconDotsHorizontal, IconPencil, IconPlus, IconTrash } from "./icons";
+import {
+	IconCheck,
+	IconDotsHorizontal,
+	IconLink,
+	IconPencil,
+	IconPlus,
+	IconTrash,
+} from "./icons";
 import { setupRequest, type TeamMember } from "./setup-shared";
 import { UserAvatar } from "./UserAvatar";
 import * as stylex from "@stylexjs/stylex";
@@ -52,6 +61,7 @@ const sx = stylex.create({
 		marginTop: 0,
 	},
 });
+import { useAuthStatus } from "./UserPicker";
 
 // Settings → Setup → Team: the manageable roster. The identity table drives
 // commit attribution, `allowedUsers` MCP scoping, and GitHub sign-in, so each
@@ -80,9 +90,12 @@ export function TeamSection({
 	/** Append the loaded roster size to an explicit title. */
 	showCount?: boolean;
 }) {
+	const auth = useAuthStatus();
+	const githubAuth = auth?.required === true;
 	const [members, setMembers] = useState<TeamMember[] | null>(null);
 	const [loadFailed, setLoadFailed] = useState(false);
 	const [dialogOpen, setDialogOpen] = useState(false);
+	const [inviteCopied, setInviteCopied] = useState(false);
 	const [editing, setEditing] = useState<TeamMember | null>(null);
 	const [githubOrganization, setGithubOrganization] = useState<string | null>(null);
 	const [githubSyncError, setGithubSyncError] = useState<string | null>(null);
@@ -129,23 +142,43 @@ await load();
 		await onChanged();
 	}
 
+	function copyInviteLink() {
+		copyToClipboard(`${window.location.origin}${BASE_PATH}/`, () => {
+			setInviteCopied(true);
+			toast("Invite link copied", { variant: "success" });
+			window.setTimeout(() => setInviteCopied(false), 2000);
+		});
+	}
+
 	return (
 		<>
 			<SettingsGroupLabel
 				className={mergeStylexOverrideClassName("", !title && sx.mt0)}
 				actions={
-					<Button
-						size="sm"
-						variant="default"
-						className={onboarding ? utilityClassName("phone:min-h-11") : undefined}
-						icon={<IconPlus size={16} />}
-						onClick={() => {
-							setEditing(null);
-							setDialogOpen(true);
-						}}
-					>
-						{addLabel}
-					</Button>
+					githubAuth ? (
+						<Button
+							size="sm"
+							variant="default"
+							className={utilityClassName("phone:min-h-11")}
+							icon={inviteCopied ? <IconCheck size={16} /> : <IconLink size={16} />}
+							onClick={copyInviteLink}
+						>
+							{inviteCopied ? "Invite link copied" : "Copy invite link"}
+						</Button>
+					) : (
+						<Button
+							size="sm"
+							variant="default"
+							className={onboarding ? utilityClassName("phone:min-h-11") : undefined}
+							icon={<IconPlus size={16} />}
+							onClick={() => {
+								setEditing(null);
+								setDialogOpen(true);
+							}}
+						>
+							{addLabel}
+						</Button>
+					)
 				}
 			>
 				{showCount && members
@@ -174,8 +207,9 @@ await load();
 						<EmptyState placement="row">Couldn&rsquo;t load the team roster.</EmptyState>
 					) : members.length === 0 ? (
 						<EmptyState placement="row">
-							No teammates yet. Add everyone who uses this instance so commits and
-							sessions attribute to real people.
+							{githubAuth
+								? "No teammates yet. Share the invite link so they can sign in with GitHub."
+								: "No teammates yet. Add everyone who uses this instance so commits and sessions attribute to real people."}
 						</EmptyState>
 					) : (
 						members.map((m) => (
@@ -194,9 +228,11 @@ await load();
 				</SettingCard>
 			)}
 			<SettingsHint>
-				{githubOrganization
-					? `Members were imported from the ${githubOrganization} GitHub organization. Only a name is required when you add someone manually.`
-					: "Only a name is required. Add a GitHub login or other identities when sign-in and attribution should resolve to this member."}
+				{githubAuth
+					? "Share the invite link. Teammates are added when they sign in with GitHub."
+					: githubOrganization
+						? `Members were imported from the ${githubOrganization} GitHub organization. Only a name is required when you add someone manually.`
+						: "Only a name is required. Add a GitHub login or other identities when sign-in and attribution should resolve to this member."}
 			</SettingsHint>
 			<MemberDialog
 				open={dialogOpen}

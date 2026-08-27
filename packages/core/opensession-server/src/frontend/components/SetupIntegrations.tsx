@@ -272,10 +272,12 @@ export function IntegrationsList({
 export function GithubAuthCard({
 	github,
 	onboarding = false,
+	onPersonalSignIn,
 }: {
 	github: SetupGithub;
 	onSaved: (updated: SetupGithub, restartRequired: boolean) => void;
 	onboarding?: boolean;
+	onPersonalSignIn?: () => void;
 }) {
 	const state = githubAuthState(github);
 
@@ -302,11 +304,13 @@ export function GithubAuthCard({
 				</SettingsSection>
 				{onboarding && github.clientIdConfigured && (
 					<div {...stylex.props(sx.mt6)}>
-						<SettingsHint className={mergeStylexOverrideClassName("", sx.mb2, sx.mt0, sx.px5)}>
-							Optional. Sign in now so sessions can use your GitHub account. You can
-							skip this and connect later under Account.
-						</SettingsHint>
-						<GithubAccounts personal showHeading={false} />
+						<GithubAccounts
+							personal
+							showHeading={false}
+							showHint={false}
+							onConnectRequest={onPersonalSignIn}
+							cardClassName="personal-github-card"
+						/>
 					</div>
 				)}
 			</div>

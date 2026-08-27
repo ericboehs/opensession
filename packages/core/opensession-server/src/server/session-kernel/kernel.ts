@@ -661,6 +661,14 @@ export function sessionCreationState(
   return sessionStoreAsync("creationState", [sessionId], true);
 }
 
+/** Authoritative run state for recovery decisions. Unlike runStateProjection(),
+ * this crosses the actor boundary and may be used as durable terminal proof. */
+export function sessionRunStateSnapshot(
+	sessionId: string,
+): Promise<DurableRunState> {
+	return sessionStoreAsync("runState", [sessionId]);
+}
+
 export function sessionTurnSnapshot(sessionId: string) {
   return sessionTurn({ op: "snapshot", sessionId });
 }

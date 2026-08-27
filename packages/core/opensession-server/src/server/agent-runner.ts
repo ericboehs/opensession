@@ -1083,6 +1083,15 @@ export function currentAgentRunToken(id: string): string | undefined {
   return activeRecoveryRuns.get(id)?.runKey;
 }
 
+/** The exact journal lineage currently owned by boot recovery. This remains
+ * available after recovery retires the journal before starting its fallback,
+ * closing the handoff window for other process-local owners. */
+export function activeAgentRecoveryRecord(
+  id: string,
+): ActiveRunRecord | undefined {
+  return activeRecoveryRuns.get(id);
+}
+
 /** Cancel one exact physical dispatch without crossing onto a successor that
  * reused its session or engine aliases. */
 function agentRunTokenPending(runToken: string): boolean {
@@ -1786,6 +1795,12 @@ export async function resumeInterruptedRuns(
             );
           if (reattached) {
             Object.assign(run, journalMarkRecoveryAttached(run) || {});
+            // Reaching this point proves the detached host is connected and this
+            // worker owns its stream. The turn can remain quiet for minutes while
+            // the model is working, so do not hold the single boot-admission slot
+            // until its next event. Other already-live hosts must be allowed to
+            // attach immediately as well.
+            releaseQueueSlot();
           }
           let events = reattached;
           if (!events) {
@@ -1847,7 +1862,7 @@ export async function resumeInterruptedRuns(
           }
           for await (const event of events) {
             // A fallback re-prompt is lazy. Its first event proves that the
-            // engine has started; a live host was already attached above.
+            // engine has started. A live host released the slot when attached.
             releaseQueueSlot();
             if (await checkpointStoppedRecovery(run)) return;
             markRecoveryProgress(run, event);

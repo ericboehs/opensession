@@ -6,6 +6,7 @@ import {
 	optimisticOutboxFallbacks,
 	PENDING_GIVE_UP_MS,
 	reconcilePending,
+	withoutPendingTranscriptEchoes,
 } from "./pending-reconcile";
 import type { PromptOutboxItem } from "./prompt-outbox";
 
@@ -76,6 +77,40 @@ describe("optimisticOutboxFallbacks", () => {
 				new Set(),
 			),
 		).toEqual([]);
+	});
+});
+
+describe("withoutPendingTranscriptEchoes", () => {
+	test("keeps an admission echo off the queue while its bubble is visible", () => {
+		const queued = [
+			{ id: "a", content: "ship it" },
+			{ id: "b", content: "another message" },
+			{ content: "legacy message" },
+		];
+
+		expect(
+			withoutPendingTranscriptEchoes(queued, [
+				bubble("outbox-a", "ship it"),
+			]),
+		).toEqual([queued[1], queued[2]]);
+	});
+
+	test("also hides an echo after the server confirms the turn started", () => {
+		expect(
+			withoutPendingTranscriptEchoes(
+				[{ id: "a" }],
+				[{ ...bubble("outbox-a", "ship it"), serverStarted: true }],
+			),
+		).toEqual([]);
+	});
+
+	test("does not match non-outbox optimistic rows to queue ids", () => {
+		const queued = [{ id: "pending-initial-session" }];
+		expect(
+			withoutPendingTranscriptEchoes(queued, [
+				bubble("pending-initial-session", "ship it"),
+			]),
+		).toEqual(queued);
 	});
 });
 

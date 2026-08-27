@@ -16,6 +16,8 @@ function field(overrides: Partial<Parameters<typeof NewSessionPrompt>[0]> = {}) 
 		staging: { images: 0, files: 0 },
 		onRemoveImage: () => {},
 		onRemoveFile: () => {},
+		onRemovePendingImage: () => {},
+		onRemovePendingFile: () => {},
 		onAddAttachments: () => {},
 		sendKey: "enter",
 		canCreate: false,
@@ -74,6 +76,7 @@ test("an image still being staged holds its place", () => {
 
 	// The tile itself, in the row the picture will land in.
 	expect(html).toContain("animation-duration:2s");
+	expect(html).toContain('aria-label="Cancel image upload"');
 	// And the same news for a reader who cannot see it.
 	expect(html).toContain("Attaching 1 image…");
 	expect(html).toContain('role="status"');
@@ -83,6 +86,7 @@ test("a staged file holds its place too", () => {
 	const { html } = field({ staging: { images: 0, files: 1 } });
 
 	expect(html).toContain("background-color:var(--hover)");
+	expect(html).toContain('aria-label="Cancel file upload"');
 	expect(html).toContain("Attaching 1 file…");
 });
 

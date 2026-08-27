@@ -73,6 +73,26 @@ describe("shutdown intake fence", () => {
     expect(source).toContain("resumePendingAutomationRuns(onAutomationSession)");
   });
 
+  test("acknowledges restart-window composer intake as queued", async () => {
+    const source = await read("./session-control-wiring.ts");
+    const delivery = source.indexOf("deliverToSession: async");
+    const earlyFence = source.indexOf("if (isShuttingDown())", delivery);
+    const busyRoute = source.indexOf("isAgentSessionBusy(", earlyFence);
+    expect(earlyFence).toBeGreaterThan(delivery);
+    expect(earlyFence).toBeLessThan(busyRoute);
+    expect(source.slice(earlyFence, busyRoute)).toContain("await enqueuePrompt(id, queuedItem)");
+    expect(source.slice(earlyFence, busyRoute)).toContain('status: "queued" as const');
+
+    const durableIntake = source.indexOf("// Every accepted prompt is durable before any engine or workspace wake.");
+    const enqueue = source.indexOf("await enqueuePrompt(id", durableIntake);
+    const park = source.indexOf("if (parkQueueForShutdown(id))", enqueue);
+    const drain = source.indexOf("void drainQueue(id)", park);
+    expect(enqueue).toBeGreaterThan(durableIntake);
+    expect(park).toBeGreaterThan(enqueue);
+    expect(park).toBeLessThan(drain);
+    expect(source.slice(park, drain)).toContain('status: "queued" as const');
+  });
+
   test("does not launch derived one-shots after shutdown or a capacity wait", async () => {
     const source = await read("./one-shot.ts");
     const detailed = source.indexOf("export async function oneShotDetailed(");

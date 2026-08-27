@@ -5,20 +5,22 @@ import { motion, useReducedMotion } from "motion/react";
 import { BASE_PATH } from "../lib/base";
 import { DEFAULT_DOC_TITLE, PRODUCT_NAME } from "../lib/brand";
 import { useSetupStatus } from "../hooks/useSetupStatus";
+import { copyToClipboard } from "../lib/share-link";
 import { effectiveTheme, onThemeChanged } from "../lib/theme";
 import { Button } from "../ui/button";
 import { cn } from "../ui/cn";
 import { duration, ease } from "../ui/motion";
+import { SettingCardSkeleton } from "../ui/settings";
 import { LoadingState } from "../ui/state";
 import { BrandMark } from "./BrandTile";
+import { GithubAccounts } from "./Connections";
 import { GithubAuthCard } from "./SetupIntegrations";
 import { ReposSection } from "./SetupRepos";
 import { SetupRestart } from "./SetupRestart";
-import { TeamSection } from "./SetupTeam";
 import { UserAvatar } from "./UserAvatar";
 import { OrganizationProfileSection } from "./settings/GeneralPanel";
 import { ProviderAccountsSection } from "./settings/ModelAccounts";
-import { IconCheck, IconGlobe, IconRepo } from "./icons";
+import { IconCheck, IconGlobe, IconLink, IconRepo } from "./icons";
 import { githubAuthState, type SetupStatus } from "./setup-shared";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
@@ -246,7 +248,14 @@ const sx = stylex.create({
 });
 
 interface FirstMileStep {
-	id: "welcome" | "github" | "organization" | "team" | "ai" | "repos" | "ready";
+	id:
+		| "welcome"
+		| "github"
+		| "github-account"
+		| "organization"
+		| "ai"
+		| "repos"
+		| "ready";
 	label: string;
 	title: string;
 	description: string;
@@ -254,9 +263,9 @@ interface FirstMileStep {
 
 // Organization and model setup come first. GitHub App creation no longer
 // depends on a public callback origin: the manifest returns its credentials to
-// the private app, while Domains and public callbacks stay in Settings. Members
-// sit after repositories, since an identity is worth more once there is something
-// to act on. Members remain independent from the optional GitHub sign-in gate.
+// the private app, while Domains and public callbacks stay in Settings. Team
+// members are not a step: they join through the invite link on the final page,
+// so onboarding stays focused on the server itself.
 const STEPS: FirstMileStep[] = [
 	{
 		id: "welcome",
@@ -283,16 +292,16 @@ const STEPS: FirstMileStep[] = [
 		description: "Connect a GitHub App so sessions can access repositories, push changes, and create and review pull requests.",
 	},
 	{
+		id: "github-account",
+		label: "Personal GitHub",
+		title: "Personal GitHub account",
+		description: "Sign in so interactive sessions can open pull requests as you.",
+	},
+	{
 		id: "repos",
 		label: "Repositories",
 		title: "Repositories",
 		description: "Add the repositories you want sessions to work in.",
-	},
-	{
-		id: "team",
-		label: "Members",
-		title: "Team members",
-		description: "Add yourself and anyone else sessions can act as. GitHub usernames are optional.",
 	},
 	{
 		id: "ready",
@@ -301,14 +310,6 @@ const STEPS: FirstMileStep[] = [
 		description: "Review your setup before entering Open Session.",
 	},
 ];
-
-function githubOrganizationImportEnabled(status: SetupStatus | null): boolean {
-	return Boolean(
-		status?.github.userPrAuth &&
-			status.github.clientIdConfigured &&
-			status.github.appOrg,
-	);
-}
 
 function initialFirstMileIndex(): number {
 	if (typeof window === "undefined") return 0;
@@ -469,23 +470,6 @@ function FirstMileSummary({
 				</div>
 			),
 		},
-		{
-			title: "Team",
-			step: "team" as const,
-			ready: status.team.count > 0,
-			label:
-				status.team.count > 0
-					? `${status.team.count} ${status.team.count === 1 ? "member" : "members"}`
-					: "No members",
-			preview: (
-				<div {...mergeStylexProps("-space-x-2", sx.flex)} >
-					{status.team.names.slice(0, 4).map((name) => (
-						<UserAvatar key={name} name={name} size={28} className={mergeStylexOverrideClassName("", sx.border, sx.borderBg)} />
-					))}
-					<PreviewOverflow count={status.team.names.length - 4} transparent />
-				</div>
-			),
-		},
 	];
 
 	return (
@@ -503,7 +487,7 @@ function FirstMileSummary({
 							<div
 								className={cn(
 									utilityClassName("flex size-8 shrink-0 items-center justify-center rounded-full"),
-									tile.ready ? utilityClassName("bg-green text-white") : utilityClassName("bg-faint/10 text-faint"),
+									tile.ready ? utilityClassName("bg-blue text-white") : utilityClassName("bg-faint/10 text-faint"),
 								)}
 							>
 								{tile.ready ? (
@@ -546,11 +530,18 @@ export function FirstMile({ onDone }: { onDone: () => Promise<void> }) {
 	const [contentVisible, setContentVisible] = useState(true);
 	const [navigationVisible, setNavigationVisible] = useState(true);
 	const [finishing, setFinishing] = useState(false);
+	const [personalGithubVisited, setPersonalGithubVisited] = useState(false);
+	const [inviteCopied, setInviteCopied] = useState(false);
 	const [theme, setTheme] = useState(effectiveTheme);
 	const headingRef = useRef<HTMLHeadingElement>(null);
 	const reducedMotion = useReducedMotion();
 	const steps = STEPS;
 	const step = steps[index]!;
+	const githubIndex = steps.findIndex((item) => item.id === "github");
+	const personalGithubIndex = steps.findIndex(
+		(item) => item.id === "github-account",
+	);
+	const repositoriesIndex = steps.findIndex((item) => item.id === "repos");
 
 	useEffect(() => {
 		document.title = `Welcome to ${PRODUCT_NAME}`;
@@ -565,15 +556,15 @@ export function FirstMile({ onDone }: { onDone: () => Promise<void> }) {
 		if (index > 0) headingRef.current?.focus({ preventScroll: true });
 	}, [index]);
 
-	// `onLayoutAnimationComplete` is the exact reveal signal. This timeout is a
-	// fallback for steps whose measured modal geometry happens to be identical,
-	// in which case Motion has no layout animation to complete.
+	// Step content changes at its natural size, then fades in quickly. Avoid
+	// projecting the whole modal between unrelated layouts: async content can
+	// arrive mid-projection and briefly stretch the container.
 	useEffect(() => {
 		if (contentVisible) return;
 		const reveal = window.setTimeout(() => {
 			setContentVisible(true);
 			setNavigationVisible(true);
-		}, (reducedMotion ? duration.micro : duration.large) * 1000);
+		}, (reducedMotion ? 0 : duration.micro) * 1000);
 		return () => window.clearTimeout(reveal);
 	}, [contentVisible, index, reducedMotion]);
 
@@ -586,6 +577,37 @@ export function FirstMile({ onDone }: { onDone: () => Promise<void> }) {
 		void refetch();
 	}
 
+	function openPersonalGithub() {
+		setPersonalGithubVisited(true);
+		void goTo(personalGithubIndex);
+	}
+
+	function goBack() {
+		if (step.id === "repos") {
+			void goTo(personalGithubVisited ? personalGithubIndex : githubIndex);
+			return;
+		}
+		void goTo(index - 1);
+	}
+
+	function goForward() {
+		if (step.id === "ready") {
+			void finish();
+			return;
+		}
+		if (step.id === "github") {
+			setPersonalGithubVisited(false);
+			void goTo(repositoriesIndex);
+			return;
+		}
+		if (step.id === "github-account") {
+			setPersonalGithubVisited(true);
+			void goTo(repositoriesIndex);
+			return;
+		}
+		void goTo(index + 1);
+	}
+
 	async function finish() {
 		if (finishing) return;
 		setNavigationVisible(false);
@@ -593,6 +615,15 @@ export function FirstMile({ onDone }: { onDone: () => Promise<void> }) {
 		await onDone();
 		setFinishing(false);
 		setNavigationVisible(true);
+	}
+
+	// The invite link is just this server's address: anyone on the network signs
+	// in with GitHub, so there is nothing more to mint or provision.
+	function copyInviteLink() {
+		copyToClipboard(`${window.location.origin}${BASE_PATH}/`, () => {
+			setInviteCopied(true);
+			window.setTimeout(() => setInviteCopied(false), 2000);
+		});
 	}
 
 	const backdropName =
@@ -623,7 +654,10 @@ export function FirstMile({ onDone }: { onDone: () => Promise<void> }) {
 					<button
 						key={item.id}
 						type="button"
-						onClick={() => goTo(stepIndex)}
+						onClick={() => {
+							if (item.id === "github-account") setPersonalGithubVisited(true);
+							void goTo(stepIndex);
+						}}
 						aria-label={`${item.label}, step ${stepIndex + 1} of ${steps.length}`}
 						aria-current={stepIndex === index ? "step" : undefined}
 						{...mergeStylexProps("group focus-ring phone:h-11 phone:w-9", sx.flex, sx.h10, sx.w8, sx.itemsCenter, sx.justifyCenter, sx.roundedControl)}
@@ -650,19 +684,7 @@ export function FirstMile({ onDone }: { onDone: () => Promise<void> }) {
 					</LoadingState>
 				</div>
 			) : (
-				<motion.section
-					layout
-					onLayoutAnimationComplete={() => {
-						setContentVisible(true);
-						setNavigationVisible(true);
-					}}
-					transition={{
-						layout: {
-							type: "spring",
-							duration: reducedMotion ? duration.micro : duration.large,
-							bounce: 0,
-						},
-					}}
+				<section
 					className={cn(
 						utilityClassName("relative z-10 flex max-h-full w-full self-center justify-self-center flex-col overflow-hidden rounded-2xl phone:h-full phone:max-h-none phone:max-w-none phone:self-stretch phone:rounded-none phone:[box-shadow:none]"),
 						step.id === "welcome" || step.id === "ready"
@@ -678,8 +700,8 @@ export function FirstMile({ onDone }: { onDone: () => Promise<void> }) {
 						aria-hidden={!contentVisible}
 						inert={!contentVisible}
 						className={cn(
-							utilityClassName("flex min-h-0 flex-col"),
-							!contentVisible && utilityClassName("invisible"),
+							utilityClassName("flex min-h-0 flex-col transition-opacity duration-[var(--dur-micro)] ease-[var(--ease)] motion-reduce:transition-none"),
+							!contentVisible && utilityClassName("opacity-0"),
 						)}
 					>
 						<header {...mergeStylexProps("phone:px-5 phone:pt-6", sx.shrink0, sx.px10, sx.pb2, sx.pt9, sx.textCenter)} >
@@ -710,9 +732,10 @@ export function FirstMile({ onDone }: { onDone: () => Promise<void> }) {
 							{step.id !== "welcome" && (
 								<div
 									className={cn(
-										utilityClassName("mx-auto w-full [&_[data-setting-title]]:text-dialog-title [&_[data-setting-title]]:phone:text-body [&_[data-settings-group-label]]:text-body [&_[data-settings-group-label]]:text-fg [&_[data-settings-hint]]:leading-[1.5] [&_[data-settings-hint]]:text-faint [&_[data-onboarding-caption]]:leading-[1.5]"),
-										step.id === "ready" ? utilityClassName("max-w-[1160px]") : utilityClassName("max-w-[780px]"),
-										"[&_.bg-settings-plate]:border-0 [&_.bg-settings-plate]:bg-transparent! [&_.bg-settings-plate]:shadow-none [&_.bg-settings-plate]:[backdrop-filter:none]",
+									utilityClassName("mx-auto w-full [&_[data-setting-title]]:text-dialog-title [&_[data-setting-title]]:phone:text-body [&_[data-settings-group-label]]:text-body [&_[data-settings-group-label]]:text-fg [&_[data-settings-hint]]:leading-[1.5] [&_[data-settings-hint]]:text-faint [&_[data-onboarding-caption]]:leading-[1.5]"),
+									step.id === "ready" ? utilityClassName("max-w-[1160px]") : utilityClassName("max-w-[780px]"),
+									step.id !== "github-account" &&
+										"[&_.bg-settings-plate:not(.personal-github-card)]:border-0 [&_.bg-settings-plate:not(.personal-github-card)]:bg-transparent! [&_.bg-settings-plate:not(.personal-github-card)]:shadow-none [&_.bg-settings-plate:not(.personal-github-card)]:[backdrop-filter:none]",
 										"[&_input]:h-9 [&_input]:min-h-9 [&_input]:px-3 [&_input]:text-base [&_select]:min-h-9 [&_textarea]:min-h-9",
 									)}
 								>
@@ -721,22 +744,30 @@ export function FirstMile({ onDone }: { onDone: () => Promise<void> }) {
 											github={status.github}
 											onSaved={setup.applyGithub}
 											onboarding
+											onPersonalSignIn={openPersonalGithub}
 										/>
+									)}
+									{step.id === "github-account" && (
+										<div className={utilityClassName("mx-auto w-full max-w-[34rem] px-4 phone:px-0")}>
+											<GithubAccounts
+												personal
+												showHeading={false}
+												showHint={false}
+												loadingFallback={
+													<SettingCardSkeleton
+														rows={1}
+														icon={30}
+														label="Loading GitHub account"
+														className="[&_.bg-settings-plate]:min-h-[72px]"
+													/>
+												}
+											/>
+										</div>
 									)}
 									{step.id === "organization" && (
 										<OrganizationProfileSection
 											githubOrganization={connectedGithubOrganization(status)}
 											onboarding
-										/>
-									)}
-									{step.id === "team" && (
-										<TeamSection
-											onChanged={refetch}
-											title="Members"
-											showCount
-											onboarding
-											syncGithubOrganization={githubOrganizationImportEnabled(status)}
-											compact
 										/>
 									)}
 									{step.id === "ai" && (
@@ -764,7 +795,6 @@ export function FirstMile({ onDone }: { onDone: () => Promise<void> }) {
 					</div>
 
 					<motion.footer
-						layout="position"
 						initial={false}
 						animate={{ opacity: navigationVisible ? 1 : 0 }}
 						transition={{ type: "tween", duration: duration.micro, ease }}
@@ -787,20 +817,29 @@ export function FirstMile({ onDone }: { onDone: () => Promise<void> }) {
 								<Button
 									variant="soft"
 									size="lg"
-									onClick={() => goTo(index - 1)}
+									onClick={goBack}
 									className={utilityClassName("phone:min-h-11")}
 								>
 									Back
 								</Button>
 							)}
 
+							{step.id === "ready" && (
+								<Button
+									variant="soft"
+									size="lg"
+									onClick={copyInviteLink}
+									className={utilityClassName("gap-2 px-4 phone:min-h-11")}
+								>
+									{inviteCopied ? <IconCheck size={16} /> : <IconLink size={16} />}
+									{inviteCopied ? "Invite link copied" : "Copy invite link"}
+								</Button>
+							)}
+
 							<Button
 								variant="primary"
 								size="lg"
-								onClick={() => {
-									if (index === steps.length - 1) void finish();
-									else goTo(index + 1);
-								}}
+								onClick={goForward}
 								disabled={finishing}
 								className={mergeStylexOverrideClassName("phone:min-h-11", sx.px4)}
 							>
@@ -813,7 +852,7 @@ export function FirstMile({ onDone }: { onDone: () => Promise<void> }) {
 							</Button>
 						</div>
 					</motion.footer>
-				</motion.section>
+				</section>
 			)}
 
 			<SetupRestart setup={setup} />

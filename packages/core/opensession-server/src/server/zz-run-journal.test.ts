@@ -1461,6 +1461,56 @@ describe("restart recovery queue", () => {
 });
 
 describe("restart recovery reattach", () => {
+	it("frees its boot slot as soon as a local host attaches, before the next event", async () => {
+		const releases = [Promise.withResolvers<void>(), Promise.withResolvers<void>()];
+		let resumeCalls = 0;
+		agent.__setLocalHostResumeForTest(async (run) => {
+			const index = resumeCalls++;
+			return (async function* () {
+				await releases[index]!.promise;
+				yield {
+					type: "done" as const,
+					sessionId: run.claudeSessionId,
+					provider: "pi",
+					model: run.model,
+					result: "attached host finished",
+				};
+			})();
+		});
+		const snapshots: mod.ActiveRunRecord[] = Array.from({ length: 2 }, (_, i) => ({
+			runKey: `rh-${crypto.randomUUID()}`,
+			hostId: `host-${crypto.randomUUID()}`,
+			osSessionId: `local-host-slot-${i}-${crypto.randomUUID()}`,
+			claudeSessionId: `pi-${crypto.randomUUID()}`,
+			prompt: "keep running",
+			cwd: "/tmp",
+			model: "pi/anthropic/claude-sonnet-5",
+			kind: "prompt",
+			startedAt: new Date(Date.now() - i * 1000).toISOString(),
+		}));
+		let recovery: Promise<string[]> | undefined;
+		try {
+			recovery = agent.resumeInterruptedRuns(
+				() => {},
+				undefined,
+				undefined,
+				undefined,
+				undefined,
+				snapshots,
+			);
+			const deadline = Date.now() + 1_000;
+			while (resumeCalls < 2 && Date.now() < deadline) await Bun.sleep(5);
+			expect(resumeCalls).toBe(2);
+		} finally {
+			for (const release of releases) release.resolve();
+			await recovery;
+			for (const run of snapshots) {
+				mod.journalClear(run.runKey);
+				await clearRunState(run.osSessionId!);
+			}
+		}
+	});
+
 	it("does not re-prompt when a local host is not proven dead", async () => {
 		const sessionId = `local-host-uncertain-${crypto.randomUUID()}`;
 		const hostId = `rh-${crypto.randomUUID()}`;
@@ -1545,6 +1595,13 @@ describe("restart recovery reattach", () => {
 			);
 			expect(agent.currentAgentRunToken(sessionId)).toBe(hostId);
 			expect(agent.currentAgentRunToken(snapshotRun.claudeSessionId!)).toBe(hostId);
+			expect(agent.activeAgentRecoveryRecord(sessionId)).toMatchObject(snapshotRun);
+			// Recovery can retire the journal before a fallback starts. Its live
+			// claim must remain observable so the creation executor does not launch
+			// the same opening turn again in this handoff window.
+			mod.journalClear(hostId);
+			expect(mod.activeRunRecords()).toEqual([]);
+			expect(agent.activeAgentRecoveryRecord(hostId)).toMatchObject(snapshotRun);
 			release.resolve();
 			await terminal.promise;
 		} finally {
