@@ -275,12 +275,8 @@ export function DownloadAppsDialog({
 
 	return (
 		<Modal.Root open={open} onOpenChange={onOpenChange}>
-			<Modal.Content
-				widthClassName={utilityClassName("max-w-[48rem]")}
-				className={mergeStylexOverrideClassName("", sx.rounded3xl, sx.bgPopupGlass, sx.BackdropFilterVarPopupBlur)}
-			>
+			<Modal.Content widthClassName={utilityClassName("max-w-[48rem]")}>
 				<Modal.Header
-					className={mergeStylexOverrideClassName("", sx.static, sx.bgTransparent)}
 					title={
 						showInstallHelp ? (
 							<span {...stylex.props(sx.flex, sx.minW0, sx.itemsCenter, sx.gap1)}>

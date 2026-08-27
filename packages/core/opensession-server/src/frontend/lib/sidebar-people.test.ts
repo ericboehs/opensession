@@ -1,4 +1,6 @@
 import { describe, expect, test } from "bun:test";
+import { AGENT_PERSON_KEY } from "./automation-audience";
+import { AGENT_NAME } from "./brand";
 import type { Person } from "./people";
 import {
 	PERSON_RECENT_ACTIVITY_MS,
@@ -81,7 +83,7 @@ describe("sidebar person sessions", () => {
 				}),
 			],
 			roster,
-			"Kent de Bruin",
+			"Kent",
 			NOW,
 		);
 
@@ -102,11 +104,6 @@ describe("sidebar person sessions", () => {
 			[
 				session("me", { startedBy: "kentdebruin", isRunning: true }),
 				session("worker", { startedBy: "worker os-123", isRunning: true }),
-				session("automation", {
-					startedBy: "Michiel",
-					isRunning: true,
-					automation: "Daily report",
-				}),
 				session("teammate", { startedBy: "Jeroen", isRunning: true }),
 			],
 			roster,
@@ -115,5 +112,35 @@ describe("sidebar person sessions", () => {
 		);
 
 		expect(groups.map((group) => group.key)).toEqual(["jeroen"]);
+	});
+
+	test("files automations under their owner or the Agent person", () => {
+		const groups = sidebarPersonSessions(
+			[
+				session("owned-automation", {
+					startedBy: null,
+					isRunning: true,
+					automation: "Daily report",
+				}),
+				session("agent-automation", {
+					startedBy: null,
+					isRunning: true,
+					automation: "PR review",
+				}),
+			],
+			roster,
+			"Kent",
+			NOW,
+			new Map([["Daily report", "Michiel"]]),
+		);
+
+		expect(groups.map((group) => group.key)).toEqual([
+			"michiel",
+			AGENT_PERSON_KEY,
+		]);
+		expect(groups.map((group) => group.label)).toEqual([
+			"Michiel",
+			AGENT_NAME,
+		]);
 	});
 });

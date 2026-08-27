@@ -3,7 +3,9 @@ import type { UnifiedSession } from "./types";
 import {
 	parseSidebarSessionScope,
 	scopeSessionsForSidebar,
+	sessionIsRecentTeamActivity,
 	sidebarSessionScopeKey,
+	TEAM_ACTIVITY_RECENT_MS,
 	type SidebarSessionScope,
 	type SidebarSessionScopeContext,
 } from "./sidebar-session-scope";
@@ -113,6 +115,50 @@ describe("scopeSessionsForSidebar", () => {
 				}),
 			).map((row) => row.id),
 		).toEqual(["mine", "teammate-tab"]);
+	});
+
+	test("adds every person's active window outside the current lens and repo", () => {
+		const now = Date.parse("2026-08-27T12:00:00.000Z");
+		const rows = [
+			session("mine", { startedBy: "Ada", repo: "opensession" }),
+			session("running-teammate", {
+				startedBy: "Grace",
+				repo: "other-repo",
+				isRunning: true,
+			}),
+			session("recent-teammate", {
+				startedBy: "Lin",
+				repo: "other-repo",
+				claudeSessionId: "engine-recent",
+				lastActivity: new Date(now - TEAM_ACTIVITY_RECENT_MS).toISOString(),
+			}),
+			session("recent-draft", {
+				startedBy: "Sam",
+				repo: "other-repo",
+				lastActivity: new Date(now - 60_000).toISOString(),
+			}),
+			session("active-agent", {
+				startedBy: undefined,
+				automation: "review",
+				repo: "other-repo",
+				isRunning: true,
+			}),
+		];
+
+		expect(
+			scopeSessionsForSidebar(
+				rows,
+				scope({ repo: "opensession" }),
+				context(),
+				now,
+			).map((row) => row.id),
+		).toEqual([
+			"mine",
+			"running-teammate",
+			"recent-teammate",
+			"active-agent",
+		]);
+		expect(sessionIsRecentTeamActivity(rows[3]!, now)).toBe(false);
 	});
 
 	test("keeps personal pins, claims, mentions and snoozes", () => {

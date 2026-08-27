@@ -138,6 +138,7 @@ import {
 	loadSidebarSessionScopeContext,
 	parseSidebarSessionScope,
 	scopeSessionsForSidebar,
+	sessionIsRecentTeamActivity,
 	sidebarSessionScopeKey,
 	type SidebarSessionScope,
 } from "../sidebar-session-scope";
@@ -594,13 +595,19 @@ export function sidebarLiveSessions<T extends UnifiedSession & SessionListSignal
 	}
 
 	const keep = new Set<T>();
+	const now = Date.now();
 	for (const rows of byAutomation.values()) {
 		const recent = [...rows]
 			.sort((a, b) => b.lastActivity.localeCompare(a.lastActivity))
 			.slice(0, SIDEBAR_AUTOMATION_RUNS);
 		for (const row of recent) keep.add(row);
 		for (const row of rows) {
-			if (row.isRunning || row.waitingForInput || row.manualStatus) keep.add(row);
+			if (
+				sessionIsRecentTeamActivity(row, now) ||
+				row.waitingForInput ||
+				row.manualStatus
+			)
+				keep.add(row);
 		}
 	}
 

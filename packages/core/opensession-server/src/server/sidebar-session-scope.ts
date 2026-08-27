@@ -41,6 +41,7 @@ export interface SidebarSessionScopeContext {
 }
 
 const MAX_QUERY_VALUE_LENGTH = 256;
+export const TEAM_ACTIVITY_RECENT_MS = 15 * 60 * 1000;
 
 function cleanQueryValue(value: string | null): string | undefined {
 	const clean = value?.trim();
@@ -250,6 +251,26 @@ function groupNeedsAttention(sessions: readonly SidebarScopeSession[]): boolean 
 	);
 }
 
+/** The global team-activity window appended to every scoped sidebar response. */
+export function sessionIsRecentTeamActivity(
+	session: UnifiedSession,
+	nowMs: number,
+): boolean {
+	if (session.desk) return false;
+	if (session.isRunning) return true;
+	const ran = !!(
+		session.claudeSessionId ||
+		session.codexThreadId ||
+		session.piSessionId
+	);
+	if (!ran) return false;
+	const lastActivity = Date.parse(session.lastActivity || "");
+	return (
+		Number.isFinite(lastActivity) &&
+		lastActivity >= nowMs - TEAM_ACTIVITY_RECENT_MS
+	);
+}
+
 /**
  * Keep exactly the live inventory needed to derive the current sidebar lens.
  * Every retained workspace stays whole so its status and tab strip remain
@@ -259,6 +280,7 @@ export function scopeSessionsForSidebar<T extends SidebarScopeSession>(
 	sessions: T[],
 	scope: SidebarSessionScope,
 	context: SidebarSessionScopeContext,
+	nowMs = Date.now(),
 ): T[] {
 	const selectedIds = new Set<string>();
 	const selectedGroupKeys = new Set<string>();
@@ -374,6 +396,13 @@ export function scopeSessionsForSidebar<T extends SidebarScopeSession>(
 			continue;
 		for (const row of rows) keep.add(row);
 	}
+
+	// The People section is a global live-team view, even while the workspace
+	// list above is narrowed to Me, one repo, or another person. Keep only the
+	// active window here; the frontend applies the directory/Agent ownership
+	// rules and drops each idle row at the exact fifteen-minute boundary.
+	for (const session of sessions)
+		if (sessionIsRecentTeamActivity(session, nowMs)) keep.add(session);
 
 	return sessions.filter((session) => keep.has(session));
 }
