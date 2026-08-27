@@ -1,4 +1,5 @@
-import { utilityClassName } from "../../ui/cn";
+import { utilityClassName, mergeStylexOverrideClassName } from "../../ui/cn";
+import * as stylex from "@stylexjs/stylex";
 import { useState } from "react";
 import { useSetupStatus } from "../../hooks/useSetupStatus";
 import type { SettingsSectionKey } from "../../lib/settings-sections";
@@ -10,6 +11,15 @@ import {
 	type SetupWidgetItem,
 } from "../../lib/setup-widget";
 import { cn } from "../../ui/cn";
+
+/* Converted from Tailwind utilities; names mirror the original class tokens. */
+const sx = stylex.create({
+	/** The widget floats over the sidebar, so its panel stays translucent and
+	 *  lets the blur behind it read. */
+	bgPanel72: {
+			backgroundColor: "color-mix(in oklab, var(--bg-panel) 72%, transparent)"
+	},
+});
 import { Tooltip } from "../../ui/tooltip";
 import {
 	IconArrowRight,
@@ -124,7 +134,8 @@ export function SetupWidget({
 		<aside
 			aria-labelledby="sidebar-setup-title"
 			className={cn(
-				utilityClassName("z-30 rounded-2xl border border-divider-soft bg-popup-glass p-2 [backdrop-filter:var(--popup-blur)] smooth-shadow-sm"),
+				utilityClassName("z-30 rounded-2xl border border-divider-soft p-2 [backdrop-filter:var(--popup-blur)] smooth-shadow-sm"),
+				mergeStylexOverrideClassName("", sx.bgPanel72),
 				placement === "desktop"
 					? utilityClassName("fixed right-4 bottom-20 w-72")
 					: utilityClassName("mx-3 mt-3 mb-20 flex-none"),

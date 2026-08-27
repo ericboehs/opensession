@@ -508,7 +508,7 @@ function FirstMileSummary({
 							<RepoTile
 								name={repo.id}
 								size={28}
-								className={mergeStylexOverrideClassName("", sx.border, sx.borderLine)}
+								className={utilityClassName("ring-1 ring-inset ring-line")}
 							/>
 						</span>
 					))}

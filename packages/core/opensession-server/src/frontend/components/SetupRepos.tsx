@@ -737,7 +737,7 @@ setBusy(false);
 				)}
 				aria-label={`Change ${id}'s icon`}
 			>
-				<RepoTile name={id} size={28} glow={glow} className="border border-line" />
+				<RepoTile name={id} size={28} glow={glow} className="ring-1 ring-inset ring-line" />
 			</Popover.Trigger>
 			<Popover.Popup className={mergeStylexOverrideClassName("", sx.w248px, sx.p3)} initialFocus>
 				<div {...stylex.props(sx.mb2, sx.fontMedium, sx.textDim, typography.meta)}>Icon</div>
