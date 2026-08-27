@@ -567,19 +567,19 @@ function FirstMileSummary({
 							</div>
 						</div>
 						<div {...stylex.props(sx.minW0)}>
-							<div {...stylex.props(sx.fontSemibold, sx.textFg, typography.itemTitle)}>{tile.title}</div>
-							<div {...stylex.props(sx.mt1, sx.leadingSnug, sx.textDim, typography.supporting)}>{tile.label}</div>
 							{"copyInvite" in tile && (
 								<Button
 									variant="soft"
 									size="sm"
 									onClick={onCopyInviteLink}
 									icon={inviteCopied ? <IconCheck size={15} /> : <IconLink size={15} />}
-									className={utilityClassName("mt-3 min-h-10 w-full px-2.5 phone:min-h-11")}
+									className={utilityClassName("mb-3 min-h-10 w-full px-2.5 phone:min-h-11")}
 								>
 									{inviteCopied ? "Invite link copied" : "Copy invite link"}
 								</Button>
 							)}
+							<div {...stylex.props(sx.fontSemibold, sx.textFg, typography.itemTitle)}>{tile.title}</div>
+							<div {...stylex.props(sx.mt1, sx.leadingSnug, sx.textDim, typography.supporting)}>{tile.label}</div>
 						</div>
 					</>
 				);

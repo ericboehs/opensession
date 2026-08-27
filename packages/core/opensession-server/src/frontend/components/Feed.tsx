@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import type { UnifiedSession } from "../lib/types";
 import {
 	fetchRecentCommits,
@@ -45,6 +46,7 @@ const sx = stylex.create({
 		cornerShape: "var(--cs)"
 	},
 	shadowVarAvatarEdge: { boxShadow: "var(--avatar-edge)" },
+	maxW28: { maxWidth: "112px" },
 	maxW150px: { maxWidth: "150px" },
 	maxW920px: { maxWidth: "920px" },
 	minW200px: { minWidth: "200px" },
@@ -78,7 +80,8 @@ import {
  * The page is the feed. The team is the row at its top, because who shipped it
  * is how you narrow the feed, not a destination of its own. There is no
  * per-person page to open, since everything you would put on one already
- * exists as their sidebar.
+ * exists as their sidebar. Once the row scrolls away, its compact face picker
+ * moves into the app bar so the scope stays available.
  *
  * So picking a teammate does two things at once, which is the point: it
  * narrows the feed to their merges, and it hands you their sidebar.
@@ -93,6 +96,8 @@ interface Props {
 	sessions: UnifiedSession[];
 	/** Who's viewing what right now (global presence), for the face dots. */
 	teamViewing?: Array<{ user: string; sessionId: string }>;
+	/** The app-level title bar's actions slot. */
+	headerActionsEl?: HTMLElement | null;
 	/** By id, not by row: most of what the feed can open is archived, and an
 	 *  archived session is not in `sessions`. */
 	onSelect: (sessionId: string) => void;
@@ -165,11 +170,13 @@ function FeedOwnerMark({ owner }: { owner: FeedOwner }) {
 	);
 }
 
-export function Feed({ sessions, teamViewing, onSelect }: Props) {
+export function Feed({ sessions, teamViewing, headerActionsEl, onSelect }: Props) {
 	const currentUser = useCurrentUser();
 	const team = useTeamPresence({ sessions, teamViewing, currentUser });
 	const people = usePeople();
 	const [scope, setScope] = useState<Scope>({ kind: "everyone" });
+	const [membersPinned, setMembersPinned] = useState(false);
+	const memberRowRef = useRef<HTMLDivElement>(null);
 	// The other axis: which repo shipped it. Unlike the person scope this is
 	// the page's own filter and touches nothing else, because a repo is not
 	// something the sidebar can be turned to.
@@ -178,6 +185,26 @@ export function Feed({ sessions, teamViewing, onSelect }: Props) {
 	// You first, then the team in the order `useTeamPresence` already sorted
 	// them: working, then online, then whoever moved most recently.
 	const chips = [...team].sort((a, b) => Number(b.isYou) - Number(a.isYou));
+
+	useEffect(() => {
+		const row = memberRowRef.current;
+		const scroller = row?.closest("[data-page-scroll]");
+		if (!row || !(scroller instanceof HTMLElement)) {
+			setMembersPinned(false);
+			return;
+		}
+		const observer = new IntersectionObserver(
+			([entry]) => {
+				const rootTop = entry.rootBounds?.top ?? 0;
+				setMembersPinned(
+					!entry.isIntersecting && entry.boundingClientRect.bottom <= rootTop,
+				);
+			},
+			{ root: scroller, threshold: 0 },
+		);
+		observer.observe(row);
+		return () => observer.disconnect();
+	}, [team.length]);
 
 	const [recentPrs, setRecentPrs] = useState<RecentPr[]>([]);
 	const [recentPrsLoading, setRecentPrsLoading] = useState(true);
@@ -300,6 +327,55 @@ export function Feed({ sessions, teamViewing, onSelect }: Props) {
 	const canWiden = !!nextStep && (hasOlder || scoped.length > shipped.length);
 
 	const scopeName = scope.kind === "person" ? personLabel(scope.key) : null;
+	const compactMembers =
+		scope.kind === "person"
+			? [...chips].sort((a, b) => Number(b.key === scope.key) - Number(a.key === scope.key))
+			: chips;
+	const visibleCompactMembers = compactMembers.slice(0, 5);
+	const hiddenCompactMembers = compactMembers.length - visibleCompactMembers.length;
+	const compactPicker = (
+		<div className={utilityClassName("flex items-center gap-0.5")} aria-label="Filter feed by person">
+			{visibleCompactMembers.map((member) => {
+				const selected = scope.kind === "person" && scope.key === member.key;
+				return (
+					<button
+						key={member.key}
+						type="button"
+						className={cn(
+							utilityClassName("focus-ring flex min-h-10 items-center gap-1.5 rounded-control p-1 text-label font-medium text-fg hover:bg-hover"),
+							selected && utilityClassName("bg-accent-soft pr-2 text-accent"),
+						)}
+						onClick={() =>
+							pick(
+								selected
+									? { kind: "everyone" }
+									: { kind: "person", key: member.key },
+							)
+						}
+						aria-pressed={selected}
+						aria-label={selected ? "Show everyone" : `Show ${member.person.name}`}
+					>
+						<UserAvatar name={member.person.name} size={30} edge={false} />
+						{selected && (
+							<span {...mergeStylexProps(utilityClassName("truncate pr-0.5"), sx.maxW28)}>
+								{member.isYou ? "You" : personLabel(member.key)}
+							</span>
+						)}
+					</button>
+				);
+			})}
+			{hiddenCompactMembers > 0 && (
+				<button
+					type="button"
+					className={utilityClassName("focus-ring flex size-10 min-h-10 items-center justify-center rounded-control bg-active text-label font-semibold text-dim hover:bg-hover")}
+					onClick={() => memberRowRef.current?.scrollIntoView({ block: "start" })}
+					aria-label={`Show ${hiddenCompactMembers} more people`}
+				>
+					+{hiddenCompactMembers}
+				</button>
+			)}
+		</div>
+	);
 	const feedLoading =
 		recentPrs.length === 0 &&
 		commits.length === 0 &&
@@ -309,10 +385,13 @@ export function Feed({ sessions, teamViewing, onSelect }: Props) {
 
 	return (
 		<div className={utilityClassName("flex min-h-0 w-full flex-1 flex-col bg-surface")}>
+			{membersPinned &&
+				headerActionsEl &&
+				createPortal(<div className={utilityClassName("phone:hidden")}>{compactPicker}</div>, headerActionsEl)}
 			<div data-page-scroll className={utilityClassName("min-h-0 flex-1 overflow-y-auto")}>
 				<div {...mergeStylexProps(utilityClassName("mx-auto w-full px-6 phone:px-4 phone:pb-12"), sx.maxW920px, sx.pb15, sx.pt6, sx.phonePtHeader)}>
 					{team.length > 0 && (
-						<div className={PEOPLE_CHIP_ROW}>
+						<div ref={memberRowRef} className={PEOPLE_CHIP_ROW}>
 							<ScopeChip
 								selected={scope.kind === "everyone"}
 								onClick={() => pick({ kind: "everyone" })}
