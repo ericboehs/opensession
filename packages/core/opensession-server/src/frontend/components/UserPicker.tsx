@@ -35,13 +35,16 @@ const sx = stylex.create({
 			borderStyle: "solid",
 			borderWidth: "0"
 	},
+	bgSurface85: {
+			backgroundColor: "color-mix(in oklab, var(--bg) 85%, transparent)"
+	},
 	/** The field keeps its surface under the pointer: it is a heading that can
 	 *  be typed into, not a control that lights up. Gated to hover-capable
 	 *  pointers so a tap does not leave the state latched. */
-	hoverBgSurface: {
+	hoverBgSurface85: {
 		":hover": {
 			"@media (hover: hover)": {
-				"backgroundColor": "var(--bg-surface)"
+				"backgroundColor": "color-mix(in oklab, var(--bg) 85%, transparent)"
 			}
 		}
 	},
@@ -661,17 +664,17 @@ setError(e.message);
             .
           </AuthCopy>
           {/* The code is what this screen is for, so it gets a clear display
-              step and a plain paper block rather than the shared input chrome. */}
+              step and a translucent paper block rather than the shared input chrome. */}
           <DeviceCode
             code={flow.userCode}
             className={mergeStylexOverrideClassName(
               utilityClassName("[box-shadow:none]!"),
               sx.border0,
-              sx.bgSurface,
+              sx.bgSurface85,
               sx.px4,
               sx.py25,
               sx.fontSans,
-              sx.hoverBgSurface,
+              sx.hoverBgSurface85,
               typography.pageTitle,
             )}
           />

@@ -205,6 +205,47 @@ describe("hover cards drop the repo and the idle timestamp", () => {
 		);
 		expect(callout).toContain("-webkit-line-clamp:2");
 		expect(callout).not.toContain("Last run failed");
+
+		const retrying = renderToStaticMarkup(
+			<SessionCardBody
+				session={session({
+					isRunning: true,
+					lastRunError: { message: "Stale failure", at: AGO },
+				})}
+			/>,
+		);
+		expect(retrying).not.toContain("Stale failure");
+	});
+
+	test("a safety pause shows its explanation without requiring a run error", () => {
+		const explanation =
+			"Open Session paused because it couldn't verify the last action. It won't retry automatically.";
+		const paused = session({
+			safety: {
+				status: "paused_for_safety",
+				explanation,
+				automaticReconciliationRunning: false,
+				pausedAt: AGO,
+				operation: "finishing the current turn",
+				repairAvailable: false,
+			},
+		});
+
+		for (const html of [
+			renderToStaticMarkup(<SessionCardBody session={paused} />),
+			renderToStaticMarkup(
+				<WsCardBody
+					row={{ ...row([paused]), status: "needsinput" }}
+					snoozed={false}
+					onToggleSnooze={() => {}}
+					onOpen={() => {}}
+				/>,
+			),
+		]) {
+			expect(html).toContain(`title="${explanation.replaceAll("'", "&#x27;")}"`);
+			expect(html).toContain("Open Session paused because it couldn&#x27;t verify the last action.");
+			expect(html).not.toContain("Needs attention.");
+		}
 	});
 });
 

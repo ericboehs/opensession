@@ -322,6 +322,12 @@ const sx = stylex.create({
 			"justifyContent": "center"
 		}
 	},
+	bgFg: {
+			backgroundColor: "var(--text)"
+	},
+	textBg: {
+			color: "var(--bg)"
+	},
 	w52: {
 			width: "208px"
 	},
@@ -407,7 +413,7 @@ function SetupStep({
 }) {
 	return (
 		<li {...mergeStylexProps("grid-cols-[24px_minmax(0,1fr)]", sx.grid, sx.gap25, sx.py4, sx.firstPt0, sx.lastPb0)}>
-			<span {...stylex.props(sx.flex, sx.size6, sx.itemsCenter, sx.justifyCenter, sx.roundedFull, sx.bgSurface, sx.fontSemibold, sx.textFg, typography.meta)}>
+			<span {...stylex.props(sx.flex, sx.size6, sx.itemsCenter, sx.justifyCenter, sx.roundedFull, sx.bgFg, sx.fontSemibold, sx.textBg, typography.meta)}>
 				{number}
 			</span>
 			<div {...stylex.props(sx.minW0, sx.pt05, Boolean(controls) && sx.desktopStepColumns)}>

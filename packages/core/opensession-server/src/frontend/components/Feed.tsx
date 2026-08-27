@@ -25,104 +25,40 @@ import { usePeople } from "../lib/people";
 import { UserAvatar } from "./UserAvatar";
 import { personLensFilter, setFilter } from "../lib/sidebar-filter";
 import { presenceState, StatusDot, useTeamPresence } from "./TeamPresence";
-import { PageDescription, PageHeader, PageTitle } from "../ui/page-header";
 import { EmptyState, ListSkeleton } from "../ui/state";
 import { Button } from "../ui/button";
 import { Menu } from "../ui/menu";
-import { cn, mergeStylexProps, mergeStylexClassName, mergeStylexOverrideClassName } from "../ui/cn";
-import { IconFeed, IconPeople, IconRepo, IconRobot } from "./icons";
 import {
-	PEOPLE_CHIP,
-	PEOPLE_CHIP_GLYPH,
-	PEOPLE_CHIP_GLYPH_SELECTED,
-	PEOPLE_CHIP_ROW,
-	PEOPLE_CHIP_SELECTED,
-	PEOPLE_SECTION_LABEL,
-} from "../lib/people-classes";
+	cn,
+	mergeStylexProps,
+	mergeStylexOverrideClassName,
+	utilityClassName,
+} from "../ui/cn";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
-import { sharedClassStyles } from "../styles/shared-class-styles.stylex";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
-	minW0: {
-			minWidth: "0"
-	},
-	truncate: {
-			textOverflow: "ellipsis",
-			whiteSpace: "nowrap",
-			overflow: "hidden"
-	},
-	flex: {
-			display: "flex"
-	},
 	size24px: {
 			width: "24px",
 			height: "24px"
 	},
-	shrink0: {
-			flexShrink: "0"
-	},
-	itemsCenter: {
-			alignItems: "center"
-	},
-	justifyCenter: {
-			justifyContent: "center"
+	size6: {
+			width: "24px",
+			height: "24px"
 	},
 	roundedAvatar: {
-			borderRadius: "calc(32% * var(--rp))"
-	,
-		cornerShape: "var(--cs)"},
-	bgActive: {
-			backgroundColor: "var(--bg-active)"
+			borderRadius: "calc(32% * var(--rp))",
+		cornerShape: "var(--cs)"
 	},
-	textDim: {
-			color: "var(--text-dim)"
+	shadowVarAvatarEdge: {
+			boxShadow: "var(--avatar-edge)"
 	},
-	minH0: {
-			minHeight: "0"
-	},
-	wFull: {
-			width: "100%"
-	},
-	flex1: {
-			flex: "1"
-	},
-	overflowYAuto: {
-			overflowY: "auto"
-	},
-	bgSurface: {
-			backgroundColor: "var(--bg)"
-	},
-	mxAuto: {
-			marginInline: "auto"
+	shadowSurfaceRing: {
+			boxShadow: "0 0 0 2px var(--bg-surface)"
 	},
 	maxW920px: {
 			maxWidth: "920px"
-	},
-	px6: {
-			paddingInline: "24px"
-	},
-	pb15: {
-			paddingBottom: "60px"
-	},
-	pt7: {
-			paddingTop: "28px"
-	},
-	relative: {
-			position: "relative"
-	},
-	mb2: {
-			marginBottom: "8px"
-	},
-	minH30px: {
-			minHeight: "30px"
-	},
-	justifyBetween: {
-			justifyContent: "space-between"
-	},
-	gap3: {
-			gap: "12px"
 	},
 	maxW150px: {
 			maxWidth: "150px"
@@ -130,90 +66,50 @@ const sx = stylex.create({
 	minW200px: {
 			minWidth: "200px"
 	},
-	size18px: {
-			width: "18px",
-			height: "18px"
+	minH30px: {
+			minHeight: "30px"
 	},
-	mb5: {
-			marginBottom: "20px"
+	pb15: {
+			paddingBottom: "60px"
 	},
-	fontMedium: {
-			fontWeight: "var(--font-weight-medium)"
+	pt6: {
+			paddingTop: "24px"
 	},
 	itemsBaseline: {
 			alignItems: "baseline"
 	},
-	gap2: {
-			gap: "8px"
-	},
-	selfCenter: {
-			alignSelf: "center"
-	},
 	leading13: {
 			lineHeight: "1.3"
-	},
-	textFg: {
-			color: "var(--text)"
-	},
-	textFaint: {
-			color: "var(--text-faint)"
 	},
 	justifySelfEnd: {
 			justifySelf: "flex-end"
 	},
-	textGreen: {
-			color: "var(--green)"
-	},
 	ml2: {
 			marginLeft: "8px"
 	},
-	textRed: {
-			color: "var(--red)"
-	},
-	mt1: {
-			marginTop: "4px"
-	},
-
-	mb0: {
-		"marginBottom": "0"
-	},
-
-	shadowVarAvatarEdge: {
-		"--tw-shadow": "var(--avatar-edge)",
-		"boxShadow": "var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow)"
-	},
-	phonePtCalcVarHeaderH18px: {
+	/** The bar keeps the desktop chrome height; a phone lets its content set
+	 *  the height and pads instead. */
+	phoneHAuto: {
 		"@media (max-width: 720px)": {
-			"paddingTop": "calc(var(--header-h) + 18px)"
+			"height": "auto"
 		}
 	},
-	max560pxPx4: {
-		"@media not all and (min-width: 560px)": {
-			"paddingInline": "16px"
-		}
-	},
-	max560pxPb12: {
-		"@media not all and (min-width: 560px)": {
-			"paddingBottom": "48px"
-		}
-	},
-	tabularNums: {
-		"--tw-numeric-spacing": "tabular-nums",
-		"fontVariantNumeric": "var(--tw-ordinal,) var(--tw-slashed-zero,) var(--tw-numeric-figure,) var(--tw-numeric-spacing,) var(--tw-numeric-fraction,)"
-	},
-	phoneHidden: {
+	phonePy25: {
 		"@media (max-width: 720px)": {
-			"display": "none"
+			"paddingBlock": "10px"
 		}
 	},
 });
+import { TopBar, TopBarActions, TopBarLeading, TopBarTitle } from "../ui/top-bar";
+import { IconFeed, IconPeople, IconRepo, IconRobot } from "./icons";
+import { PEOPLE_SECTION_LABEL } from "../lib/people-classes";
 
 /**
  * What the team has been shipping.
  *
- * The page is the feed. The team is the row above it, because who shipped it
- * is how you narrow the feed, not a destination of its own — there is no
- * per-person page to open, since everything you would put on one already
+ * The page is the feed. The team is the face stack in its top bar, because who
+ * shipped it is how you narrow the feed, not a destination of its own. There
+ * is no per-person page to open, since everything you would put on one already
  * exists as their sidebar.
  *
  * So picking a teammate does two things at once, which is the point: it
@@ -250,29 +146,6 @@ const RENDER_CEILING = 1500;
 /** Everyone, or one person. */
 type Scope = { kind: "everyone" } | { kind: "person"; key: string };
 
-function ScopeChip({
-	selected,
-	onClick,
-	mark,
-	label,
-}: {
-	selected: boolean;
-	onClick: () => void;
-	mark: React.ReactNode;
-	label: string;
-}) {
-	return (
-		<button
-			className={cn(PEOPLE_CHIP, selected && PEOPLE_CHIP_SELECTED)}
-			onClick={onClick}
-			aria-pressed={selected}
-		>
-			{mark}
-			<span {...stylex.props(sx.minW0, sx.truncate)}>{label}</span>
-		</button>
-	);
-}
-
 /**
  * The owner of a row, in the same 24px slot whoever they are. A teammate wears
  * their face; an automation wears a glyph in the avatar's own shape, so the
@@ -287,7 +160,13 @@ function FeedOwnerMark({ owner }: { owner: FeedOwner }) {
 		return <UserAvatar name={owner.label} size={24} title={owner.label} />;
 	}
 	return (
-		<span {...mergeStylexProps("", sx.shadowVarAvatarEdge, sx.flex, sx.size24px, sx.shrink0, sx.itemsCenter, sx.justifyCenter, sx.roundedAvatar, sx.bgActive, sx.textDim)}
+		<span
+			{...mergeStylexProps(
+				utilityClassName("flex shrink-0 items-center justify-center bg-active text-dim"),
+				sx.size24px,
+				sx.roundedAvatar,
+				sx.shadowVarAvatarEdge,
+			)}
 			title={owner.label}
 		>
 			<IconRobot size={14} />
@@ -430,6 +309,13 @@ export function Feed({ sessions, teamViewing, onSelect }: Props) {
 	const canWiden = !!nextStep && (hasOlder || scoped.length > shipped.length);
 
 	const scopeName = scope.kind === "person" ? personLabel(scope.key) : null;
+	const scopeValue = scope.kind === "person" ? scope.key : "everyone";
+	const stackedMembers =
+		scope.kind === "person"
+			? [...chips].sort((a, b) => Number(b.key === scope.key) - Number(a.key === scope.key))
+			: chips;
+	const visibleStack = stackedMembers.slice(0, 5);
+	const hiddenStackCount = stackedMembers.length - visibleStack.length;
 	const feedLoading =
 		recentPrs.length === 0 &&
 		commits.length === 0 &&
@@ -438,76 +324,105 @@ export function Feed({ sessions, teamViewing, onSelect }: Props) {
 		dayGroups.length === 0 && (widening || personPrsLoading);
 
 	return (
-		// The page frame every other list page in the app uses: one centred
-		// column at the shared width and padding, a PageHeader on top.
-		<div data-page-scroll {...stylex.props(sx.minH0, sx.wFull, sx.flex1, sx.overflowYAuto, sx.bgSurface)}>
-			<div {...mergeStylexProps("", sx.phonePtCalcVarHeaderH18px, sx.max560pxPx4, sx.max560pxPb12, sx.mxAuto, sx.wFull, sx.maxW920px, sx.px6, sx.pb15, sx.pt7)}>
-				<PageHeader>
-					<div {...stylex.props(sx.minW0)}>
-						<PageTitle>Feed</PageTitle>
-						<PageDescription>
-							What the team has been shipping. Pick someone to narrow it, and to
-							put their workspaces in the sidebar.
-						</PageDescription>
-					</div>
-				</PageHeader>
-
-				{team.length > 0 && (
-					<div className={PEOPLE_CHIP_ROW}>
-						<ScopeChip
-							selected={scope.kind === "everyone"}
-							onClick={() => pick({ kind: "everyone" })}
-							mark={
-								<span
-									className={cn(
-										PEOPLE_CHIP_GLYPH,
-										scope.kind === "everyone" && PEOPLE_CHIP_GLYPH_SELECTED,
-									)}
-								>
-									<IconPeople size={17} />
-								</span>
-							}
-							label="Everyone"
-						/>
-						{chips.map((member) => (
-							<ScopeChip
-								key={member.key}
-								selected={scope.kind === "person" && scope.key === member.key}
-								onClick={() => pick({ kind: "person", key: member.key })}
-								mark={
-									// The face carries whether they're around. The dot rings
-									// itself in the chip's own fill so it reads as a gap in the
-									// picture rather than a mark on it.
-									<span {...stylex.props(sx.relative, sx.flex)}>
-										<UserAvatar name={member.person.name} size={26} />
-										<StatusDot
-											state={presenceState(member)}
-											ring={
-												scope.kind === "person" && scope.key === member.key
-													? "var(--accent)"
-													: "var(--bg-panel)"
-											}
-											size={8}
-										/>
-									</span>
-								}
-								label={member.isYou ? "You" : member.person.name}
-							/>
-						))}
-					</div>
+		<div className={utilityClassName("flex min-h-0 w-full flex-1 flex-col bg-surface")}>
+			<TopBar
+				as="header"
+				className={cn(
+					utilityClassName("wco-chrome h-[var(--desktop-header-h)] shrink-0 border-b border-divider"),
+					mergeStylexOverrideClassName("", sx.phoneHAuto, sx.phonePy25),
 				)}
+			>
+				<div {...mergeStylexProps(utilityClassName("mx-auto flex w-full items-center px-6 phone:px-4"), sx.maxW920px)}>
+					<TopBarLeading>
+						<IconFeed size={20} className={utilityClassName("text-dim")} />
+						<TopBarTitle className={utilityClassName("text-item-title font-semibold text-fg")}>
+							Feed
+						</TopBarTitle>
+					</TopBarLeading>
+					{team.length > 0 && (
+						<TopBarActions>
+							<Menu.Root>
+								<Menu.Trigger
+									render={
+										<Button
+											variant="ghost"
+											size="md"
+											aria-label={scopeName ? `Showing ${scopeName}` : "Showing everyone"}
+											className={utilityClassName("gap-0 px-2 phone:min-h-11")}
+										/>
+									}
+								>
+									<span className={utilityClassName("flex -space-x-2")} aria-hidden="true">
+										{visibleStack.map((member) => (
+											<span
+												key={member.key}
+												className={cn(
+													utilityClassName("relative bg-surface p-0.5"),
+													mergeStylexOverrideClassName("", sx.roundedAvatar),
+													scope.kind === "person" && scope.key === member.key && utilityClassName("bg-accent"),
+												)}
+											>
+												<UserAvatar name={member.person.name} size={24} edge={false} />
+											</span>
+										))}
+										{hiddenStackCount > 0 && (
+											<span {...mergeStylexProps(utilityClassName("relative flex size-7 items-center justify-center bg-active font-semibold text-dim"), sx.roundedAvatar, sx.shadowSurfaceRing, typography.meta)}>
+												+{hiddenStackCount}
+											</span>
+										)}
+									</span>
+								</Menu.Trigger>
+								<Menu.Popup align="end" className={mergeStylexOverrideClassName("", sx.minW200px)}>
+									<Menu.RadioGroup
+										value={scopeValue}
+										onValueChange={(value) =>
+											pick(
+												value === "everyone"
+													? { kind: "everyone" }
+													: { kind: "person", key: String(value) },
+											)
+										}
+									>
+										<Menu.RadioItem value="everyone" closeOnClick>
+											<span {...mergeStylexProps(utilityClassName("flex items-center justify-center text-dim"), sx.size6)}>
+												<IconPeople size={18} />
+											</span>
+											<span className={utilityClassName("min-w-0 flex-1")}>Everyone</span>
+											<Menu.Check on={scope.kind === "everyone"} />
+										</Menu.RadioItem>
+										{chips.map((member) => (
+											<Menu.RadioItem key={member.key} value={member.key} closeOnClick>
+												<span className={utilityClassName("relative flex")}>
+													<UserAvatar name={member.person.name} size={24} />
+													<StatusDot state={presenceState(member)} ring="var(--bg-popup)" size={7} />
+												</span>
+												<span className={utilityClassName("min-w-0 flex-1 truncate")}>
+													{member.isYou ? "You" : member.person.name}
+												</span>
+												<Menu.Check on={scope.kind === "person" && scope.key === member.key} />
+											</Menu.RadioItem>
+										))}
+									</Menu.RadioGroup>
+								</Menu.Popup>
+							</Menu.Root>
+						</TopBarActions>
+					)}
+				</div>
+			</TopBar>
 
-				{feedLoading ? (
+			<div data-page-scroll className={utilityClassName("min-h-0 flex-1 overflow-y-auto")}>
+				<div {...mergeStylexProps(utilityClassName("mx-auto w-full px-6 phone:px-4 phone:pb-12 phone:pt-4"), sx.maxW920px, sx.pb15, sx.pt6)}>
+					{feedLoading ? (
 					<>
-						<div {...stylex.props(sx.mb2, sx.flex, sx.minH30px, sx.itemsCenter)}>
-							<h3 className={cn(PEOPLE_SECTION_LABEL, mergeStylexClassName("", sx.mb0))}>Shipped</h3>
+						<div {...mergeStylexProps(utilityClassName("mb-2 flex items-center"), sx.minH30px)}>
+							<h3 className={cn(PEOPLE_SECTION_LABEL, utilityClassName("mb-0"))}>Shipped</h3>
 						</div>
 						<ListSkeleton
 							variant="bare"
 							rows={6}
 							label="Loading feed"
 							className={PR_LIST}
-							rowClassName={mergeStylexClassName("", sharedClassStyles.py18px)}
+							rowClassName="py-[18px]"
 						/>
 					</>
 				) : recentPrs.length === 0 && commits.length === 0 ? (
@@ -522,8 +437,8 @@ export function Feed({ sessions, teamViewing, onSelect }: Props) {
 						    changing whose sidebar you are in, and it has to stay on
 						    screen when a pick empties the list, or the only way back
 						    is gone. */}
-						<div {...stylex.props(sx.mb2, sx.flex, sx.minH30px, sx.itemsCenter, sx.justifyBetween, sx.gap3)}>
-							<h3 className={cn(PEOPLE_SECTION_LABEL, mergeStylexClassName("", sx.mb0))}>
+						<div {...mergeStylexProps(utilityClassName("mb-2 flex items-center justify-between gap-3"), sx.minH30px)}>
+							<h3 className={cn(PEOPLE_SECTION_LABEL, utilityClassName("mb-0"))}>
 								{scopeName ? `${scopeName} shipped` : "Shipped"}
 							</h3>
 							{repoOptions.length > 1 && (
@@ -531,7 +446,7 @@ export function Feed({ sessions, teamViewing, onSelect }: Props) {
 									<Menu.Trigger
 										render={
 											<Button variant="ghost" size="sm" icon={<IconRepo size={18} />} caret>
-												<span {...stylex.props(sx.maxW150px, sx.truncate)}>
+												<span {...mergeStylexProps(utilityClassName("truncate"), sx.maxW150px)}>
 													{repo === "all" ? "In all repos" : `In ${repoLabel(repo)}`}
 												</span>
 											</Button>
@@ -544,14 +459,14 @@ export function Feed({ sessions, teamViewing, onSelect }: Props) {
 										>
 											<Menu.RadioItem value="all" closeOnClick>
 												{/* Sized to the tiles below so every label shares one edge. */}
-												<span {...stylex.props(sx.size18px, sx.shrink0)} />
-												<span {...stylex.props(sx.minW0, sx.flex1, sx.truncate)}>All repos</span>
+												<span className={utilityClassName("size-[18px] shrink-0")} />
+												<span className={utilityClassName("min-w-0 flex-1 truncate")}>All repos</span>
 												<Menu.Check on={repo === "all"} />
 											</Menu.RadioItem>
 											{repoOptions.map((name) => (
 												<Menu.RadioItem key={name} value={name} closeOnClick>
 													<RepoTile name={name} size={18} />
-													<span {...stylex.props(sx.minW0, sx.flex1, sx.truncate)}>
+													<span className={utilityClassName("min-w-0 flex-1 truncate")}>
 														{repoLabel(name)}
 													</span>
 													<Menu.Check on={repo === name} />
@@ -568,7 +483,7 @@ export function Feed({ sessions, teamViewing, onSelect }: Props) {
 								rows={6}
 								label="Loading feed"
 								className={PR_LIST}
-								rowClassName={mergeStylexClassName("", sharedClassStyles.py18px)}
+								rowClassName="py-[18px]"
 							/>
 						) : dayGroups.length === 0 ? (
 							// A picked teammate or repo with nothing shipped is an answer,
@@ -588,10 +503,10 @@ export function Feed({ sessions, teamViewing, onSelect }: Props) {
 						) : null}
 						<div className={PR_LIST}>
 							{dayGroups.map(([label, rows]) => (
-								<div key={label} {...stylex.props(sx.mb5)}>
+								<div key={label} className={utilityClassName("mb-5")}>
 									<h4 className={PR_FEED_GROUP_LABEL}>
 										{label}
-										<span {...stylex.props(sx.fontMedium)}>{rows.length}</span>
+										<span className={utilityClassName("font-medium")}>{rows.length}</span>
 									</h4>
 									<div>
 										{rows.map((row) => (
@@ -626,13 +541,13 @@ export function Feed({ sessions, teamViewing, onSelect }: Props) {
 												    what the picture already said and made the feed twice
 												    as tall as it needed to be. The name is in the row's
 												    tooltip and in the repo filter above. */}
-												<span {...stylex.props(sx.flex, sx.minW0, sx.itemsBaseline, sx.gap2)}>
-													<RepoTile name={row.repo} size={16} className={mergeStylexOverrideClassName("", sx.selfCenter)} />
-													<span {...stylex.props(sx.truncate, sx.fontMedium, sx.leading13, sx.textFg, typography.itemTitle)}>
+												<span {...mergeStylexProps(utilityClassName("flex min-w-0 gap-2"), sx.itemsBaseline)}>
+													<RepoTile name={row.repo} size={16} className={utilityClassName("self-center")} />
+													<span {...mergeStylexProps(utilityClassName("truncate text-item-title font-medium text-fg"), sx.leading13)}>
 														{row.title}
 													</span>
 													{row.ref && (
-														<span {...mergeStylexProps("", sx.tabularNums, sx.shrink0, sx.textFaint, typography.meta)}>
+														<span {...mergeStylexProps(utilityClassName("shrink-0 tabular-nums text-faint"), typography.meta)}>
 															{row.ref}
 														</span>
 													)}
@@ -645,15 +560,15 @@ export function Feed({ sessions, teamViewing, onSelect }: Props) {
 												</span>
 												{/* A side that moved no lines is left off rather than
 												    written as a zero: every commit carries both counts. */}
-												<span {...mergeStylexProps("", sx.tabularNums, sx.phoneHidden, sx.justifySelfEnd, typography.meta)}>
+												<span {...mergeStylexProps(utilityClassName("tabular-nums phone:hidden"), sx.justifySelfEnd, typography.meta)}>
 													{!!row.additions && (
-														<span {...stylex.props(sx.textGreen)}>+{compactDiff(row.additions)}</span>
+														<span className={utilityClassName("text-green")}>+{compactDiff(row.additions)}</span>
 													)}
 													{!!row.deletions && (
-														<span {...stylex.props(sx.ml2, sx.textRed)}>−{compactDiff(row.deletions)}</span>
+														<span {...mergeStylexProps(utilityClassName("text-red"), sx.ml2)}>−{compactDiff(row.deletions)}</span>
 													)}
 												</span>
-												<span {...mergeStylexProps("", sx.tabularNums, sx.justifySelfEnd, sx.textFaint, typography.meta)}>
+												<span {...mergeStylexProps(utilityClassName("tabular-nums text-faint"), sx.justifySelfEnd, typography.meta)}>
 													{compactAge(row.shippedAt)}
 												</span>
 											</button>
@@ -668,7 +583,7 @@ export function Feed({ sessions, teamViewing, onSelect }: Props) {
 						    it holds nothing older, so the last page ends in the list
 						    rather than in a button that would do nothing. */}
 						{canWiden && (
-							<div {...stylex.props(sx.mt1, sx.flex, sx.justifyCenter)}>
+							<div className={utilityClassName("mt-1 flex justify-center")}>
 								<Button
 									variant="ghost"
 									size="sm"
@@ -680,7 +595,8 @@ export function Feed({ sessions, teamViewing, onSelect }: Props) {
 							</div>
 						)}
 					</>
-				)}
+					)}
+				</div>
 			</div>
 		</div>
 	);

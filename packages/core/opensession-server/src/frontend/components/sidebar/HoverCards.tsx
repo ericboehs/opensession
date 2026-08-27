@@ -282,6 +282,8 @@ const sx = stylex.create({
 export function SessionCardBody({ session: s }: { session: UnifiedSession }) {
 	const state = hoverState(s);
 	const ov = useSessionOverview(s);
+	const attentionDetail =
+		s.safety?.explanation ?? (!s.isRunning ? s.lastRunError?.message : undefined);
 	const rows: Array<[string, React.ReactNode]> = [];
 	const hasHead =
 		(s.prAdditions != null && s.prDeletions != null) || !!s.prOsReview;
@@ -357,11 +359,11 @@ export function SessionCardBody({ session: s }: { session: UnifiedSession }) {
 					Blocked on a question. Open the session to answer.
 				</div>
 			)}
-			{!s.waitingForInput && runNeedsAttention(s) && (
+			{!s.waitingForInput && attentionDetail && (
 				<div {...mergeStylexProps("", sx.lineClamp2, sx.mt7px, sx.roundedMd, sx.bgAccentSoft, sx.px2, sx.py5px, sx.leadingSnug, sx.textDim, typography.meta)}
-					title={s.lastRunError!.message}
+					title={attentionDetail}
 				>
-					{cardRunErrorDetail(s.lastRunError!.message)}
+					{cardRunErrorDetail(attentionDetail)}
 				</div>
 			)}
 			{!s.waitingForInput && (s.queuedCount ?? 0) > 0 && (
@@ -699,7 +701,11 @@ function WsOverviewInfo({
 	const hasHead =
 		(prSession?.prAdditions != null && prSession?.prDeletions != null) ||
 		!!prSession?.prOsReview;
-	const failedSession = workspaceRunNeedingAttention(row.sessions);
+	const attentionSession = workspaceRunNeedingAttention(row.sessions);
+	const attentionDetail =
+		attentionSession?.safety?.explanation ??
+		attentionSession?.lastRunError?.message ??
+		"Needs attention.";
 	return (
 		<>
 			{/* The PR facts, on one strip above the title: what changed, what the
@@ -757,11 +763,9 @@ function WsOverviewInfo({
 					</div>
 				) : (
 					<div {...mergeStylexProps("", sx.lineClamp2, sx.mt7px, sx.roundedMd, sx.bgAccentSoft, sx.px2, sx.py5px, sx.leadingSnug, sx.textDim, typography.meta)}
-						title={failedSession?.lastRunError?.message}
+						title={attentionDetail}
 					>
-						{cardRunErrorDetail(
-							failedSession?.lastRunError?.message || "Needs attention.",
-						)}
+						{cardRunErrorDetail(attentionDetail)}
 					</div>
 				))}
 

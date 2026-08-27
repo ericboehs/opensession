@@ -54,10 +54,6 @@
 #
 # With --tailscale the client is installed but not joined to a network, since
 # joining needs your account. Set TS_AUTHKEY to have the installer do that too.
-# On Linux, Open Session needs permission to turn on a public Tailscale address.
-# The installer prints the one-time command after network setup, but does not
-# run it automatically because it may take that permission away from another
-# app on the server.
 #
 set -euo pipefail
 
@@ -742,15 +738,6 @@ else
       info "2. ${C}opensession bind${N}"
     fi
   fi
-fi
-
-if [ "$WITH_TAILSCALE" = "1" ] \
-  && command -v tailscale >/dev/null 2>&1 \
-  && [ "$OS" != "Darwin" ]; then
-  muted "To let Open Session turn on a public Tailscale address, run this once:"
-  info "${C}sudo tailscale set --operator=\"$(id -un)\"${N}"
-  muted "This lets Open Session change Tailscale settings."
-  muted "It may remove the same access from another app, such as Caddy."
 fi
 
 # Public ingress is configured in /welcome or Settings after the service is

@@ -2,7 +2,7 @@ import { mergeStylexProps, mergeStylexOverrideClassName } from "../ui/cn";
 import { utilityClassName } from "../ui/cn";
 import React, { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import type { Workspace, UnifiedSession } from "../lib/types";
+import type { UnifiedSession } from "../lib/types";
 import { fetchHomeStats, fetchRecentPrs, type HomeStats, type RecentPr } from "../lib/api";
 import { prStatusMark } from "../lib/pr-status";
 import {
@@ -42,7 +42,6 @@ import {
 import {
   IconArchive,
   IconDotsHorizontal,
-  IconFolder,
   IconGitMerge,
   IconPeople,
   IconPlus,
@@ -323,7 +322,6 @@ const sx = stylex.create({
 
 interface Props {
   sessions: UnifiedSession[];
-  workspaces: Workspace[];
   onSelect: (session: UnifiedSession) => void;
   onNewSession: () => void;
   onShowArchived: () => void;
@@ -516,7 +514,6 @@ function StateIcon({ state }: { state: WorktreeRow["state"] }) {
 
 export function Prs({
   sessions,
-  workspaces,
   onSelect,
   onNewSession,
   onShowArchived,
@@ -531,12 +528,11 @@ export function Prs({
   const [searchActive, setSearchActive] = useState(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const searchExpanded = searchActive || query.length > 0;
-  const [workspaceId, setWorkspaceId] = useState("all");
   const [repo, setRepo] = useState("all");
   // Whose pull requests to show, and nothing more. This used to be the app's
   // person lens, so narrowing the list here also swapped the sidebar out from
-  // under you. It is an ordinary filter now, alongside workspace and repo:
-  // switching whose work the app is showing is the People page's job.
+  // under you. It is an ordinary filter now, alongside repo: switching whose
+  // work the app is showing is the People page's job.
   const [person, setPerson] = useState("all");
   // Everyone, not only whoever the default request happened to return, because
   // picking someone fetches their pull requests below.
@@ -551,7 +547,7 @@ export function Prs({
   const [personPrs, setPersonPrs] = useState<RecentPr[]>([]);
   const [stats, setStats] = useState<HomeStats | null>(readCachedHomeStats);
   const [preview, setPreview] = useState<PrPreviewTarget | null>(null);
-  const renderScope = [query, workspaceId, repo, person, String(showArchived)].join("\0");
+  const renderScope = [query, repo, person, String(showArchived)].join("\0");
   const [renderWindow, setRenderWindow] = useState(() => ({
     scope: renderScope,
     limit: INITIAL_PR_ROWS,
@@ -641,9 +637,6 @@ setAddingToSidebar(false);
     return allWorktrees
       .filter((row) => {
         if (!showArchived && row.archived) return false;
-        if (workspaceId === "standalone" && row.workspaceId) return false;
-        if (workspaceId !== "all" && workspaceId !== "standalone" && row.workspaceId !== workspaceId)
-          return false;
         if (repo !== "all" && row.repo !== repo) return false;
         if (person !== "all" && row.person !== person) return false;
         if (!needle) return true;
@@ -676,11 +669,6 @@ setAddingToSidebar(false);
     });
   })();
 
-  const workspaceOptions = (() => {
-    const represented = new Set(sessions.filter((s) => s.prUrl || s.prs?.some((pr) => pr.url)).map((s) => s.workspaceId));
-    return workspaces.filter((workspace) => represented.has(workspace.id));
-  })();
-
   const repoOptions = ([...new Set(allWorktrees.map((row) => row.repo).filter(Boolean))].sort());
 
   // The page's controls, in the window's top bar rather than in a strip of
@@ -689,14 +677,14 @@ setAddingToSidebar(false);
   // first pull request. Search, the scopes and the one CTA go up there, and the
   // body keeps the title and the day's numbers.
   //
-  // The three scopes stay three controls, side by side, rather than folding
-  // into one Filters button: each says what it is set to without being opened,
-  // which is the whole of what this row has to tell you at rest. They are ghost
+  // The two scopes stay two controls, side by side, rather than folding into
+  // one Filters button: each says what it is set to without being opened, which
+  // is the whole of what this row has to tell you at rest. They are ghost
   // buttons so the run of them reads as one group of words between the field
-  // and the CTA, rather than as three more plates.
+  // and the CTA, rather than as two more plates.
   //
   // Each names its value rather than a phrase about it ("All repos", not "In
-  // all repos"): three of them and a field and a button share this row, and the
+  // all repos"): two of them and a field and a button share this row, and the
   // preposition is the first thing that does not fit. The glyph already says
   // which scope it is, and the label now matches the row it is set to in the
   // menu below.
@@ -814,46 +802,6 @@ setAddingToSidebar(false);
         </Menu.Root>
       )}
 
-      <Menu.Root>
-        <Menu.Trigger
-          render={
-            <Button variant="ghost" className={mergeStylexOverrideClassName("", sx.minW0)} icon={<IconFolder size={18} />} caret>
-              <span {...stylex.props(sx.maxW150px, sx.truncate)}>
-                {workspaceId === "all"
-                  ? "All workspaces"
-                  : workspaceId === "standalone"
-                    ? "Standalone"
-                    : (workspaceOptions.find((w) => w.id === workspaceId)?.name ?? "Workspace")}
-              </span>
-            </Button>
-          }
-        />
-        {/* Capped, because a workspace is named after the pull request it was
-            opened for and those names run long. Uncapped, one of them sets the
-            width of the whole popup and the menu spans half the page. */}
-        <Menu.Popup align="end" className={mergeStylexOverrideClassName("", sx.minW200px, sx.maxW320px)}>
-          <Menu.RadioGroup
-            value={workspaceId}
-            onValueChange={(value) => setWorkspaceId(String(value))}
-          >
-            <Menu.RadioItem value="all" closeOnClick>
-              <span {...stylex.props(sx.minW0, sx.flex1, sx.truncate)}>All workspaces</span>
-              <Menu.Check on={workspaceId === "all"} />
-            </Menu.RadioItem>
-            {workspaceOptions.map((workspace) => (
-              <Menu.RadioItem key={workspace.id} value={workspace.id} closeOnClick>
-                <span {...stylex.props(sx.minW0, sx.flex1, sx.truncate)}>{workspace.name}</span>
-                <Menu.Check on={workspaceId === workspace.id} />
-              </Menu.RadioItem>
-            ))}
-            <Menu.RadioItem value="standalone" closeOnClick>
-              <span {...stylex.props(sx.minW0, sx.flex1, sx.truncate)}>Standalone</span>
-              <Menu.Check on={workspaceId === "standalone"} />
-            </Menu.RadioItem>
-          </Menu.RadioGroup>
-        </Menu.Popup>
-      </Menu.Root>
-
       {repoOptions.length > 1 && (
         <Menu.Root>
           <Menu.Trigger
@@ -959,9 +907,9 @@ setAddingToSidebar(false);
             }
           >
             {query
-              ? "Try another search or workspace."
+              ? "Try another search or filter."
               : person === "all"
-                ? "Workspaces with pull requests appear here."
+                ? "Pull requests appear here."
                 : "Pick someone else, or set the filter back to anyone."}
           </EmptyState>
         ) : (

@@ -6124,7 +6124,6 @@ console.error("Archive failed:", e);
 							   the root, freezing the back-swipe for seconds. */
 							<Prs
 								sessions={sessions}
-								workspaces={workspaces}
 								onSelect={(s) => navigate({ view: "session", id: s.id })}
 								onNewSession={() => openPalette()}
 								onShowArchived={refreshArchived}
