@@ -184,7 +184,7 @@ function GithubSetupStep({
 				</span>
 				<Tooltip
 					side="top"
-					align="start"
+					align="center"
 					offset={6}
 					multiline
 					popupClassName={utilityClassName("max-w-[424px]! p-2!")}
