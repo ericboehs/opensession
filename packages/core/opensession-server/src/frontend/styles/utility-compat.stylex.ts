@@ -1061,6 +1061,9 @@ const sx = stylex.create({
 	durationVarDur: {
 			transitionDuration: "var(--dur)"
 	},
+	durationVarDurLg: {
+			transitionDuration: "var(--dur-lg)"
+	},
 	durationVarDurMicro: {
 			transitionDuration: "var(--dur-micro)"
 	},
@@ -2826,6 +2829,10 @@ const sx = stylex.create({
 			borderRadius: "calc(12px * var(--rf))",
 			cornerShape: "var(--cs)"
 	},
+	roundedSection: {
+			borderRadius: "calc(28px * var(--rf))",
+			cornerShape: "var(--cs)"
+	},
 	roundedSm: {
 			borderRadius: "calc(4px * var(--rf))",
 			cornerShape: "var(--cs)"
@@ -3125,6 +3132,11 @@ const sx = stylex.create({
 	},
 	transitionWidthBackgroundColorOpacity: {
 			transitionProperty: "width,background-color,opacity",
+			transitionTimingFunction: "var(--tw-ease, var(--ease))",
+			transitionDuration: "var(--tw-duration, var(--dur-micro))"
+	},
+	transitionWidthHeight: {
+			transitionProperty: "width,height",
 			transitionTimingFunction: "var(--tw-ease, var(--ease))",
 			transitionDuration: "var(--tw-duration, var(--dur-micro))"
 	},
@@ -3528,6 +3540,7 @@ export const utilityStyles = {
 	"duration-150": sx.duration150,
 	"duration-300": sx.duration300,
 	"duration-[var(--dur)]": sx.durationVarDur,
+	"duration-[var(--dur-lg)]": sx.durationVarDurLg,
 	"duration-[var(--dur-micro)]": sx.durationVarDurMicro,
 	"ease-(--ease)": sx.easeEase,
 	"ease-[var(--ease)]": sx.easeVarEase,
@@ -3989,6 +4002,7 @@ export const utilityStyles = {
 	"rounded-lg": sx.roundedLg,
 	"rounded-md": sx.roundedMd,
 	"rounded-row": sx.roundedRow,
+	"rounded-section": sx.roundedSection,
 	"rounded-sm": sx.roundedSm,
 	"rounded-t-[var(--composer-radius)]": sx.roundedTVarComposerRadius,
 	"rounded-xl": sx.roundedXl,
@@ -4070,6 +4084,7 @@ export const utilityStyles = {
 	"transition-[transform,filter]": sx.transitionTransformFilter,
 	"transition-[transform,opacity]": sx.transitionTransformOpacity,
 	"transition-[width,background-color,opacity]": sx.transitionWidthBackgroundColorOpacity,
+	"transition-[width,height]": sx.transitionWidthHeight,
 	"transition-[width]": sx.transitionWidth,
 	"transition-colors": sx.transitionColors,
 	"transition-none": sx.transitionNone,

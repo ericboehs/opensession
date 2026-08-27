@@ -868,7 +868,7 @@ export function FirstMile({ onDone }: { onDone: () => Promise<void> }) {
 			</nav>
 
 			{!status ? (
-				<div className={utilityClassName("flex min-h-40 w-full max-w-[560px] self-center justify-self-center items-center justify-center rounded-3xl bg-palette-glass px-8 py-12 [--smooth-ring-color:var(--dialog-ring)] [backdrop-filter:var(--popup-blur)] smooth-shadow-ring-lg")}>
+				<div className={utilityClassName("flex min-h-40 w-full max-w-[560px] self-center justify-self-center items-center justify-center rounded-section bg-palette-glass px-8 py-12 [--smooth-ring-color:var(--dialog-ring)] [backdrop-filter:var(--popup-blur)] smooth-shadow-ring-lg")}>
 					<LoadingState>
 						{failed ? "Couldn't load setup." : "Preparing your workspace…"}
 					</LoadingState>
@@ -881,7 +881,7 @@ export function FirstMile({ onDone }: { onDone: () => Promise<void> }) {
 					transition={{ type: "tween", duration: duration.micro, ease }}
 					onAnimationComplete={finishPanelCrossfade}
 					className={cn(
-					utilityClassName("relative z-10 flex max-h-full w-full self-center justify-self-center flex-col overflow-hidden rounded-3xl phone:h-full phone:max-h-none phone:max-w-none phone:self-stretch phone:rounded-none phone:[box-shadow:none]"),
+					utilityClassName("relative z-10 flex max-h-full w-full self-center justify-self-center flex-col overflow-hidden rounded-section phone:h-full phone:max-h-none phone:max-w-none phone:self-stretch phone:rounded-none phone:[box-shadow:none]"),
 					panelSize
 						? utilityClassName("max-w-none")
 						: step.id === "ready"
@@ -892,7 +892,7 @@ export function FirstMile({ onDone }: { onDone: () => Promise<void> }) {
 					edgeSurface
 						? utilityClassName("bg-transparent [backdrop-filter:none]")
 						: utilityClassName("bg-palette-glass [--smooth-ring-color:var(--dialog-ring)] [backdrop-filter:var(--popup-blur)] smooth-shadow-ring-lg"),
-					panelSize?.phase === "animating" && utilityClassName("transition-[width,height,max-height] duration-[var(--dur)] ease-[var(--ease)] motion-reduce:transition-none"),
+					panelSize?.phase === "animating" && utilityClassName("transition-[width,height] duration-[var(--dur-lg)] ease-[var(--ease)] motion-reduce:transition-none"),
 					)}
 					style={
 						panelSize

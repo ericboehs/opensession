@@ -182,6 +182,8 @@
 	   in dark. */
 	--font-weight-title: var(--title-weight);
 	--radius-panel: calc(var(--radius) * var(--rf));
+	/* The large standalone section shared by the website and first-run setup. */
+	--radius-section: calc(28px * var(--rf));
 	/* The corner every button and chip in the chrome shares. legacy.css authors
 	   it as `calc(10px * var(--rf))` on .btn-viewer-pin / .btn-panel-toggle /
 	   .btn-viewer-newsession and friends; naming it here lets the Button primitive
