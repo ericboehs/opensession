@@ -5,6 +5,7 @@ import { markTileShadow } from "../lib/mark-tile";
 import { repoLetter } from "../lib/repo-label";
 import {
 	hasRepoIcon,
+	hasRoundRepoIcon,
 	REPO_TILE_INK,
 	repoColor,
 	repoIconFill,
@@ -55,8 +56,10 @@ const ICON_VERSION = 6;
 // even when their letters don't. Every icon arrives drawn to the same
 // proportions (see the route), so the tile scales them all identically.
 // `size` (px) shrinks it for tight spots like the phone header's model line;
-// omitted = the 18px default. `round` makes it a full circle (e.g. the phone
-// title pill, where it sits against the pill's own rounding).
+// omitted = the 18px default. Tiles are squircles unless `round` requests a
+// circle (e.g. the phone title pill), or the only available artwork is an
+// inherently circular GitHub owner avatar. In that case the container follows
+// the art instead of drawing empty squircle corners around it.
 //
 // `className` is merged so a caller can adjust the tile in place instead of
 // reaching through `.repo-tile` from an ancestor's stylesheet — the sidebar's
@@ -73,9 +76,9 @@ const ICON_VERSION = 6;
 const TILE =
 	// Settings applies body leading to every descendant, which makes the fallback
 	// letter's line box taller than the tile and leaves its cap height visibly
-	// high. A direct-child rule wins that page-level override; the one-pixel
-	// nudge then centers the glyph optically rather than its font metrics.
-	utilityClassName("repo-tile inline-flex size-[18px] shrink-0 items-center justify-center rounded-sm text-meta font-bold [&>span]:!leading-none");
+	// high. A direct-child rule wins that page-level override, then flex centers
+	// the tight line box without an extra baseline offset.
+	utilityClassName("repo-tile inline-flex size-[18px] shrink-0 items-center justify-center overflow-hidden rounded-sm text-meta font-bold [&>span]:!leading-none");
 
 export function RepoTile({
 	name,
@@ -95,13 +98,17 @@ export function RepoTile({
 	// given an icon from Settings had already 404'd, and without the revision
 	// in the key it would keep painting its letter until a reload.
 	const [failedFor, setFailedFor] = React.useState<string | null>(null);
+	const rev = repoIconRevision(name);
+	const attempt = `${name}:${rev ?? 0}`;
+	const usingIcon = hasRepoIcon(name) && failedFor !== attempt;
+	const circular = Boolean(round || (usingIcon && hasRoundRepoIcon(name)));
 	const style: React.CSSProperties = {};
 	if (size) {
 		style.width = size;
 		style.height = size;
 		style.fontSize = Math.round(size * 0.6);
-		style.borderRadius = round ? "50%" : Math.max(3, Math.round(size * 0.28));
-	} else if (round) {
+		style.borderRadius = circular ? "50%" : Math.max(3, Math.round(size * 0.28));
+	} else if (circular) {
 		style.borderRadius = "50%";
 	}
 	// The tile's ink, on BOTH variants. legacy.css put `color: #fff` on
@@ -110,23 +117,16 @@ export function RepoTile({
 	// see REPO_TILE_INK) rather than as a raw colour in a utility.
 	style.color = REPO_TILE_INK;
 	if (glow) style.boxShadow = markTileShadow(repoColor(name));
-	const rev = repoIconRevision(name);
-	const attempt = `${name}:${rev ?? 0}`;
-	if (hasRepoIcon(name) && failedFor !== attempt) {
+	if (usingIcon) {
 		return (
-			<span className={cn(TILE, className)} style={style}>
-				{/* The img fills the tile and inherits its rounding; the tile keeps
-				    no colored backing, so icons with transparency sit on the
-				    surface itself. No inset on purpose, at either end: the route
-				    crops every icon to its artwork and adds no margin back
-				    (png-trim.ts), so the art reaches the tile's edge exactly the
-				    way a lettered tile's color reaches its own. Any breathing
-				    room here — or baked into the image — is what makes an icon
-				    read a size smaller than the tiles beside it.
-				    `border-radius: inherit` is spelled as the property rather
-				    than `rounded-[inherit]`: any `rounded-*` class also picks up
-				    base.css's squircle grant, and this img has always worn a
-				    plain round corner inside its squircled tile. */}
+			<span className={cn(TILE, circular && "rounded-full", className)} style={style}>
+				{/* The image fills the tile. The parent clips it to the same squircle
+				    (or source-matched circle) as its border, so transparent or square
+				    artwork cannot sit inside a smaller-looking inner box. No inset on
+				    purpose: the route crops every icon to its artwork and adds no
+				    margin back (png-trim.ts), so its ink reaches the same frame as a
+				    letter tile. `border-radius: inherit` keeps the non-squircle browser
+				    fallback aligned with that clipping edge. */}
 				<img
 					src={`/repo-icon/${encodeURIComponent(name)}.png?v=${ICON_VERSION}${
 						rev ? `&r=${rev}` : ""
@@ -142,7 +142,7 @@ export function RepoTile({
 	style.background = repoIconFill(repoColor(name));
 	const letter = repoLetter(name);
 	return (
-		<span className={cn(TILE, className)} style={style}>
+		<span className={cn(TILE, circular && "rounded-full", className)} style={style}>
 			<span>{letter}</span>
 		</span>
 	);

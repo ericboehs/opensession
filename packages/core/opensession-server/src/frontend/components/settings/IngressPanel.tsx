@@ -482,7 +482,7 @@ function PrivateAppSetup({
 	const status = settings.app.domain.health;
 	return (
 		<>
-			{!onboarding && (
+			{!onboarding && savedDomain && (
 				<SettingCard className={cn(utilityClassName("bg-raised"), mergeStylexOverrideClassName("", sx.desktopBgPanel))}>
 					<SettingRow>
 						<SettingRowText>

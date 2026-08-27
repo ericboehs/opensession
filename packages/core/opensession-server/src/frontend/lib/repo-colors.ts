@@ -54,6 +54,9 @@ const assigned = new Map<string, string>();
 const revisions = new Map<string, number>();
 /** Repositories that have their own icon rather than a colored letter tile. */
 const iconRepos = new Set<string>();
+/** Where each icon came from. GitHub owner avatars are circular artwork;
+ * uploads and generated tiles use the product's squircle container. */
+const iconSources = new Map<string, "github" | "upload">();
 
 /** Record the assignment that came down with the repo list. */
 export function rememberRepoColors(
@@ -61,6 +64,7 @@ export function rememberRepoColors(
 		id: string;
 		color?: string;
 		hasIcon?: boolean;
+		iconSource?: "github" | "upload" | null;
 		iconRev?: number | null;
 	}>,
 ): void {
@@ -68,6 +72,8 @@ export function rememberRepoColors(
 		if (repo.color) assigned.set(repo.id, repo.color);
 		if (repo.hasIcon) iconRepos.add(repo.id);
 		else iconRepos.delete(repo.id);
+		if (repo.iconSource) iconSources.set(repo.id, repo.iconSource);
+		else iconSources.delete(repo.id);
 		if (repo.iconRev) revisions.set(repo.id, repo.iconRev);
 		else revisions.delete(repo.id);
 	}
@@ -76,6 +82,12 @@ export function rememberRepoColors(
 /** Whether the repository has custom artwork worth requesting from the server. */
 export function hasRepoIcon(id: string): boolean {
 	return iconRepos.has(id);
+}
+
+/** Whether the available artwork is inherently circular. Keeping its container
+ * circular avoids a squircle outline floating around transparent corners. */
+export function hasRoundRepoIcon(id: string): boolean {
+	return iconSources.get(id) === "github";
 }
 
 /**

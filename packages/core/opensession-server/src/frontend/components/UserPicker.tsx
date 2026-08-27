@@ -28,6 +28,9 @@ const sx = stylex.create({
 	inset0: {
 			inset: "0"
 	},
+	fontSans: {
+			fontFamily: "var(--sans)"
+	},
 	border0: {
 			borderStyle: "solid",
 			borderWidth: "0"
@@ -657,7 +660,7 @@ setError(e.message);
             </span>
             .
           </AuthCopy>
-          {/* The code is what this screen is for, so it gets the largest type
+          {/* The code is what this screen is for, so it gets a clear display
               step and a plain paper block rather than the shared input chrome. */}
           <DeviceCode
             code={flow.userCode}
@@ -667,8 +670,9 @@ setError(e.message);
               sx.bgSurface,
               sx.px4,
               sx.py25,
+              sx.fontSans,
               sx.hoverBgSurface,
-              typography.stat,
+              typography.pageTitle,
             )}
           />
           <a

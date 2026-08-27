@@ -109,6 +109,14 @@ const sx = stylex.create({
 	gap25: {
 			gap: "calc(4px * 2.5)"
 	},
+	roundedFull: {
+			borderRadius: "calc(infinity * 1px)",
+		cornerShape: "round"
+	},
+	roundedSm: {
+			borderRadius: "calc(6px * var(--rf))",
+		cornerShape: "var(--cs)"
+	},
 	roundedMd: {
 			borderRadius: "calc(7px * var(--rf))",
 
@@ -721,10 +729,15 @@ setBusy(false);
 	return (
 		<Popover.Root>
 			<Popover.Trigger
-				className={mergeStylexOverrideClassName("focus-visible:ring-2 focus-visible:ring-[var(--accent,#6b8afd)]", sx.shrink0, sx.roundedMd, sx.outlineNone)}
+				className={mergeStylexOverrideClassName(
+					"focus-visible:ring-2 focus-visible:ring-[var(--accent,#6b8afd)]",
+					sx.shrink0,
+					sx.outlineNone,
+					repo?.iconSource === "github" ? sx.roundedFull : sx.roundedSm,
+				)}
 				aria-label={`Change ${id}'s icon`}
 			>
-				<RepoTile name={id} size={28} glow={glow} />
+				<RepoTile name={id} size={28} glow={glow} className="border border-line" />
 			</Popover.Trigger>
 			<Popover.Popup className={mergeStylexOverrideClassName("", sx.w248px, sx.p3)} initialFocus>
 				<div {...stylex.props(sx.mb2, sx.fontMedium, sx.textDim, typography.meta)}>Icon</div>

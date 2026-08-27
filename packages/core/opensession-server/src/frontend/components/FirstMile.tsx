@@ -391,7 +391,7 @@ function PreviewOverflow({
 		<span
 			className={cn(
 				utilityClassName("flex size-7 items-center justify-center rounded-full border text-meta font-semibold text-dim"),
-				transparent ? utilityClassName("border-transparent bg-transparent") : utilityClassName("border-bg bg-bg/85"),
+				transparent ? utilityClassName("border-transparent bg-transparent") : utilityClassName("border-line bg-bg/85"),
 			)}
 		>
 			+{count}
@@ -508,7 +508,6 @@ function FirstMileSummary({
 							<RepoTile
 								name={repo.id}
 								size={28}
-								round
 								className={mergeStylexOverrideClassName("", sx.border, sx.borderLine)}
 							/>
 						</span>
