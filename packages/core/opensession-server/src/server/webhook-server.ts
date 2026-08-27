@@ -5,7 +5,7 @@
  * listener owns the only internet-facing local endpoint and dispatches exact
  * registered methods and paths here after handling its sandbox/OIDC routes.
  * Keeping registration separate from Bun.serve makes the application route
- * table the fail-closed allowlist for Caddy, Funnel and Cloudflare Tunnel.
+ * table the fail-closed allowlist for Caddy and Cloudflare Tunnel.
  */
 import type { AgentModule } from "../agents/types";
 

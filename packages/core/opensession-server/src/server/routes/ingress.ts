@@ -1,12 +1,10 @@
 import {
   configureCloudflareTunnel,
-  enableTailscaleFunnel,
   installManagedCaddy,
   publicIngressStatus,
   savePrivateAppOrigin,
   savePublicIngress,
   setupPrivateAppDomain,
-  TailscaleFunnelActionRequired,
   verifyPrivateAppDomain,
 } from "../ingress-settings";
 import { audit } from "../audit";
@@ -22,17 +20,8 @@ import type { RouteContext } from "./context";
 
 function errorResponse(error: unknown): Response {
   return Response.json(
-    {
-      error: error instanceof Error ? error.message : String(error),
-      ...(error instanceof TailscaleFunnelActionRequired
-        ? {
-            actionUrl: error.actionUrl,
-            actionCommand: error.actionCommand,
-            actionKind: error.actionKind,
-          }
-        : {}),
-    },
-    { status: error instanceof TailscaleFunnelActionRequired ? 409 : 400 },
+    { error: error instanceof Error ? error.message : String(error) },
+    { status: 400 },
   );
 }
 
@@ -134,17 +123,6 @@ export async function handleIngressRoutes(ctx: RouteContext): Promise<Response |
         cloudflareTunnelId:
           typeof body.cloudflareTunnelId === "string" ? body.cloudflareTunnelId : undefined,
       });
-      refreshIndexHtml("public ingress changed");
-      return Response.json(await changedIngressResponse());
-    } catch (error) {
-      return errorResponse(error);
-    }
-  }
-  if (path === "/api/ingress/tailscale" && req.method === "POST") {
-    const forbidden = requireWorkspaceAdmin(ctx);
-    if (forbidden) return forbidden;
-    try {
-      await enableTailscaleFunnel();
       refreshIndexHtml("public ingress changed");
       return Response.json(await changedIngressResponse());
     } catch (error) {

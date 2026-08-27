@@ -14,26 +14,13 @@ export const API_BASE = BASE;
 const inflightGets = new Map<string, Promise<unknown>>();
 
 /** Single error shape for every API failure: HTTP status + the server's
- * `error` field when it sent one (else a "<label>: <status>" message), and an
- * optional safe follow-up URL for flows that require browser approval. */
+ * `error` field when it sent one, else a "<label>: <status>" message. */
 export class ApiError extends Error {
 	status: number;
-	actionUrl?: string;
-	actionCommand?: string;
-	actionKind?: string;
-	constructor(
-		message: string,
-		status: number,
-		actionUrl?: string,
-		actionCommand?: string,
-		actionKind?: string,
-	) {
+	constructor(message: string, status: number) {
 		super(message);
 		this.name = "ApiError";
 		this.status = status;
-		this.actionUrl = actionUrl;
-		this.actionCommand = actionCommand;
-		this.actionKind = actionKind;
 	}
 }
 
@@ -80,18 +67,10 @@ export function request<T>(
 				: {}),
 		});
 		if (!res.ok) {
-			const body = (await res.json().catch(() => null)) as {
-				error?: string;
-				actionUrl?: string;
-				actionCommand?: string;
-				actionKind?: string;
-			} | null;
+			const body = (await res.json().catch(() => null)) as { error?: string } | null;
 			throw new ApiError(
 				body?.error || `${opts.label || "Failed"}: ${res.status}`,
 				res.status,
-				body?.actionUrl,
-				body?.actionCommand,
-				body?.actionKind,
 			);
 		}
 		return (await res.json().catch(() => null)) as T;

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
-import { dirname, join } from "path";
+import { join } from "path";
 import { tmpdir } from "os";
 import {
   configuredPrivateAppOrigin,
@@ -13,11 +13,6 @@ import {
   publicIngressHealth,
   savePrivateAppOrigin,
   savePublicIngress,
-  startTailscaleFunnelCommand,
-  tailscaleFunnelAction,
-  tailscaleFunnelConfigured,
-  tailscaleFunnelOperatorCommand,
-  tailscaleFunnelOperatorDenied,
 } from "./ingress-settings";
 
 const previous = process.env.OPENSESSION_CONFIG;
@@ -101,11 +96,9 @@ describe("public ingress settings", () => {
   test("gives newly configured ingress methods time to become reachable", () => {
     const startedAt = 10_000;
     const addresses = { a: [], aaaa: [] };
-    expect(publicIngressHealth("tailscale", "unreachable", addresses, addresses, startedAt, startedAt + 30_000))
-      .toBe("starting");
     expect(publicIngressHealth("cloudflare", "unreachable", addresses, addresses, startedAt, startedAt + 30_000))
       .toBe("starting");
-    expect(publicIngressHealth("tailscale", "ready", addresses, addresses, startedAt, startedAt + 30_000))
+    expect(publicIngressHealth("cloudflare", "ready", addresses, addresses, startedAt, startedAt + 30_000))
       .toBe("ready");
     expect(publicIngressHealth("custom", "unreachable", { a: [], aaaa: [] }, { a: ["203.0.113.10"], aaaa: [] }, startedAt, startedAt + 30_000))
       .toBe("waiting_dns");
@@ -113,80 +106,6 @@ describe("public ingress settings", () => {
       .toBe("starting");
     expect(publicIngressHealth("cloudflare", "unreachable", addresses, addresses, startedAt, startedAt + 60_000))
       .toBe("unreachable");
-    expect(publicIngressHealth("tailscale", "unreachable", addresses, addresses, startedAt, startedAt + 10 * 60_000))
-      .toBe("unreachable");
-  });
-
-  test("recognizes only the exact public Funnel route", () => {
-    const hostPort = "server.example.ts.net:443";
-    const status = {
-      TCP: { "443": { HTTPS: true } },
-      Web: {
-        [hostPort]: {
-          Handlers: { "/": { Proxy: "http://127.0.0.1:3860" } },
-        },
-      },
-      AllowFunnel: { [hostPort]: true },
-    };
-    expect(tailscaleFunnelConfigured(status, "server.example.ts.net")).toBe(true);
-    expect(tailscaleFunnelConfigured({ ...status, AllowFunnel: {} }, "server.example.ts.net"))
-      .toBe(false);
-    expect(tailscaleFunnelConfigured({
-      ...status,
-      Web: {
-        [hostPort]: {
-          Handlers: { "/": { Proxy: "http://127.0.0.1:3850" } },
-        },
-      },
-    }, "server.example.ts.net")).toBe(false);
-  });
-
-  test("classifies Tailscale Funnel actions from CLI output", () => {
-    expect(tailscaleFunnelAction(
-      [
-        "Manage your plan at https://login.tailscale.com/admin/billing",
-        "Enable Funnel at https://login.tailscale.com/f/funnel?node=example",
-      ].join("\n"),
-    )).toEqual({
-      url: "https://login.tailscale.com/f/funnel?node=example",
-      kind: "approval",
-    });
-    expect(tailscaleFunnelAction(
-      "Manage at https://console.tailscale.com/admin/settings/billing/plans",
-    )).toEqual({
-      url: "https://console.tailscale.com/admin/settings/billing/plans",
-      kind: "plans",
-    });
-    expect(tailscaleFunnelAction("Continue at https://example.test/not-tailscale"))
-      .toBeNull();
-  });
-
-  test("recognizes a missing local Tailscale operator", () => {
-    const output = [
-      "sending serve config: Access denied: serve config denied",
-      "Use 'sudo tailscale funnel --bg --yes --https=443 http://127.0.0.1:3860'.",
-      "To not require root, use 'sudo tailscale set --operator=$USER' once.",
-    ].join("\n");
-    expect(tailscaleFunnelOperatorDenied(output)).toBe(true);
-    expect(tailscaleFunnelOperatorDenied("Funnel is unavailable")).toBe(false);
-    expect(tailscaleFunnelOperatorCommand("ubuntu"))
-      .toBe("sudo tailscale set --operator=ubuntu");
-  });
-
-  test("returns a Funnel approval link without leaving the CLI waiting", async () => {
-    const { path } = fixture();
-    const binary = join(dirname(path), "fake-tailscale");
-    writeFileSync(binary, [
-      "#!/bin/sh",
-      "printf 'Billing: https://console.tailscale.com/admin/settings/billing/plans\\n'",
-      "printf 'Approve at https://login.tailscale.com/f/funnel?node=example\\n'",
-      "exec sleep 30",
-    ].join("\n"), { mode: 0o700 });
-    const startedAt = Date.now();
-    const result = await startTailscaleFunnelCommand(binary);
-    expect(result.actionUrl).toBe("https://login.tailscale.com/f/funnel?node=example");
-    expect(result.actionKind).toBe("approval");
-    expect(Date.now() - startedAt).toBeLessThan(3_000);
   });
 
   test("uses proven healthy DNS when a NATed server cannot detect its public IP", () => {

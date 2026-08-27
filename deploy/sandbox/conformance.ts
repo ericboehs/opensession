@@ -223,8 +223,8 @@ await Bun.write(
 
 // Overrides for hosts where the public IP doesn't accept inbound connections
 // (typical cloud security groups): pin the listener port and front it with any
-// websocket-capable tunnel (cloudflared quick tunnel, tailscale funnel, …) or
-// — the permanent setup — the publicIngress Caddy path routes (docs/
+// websocket-capable tunnel (such as a cloudflared quick tunnel) or the
+// permanent publicIngress Caddy path routes (docs/
 // self-hosting-sandboxes.md), which forward ONLY /run-ws/*,
 // /rpc-ws and /ingress-health; the remote probe uses the last one.
 //   SBX_CONF_LISTEN_PORT=3860 SBX_CONF_PUBLIC_BASE=wss://sessions.example.com \

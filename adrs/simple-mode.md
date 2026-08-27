@@ -164,11 +164,9 @@ and workload identity.
 
 - **R4.1 Settings → Public ingress**: choose an exposure method that gives
   `:3860` a public HTTPS URL and stores one canonical origin:
-  1. **Tailscale Funnel** (`tailscale funnel --bg 3860`): stable `*.ts.net`
-     URL, real certificate, no DNS records or inbound ports.
-  2. **Cloudflare Tunnel**: a named tunnel with a CNAME to
-     `<tunnel-id>.cfargotunnel.com`, also without inbound ports.
-  3. **Custom domain**: A/AAAA records plus a managed Caddy site.
+  1. **Cloudflare Tunnel**: a named tunnel with a CNAME to
+     `<tunnel-id>.cfargotunnel.com`, without inbound ports.
+  2. **Custom domain**: A/AAAA records plus a managed Caddy site.
   Only `:3860` is exposed. The private app on `:3850` never is: the gateway
   dispatches exact registered routes and returns 404 for everything else.
 - **R4.2 Integration setup screens show the URLs.** Enabling Slack/GitHub/
@@ -364,6 +362,6 @@ Sonarr/Radarr (single binary, embedded DB, first-run in browser), Grafana
 (config file ↔ env mirror, `brew services`), Ollama (installer installs the
 service, documented uninstall/pin), PocketBase/Gitea (one-shot setup URL),
 Coolify (installer brings Docker; browser registers admin), Tailscale
-(install ≠ join; Funnel/Serve), Cloudflare quick tunnels, `gh webhook
+(install ≠ join), Cloudflare quick tunnels, `gh webhook
 forward`, `stripe listen`, Slack Socket Mode, Home Assistant / n8n tunnel
 modes for webhooks.

@@ -620,8 +620,8 @@ webhook and OAuth methods and paths into it; the same listener owns remote
 Sandbox WebSockets and workload identity. Everything else returns 404,
 including all private app/API routes.
 
-Choose Tailscale Funnel, Cloudflare Tunnel, or Direct HTTPS with Caddy in
-**Settings → Domains and ingress → Public callbacks**. These are three
-alternatives for the same restricted endpoint. All provider signature checks
+Choose Cloudflare Tunnel or Direct HTTPS with Caddy in **Settings → Domains and
+ingress → Public callbacks**. These are alternatives for the same restricted
+endpoint. All provider signature checks
 remain fail-closed: a missing secret rejects the webhook rather than allowing
 unsigned intake.

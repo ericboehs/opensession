@@ -70,7 +70,7 @@ export interface StorageSection {
   assets?: AssetStorageSection;
 }
 
-export type IngressExposure = "tailscale" | "cloudflare" | "custom";
+export type IngressExposure = "cloudflare" | "custom";
 
 /** The separately exposed public origin. The private app origin remains an
  * independent server setting and is never implied by this section. */
@@ -463,9 +463,7 @@ function parseConfig(text: string): OpenSessionConfig {
     if (ingress) {
       const rawExposure = str(ingress.exposure);
       const exposure: IngressExposure | undefined =
-        rawExposure === "tailscale" || rawExposure === "cloudflare" || rawExposure === "custom"
-          ? rawExposure
-          : undefined;
+        rawExposure === "cloudflare" || rawExposure === "custom" ? rawExposure : undefined;
       cfg.ingress = defined({
         publicBaseUrl: str(ingress.publicBaseUrl),
         exposure,

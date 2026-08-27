@@ -341,10 +341,10 @@ loopback, but a bare Tunnel hostname is public and is not sufficient. If the UI
 is all you need, you do not need an Elastic IP. See
 [networking.md](networking.md).
 
-**For public callbacks without inbound ports, use Tailscale Funnel or Cloudflare
-Tunnel.** Both give webhooks and remote Sandbox callbacks a stable HTTPS origin
-without an Elastic IP or inbound security-group rule. Configure them in
-**Settings → Domains and ingress → Public callbacks** as described in
+**For public callbacks without inbound ports, use Cloudflare Tunnel.** It gives
+webhooks and remote Sandbox callbacks a stable HTTPS origin without an Elastic
+IP or inbound security-group rule. Configure it in **Settings → Domains and
+ingress → Public callbacks** as described in
 [networking.md](networking.md#public-ingress-is-separate).
 
 An **Elastic IP** is useful only when you choose the custom-domain/Caddy path
@@ -377,8 +377,7 @@ are in [networking.md](networking.md#direct-https-with-caddy).
 
 Public IPv4 addresses currently cost about $0.005/hour (~$3.60/month), attached
 or not. An Elastic IP survives instance termination and keeps billing until you
-release it. Skip it for Tailscale Funnel, Cloudflare Tunnel, or a private-only
-install.
+release it. Skip it for Cloudflare Tunnel or a private-only install.
 
 ## Updating
 

@@ -24,12 +24,6 @@ const settings = {
 		tailnetIpv4: "100.64.0.10",
 	},
 	server: { ipv4: ["203.0.113.10"], ipv6: ["2001:db8::10"] },
-	tailscale: {
-		installed: true,
-		dnsName: "server.example.ts.net",
-		suggestedUrl: "https://server.example.ts.net",
-		funnelConfigured: true,
-	},
 } as PublicIngressSettings;
 
 describe("public ingress form", () => {
@@ -38,17 +32,12 @@ describe("public ingress form", () => {
 		expect(ingressHealthDot("starting")).toBe("var(--yellow)");
 	});
 
-	test("presents three distinct ways to publish the same callback endpoint", () => {
+	test("presents the supported ways to publish the callback endpoint", () => {
 		expect(INGRESS_METHODS).toEqual([
 			{
 				value: "custom",
 				label: "Direct HTTPS with Caddy",
 				description: "Your domain with any DNS provider. Requires ports 80 and 443.",
-			},
-			{
-				value: "tailscale",
-				label: "Tailscale Funnel",
-				description: "Generated .ts.net URL. No DNS records or inbound ports.",
 			},
 			{
 				value: "cloudflare",
@@ -60,13 +49,9 @@ describe("public ingress form", () => {
 
 	test("keeps one draft and display URL per exposure method", () => {
 		expect(configuredIngressDrafts(settings)).toEqual({
-			tailscale: "https://server.example.ts.net",
 			cloudflare: "https://ingress.os.example.test",
 			custom: "old.example.test",
 		});
-		expect(publicUrlForMethod(settings, "tailscale", "ignored.example.test")).toBe(
-			"https://server.example.ts.net",
-		);
 		expect(publicUrlForMethod(settings, "cloudflare", "callbacks.example.test")).toBe(
 			"https://callbacks.example.test",
 		);

@@ -3,9 +3,9 @@
  *
  * The main Bun.serve on 3850 carries the private app. This second listener
  * exposes only three deliberately public capabilities: registered webhook and
- * OAuth routes, remote-sandbox WebSockets, and workload identity. Caddy,
- * Tailscale Funnel and Cloudflare Tunnel all proxy one origin to this port;
- * they never need a second webhook port or a copy of the route allowlist.
+ * OAuth routes, remote-sandbox WebSockets, and workload identity. Caddy and
+ * Cloudflare Tunnel both proxy one origin to this port; they never need a
+ * second webhook port or a copy of the route allowlist.
  *
  *   - exact routes registered by webhook-server.ts
  *   - /run-ws/<hostId>, /rpc-ws and /sandbox-portal-ws

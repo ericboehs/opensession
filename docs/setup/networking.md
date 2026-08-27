@@ -19,13 +19,12 @@ external services. Configuring one never exposes the other.
 | Connection | Used by | Address | Setup |
 | --- | --- | --- | --- |
 | **Private app** | Teammates and server administrators | A private-network or access-controlled HTTPS address | Use Tailscale, an SSH tunnel, or an identity-gated private tunnel |
-| **Public callbacks** | GitHub webhooks and remote Sandboxes | A different public HTTPS address | Choose exactly one: Tailscale Funnel, Cloudflare Tunnel, or Direct HTTPS with Caddy |
+| **Public callbacks** | GitHub webhooks and remote Sandboxes | A different public HTTPS address | Choose Cloudflare Tunnel or Direct HTTPS with Caddy |
 
-Tailscale and Tailscale Funnel have different jobs. Tailscale keeps teammate and
-server traffic private. Funnel publishes only the restricted callback listener,
-not the app. Cloudflare Tunnel can front the private app only when Cloudflare
-Access or an equivalent identity policy protects it. A bare Tunnel hostname is
-public and must never route directly to the private app.
+Tailscale keeps teammate and server traffic private. Cloudflare Tunnel can front
+the private app only when Cloudflare Access or an equivalent identity policy
+protects it. A bare Tunnel hostname is public and must never route directly to
+the private app.
 
 ### Private app quick reference
 
@@ -167,8 +166,8 @@ curl -m 5 http://<public-ip>:3850/    # must fail
 ```
 
 On a cloud box, also check the firewall — the security group or firewall rules
-should not open 3850 or 3860 directly. Funnel, Cloudflare Tunnel, or Caddy
-terminates TLS in front of loopback 3860. See [ec2.md](ec2.md#networking).
+should not open 3850 or 3860 directly. Cloudflare Tunnel or Caddy terminates
+TLS in front of loopback 3860. See [ec2.md](ec2.md#networking).
 
 ## An optional friendly private domain (os.company.dev)
 
@@ -302,7 +301,6 @@ Choose exactly one way to publish that callback listener:
 
 | Method | Address | Inbound ports | Best when |
 | --- | --- | --- | --- |
-| **Tailscale Funnel** | Generated `.ts.net` URL | None | You want the shortest setup and do not need your own hostname |
 | **Cloudflare Tunnel** | Your domain | None | Your DNS is on Cloudflare and you do not want to open ports |
 | **Direct HTTPS with Caddy** | Your domain | 80 and 443 | You use any DNS provider and can expose the server directly |
 
@@ -334,14 +332,6 @@ with no path, credentials, or custom port:
 webhook URLs, remote Sandbox callbacks, and the workload-identity issuer all
 use this origin. Session links and authenticated app callbacks continue to use
 the independent private app origin.
-
-### Tailscale Funnel
-
-Choose Tailscale Funnel in Settings for automatic HTTPS without DNS records or
-inbound firewall ports. The server must be connected to Tailscale, have a
-Tailscale DNS name, and be allowed to use Funnel by the tailnet policy. Open
-Session routes that `*.ts.net` hostname to `127.0.0.1:3860`. Funnel cannot
-serve a custom hostname.
 
 ### Cloudflare Tunnel
 

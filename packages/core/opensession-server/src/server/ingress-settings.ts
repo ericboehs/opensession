@@ -2,7 +2,7 @@
 import { randomBytes } from "crypto";
 import { createSocket } from "dgram";
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "fs";
-import { networkInterfaces, tmpdir, userInfo } from "os";
+import { networkInterfaces, tmpdir } from "os";
 import { isIP } from "net";
 import { join } from "path";
 import { resolve4, resolve6 } from "dns/promises";
@@ -40,7 +40,6 @@ export const PUBLIC_INGRESS_PORT = 3860;
 const CADDYFILE = process.env.OPENSESSION_CADDYFILE || "/etc/caddy/Caddyfile";
 const CLOUDFLARE_TOKEN_PATH = stateDir("cloudflared-tunnel-token");
 const INGRESS_STARTING_GRACE_MS: Record<IngressExposure, number> = {
-  tailscale: 10 * 60_000,
   cloudflare: 60_000,
   custom: 60_000,
 };
@@ -73,12 +72,6 @@ export interface IngressStatus {
   };
   server: { ipv4: string[]; ipv6: string[] };
   dns: { a: string[]; aaaa: string[]; suggested: string[] };
-  tailscale: {
-    installed: boolean;
-    dnsName: string;
-    suggestedUrl: string;
-    funnelConfigured: boolean;
-  };
   cloudflare: {
     installed: boolean;
     tunnelId: string;
@@ -108,8 +101,9 @@ export function configuredPublicIngress(): ReturnType<typeof configuredIngress> 
   const configured = configuredIngress();
   return {
     ...configured,
-    publicBaseUrl: (getConfig().ingress?.publicBaseUrl || configured.publicBaseUrl)
-      .replace(/\/+$/, ""),
+    publicBaseUrl: configured.exposure
+      ? (getConfig().ingress?.publicBaseUrl || configured.publicBaseUrl).replace(/\/+$/, "")
+      : "",
   };
 }
 
@@ -227,150 +221,6 @@ async function command(argv: string[]): Promise<{ code: number; stdout: string; 
     child.exited,
   ]);
   return { code, stdout, stderr };
-}
-
-async function tailscaleDnsName(): Promise<string> {
-  const binary = Bun.which("tailscale");
-  if (!binary) return "";
-  const result = await command([binary, "status", "--json"]);
-  if (result.code !== 0) return "";
-  try {
-    const parsed = JSON.parse(result.stdout);
-    return String(parsed?.Self?.DNSName || "").replace(/\.$/, "");
-  } catch {
-    return "";
-  }
-}
-
-async function tailscaleFunnelStatus(binary = Bun.which("tailscale")): Promise<unknown> {
-  if (!binary) return null;
-  const result = await command([binary, "funnel", "status", "--json"]);
-  if (result.code !== 0) return null;
-  try {
-    return JSON.parse(result.stdout);
-  } catch {
-    return null;
-  }
-}
-
-export function tailscaleFunnelAction(output: string): {
-  url: string;
-  kind: "approval" | "plans";
-} | null {
-  let plansUrl = "";
-  for (const match of output.matchAll(/https:\/\/[^\s<>"']+/g)) {
-    try {
-      const url = new URL(match[0]);
-      if (url.hostname === "login.tailscale.com" && url.pathname === "/f/funnel") {
-        return { url: url.href, kind: "approval" };
-      }
-      if (
-        url.hostname === "console.tailscale.com" &&
-        url.pathname === "/admin/settings/billing/plans"
-      ) {
-        plansUrl = url.href;
-      }
-    } catch {}
-  }
-  return plansUrl ? { url: plansUrl, kind: "plans" } : null;
-}
-
-export function tailscaleFunnelOperatorDenied(output: string): boolean {
-  return /serve config denied/i.test(output);
-}
-
-export function tailscaleFunnelOperatorCommand(username = userInfo().username): string {
-  const operator = /^[a-z_][a-z0-9_-]*[$]?$/i.test(username) ? username : "$(id -un)";
-  return `sudo tailscale set --operator=${operator}`;
-}
-
-type TailscaleFunnelAction =
-  | { kind: "approval" | "plans"; url: string }
-  | { kind: "operator"; command: string };
-
-export class TailscaleFunnelActionRequired extends Error {
-  readonly actionKind: TailscaleFunnelAction["kind"];
-  readonly actionUrl?: string;
-  readonly actionCommand?: string;
-
-  constructor(action: TailscaleFunnelAction) {
-    super(action.kind === "plans"
-      ? "Tailscale requires this tailnet to select a current plan before Funnel can be enabled."
-      : action.kind === "operator"
-        ? "Allow the Open Session service account to manage Tailscale, then start Funnel again."
-        : "Approve Funnel in Tailscale, then start Funnel again.");
-    this.name = "TailscaleFunnelActionRequired";
-    this.actionKind = action.kind;
-    if ("url" in action) this.actionUrl = action.url;
-    if ("command" in action) this.actionCommand = action.command;
-  }
-}
-
-export async function startTailscaleFunnelCommand(binary: string): Promise<{
-  code: number;
-  stdout: string;
-  stderr: string;
-  actionUrl: string;
-  actionKind: "approval" | "plans" | null;
-}> {
-  const child = Bun.spawn([
-    binary,
-    "funnel",
-    "--bg",
-    "--yes",
-    "--https=443",
-    `http://127.0.0.1:${PUBLIC_INGRESS_PORT}`,
-  ], { stdout: "pipe", stderr: "pipe", env: process.env });
-  let stdout = "";
-  let approvalUrl = "";
-  const readStdout = (async () => {
-    const reader = child.stdout.getReader();
-    const decoder = new TextDecoder();
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      stdout += decoder.decode(value, { stream: true });
-      const action = tailscaleFunnelAction(stdout);
-      if (action?.kind === "approval") approvalUrl = action.url;
-      // Some Tailscale control-plane configurations keep the CLI open while
-      // waiting for browser approval. The Settings request cannot complete the
-      // approval itself, so stop the hidden waiter once its action is visible.
-      if (approvalUrl && child.exitCode === null) child.kill();
-    }
-    stdout += decoder.decode();
-  })();
-  const [stderr, code] = await Promise.all([
-    new Response(child.stderr).text(),
-    child.exited,
-    readStdout,
-  ]);
-  const action = tailscaleFunnelAction(stdout);
-  return {
-    code,
-    stdout,
-    stderr,
-    actionUrl: action?.url || "",
-    actionKind: action?.kind || null,
-  };
-}
-
-/** A zero exit from `tailscale funnel --bg` only says the CLI request
- * completed. Confirm that tailscaled retained both the public permission and
- * the exact loopback proxy before Open Session reports the setup as started. */
-export function tailscaleFunnelConfigured(
-  status: unknown,
-  dnsName: string,
-  target = `http://127.0.0.1:${PUBLIC_INGRESS_PORT}`,
-): boolean {
-  if (!status || typeof status !== "object" || Array.isArray(status) || !dnsName) return false;
-  const config = status as Record<string, unknown>;
-  const hostPort = `${dnsName.replace(/\.$/, "")}:443`;
-  const tcp = config.TCP as Record<string, { HTTPS?: unknown }> | undefined;
-  const web = config.Web as Record<string, { Handlers?: Record<string, { Proxy?: unknown }> }> | undefined;
-  const allowFunnel = config.AllowFunnel as Record<string, unknown> | undefined;
-  return tcp?.["443"]?.HTTPS === true &&
-    web?.[hostPort]?.Handlers?.["/"]?.Proxy === target &&
-    allowFunnel?.[hostPort] === true;
 }
 
 function publicInterfaceAddresses(): { a: string[]; aaaa: string[] } {
@@ -506,23 +356,19 @@ export async function publicIngressStatus(
   let hostname = "";
   try { hostname = new URL(configured.publicBaseUrl).hostname; } catch {}
   const tailnetIpv4 = detectedTailnetIpv4();
-  const [dns, tsName, funnelStatus, probedHealth, serverAddresses, appDomain] = await Promise.all([
+  const [dns, probedHealth, serverAddresses, appDomain] = await Promise.all([
     currentDns(hostname),
-    tailscaleDnsName(),
-    tailscaleFunnelStatus(),
     ingressHealth(configured.publicBaseUrl),
     publicServerAddresses(),
     privateAppDomainStatus(appBaseUrl, tailnetIpv4),
   ]);
-  const funnelConfigured = tailscaleFunnelConfigured(funnelStatus, tsName);
-  const canStillBeStarting = configured.exposure !== "tailscale" || funnelConfigured;
   const connectorRunning = cloudflareConnectorRunning();
   const health = publicIngressHealth(
     configured.exposure,
-    configured.exposure === "tailscale" && !funnelConfigured ? "unreachable" : probedHealth,
+    probedHealth,
     dns,
     serverAddresses,
-    canStillBeStarting && (configured.exposure !== "cloudflare" || connectorRunning)
+    configured.exposure !== "cloudflare" || connectorRunning
       ? ingressStartedAt(configured.exposure)
       : 0,
   );
@@ -552,12 +398,6 @@ export async function publicIngressStatus(
         ...displayedAddresses.a.map((address) => `A ${hostname || "ingress.example.com"} ${address}`),
         ...displayedAddresses.aaaa.map((address) => `AAAA ${hostname || "ingress.example.com"} ${address}`),
       ],
-    },
-    tailscale: {
-      installed: Bun.which("tailscale") !== null,
-      dnsName: tsName,
-      suggestedUrl: tsName ? `https://${tsName}` : "",
-      funnelConfigured,
     },
     cloudflare: {
       installed: Bun.which("cloudflared") !== null,
@@ -627,7 +467,7 @@ export async function savePublicIngress(input: {
   publicIp?: string;
 }): Promise<void> {
   const publicBaseUrl = normalizeIngressOrigin(input.publicBaseUrl);
-  if (!(["tailscale", "cloudflare", "custom"] as string[]).includes(input.exposure)) {
+  if (!(["cloudflare", "custom"] as string[]).includes(input.exposure)) {
     throw new Error("Unknown exposure method");
   }
   const cloudflareTunnelId = (input.cloudflareTunnelId || "").trim();
@@ -679,40 +519,6 @@ export async function savePublicIngress(input: {
     runtime.__opensessionCloudflared?.kill();
     runtime.__opensessionCloudflared = undefined;
   }
-}
-
-export async function enableTailscaleFunnel(): Promise<string> {
-  const binary = Bun.which("tailscale");
-  if (!binary) throw new Error("Tailscale is not installed on this server");
-  const dnsName = await tailscaleDnsName();
-  if (!dnsName) throw new Error("Tailscale is not connected or has no HTTPS hostname");
-  const result = await startTailscaleFunnelCommand(binary);
-  if (result.actionUrl && result.actionKind) {
-    throw new TailscaleFunnelActionRequired({
-      url: result.actionUrl,
-      kind: result.actionKind,
-    });
-  }
-  if (tailscaleFunnelOperatorDenied(`${result.stdout}\n${result.stderr}`)) {
-    throw new TailscaleFunnelActionRequired({
-      kind: "operator",
-      command: tailscaleFunnelOperatorCommand(),
-    });
-  }
-  if (result.code !== 0) throw new Error(result.stderr.trim() || "Could not enable Tailscale Funnel");
-  const funnelStatus = await tailscaleFunnelStatus(binary);
-  if (!tailscaleFunnelConfigured(funnelStatus, dnsName)) {
-    throw new Error(
-      "Tailscale did not retain a public Funnel route on port 443. Allow Funnel and HTTPS certificates for this node, then try again.",
-    );
-  }
-  const origin = normalizeIngressOrigin(`https://${dnsName}`);
-  // Funnel starting and its public edge becoming reachable are separate facts.
-  // Persist the successful command immediately so a slow edge does not leave a
-  // running Funnel reported as an entirely failed setup. The UI probes health.
-  await savePublicIngress({ publicBaseUrl: origin, exposure: "tailscale" });
-  markIngressStarting("tailscale");
-  return origin;
 }
 
 function cloudflareConnectorRunning(): boolean {

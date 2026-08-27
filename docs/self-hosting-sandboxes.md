@@ -66,8 +66,7 @@ from the low-level schema defaults documented below.
 
 Remote providers use the workspace's canonical Public ingress origin. Configure
 it once under **Settings → Domains and ingress → Public callbacks** with
-Tailscale Funnel, Cloudflare Tunnel, or Direct HTTPS with Caddy. The same
-fail-closed listener receives
+Cloudflare Tunnel or Direct HTTPS with Caddy. The same fail-closed listener receives
 signed integration webhooks, Sandbox callbacks, and workload identity; the
 private app is never part of that public listener.
 
@@ -508,15 +507,13 @@ routes, the general API, or the frontend. Sandbox upgrades use per-launch
 tokens and internet-facing upgrade/token attempts are rate-limited per client
 IP.
 
-**Settings → Domains and ingress → Public callbacks** offers three exposure
+**Settings → Domains and ingress → Public callbacks** offers two exposure
 methods:
 
-1. **Tailscale Funnel** routes the machine's HTTPS `*.ts.net` hostname to
-   `127.0.0.1:3860`. It needs no DNS records or inbound ports.
-2. **Cloudflare Tunnel** stores a named tunnel's connector token write-only,
+1. **Cloudflare Tunnel** stores a named tunnel's connector token write-only,
    runs `cloudflared`, and uses a CNAME to `<tunnel-id>.cfargotunnel.com`;
    its only service must be `http://127.0.0.1:3860`.
-3. **Direct HTTPS with Caddy** points A/AAAA records at the host and lets Open
+2. **Direct HTTPS with Caddy** points A/AAAA records at the host and lets Open
    Session manage a Caddy site that reverse-proxies the whole origin to 3860. The
    application, not Caddy, remains the exact route allowlist.
 

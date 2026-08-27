@@ -168,7 +168,7 @@ Not supported, because the concepts don't exist upstream (no PR model):
 
 Point a code.storage webhook subscription (push + repo.sync events) at
 `POST /codestorage/webhook` on public ingress (`127.0.0.1:3860` by default),
-behind Funnel, Cloudflare Tunnel, or Caddy and alongside `/github/webhook`.
+behind Cloudflare Tunnel or Caddy and alongside `/github/webhook`.
 The HMAC secret
 (`integrations.codestorage.webhookSecret`) is generated automatically on the
 first connect/status call and shown (with copy/reveal) in the code.storage

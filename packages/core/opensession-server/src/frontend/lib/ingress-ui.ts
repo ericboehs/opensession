@@ -11,11 +11,6 @@ export const INGRESS_METHODS: Array<{
 		description: "Your domain with any DNS provider. Requires ports 80 and 443.",
 	},
 	{
-		value: "tailscale",
-		label: "Tailscale Funnel",
-		description: "Generated .ts.net URL. No DNS records or inbound ports.",
-	},
-	{
 		value: "cloudflare",
 		label: "Cloudflare Tunnel",
 		description: "Your domain through Cloudflare. No inbound ports.",
@@ -73,7 +68,6 @@ export function publicUrlForMethod(
 	method: IngressExposure,
 	draft: string,
 ): string {
-	if (method === "tailscale") return settings.tailscale.suggestedUrl;
 	const hostname = ingressHostname(draft, "");
 	return hostname ? `https://${hostname}` : "";
 }
@@ -106,7 +100,6 @@ export function privateAppCaddyConfig(settings: PublicIngressSettings, value: st
 export function configuredIngressDrafts(settings: PublicIngressSettings): Record<IngressExposure, string> {
 	const suggestedDomain = suggestedPublicIngressDomain(configuredAppDomain(settings));
 	return {
-		tailscale: settings.tailscale.suggestedUrl,
 		cloudflare:
 			settings.exposure === "cloudflare" && settings.publicBaseUrl
 				? settings.publicBaseUrl

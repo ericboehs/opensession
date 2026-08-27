@@ -56,39 +56,18 @@ describe("request", () => {
 		expect(calls).toBe(4);
 	});
 
-	test("preserves an approval action on API errors", async () => {
+	test("preserves API error messages and status codes", async () => {
 		globalThis.fetch = (() => Promise.resolve(Response.json({
-			error: "Approval required",
-			actionUrl: "https://login.tailscale.com/f/funnel",
-			actionKind: "approval",
+			error: "Request rejected",
 		}, { status: 409 }))) as unknown as typeof fetch;
 
 		try {
-			await request("/approval");
+			await request("/rejected");
 			throw new Error("Expected request to fail");
 		} catch (error) {
 			expect(error).toBeInstanceOf(ApiError);
+			expect((error as ApiError).message).toBe("Request rejected");
 			expect((error as ApiError).status).toBe(409);
-			expect((error as ApiError).actionUrl).toBe("https://login.tailscale.com/f/funnel");
-			expect((error as ApiError).actionKind).toBe("approval");
-		}
-	});
-
-	test("preserves a setup command on API errors", async () => {
-		globalThis.fetch = (() => Promise.resolve(Response.json({
-			error: "Operator required",
-			actionCommand: "sudo tailscale set --operator=ubuntu",
-			actionKind: "operator",
-		}, { status: 409 }))) as unknown as typeof fetch;
-
-		try {
-			await request("/operator");
-			throw new Error("Expected request to fail");
-		} catch (error) {
-			expect(error).toBeInstanceOf(ApiError);
-			expect((error as ApiError).actionCommand)
-				.toBe("sudo tailscale set --operator=ubuntu");
-			expect((error as ApiError).actionKind).toBe("operator");
 		}
 	});
 });

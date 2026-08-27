@@ -1,6 +1,6 @@
 import { request } from "./request";
 
-export type IngressExposure = "tailscale" | "cloudflare" | "custom";
+export type IngressExposure = "cloudflare" | "custom";
 
 export interface PublicIngressSettings {
 	canManage: boolean;
@@ -24,12 +24,6 @@ export interface PublicIngressSettings {
 	};
 	server: { ipv4: string[]; ipv6: string[] };
 	dns: { a: string[]; aaaa: string[]; suggested: string[] };
-	tailscale: {
-		installed: boolean;
-		dnsName: string;
-		suggestedUrl: string;
-		funnelConfigured: boolean;
-	};
 	cloudflare: {
 		installed: boolean;
 		tunnelId: string;
@@ -86,13 +80,6 @@ export function savePublicIngress(input: {
 		method: "PUT",
 		body: input,
 		label: "Failed to save public ingress",
-	});
-}
-
-export function enablePublicIngressFunnel(): Promise<PublicIngressSettings> {
-	return request("/ingress/tailscale", {
-		method: "POST",
-		label: "Failed to enable Tailscale Funnel",
 	});
 }
 

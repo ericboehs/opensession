@@ -1269,6 +1269,12 @@ summary:focus-visible {
 }
 
 @media (max-width: 720px) {
+	/* The preview is display-only on phones so drag gestures keep scrolling the
+	   page instead of being captured by the embedded app. */
+	.preview-wrap[data-ready="true"] .product-demo-frame {
+		pointer-events: none;
+	}
+
 	.landing-setup-step-icon {
 		display: none;
 	}

@@ -3,7 +3,6 @@ import { utilityClassName } from "../../ui/cn";
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 import {
 	configurePublicIngressCloudflare,
-	enablePublicIngressFunnel,
 	fetchPublicIngress,
 	installPublicIngressCaddy,
 	savePrivateAppDomain,
@@ -13,7 +12,6 @@ import {
 	type IngressExposure,
 	type PublicIngressSettings,
 } from "../../lib/api";
-import { ApiError } from "../../lib/api/request";
 import {
 	configuredAppDomain,
 	configuredIngressDrafts,
@@ -53,7 +51,7 @@ import { ResponsiveDialog } from "../../ui/sheet";
 import { InlineAlert, LoadingState } from "../../ui/state";
 import { toast } from "../../ui/toast";
 import { markTileClass, markTileGradient, markTileInk, markTileShadow, type MarkTone } from "../../lib/mark-tile";
-import { IconCopy, IconGlobe, IconServer, IconShieldCheck, IconX } from "../icons";
+import { IconCopy, IconGlobe, IconServer, IconX } from "../icons";
 import { SetupRestart } from "../SetupRestart";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../../styles/typography.stylex";
@@ -295,7 +293,6 @@ const sx = stylex.create({
 });
 
 const EMPTY_DRAFTS: Record<IngressExposure, string> = {
-	tailscale: "",
 	cloudflare: "",
 	custom: "",
 };
@@ -304,7 +301,6 @@ const EMPTY_DRAFTS: Record<IngressExposure, string> = {
  *  panel it opens — the leading mark is what ties the two halves together in
  *  the server setup this mirrors. */
 const METHOD_MARKS: Record<IngressExposure, { tone: MarkTone; icon: typeof IconGlobe }> = {
-	tailscale: { tone: "indigo", icon: IconShieldCheck },
 	cloudflare: { tone: "sky", icon: IconGlobe },
 	custom: { tone: "orange", icon: IconServer },
 };
@@ -391,13 +387,11 @@ function IngressWaitingState({
 	health: PublicIngressSettings["health"];
 }) {
 	if (health !== "starting" && health !== "waiting_dns") return null;
-	const message = method === "tailscale"
-		? "Waiting for Tailscale’s public DNS. This can take up to 10 minutes."
-		: method === "cloudflare"
-			? "Waiting for Cloudflare to connect the public route."
-			: health === "waiting_dns"
-				? "Waiting for DNS to point to this server."
-				: "Waiting for Caddy to finish HTTPS setup.";
+	const message = method === "cloudflare"
+		? "Waiting for Cloudflare to connect the public route."
+		: health === "waiting_dns"
+			? "Waiting for DNS to point to this server."
+			: "Waiting for Caddy to finish HTTPS setup.";
 	return <LoadingState placement="card">{message} This page checks automatically.</LoadingState>;
 }
 
@@ -612,11 +606,6 @@ export function IngressPanel({
 	const [publicAddress, setPublicAddress] = useState("");
 	const [busy, setBusy] = useState<"app" | "apply" | "test" | null>(null);
 	const [error, setError] = useState<string | null>(null);
-	const [tailscaleAction, setTailscaleAction] = useState<
-		| { url: string; kind: "approval" | "plans" }
-		| { command: string; kind: "operator" }
-		| null
-	>(null);
 	const loaded = useRef(false);
 	const customDraftTouched = useRef(false);
 	const url = drafts[method];
@@ -640,7 +629,7 @@ export function IngressPanel({
 			}));
 		}
 		if (selectConfigured) {
-			setMethod(next.exposure || (next.tailscale.installed ? "tailscale" : "custom"));
+			setMethod(next.exposure || "custom");
 			setTunnelId(next.cloudflare.tunnelId);
 			setTunnelToken("");
 		}
@@ -675,7 +664,6 @@ export function IngressPanel({
 		if (busy) return;
 		setBusy(kind);
 		setError(null);
-		if (kind === "apply") setTailscaleAction(null);
 		await work()
 			.then((next) => {
 				apply(next);
@@ -688,18 +676,6 @@ export function IngressPanel({
 				void onChanged?.();
 			})
 			.catch((cause: unknown) => {
-				if (cause instanceof ApiError && cause.actionKind === "operator" && cause.actionCommand) {
-					setTailscaleAction({ command: cause.actionCommand, kind: "operator" });
-					return;
-				}
-				if (
-					cause instanceof ApiError &&
-					cause.actionUrl &&
-					(cause.actionKind === "approval" || cause.actionKind === "plans")
-				) {
-					setTailscaleAction({ url: cause.actionUrl, kind: cause.actionKind });
-					return;
-				}
 				setError(cause instanceof Error ? cause.message : "Public callbacks could not be updated");
 			})
 			.finally(() => setBusy(null));
@@ -744,10 +720,6 @@ export function IngressPanel({
 	}
 
 	async function applyMethod() {
-		if (method === "tailscale") {
-			await run("apply", enablePublicIngressFunnel, "Tailscale Funnel configured");
-			return;
-		}
 		if (method === "custom") {
 			await run(
 				"apply",
@@ -769,12 +741,11 @@ export function IngressPanel({
 
 	const records = settings ? customDnsRecords(settings, drafts.custom, publicAddress) : [];
 	const missingTool = settings && (
-		(method === "tailscale" && !settings.tailscale.installed) ||
 		(method === "cloudflare" && !settings.cloudflare.installed) ||
 		(method === "custom" && !settings.custom.caddyInstalled)
 	);
 	const invalidInput =
-		method !== "tailscale" && !url.trim() ||
+		!url.trim() ||
 		method === "custom" && records.length === 0 ||
 		method === "cloudflare" && (!tunnelId.trim() || (!tunnelToken.trim() && !settings?.cloudflare.tokenConfigured));
 	const selectedMethod = INGRESS_METHODS.find((option) => option.value === method)!;
@@ -885,7 +856,7 @@ export function IngressPanel({
 								value={method}
 								disabled={!!busy || !settings.canManage}
 								onValueChange={(next) => setMethod(next as IngressExposure)}
-								className={utilityClassName("grid grid-cols-3 gap-2.5 phone:grid-cols-1")}
+								className={utilityClassName("grid grid-cols-2 gap-2.5 phone:grid-cols-1")}
 							>
 								{INGRESS_METHODS.map((option) => (
 									<label
@@ -923,24 +894,6 @@ export function IngressPanel({
 								</div>
 							</div>
 							<div {...stylex.props(sx.grid, sx.minW0, sx.contentStart, sx.gap35)}>
-							{method === "tailscale" && (
-								<SetupSteps>
-									<SetupStep number={1} title="Connect this server to Tailscale">
-										<p className={utilityClassName("m-0")}>The server must have a Tailscale DNS name. Funnel may also need to be allowed in your tailnet policy.</p>
-										{!settings.tailscale.installed && <CodeBlock>{"curl -fsSL https://raw.githubusercontent.com/tellahq/opensession/main/install.sh | bash -s -- --tailscale --no-onboard"}</CodeBlock>}
-										<CodeBlock>sudo tailscale up</CodeBlock>
-									</SetupStep>
-									<SetupStep number={2} title="Start Funnel">
-										<p className={utilityClassName("m-0")}>Open Session sends public HTTPS traffic only to its isolated listener. No DNS records or inbound ports are needed.</p>
-										<SettingsField className={mergeStylexOverrideClassName("", sx.mb0)}>
-											Public URL
-											<Input value={settings.tailscale.suggestedUrl} readOnly className={mergeStylexOverrideClassName("", sx.fontMono)} placeholder="Connect Tailscale to discover the URL" />
-										</SettingsField>
-										<p className={utilityClassName("m-0")}>A CNAME cannot replace this address because Funnel’s certificate and routing use the .ts.net hostname. For your own domain, use Cloudflare Tunnel or Direct HTTPS with Caddy.</p>
-									</SetupStep>
-								</SetupSteps>
-							)}
-
 							{method === "cloudflare" && (
 								<>
 									{!settings.cloudflare.installed && (
@@ -1028,39 +981,11 @@ export function IngressPanel({
 							{settings.exposure === method && (
 								<IngressWaitingState method={method} health={settings.health} />
 							)}
-							{method === "tailscale" && tailscaleAction && (
-								<InlineAlert
-									variant="info"
-									title={tailscaleAction.kind === "plans"
-										? "Choose a Tailscale plan"
-										: tailscaleAction.kind === "operator"
-											? "Allow Open Session to manage Tailscale"
-											: "Approve Funnel in Tailscale"}
-								>
-									{tailscaleAction.kind === "operator" ? (
-										<>
-											This changes Tailscale’s local operator to the Open Session service account. Run it once on the server, then start Funnel again.
-											<div {...stylex.props(sx.mt2)}><CodeBlock>{tailscaleAction.command}</CodeBlock></div>
-										</>
-									) : (
-										<>
-											{tailscaleAction.kind === "plans"
-												? "Tailscale requires this tailnet to select a current plan. Funnel is available on all current plans."
-												: "Approve public access, return here, then start Funnel again."}
-											{" "}<a {...stylex.props(sx.fontMedium, sx.underline, sx.underlineOffset2)} href={tailscaleAction.url} target="_blank" rel="noreferrer">{tailscaleAction.kind === "plans" ? "Review Tailscale plans" : "Open Tailscale approval"}</a>
-										</>
-									)}
-								</InlineAlert>
-							)}
 							{settings.health === "unreachable" && settings.exposure === method && (
 								<InlineAlert>
 									{method === "cloudflare" && settings.cloudflare.connectorRunning
 										? <>The connector process is running, but Cloudflare cannot reach Open Session. Verify that this hostname routes to <strong>{settings.cloudflare.connectorTarget}</strong> and that the tunnel ID and token come from the same remotely managed tunnel.</>
-										: method === "tailscale"
-											? settings.tailscale.funnelConfigured
-												? "Funnel is configured, but its public address did not become reachable. Check this node’s Funnel access in Tailscale, then try again."
-												: "Tailscale no longer has the Funnel route for Open Session. Start Funnel again."
-											: "The public URL is configured but its health check is not reachable. Verify DNS and firewall rules, then check again."}
+										: "The public URL is configured but its health check is not reachable. Verify DNS and firewall rules, then check again."}
 								</InlineAlert>
 							)}
 
@@ -1069,7 +994,7 @@ export function IngressPanel({
 									{busy === "test" ? "Checking…" : settings.health === "waiting_dns" ? "Check again" : "Test connection"}
 								</Button>
 								<Button variant="primary" disabled={!!busy || !settings.canManage || !!missingTool || invalidInput} className={utilityClassName("phone:min-h-11 phone:w-full phone:justify-center")} onClick={() => void applyMethod()}>
-									{busy === "apply" ? "Setting up…" : method === "tailscale" ? "Start Funnel" : method === "custom" ? settings.exposure === "custom" ? "Update Caddy" : "Configure Caddy" : "Start tunnel"}
+									{busy === "apply" ? "Setting up…" : method === "custom" ? settings.exposure === "custom" ? "Update Caddy" : "Configure Caddy" : "Start tunnel"}
 								</Button>
 							</SettingsFormActions>
 							<div {...stylex.props(sx.borderT, sx.borderLine, sx.pt35)}>

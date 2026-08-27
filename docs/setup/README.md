@@ -109,9 +109,8 @@ Open Session uses two separate addresses:
 
 - The **private app** is for teammates. Keep it on a private network or behind
   an identity-gated access layer. A friendly private domain is optional.
-- **Public callbacks** are for webhooks and remote Sandboxes. Choose exactly one
-  exposure method: Tailscale Funnel, Cloudflare Tunnel, or Direct HTTPS with
-  Caddy. This endpoint never serves the app.
+- **Public callbacks** are for webhooks and remote Sandboxes. Choose Cloudflare
+  Tunnel or Direct HTTPS with Caddy. This endpoint never serves the app.
 
 See [networking.md](networking.md) for the decision table and setup steps.
 
