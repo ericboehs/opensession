@@ -41,6 +41,10 @@ import type { GatewayCommandRequest, GatewayCommandResult } from "./gateway-comm
 import type { CoreActorRequest, CoreActorResult } from "./core-protocol";
 import {
   assertTranscriptActorRequest,
+  decodeAgentTranscriptActorRequest,
+  type AgentTranscriptDestinationAppendRequest,
+  type AgentTranscriptReceiptQueryRequest,
+  type AgentTranscriptReceiptValidationRequest,
   type TranscriptActorRequest,
   type TranscriptActorResult,
 } from "./transcript-protocol";
@@ -435,6 +439,33 @@ export class SessionKernelActorClient {
       },
       `core ${request.op}`,
     );
+  }
+
+  decideAgentTranscriptDestinationAsync(
+    request: AgentTranscriptDestinationAppendRequest,
+  ): Promise<TranscriptActorResult<AgentTranscriptDestinationAppendRequest>> {
+    const decoded = decodeAgentTranscriptActorRequest(request);
+    if (!decoded || decoded.op !== "agent_append_destination")
+      return Promise.reject(new TypeError("Invalid Agent transcript destination append"));
+    return this.decideTranscriptAsync(decoded);
+  }
+
+  queryAgentTranscriptReceiptAsync(
+    request: AgentTranscriptReceiptQueryRequest,
+  ): Promise<TranscriptActorResult<AgentTranscriptReceiptQueryRequest>> {
+    const decoded = decodeAgentTranscriptActorRequest(request);
+    if (!decoded || decoded.op !== "agent_query_destination_receipt")
+      return Promise.reject(new TypeError("Invalid Agent transcript receipt query"));
+    return this.decideTranscriptAsync(decoded);
+  }
+
+  validateAgentTranscriptReceiptAsync(
+    request: AgentTranscriptReceiptValidationRequest,
+  ): Promise<TranscriptActorResult<AgentTranscriptReceiptValidationRequest>> {
+    const decoded = decodeAgentTranscriptActorRequest(request);
+    if (!decoded || decoded.op !== "agent_validate_destination_receipt")
+      return Promise.reject(new TypeError("Invalid Agent transcript receipt validation"));
+    return this.decideTranscriptAsync(decoded);
   }
 
   decideTranscriptAsync<T extends TranscriptActorRequest>(

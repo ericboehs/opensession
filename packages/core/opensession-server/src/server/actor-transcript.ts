@@ -1,8 +1,13 @@
+import type {
+  AgentTranscriptAnchorV1,
+  AgentTranscriptReceiptRefV1,
+} from "@tellahq/opensession-protocol/agent-operation";
 import type { TranscriptEntry } from "./types";
 import { publishTranscript } from "./transcript-bus";
 import { v2SnapshotEntryWeight } from "./transcript-wire";
 import {
   notifyTranscriptAppendHook,
+  type AgentDestinationTranscriptAppendRequest,
   type AppendResult,
   type DestinationTranscriptAppendRequest,
   type DestinationTranscriptAppendResult,
@@ -155,6 +160,45 @@ export async function appendTranscriptDestination(
     generation: request.generation,
     entries: request.entries,
   });
+}
+
+export async function appendAgentTranscriptDestination(
+  request: AgentDestinationTranscriptAppendRequest,
+): Promise<AgentTranscriptReceiptRefV1> {
+  return mutate({
+    op: "agent_append_destination",
+    sessionId: request.sessionId,
+    requestId: `agent-transcript-destination:${request.appendId}`,
+    appendId: request.appendId,
+    runId: request.runId,
+    turnId: request.turnId,
+    generation: request.generation,
+    transcriptAnchor: request.transcriptAnchor,
+    entries: request.entries,
+  });
+}
+
+export async function queryAgentTranscriptReceipt(input: {
+  sessionId: string;
+  runId: string;
+  turnId: string;
+  generation: number;
+  transcriptAnchor: Readonly<AgentTranscriptAnchorV1>;
+  appendId: string;
+  requestDigest: `sha256:${string}`;
+}): Promise<AgentTranscriptReceiptRefV1 | null> {
+  return callTranscript({ op: "agent_query_destination_receipt", ...input });
+}
+
+export async function validateAgentTranscriptReceipt(input: {
+  sessionId: string;
+  runId: string;
+  turnId: string;
+  generation: number;
+  transcriptAnchor: Readonly<AgentTranscriptAnchorV1>;
+  receipt: Readonly<AgentTranscriptReceiptRefV1>;
+}): Promise<AgentTranscriptReceiptRefV1 | null> {
+  return callTranscript({ op: "agent_validate_destination_receipt", ...input });
 }
 
 function importChunks(entries: TranscriptEntry[]): TranscriptEntry[][] {

@@ -1,4 +1,9 @@
 import type { TranscriptIndexEntry } from "@tellahq/opensession-protocol/session";
+import {
+  decodeAgentTranscriptReceiptRefV1,
+  type AgentTranscriptAnchorV1,
+  type AgentTranscriptReceiptRefV1,
+} from "@tellahq/opensession-protocol/agent-operation";
 import type { TranscriptEntry } from "../types";
 import type {
   AppendResult,
@@ -33,11 +38,44 @@ export type TranscriptMutationFence = {
 
 type SessionRequest = { sessionId: string };
 type MutationRequest = SessionRequest & TranscriptMutationFence;
+export type AgentTranscriptDestinationAppendRequest = {
+  op: "agent_append_destination";
+  sessionId: string;
+  requestId: string;
+  appendId: string;
+  runId: string;
+  turnId: string;
+  generation: number;
+  transcriptAnchor: Readonly<AgentTranscriptAnchorV1>;
+  entries: readonly TranscriptEntry[];
+};
+export type AgentTranscriptReceiptQueryRequest = {
+  op: "agent_query_destination_receipt";
+  sessionId: string;
+  appendId: string;
+  runId: string;
+  turnId: string;
+  generation: number;
+  transcriptAnchor: Readonly<AgentTranscriptAnchorV1>;
+  requestDigest: `sha256:${string}`;
+};
+export type AgentTranscriptReceiptValidationRequest = {
+  op: "agent_validate_destination_receipt";
+  sessionId: string;
+  runId: string;
+  turnId: string;
+  generation: number;
+  transcriptAnchor: Readonly<AgentTranscriptAnchorV1>;
+  receipt: Readonly<AgentTranscriptReceiptRefV1>;
+};
 export type TranscriptTailWindowOptions = Omit<TailWindowOpts, "weigh"> & {
   weightProfile?: "v2_snapshot" | "handoff";
 };
 
 export type TranscriptActorRequest =
+  | AgentTranscriptDestinationAppendRequest
+  | AgentTranscriptReceiptQueryRequest
+  | AgentTranscriptReceiptValidationRequest
   | (MutationRequest & { op: "append"; entries: TranscriptEntry[] })
   | (MutationRequest & {
       op: "append_destination";
@@ -102,7 +140,11 @@ export type TranscriptWake = {
 };
 
 export type TranscriptActorResult<T extends TranscriptActorRequest> =
-  T extends { op: "append" }
+  T extends { op: "agent_append_destination" }
+    ? TranscriptMutationResult<AgentTranscriptReceiptRefV1>
+    : T extends { op: "agent_query_destination_receipt" | "agent_validate_destination_receipt" }
+      ? AgentTranscriptReceiptRefV1 | null
+  : T extends { op: "append" }
     ? TranscriptMutationResult<AppendResult | null>
     : T extends { op: "append_destination" }
       ? TranscriptMutationResult<DestinationTranscriptAppendResult>
@@ -143,7 +185,7 @@ export type TranscriptSearchHit = {
 export function isTranscriptMutation(
   request: TranscriptActorRequest,
 ): request is Extract<TranscriptActorRequest, TranscriptMutationFence> {
-  return ["append", "append_destination", "import", "replace", "delete"].includes(
+  return ["agent_append_destination", "append", "append_destination", "import", "replace", "delete"].includes(
     request.op,
   );
 }
@@ -190,12 +232,95 @@ function assertCursor(value: number | undefined, name: string): void {
     throw new RangeError(`Transcript actor ${name} is invalid`);
 }
 
+function exactDataRecord(
+  value: unknown,
+  keys: readonly string[],
+  label: string,
+): asserts value is Record<string, unknown> {
+  if (!value || typeof value !== "object" || Object.getPrototypeOf(value) !== Object.prototype)
+    throw new TypeError(`Transcript actor ${label} is invalid`);
+  const descriptors = Object.getOwnPropertyDescriptors(value);
+  if (
+    Object.keys(descriptors).some((key) =>
+      descriptors[key]?.get || descriptors[key]?.set || descriptors[key]?.enumerable !== true
+    ) ||
+    Object.keys(descriptors).sort().join("\0") !== [...keys].sort().join("\0")
+  ) throw new TypeError(`Transcript actor ${label} has invalid keys`);
+}
+
+function assertAgentTranscriptAnchor(value: unknown): void {
+  exactDataRecord(value, ["throughChangeSeq", "entryIds", "digest"], "Agent anchor");
+  if (
+    !Number.isSafeInteger(value.throughChangeSeq) || (value.throughChangeSeq as number) < 0 ||
+    typeof value.digest !== "string" || !/^sha256:[a-f0-9]{64}$/.test(value.digest) ||
+    !Array.isArray(value.entryIds) || value.entryIds.length > 512 ||
+    value.entryIds.some((id) => typeof id !== "string" || !id || Buffer.byteLength(id) > 256) ||
+    new Set(value.entryIds).size !== value.entryIds.length
+  ) throw new TypeError("Transcript actor Agent anchor is invalid");
+}
+
+function assertAgentTranscriptRequest(request: TranscriptActorRequest): void {
+  if (request.op === "agent_append_destination")
+    exactDataRecord(request, [
+      "op", "sessionId", "requestId", "appendId", "runId", "turnId",
+      "generation", "transcriptAnchor", "entries",
+    ], "Agent destination append");
+  else if (request.op === "agent_query_destination_receipt")
+    exactDataRecord(request, [
+      "op", "sessionId", "appendId", "runId", "turnId", "generation",
+      "transcriptAnchor", "requestDigest",
+    ], "Agent receipt query");
+  else if (request.op === "agent_validate_destination_receipt")
+    exactDataRecord(request, [
+      "op", "sessionId", "runId", "turnId", "generation", "transcriptAnchor", "receipt",
+    ], "Agent receipt validation");
+  else return;
+  assertAgentTranscriptAnchor(request.transcriptAnchor);
+  if (!Number.isSafeInteger(request.generation) || request.generation < 1)
+    throw new TypeError("Transcript actor Agent generation is invalid");
+  if (request.op === "agent_query_destination_receipt") {
+    if (!/^sha256:[a-f0-9]{64}$/.test(request.requestDigest))
+      throw new TypeError("Transcript actor Agent request digest is invalid");
+  } else if (request.op === "agent_validate_destination_receipt") {
+    if (!decodeAgentTranscriptReceiptRefV1(request.receipt))
+      throw new TypeError("Transcript actor Agent receipt is invalid");
+  }
+}
+
+type AgentTranscriptActorRequest =
+  | AgentTranscriptDestinationAppendRequest
+  | AgentTranscriptReceiptQueryRequest
+  | AgentTranscriptReceiptValidationRequest;
+
+function freezeJson<T>(value: T): T {
+  if (value && typeof value === "object") {
+    for (const child of Object.values(value as Record<string, unknown>)) freezeJson(child);
+    Object.freeze(value);
+  }
+  return value;
+}
+
+/** Exact-key decoder used at trusted Agent call sites before crossing the actor wire. */
+export function decodeAgentTranscriptActorRequest(
+  value: unknown,
+): AgentTranscriptActorRequest | undefined {
+  try {
+    const snapshot = structuredClone(value) as TranscriptActorRequest;
+    assertTranscriptActorRequest(snapshot);
+    if (!snapshot.op.startsWith("agent_")) return undefined;
+    return freezeJson(snapshot as AgentTranscriptActorRequest);
+  } catch {
+    return undefined;
+  }
+}
+
 /** Shared by the gateway preflight and the actor-owned store. */
 export function assertTranscriptActorRequest(request: TranscriptActorRequest): void {
   if (!request || typeof request !== "object")
     throw new TypeError("Transcript actor request is invalid");
   if (!(new Set([
-    "append", "append_destination", "import", "replace", "delete",
+    "agent_append_destination", "agent_query_destination_receipt",
+    "agent_validate_destination_receipt", "append", "append_destination", "import", "replace", "delete",
     "needs_import", "import_info", "tail", "tail_window", "since",
     "changes_since", "hydrated_since", "before", "range", "outline", "full_entry",
     "last_seq", "last_change_seq", "last_reset_change_seq", "count",
@@ -204,6 +329,7 @@ export function assertTranscriptActorRequest(request: TranscriptActorRequest): v
     throw new TypeError("Transcript actor operation is invalid");
   if (!request.sessionId || Buffer.byteLength(request.sessionId) > 1_024)
     throw new TypeError("Transcript actor request has an invalid session ID");
+  if (request.op.startsWith("agent_")) assertAgentTranscriptRequest(request);
   if ("requestId" in request &&
       (!request.requestId || Buffer.byteLength(request.requestId) > 256))
     throw new RangeError("Transcript actor mutation identity is too large");

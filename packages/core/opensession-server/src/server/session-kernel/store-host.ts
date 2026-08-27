@@ -324,6 +324,42 @@ export class SessionKernelStoreHost {
         `Session ${request.sessionId} has no isolated actor transcript placement`,
       );
     const transcriptStore = this.openTranscript(request.sessionId);
+    if (request.op === "agent_append_destination") {
+      return transcriptStore.commitAgentTranscriptDestinationAppend({
+        sessionId: request.sessionId,
+        appendId: request.appendId,
+        runId: request.runId,
+        turnId: request.turnId,
+        generation: request.generation,
+        transcriptAnchor: request.transcriptAnchor,
+        entries: [...request.entries],
+      }) as TranscriptActorResult<T>;
+    }
+    if (request.op === "agent_query_destination_receipt") {
+      if (this.storeForSession(request.sessionId).isTombstoned(request.sessionId))
+        throw new Error(`Session ${request.sessionId} was deleted`);
+      return transcriptStore.queryAgentTranscriptReceiptRef({
+        sessionId: request.sessionId,
+        appendId: request.appendId,
+        runId: request.runId,
+        turnId: request.turnId,
+        generation: request.generation,
+        transcriptAnchor: request.transcriptAnchor,
+        requestDigest: request.requestDigest,
+      }) as TranscriptActorResult<T>;
+    }
+    if (request.op === "agent_validate_destination_receipt") {
+      if (this.storeForSession(request.sessionId).isTombstoned(request.sessionId))
+        throw new Error(`Session ${request.sessionId} was deleted`);
+      return transcriptStore.validateAgentTranscriptReceiptRef({
+        sessionId: request.sessionId,
+        runId: request.runId,
+        turnId: request.turnId,
+        generation: request.generation,
+        transcriptAnchor: request.transcriptAnchor,
+        receipt: request.receipt,
+      }) as TranscriptActorResult<T>;
+    }
     if (request.op === "append_destination") {
       if (transcriptStore.replayActorRequest(request))
         return transcriptStore.applyActorRequest(request) as TranscriptActorResult<T>;

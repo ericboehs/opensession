@@ -413,6 +413,11 @@ interface ValidatedDestinationAppend extends DestinationTranscriptAppendRequest 
 
 // ── Store ────────────────────────────────────────────────────────────────────
 
+type LegacyTranscriptMutationRequest = Exclude<
+  Extract<TranscriptActorRequest, { requestId: string }>,
+  { op: "agent_append_destination" }
+>;
+
 export class TranscriptStore {
   private db: Database;
   /** Sessions known to have imported_at set — one-time PK lookup cache (§3). */
@@ -433,11 +438,18 @@ export class TranscriptStore {
   ) => DestinationWriteOutcome) & {
     immediate: (request: ValidatedDestinationAppend) => DestinationWriteOutcome;
   };
+  private txAgentDestinationAppend: ((
+    request: ValidatedDestinationAppend,
+  ) => TranscriptMutationResult<AgentTranscriptReceiptRefV1>) & {
+    immediate: (
+      request: ValidatedDestinationAppend,
+    ) => TranscriptMutationResult<AgentTranscriptReceiptRefV1>;
+  };
   private txActorMutation: ((
-    request: Extract<TranscriptActorRequest, { requestId: string }>,
+    request: LegacyTranscriptMutationRequest,
   ) => TranscriptMutationResult<unknown>) & {
     immediate: (
-      request: Extract<TranscriptActorRequest, { requestId: string }>,
+      request: LegacyTranscriptMutationRequest,
     ) => TranscriptMutationResult<unknown>;
   };
 
@@ -656,6 +668,47 @@ export class TranscriptStore {
         return { replay: false, result, affected: outcome.affected };
       },
     ) as unknown as typeof this.txDestinationAppend;
+    this.txAgentDestinationAppend = this.db.transaction(
+      (request: ValidatedDestinationAppend) => {
+        if (this.db.query(
+          "SELECT 1 FROM session_kernel_tombstones WHERE session_id = ?",
+        ).get(request.sessionId))
+          throw new Error(`Session ${request.sessionId} was deleted`);
+        const beforeChangeSeq = this.getLastChangeSeq(request.sessionId);
+        const hasReceipt = !!this.db.query(
+          `SELECT 1 FROM transcript_append_receipts
+           WHERE session_id = ? AND append_id = ?`,
+        ).get(request.sessionId, request.appendId);
+        if (!hasReceipt) this.assertActorDestinationFenceCurrent(request);
+        const outcome = this.txDestinationAppend(request);
+        const receipt = this.queryTranscriptDestinationReceipt({
+          sessionId: request.sessionId,
+          runId: request.runId,
+          turnId: request.turnId,
+          generation: request.generation,
+          appendId: request.appendId,
+          requestDigest: `sha256:${request.digest}`,
+          transcriptAnchor: request.transcriptAnchor!,
+        });
+        if (!receipt) throw new TranscriptAppendReceiptCorruptError();
+        this.assertTranscriptAnchorHistorical(request.sessionId, request.transcriptAnchor!);
+        this.assertAgentReceiptEntriesCurrent(receipt);
+        const result = destinationAgentReceiptRef(receipt);
+        if (outcome.replay) {
+          return {
+            result,
+            wakeCursor: this.pendingActorWake(request.sessionId, true)?.cursor ?? 0,
+            replay: true,
+          };
+        }
+        const cursor = this.recordActorWakeInTx(
+          request.sessionId,
+          beforeChangeSeq,
+          this.getLastResetChangeSeq(request.sessionId),
+        );
+        return { result, wakeCursor: cursor, replay: false };
+      },
+    ) as unknown as typeof this.txAgentDestinationAppend;
   }
 
   // ── Append (live path) ─────────────────────────────────────────────────────
@@ -806,6 +859,29 @@ export class TranscriptStore {
     return receipt;
   }
 
+  /** Actor-authoritative Agent append. Run/turn/generation fencing, anchor
+   * verification, insert-only writes, immutable receipt creation, and wake
+   * recording share one BEGIN IMMEDIATE transaction in the per-session DB. */
+  commitAgentTranscriptDestinationAppend(
+    input: AgentDestinationTranscriptAppendRequest,
+  ): TranscriptMutationResult<AgentTranscriptReceiptRefV1> {
+    return this.txAgentDestinationAppend.immediate(
+      validateDestinationAppend(input, true),
+    );
+  }
+
+  queryAgentTranscriptReceiptRef(
+    input: DestinationTranscriptReceiptQuery & {
+      transcriptAnchor: Readonly<AgentTranscriptAnchorV1>;
+    },
+  ): AgentTranscriptReceiptRefV1 | null {
+    const receipt = this.queryTranscriptDestinationReceipt(input);
+    if (!receipt) return null;
+    this.assertTranscriptAnchorHistorical(receipt.sessionId, input.transcriptAnchor);
+    this.assertAgentReceiptEntriesCurrent(receipt);
+    return destinationAgentReceiptRef(receipt);
+  }
+
   /** Read an immutable receipt only when the primary key, digest, complete turn
    * fence, and optional transcript anchor all match. A missing row returns
    * null; a present mismatch or malformed durable row throws a distinct error. */
@@ -853,6 +929,7 @@ export class TranscriptStore {
     });
     if (!durable) return null;
     const canonical = destinationAgentReceiptRef(durable);
+    this.assertTranscriptAnchorHistorical(durable.sessionId, validation.transcriptAnchor);
     this.assertAgentReceiptEntriesCurrent(durable);
     if (canonicalDestinationJson(canonical) !== canonicalDestinationJson(validation.receipt))
       throw new TranscriptAppendReceiptMismatchError();
@@ -887,10 +964,19 @@ export class TranscriptStore {
       : 0;
     if (
       !Number.isSafeInteger(lastChangeSeq) ||
-      !Number.isSafeInteger(resetChangeSeq) ||
-      anchor.throughChangeSeq !== lastChangeSeq ||
-      anchor.throughChangeSeq < resetChangeSeq
+      anchor.throughChangeSeq !== lastChangeSeq
     )
+      throw new TranscriptAppendReceiptMismatchError();
+    this.assertTranscriptAnchorHistorical(sessionId, anchor, resetChangeSeq);
+  }
+
+  private assertTranscriptAnchorHistorical(
+    sessionId: string,
+    anchor: AgentTranscriptAnchorV1,
+    knownResetChangeSeq?: number,
+  ): void {
+    const resetChangeSeq = knownResetChangeSeq ?? this.getLastResetChangeSeq(sessionId);
+    if (!Number.isSafeInteger(resetChangeSeq) || anchor.throughChangeSeq < resetChangeSeq)
       throw new TranscriptAppendReceiptMismatchError();
     for (const entryId of anchor.entryIds) {
       const row = this.db
@@ -1016,6 +1102,20 @@ export class TranscriptStore {
   }
 
   private applyActorRequestValidated(request: TranscriptActorRequest): unknown {
+    if (request.op === "agent_append_destination")
+      return this.commitAgentTranscriptDestinationAppend({
+        sessionId: request.sessionId,
+        appendId: request.appendId,
+        runId: request.runId,
+        turnId: request.turnId,
+        generation: request.generation,
+        transcriptAnchor: request.transcriptAnchor,
+        entries: [...request.entries],
+      });
+    if (request.op === "agent_query_destination_receipt")
+      return this.queryAgentTranscriptReceiptRef(request);
+    if (request.op === "agent_validate_destination_receipt")
+      return this.validateAgentTranscriptReceiptRef(request);
     if ("requestId" in request) return this.txActorMutation.immediate(request);
     if (request.op === "needs_import") return this.needsImport(request.sessionId);
     if (request.op === "import_info") return this.getImportInfo(request.sessionId);
@@ -1075,7 +1175,7 @@ export class TranscriptStore {
   }
 
   private actorRequestDigest(
-    request: Extract<TranscriptActorRequest, { requestId: string }>,
+    request: LegacyTranscriptMutationRequest,
   ): string {
     return new Bun.CryptoHasher("sha256")
       .update("opensession.transcript-actor-command.v1\0")
@@ -1084,7 +1184,7 @@ export class TranscriptStore {
   }
 
   replayActorRequest(
-    request: Extract<TranscriptActorRequest, { requestId: string }>,
+    request: LegacyTranscriptMutationRequest,
   ): TranscriptMutationResult<unknown> | undefined {
     const digest = this.actorRequestDigest(request);
     const receipt = this.db.query(`
@@ -1104,8 +1204,71 @@ export class TranscriptStore {
     return result;
   }
 
+  private assertActorDestinationFenceCurrent(request: ValidatedDestinationAppend): void {
+    const run = this.db.query(
+      `SELECT run_state, generation, current_run_id
+       FROM session_kernel_state WHERE session_id = ?`,
+    ).get(request.sessionId) as {
+      run_state: unknown;
+      generation: unknown;
+      current_run_id: unknown;
+    } | null;
+    if (
+      !run || run.current_run_id !== request.runId ||
+      run.generation !== request.generation ||
+      typeof run.run_state !== "string" ||
+      !["starting", "running", "ask_blocked", "interrupted", "reattaching"].includes(run.run_state)
+    ) throw new Error(`Transcript destination run fence rejected ${request.sessionId}`);
+    const plan = this.db.query(
+      `SELECT run_id, run_generation, turn_id
+       FROM session_kernel_agent_host_plan WHERE session_id = ?`,
+    ).get(request.sessionId) as {
+      run_id: unknown;
+      run_generation: unknown;
+      turn_id: unknown;
+    } | null;
+    if (
+      !plan || plan.run_id !== request.runId ||
+      plan.run_generation !== request.generation || plan.turn_id !== request.turnId
+    ) throw new Error(`Transcript destination turn fence rejected ${request.sessionId}`);
+  }
+
+  private recordActorWakeInTx(
+    sessionId: string,
+    beforeChangeSeq: number,
+    resetEpoch: number,
+  ): number {
+    const previousWake = this.pendingActorWake(sessionId, true);
+    const cursor = (previousWake?.cursor ?? 0) + 1;
+    const lastChangeSeq = this.getLastChangeSeq(sessionId);
+    const firstChangeSeq = previousWake && previousWake.cursor > previousWake.ackedCursor
+      ? previousWake.firstChangeSeq
+      : Math.min(lastChangeSeq, beforeChangeSeq + 1);
+    this.db.run(`
+      INSERT INTO session_kernel_transcript_wakes
+        (session_id, cursor, acked_cursor, first_change_seq, last_change_seq,
+         reset_epoch, updated_at)
+      VALUES (?, ?, 0, ?, ?, ?, ?)
+      ON CONFLICT(session_id) DO UPDATE SET
+        cursor = excluded.cursor,
+        first_change_seq = CASE
+          WHEN session_kernel_transcript_wakes.cursor > session_kernel_transcript_wakes.acked_cursor
+          THEN session_kernel_transcript_wakes.first_change_seq
+          ELSE excluded.first_change_seq
+        END,
+        last_change_seq = excluded.last_change_seq,
+        reset_epoch = CASE
+          WHEN session_kernel_transcript_wakes.cursor > session_kernel_transcript_wakes.acked_cursor
+          THEN MAX(session_kernel_transcript_wakes.reset_epoch, excluded.reset_epoch)
+          ELSE excluded.reset_epoch
+        END,
+        updated_at = excluded.updated_at
+    `, [sessionId, cursor, firstChangeSeq, lastChangeSeq, resetEpoch, Date.now()]);
+    return cursor;
+  }
+
   private applyActorMutationInTx(
-    request: Extract<TranscriptActorRequest, { requestId: string }>,
+    request: LegacyTranscriptMutationRequest,
   ): TranscriptMutationResult<unknown> {
     const replay = this.replayActorRequest(request);
     if (replay) return replay;
@@ -1157,42 +1320,13 @@ export class TranscriptStore {
       result = null;
     }
 
-    const previousWake = this.pendingActorWake(request.sessionId, true);
-    const cursor = (previousWake?.cursor ?? 0) + 1;
-    const lastChangeSeq = this.getLastChangeSeq(request.sessionId);
-    const resetEpoch = request.op === "delete"
-      ? currentEpoch + 1
-      : this.getLastResetChangeSeq(request.sessionId);
-    const firstChangeSeq = previousWake && previousWake.cursor > previousWake.ackedCursor
-      ? previousWake.firstChangeSeq
-      : Math.min(lastChangeSeq, beforeChangeSeq + 1);
-    this.db.run(`
-      INSERT INTO session_kernel_transcript_wakes
-        (session_id, cursor, acked_cursor, first_change_seq, last_change_seq,
-         reset_epoch, updated_at)
-      VALUES (?, ?, 0, ?, ?, ?, ?)
-      ON CONFLICT(session_id) DO UPDATE SET
-        cursor = excluded.cursor,
-        first_change_seq = CASE
-          WHEN session_kernel_transcript_wakes.cursor > session_kernel_transcript_wakes.acked_cursor
-          THEN session_kernel_transcript_wakes.first_change_seq
-          ELSE excluded.first_change_seq
-        END,
-        last_change_seq = excluded.last_change_seq,
-        reset_epoch = CASE
-          WHEN session_kernel_transcript_wakes.cursor > session_kernel_transcript_wakes.acked_cursor
-          THEN MAX(session_kernel_transcript_wakes.reset_epoch, excluded.reset_epoch)
-          ELSE excluded.reset_epoch
-        END,
-        updated_at = excluded.updated_at
-    `, [
+    const cursor = this.recordActorWakeInTx(
       request.sessionId,
-      cursor,
-      firstChangeSeq,
-      lastChangeSeq,
-      resetEpoch,
-      Date.now(),
-    ]);
+      beforeChangeSeq,
+      request.op === "delete"
+        ? currentEpoch + 1
+        : this.getLastResetChangeSeq(request.sessionId),
+    );
     const commandResult: TranscriptMutationResult<unknown> = {
       result,
       wakeCursor: cursor,
