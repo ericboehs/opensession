@@ -472,9 +472,7 @@ describe("MCP OAuth client registration", () => {
         type: "http",
         url: serverUrl,
       })).toBe(true);
-      expect(
-        Object.keys(proxy.mcpOauthProxyServers("all", undefined, [])),
-      ).toContain("vercel");
+      expect(oauth.hasMcpOauthProxyGrantForUsers("vercel", [])).toBe(true);
 
       writeFileSync(configPath, JSON.stringify({
         mcpServers: {
