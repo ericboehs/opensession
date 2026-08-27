@@ -1,6 +1,6 @@
 import { mergeStylexOverrideClassName, mergeStylexProps } from "../ui/cn";
 import { utilityClassName } from "../ui/cn";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { useReducedMotion } from "motion/react";
 import { BASE_PATH } from "../lib/base";
 import { Button } from "../ui/button";
@@ -71,6 +71,9 @@ const sx = stylex.create({
 	},
 	gap5: {
 			gap: "calc(4px * 5)"
+	},
+	textTooltipFg: {
+			color: "var(--tooltip-fg)"
 	},
 	borderTooltipRing: {
 			borderStyle: "solid",
@@ -144,7 +147,7 @@ function GithubSetupStep({
 }: {
 	label: string;
 	guide: string;
-	caption: string;
+	caption: ReactNode;
 	complete?: boolean;
 	href?: string | null;
 	disabled?: boolean;
@@ -398,7 +401,13 @@ export function GithubManifestSetup({
 				<GithubSetupStep
 					label="Enable Device Flow"
 					guide={githubDeviceFlowGuide}
-					caption="Leave OAuth during installation off, then turn on Enable Device Flow."
+					caption={
+						<>
+							Leave OAuth during installation off, then turn on Enable Device Flow.
+							Click “<strong {...stylex.props(sx.fontSemibold, sx.textTooltipFg)}>Save changes</strong>”
+							to finish.
+						</>
+					}
 					href={settingsUrl}
 				/>
 				<GithubSetupStep

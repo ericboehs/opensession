@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import { createPortal } from "react-dom";
 import type { UnifiedSession } from "../lib/types";
 import {
 	fetchRecentCommits,
@@ -25,7 +24,7 @@ import { useCurrentUser } from "./UserPicker";
 import { usePeople } from "../lib/people";
 import { UserAvatar } from "./UserAvatar";
 import { personLensFilter, setFilter } from "../lib/sidebar-filter";
-import { useTeamPresence } from "./TeamPresence";
+import { presenceState, StatusDot, useTeamPresence } from "./TeamPresence";
 import { EmptyState, ListSkeleton } from "../ui/state";
 import { Button } from "../ui/button";
 import { Menu } from "../ui/menu";
@@ -46,8 +45,6 @@ const sx = stylex.create({
 		cornerShape: "var(--cs)"
 	},
 	shadowVarAvatarEdge: { boxShadow: "var(--avatar-edge)" },
-	wMax: { width: "max-content" },
-	maxW28: { maxWidth: "112px" },
 	maxW150px: { maxWidth: "150px" },
 	maxW920px: { maxWidth: "920px" },
 	minW200px: { minWidth: "200px" },
@@ -58,24 +55,6 @@ const sx = stylex.create({
 	leading13: { lineHeight: "1.3" },
 	justifySelfEnd: { justifySelf: "flex-end" },
 	ml2: { marginLeft: "8px" },
-	/** Raised over its neighbours while pointed at, so the overlapped faces
-	 *  stack in front rather than behind. Gated so a tap does not latch it. */
-	hoverZ10: {
-		":hover": {
-			"@media (hover: hover)": { "zIndex": "10" }
-		}
-	},
-	/** The face row is a horizontal strip on a phone and a header slot on a
-	 *  desktop, so its visibility flips at the boundary. */
-	phoneBlock: {
-		"@media (max-width: 720px)": { "display": "block" }
-	},
-	phoneRoundedFull: {
-		"@media (max-width: 720px)": {
-			"borderRadius": "calc(infinity * 1px)",
-			"cornerShape": "round"
-		}
-	},
 	/** A phone floats its header over the scroll, so the column opens below it. */
 	phonePtHeader: {
 		"@media (max-width: 720px)": {
@@ -83,15 +62,22 @@ const sx = stylex.create({
 		}
 	},
 });
-import { IconFeed, IconRepo, IconRobot } from "./icons";
-import { PEOPLE_SECTION_LABEL } from "../lib/people-classes";
+import { IconFeed, IconPeople, IconRepo, IconRobot } from "./icons";
+import {
+	PEOPLE_CHIP,
+	PEOPLE_CHIP_GLYPH,
+	PEOPLE_CHIP_GLYPH_SELECTED,
+	PEOPLE_CHIP_ROW,
+	PEOPLE_CHIP_SELECTED,
+	PEOPLE_SECTION_LABEL,
+} from "../lib/people-classes";
 
 /**
  * What the team has been shipping.
  *
- * The page is the feed. The team is the face stack in its top bar, because who
- * shipped it is how you narrow the feed, not a destination of its own. There
- * is no per-person page to open, since everything you would put on one already
+ * The page is the feed. The team is the row at its top, because who shipped it
+ * is how you narrow the feed, not a destination of its own. There is no
+ * per-person page to open, since everything you would put on one already
  * exists as their sidebar.
  *
  * So picking a teammate does two things at once, which is the point: it
@@ -105,10 +91,8 @@ import { PEOPLE_SECTION_LABEL } from "../lib/people-classes";
 
 interface Props {
 	sessions: UnifiedSession[];
-	/** Who's viewing what right now, used to keep active teammates first. */
+	/** Who's viewing what right now (global presence), for the face dots. */
 	teamViewing?: Array<{ user: string; sessionId: string }>;
-	/** The app-level title bar's actions slot. */
-	headerActionsEl?: HTMLElement | null;
 	/** By id, not by row: most of what the feed can open is archived, and an
 	 *  archived session is not in `sessions`. */
 	onSelect: (sessionId: string) => void;
@@ -129,6 +113,29 @@ const RENDER_CEILING = 1500;
 
 /** Everyone, or one person. */
 type Scope = { kind: "everyone" } | { kind: "person"; key: string };
+
+function ScopeChip({
+	selected,
+	onClick,
+	mark,
+	label,
+}: {
+	selected: boolean;
+	onClick: () => void;
+	mark: React.ReactNode;
+	label: string;
+}) {
+	return (
+		<button
+			className={cn(PEOPLE_CHIP, selected && PEOPLE_CHIP_SELECTED)}
+			onClick={onClick}
+			aria-pressed={selected}
+		>
+			{mark}
+			<span className={utilityClassName("min-w-0 truncate")}>{label}</span>
+		</button>
+	);
+}
 
 /**
  * The owner of a row, in the same 24px slot whoever they are. A teammate wears
@@ -158,12 +165,11 @@ function FeedOwnerMark({ owner }: { owner: FeedOwner }) {
 	);
 }
 
-export function Feed({ sessions, teamViewing, headerActionsEl, onSelect }: Props) {
+export function Feed({ sessions, teamViewing, onSelect }: Props) {
 	const currentUser = useCurrentUser();
 	const team = useTeamPresence({ sessions, teamViewing, currentUser });
 	const people = usePeople();
 	const [scope, setScope] = useState<Scope>({ kind: "everyone" });
-	const [showAllPeople, setShowAllPeople] = useState(false);
 	// The other axis: which repo shipped it. Unlike the person scope this is
 	// the page's own filter and touches nothing else, because a repo is not
 	// something the sidebar can be turned to.
@@ -294,56 +300,6 @@ export function Feed({ sessions, teamViewing, headerActionsEl, onSelect }: Props
 	const canWiden = !!nextStep && (hasOlder || scoped.length > shipped.length);
 
 	const scopeName = scope.kind === "person" ? personLabel(scope.key) : null;
-	const stackedMembers =
-		scope.kind === "person"
-			? [...chips].sort((a, b) => Number(b.key === scope.key) - Number(a.key === scope.key))
-			: chips;
-	const visiblePeople = showAllPeople ? stackedMembers : stackedMembers.slice(0, 5);
-	const hiddenPeopleCount = stackedMembers.length - visiblePeople.length;
-	const peoplePicker = (
-		<div
-			{...mergeStylexProps(utilityClassName("flex items-center gap-0.5"), sx.wMax)}
-			aria-label="Filter feed by person"
-		>
-			{visiblePeople.map((member) => {
-				const selected = scope.kind === "person" && scope.key === member.key;
-				return (
-					<button
-						key={member.key}
-						type="button"
-						className={cn(
-							utilityClassName("focus-ring relative z-0 flex min-h-10 items-center gap-1.5 rounded-control p-1 text-label font-medium text-fg transition-[background-color,color] hover:bg-hover phone:min-h-11"),
-							mergeStylexOverrideClassName("", sx.hoverZ10, sx.phoneRoundedFull),
-							selected && utilityClassName("z-10 bg-accent-soft pr-2 text-accent"),
-						)}
-						onClick={() => pick(selected ? { kind: "everyone" } : { kind: "person", key: member.key })}
-						aria-pressed={selected}
-						aria-label={selected ? "Show everyone" : `Show ${member.person.name}`}
-					>
-						<UserAvatar name={member.person.name} size={30} edge={false} />
-						{selected && (
-							<span {...mergeStylexProps(utilityClassName("truncate pr-0.5"), sx.maxW28)}>
-								{member.isYou ? "You" : personLabel(member.key)}
-							</span>
-						)}
-					</button>
-				);
-			})}
-			{hiddenPeopleCount > 0 && (
-				<button
-					type="button"
-					className={cn(
-						utilityClassName("focus-ring relative z-0 flex size-10 min-h-10 items-center justify-center rounded-control bg-active text-label font-semibold text-dim hover:bg-hover phone:size-11 phone:min-h-11"),
-						mergeStylexOverrideClassName("", sx.hoverZ10, sx.phoneRoundedFull),
-					)}
-					onClick={() => setShowAllPeople(true)}
-					aria-label={`Show ${hiddenPeopleCount} more people`}
-				>
-					+{hiddenPeopleCount}
-				</button>
-			)}
-		</div>
-	);
 	const feedLoading =
 		recentPrs.length === 0 &&
 		commits.length === 0 &&
@@ -353,14 +309,47 @@ export function Feed({ sessions, teamViewing, headerActionsEl, onSelect }: Props
 
 	return (
 		<div className={utilityClassName("flex min-h-0 w-full flex-1 flex-col bg-surface")}>
-			{team.length > 0 &&
-				headerActionsEl &&
-				createPortal(<div className={utilityClassName("phone:hidden")}>{peoplePicker}</div>, headerActionsEl)}
 			<div data-page-scroll className={utilityClassName("min-h-0 flex-1 overflow-y-auto")}>
 				<div {...mergeStylexProps(utilityClassName("mx-auto w-full px-6 phone:px-4 phone:pb-12"), sx.maxW920px, sx.pb15, sx.pt6, sx.phonePtHeader)}>
 					{team.length > 0 && (
-						<div {...mergeStylexProps(utilityClassName("mb-3 hidden overflow-x-auto pb-1"), sx.phoneBlock)}>
-							{peoplePicker}
+						<div className={PEOPLE_CHIP_ROW}>
+							<ScopeChip
+								selected={scope.kind === "everyone"}
+								onClick={() => pick({ kind: "everyone" })}
+								mark={
+									<span
+										className={cn(
+											PEOPLE_CHIP_GLYPH,
+											scope.kind === "everyone" && PEOPLE_CHIP_GLYPH_SELECTED,
+										)}
+									>
+										<IconPeople size={17} />
+									</span>
+								}
+								label="Everyone"
+							/>
+							{chips.map((member) => (
+								<ScopeChip
+									key={member.key}
+									selected={scope.kind === "person" && scope.key === member.key}
+									onClick={() => pick({ kind: "person", key: member.key })}
+									mark={
+										<span className={utilityClassName("relative flex")}>
+											<UserAvatar name={member.person.name} size={26} />
+											<StatusDot
+												state={presenceState(member)}
+												ring={
+													scope.kind === "person" && scope.key === member.key
+														? "var(--accent)"
+														: "var(--bg-panel)"
+												}
+												size={8}
+											/>
+										</span>
+									}
+									label={member.isYou ? "You" : member.person.name}
+								/>
+							))}
 						</div>
 					)}
 					{feedLoading ? (
