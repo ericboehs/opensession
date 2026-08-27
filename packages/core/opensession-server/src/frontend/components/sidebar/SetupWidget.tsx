@@ -1,4 +1,5 @@
-import { utilityClassName, mergeStylexOverrideClassName } from "../../ui/cn";
+import { utilityClassName, mergeStylexOverrideClassName, mergeStylexProps } from "../../ui/cn";
+import { type as typography } from "../../styles/typography.stylex";
 import * as stylex from "@stylexjs/stylex";
 import { useState } from "react";
 import { useSetupStatus } from "../../hooks/useSetupStatus";
@@ -10,6 +11,7 @@ import {
 	visibleSetupWidgetItems,
 	type SetupWidgetItem,
 } from "../../lib/setup-widget";
+import { Button } from "../../ui/button";
 import { cn } from "../../ui/cn";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
@@ -18,6 +20,9 @@ const sx = stylex.create({
 	 *  lets the blur behind it read. */
 	bgPanel72: {
 			backgroundColor: "color-mix(in oklab, var(--bg-panel) 72%, transparent)"
+	},
+	leading13: {
+			lineHeight: "1.3"
 	},
 });
 import { Tooltip } from "../../ui/tooltip";
@@ -91,12 +96,12 @@ function SetupStep({
 			{complete ? (
 				<IconCheckCircleFilled
 					size={20}
-					className={utilityClassName("shrink-0 text-accent")}
+					className={utilityClassName("mr-1 shrink-0 text-accent")}
 					aria-hidden="true"
 				/>
 			) : (
 				<span
-					className={utilityClassName("flex size-5 shrink-0 items-center justify-center rounded-sm border border-line text-transparent")}
+					className={utilityClassName("mr-1 flex size-5 shrink-0 items-center justify-center rounded-full border border-line text-transparent")}
 					aria-hidden="true"
 				>
 					<IconCheck size={16} />
@@ -119,6 +124,7 @@ export function SetupWidget({
 }) {
 	const [dismissed, setDismissed] = useState(setupWidgetDismissed);
 	const [completedOpen, setCompletedOpen] = useState(false);
+	const [desktopOpen, setDesktopOpen] = useState(false);
 	const setup = useSetupStatus();
 	if (dismissed || !setup.status) return null;
 
@@ -130,14 +136,55 @@ export function SetupWidget({
 	const progress = (completed.length / items.length) * 100;
 	const completedLabel = `${completed.length} ${completed.length === 1 ? "step" : "steps"} checked`;
 
+	if (placement === "desktop" && !desktopOpen) {
+		return (
+			<aside
+				aria-label="Get started"
+				className={utilityClassName("mx-2 mb-2 flex flex-none items-center gap-2 rounded-xl border border-divider-soft bg-popup-glass py-1.5 pr-1.5 pl-3 [backdrop-filter:var(--popup-blur)] smooth-shadow-sm")}
+				onPointerEnter={() => void setup.refetch()}
+				onFocusCapture={() => void setup.refetch()}
+			>
+				<div className={utilityClassName("flex min-w-0 flex-1 flex-col items-start gap-0.5")}>
+					<span {...mergeStylexProps(utilityClassName("max-w-full truncate text-supporting font-medium text-fg"), sx.leading13)}>
+						Get started
+					</span>
+					<span {...mergeStylexProps(utilityClassName("tabular-nums text-faint"), sx.leading13, typography.meta)}>
+						{completed.length} of {items.length}
+					</span>
+				</div>
+				<div className={utilityClassName("flex shrink-0 items-center gap-1")}>
+					<Button
+						variant="primary"
+						size="sm"
+						onClick={() => setDesktopOpen(true)}
+					>
+						Open
+					</Button>
+					<Tooltip label="Dismiss" side="top">
+						<Button
+							variant="ghost"
+							size="sm"
+							icon={<IconX size={16} />}
+							aria-label="Dismiss setup checklist"
+							onClick={() => {
+								dismissSetupWidget();
+								setDismissed(true);
+							}}
+						/>
+					</Tooltip>
+				</div>
+			</aside>
+		);
+	}
+
 	return (
 		<aside
 			aria-labelledby="sidebar-setup-title"
 			className={cn(
-				utilityClassName("z-30 rounded-2xl border border-divider-soft bg-popup-glass p-2 [backdrop-filter:var(--popup-blur)] smooth-shadow-sm"),
+				utilityClassName("z-30 flex-none rounded-2xl border border-divider-soft bg-popup-glass p-2 [backdrop-filter:var(--popup-blur)] smooth-shadow-sm"),
 				placement === "desktop"
-					? utilityClassName("fixed right-4 bottom-20 w-72")
-					: utilityClassName("mx-3 mt-3 mb-20 flex-none"),
+					? utilityClassName("mx-2 mb-2")
+					: utilityClassName("mx-3 mt-3 mb-20"),
 			)}
 			style={placement === "phone" ? { order: 100 } : undefined}
 			onPointerEnter={() => void setup.refetch()}
@@ -193,7 +240,7 @@ export function SetupWidget({
 						<IconChevronDown
 							size={20}
 							className={cn(
-								utilityClassName("shrink-0 transition-transform duration-[var(--dur-micro)]"),
+								utilityClassName("mr-0.5 shrink-0 transition-transform duration-[var(--dur-micro)]"),
 								completedOpen && utilityClassName("rotate-180"),
 							)}
 						/>

@@ -6640,16 +6640,16 @@ fetchFeedItems("plain")
 			onCustomize={() => setCustomizeOpen(true)}
 		/>
 		</ContextMenu.Root>
-		{!isPhone &&
-			createPortal(
-				<SetupWidget
-					placement="desktop"
-					hasCreatedSession={sessions.length > 0}
-					onOpenSettings={onOpenSettings}
-					onNewSession={onNewSession}
-				/>,
-				document.body,
-			)}
+		{/* The desktop prompt is a compact footer in the sidebar, like the
+		    “View in the app” prompt, rather than floating over the composer. */}
+		{!isPhone && (
+			<SetupWidget
+				placement="desktop"
+				hasCreatedSession={sessions.length > 0}
+				onOpenSettings={onOpenSettings}
+				onNewSession={onNewSession}
+			/>
+		)}
 		<SidebarCustomizeDialog
 			open={customizeOpen}
 			onOpenChange={setCustomizeOpen}
