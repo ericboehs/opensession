@@ -6079,10 +6079,10 @@ fetchFeedItems("plain")
 						<button
 							className={cn(SIDEBAR_BAND_TOGGLE, SIDEBAR_BAND_TOGGLE_INSET)}
 							onClick={() => toggleBand("people")}
-							title={peopleOpen ? "Collapse people" : "Expand people"}
+							title={peopleOpen ? "Collapse team" : "Expand team"}
 							aria-expanded={peopleOpen}
 						>
-							<span className="min-w-0 truncate">People</span>
+							<span className="min-w-0 truncate">Team</span>
 							<span className={SIDEBAR_GROUP_COUNT}>
 								{activePersonGroups.reduce(
 									(count, group) => count + group.activeSessions.length,
