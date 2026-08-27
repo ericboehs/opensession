@@ -1,6 +1,6 @@
 import { mergeStylexProps, mergeStylexOverrideClassName } from "../ui/cn";
 import { utilityClassName } from "../ui/cn";
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { Workspace, UnifiedSession } from "../lib/types";
 import { fetchHomeStats, fetchRecentPrs, type HomeStats, type RecentPr } from "../lib/api";
@@ -32,6 +32,7 @@ import { Menu } from "../ui/menu";
 import { Tooltip } from "../ui/tooltip";
 import { Input } from "../ui/input";
 import { EmptyState } from "../ui/state";
+import { cn } from "../ui/cn";
 import {
   PR_GROUP_LABEL,
   PR_LIST,
@@ -47,6 +48,7 @@ import {
   IconPlus,
   IconPullRequest,
   IconRepo,
+  IconSearch,
   IconSidebarLeft,
   IconX,
 } from "./icons";
@@ -218,6 +220,69 @@ const sx = stylex.create({
 	},
 	ml2: {
 			marginLeft: "calc(4px * 2)"
+	},
+	relative: {
+			position: "relative"
+	},
+	absolute: {
+			position: "absolute"
+	},
+	inset0: {
+			inset: "0"
+	},
+	left0: {
+			left: "0"
+	},
+	z10: {
+			zIndex: "10"
+	},
+	opacity0: {
+			opacity: "0"
+	},
+	opacity100: {
+			opacity: "1"
+	},
+	pointerEventsNone: {
+			pointerEvents: "none"
+	},
+	textGreen: {
+			color: "var(--green)"
+	},
+	h8: {
+			height: "32px"
+	},
+	w8: {
+			width: "32px"
+	},
+	pl8: {
+			paddingLeft: "32px"
+	},
+	insetY0: {
+			top: "0",
+			bottom: "0"
+	},
+	/** The field grows and fades in place rather than appearing beside the
+	 *  glyph, so the trailing filters never jump. */
+	transitionWidth: {
+			transitionProperty: "width",
+			transitionDuration: "var(--dur)",
+			transitionTimingFunction: "var(--ease)",
+		"@media (prefers-reduced-motion: reduce)": {
+			"transitionProperty": "none"
+		}
+	},
+	transitionOpacityMicro: {
+			transitionProperty: "opacity",
+			transitionDuration: "var(--dur-micro)",
+			transitionTimingFunction: "var(--ease)",
+		"@media (prefers-reduced-motion: reduce)": {
+			"transitionProperty": "none"
+		}
+	},
+	hideSearchCancel: {
+		"::-webkit-search-cancel-button": {
+			"display": "none"
+		}
 	},
 	textRed: {
 			color: "var(--red)"
@@ -463,6 +528,9 @@ export function Prs({
   const currentUser = useCurrentUser();
   const isPhone = useIsPhone();
   const [query, setQuery] = useState("");
+  const [searchActive, setSearchActive] = useState(false);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const searchExpanded = searchActive || query.length > 0;
   const [workspaceId, setWorkspaceId] = useState("all");
   const [repo, setRepo] = useState("all");
   // Whose pull requests to show, and nothing more. This used to be the app's
@@ -490,6 +558,10 @@ export function Prs({
   }));
   const rowLimit = visiblePrRowLimit(renderWindow, renderScope);
   const [addingToSidebar, setAddingToSidebar] = useState(false);
+
+  useEffect(() => {
+    if (searchActive) searchInputRef.current?.focus();
+  }, [searchActive]);
 
   function openPreviewTarget(repo: string, branch: string) {
     setPreview({ repo, branch, title: repo, state: "OPEN", workspaceId: null });
@@ -630,25 +702,72 @@ setAddingToSidebar(false);
   // menu below.
   const actions = (
     <>
-      {/* Everything else in this row is sized by its own label, so the field is
-          what gives the bar back when the pane is narrow. It has to be weighted
-          weighted to do it. Shrink is shared in proportion, so on equal terms
-          every control gives up its share at once and a scope's label is the
-          first thing an ellipsis takes: a label needs its exact width and loses
-          a word to one spare pixel, while a field that is merely shorter costs
-          nothing. The scopes are therefore given a shrink of almost zero, so
-          the field surrenders everything it has before a label gives anything,
-          and past the field's floor the labels do truncate, which is the honest
-          end of a bar that has run out of room. */}
-      <Input
-        className={mergeStylexOverrideClassName("", sx.w200px, sx.minW90px, sx.shrink100)}
-        type="search"
-        aria-label="Search pull requests"
-        placeholder="Search pull requests…"
-        value={query}
-        onChange={(event) => setQuery(event.target.value)}
-        spellCheck={false}
-      />
+      {/* Search rests as one quiet glyph beside the page name. Activating it
+          grows the field to the right, into the flexible space before the
+          trailing filters. A non-empty search stays open when focus moves on,
+          so the active filter remains visible. */}
+      <div
+        {...stylex.props(
+          sx.relative,
+          sx.h8,
+          sx.shrink0,
+          sx.transitionWidth,
+          searchExpanded ? sx.w200px : sx.w8,
+          searchExpanded && sx.minW90px,
+          searchExpanded && sx.shrink100,
+        )}
+      >
+        <Input
+          ref={searchInputRef}
+          className={mergeStylexOverrideClassName(
+            "",
+            sx.absolute,
+            sx.inset0,
+            sx.h8,
+            sx.pl8,
+            sx.hideSearchCancel,
+            sx.transitionOpacityMicro,
+            searchExpanded ? sx.opacity100 : sx.opacity0,
+            !searchExpanded && sx.pointerEventsNone,
+          )}
+          type="search"
+          aria-label="Search pull requests"
+          placeholder="Search pull requests…"
+          value={query}
+          tabIndex={searchExpanded ? 0 : -1}
+          onFocus={() => setSearchActive(true)}
+          onBlur={() => setSearchActive(false)}
+          onChange={(event) => setQuery(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key !== "Escape") return;
+            event.preventDefault();
+            setQuery("");
+            setSearchActive(false);
+            event.currentTarget.blur();
+          }}
+          spellCheck={false}
+        />
+        <Tooltip label="Search" side="bottom">
+          <Button
+            variant="ghost"
+            icon={<IconSearch size={18} />}
+            className={mergeStylexOverrideClassName(
+              "",
+              sx.absolute,
+              sx.insetY0,
+              sx.left0,
+              sx.z10,
+              Boolean(searchExpanded) && sx.pointerEventsNone,
+              Boolean(searchExpanded) && sx.textFaint,
+            )}
+            aria-label="Search pull requests"
+            aria-expanded={searchExpanded}
+            aria-hidden={searchExpanded || undefined}
+            tabIndex={searchExpanded ? -1 : 0}
+            onClick={() => setSearchActive(true)}
+          />
+        </Tooltip>
+      </div>
 
       {/* Search sits with the page name. The scopes and CTA remain a trailing
           group, so widening the pane grows the quiet space between the two
@@ -905,7 +1024,7 @@ setAddingToSidebar(false);
                                 numbers does not. */}
                             <span {...mergeStylexProps("tabular-nums phone:hidden", sx.justifySelfEnd, typography.meta)} >
                               {row.additions !== undefined && (
-                                <span className="text-green">+{compactDiff(row.additions)}</span>
+                                <span {...stylex.props(sx.textGreen)}>+{compactDiff(row.additions)}</span>
                               )}
                               {row.deletions !== undefined && (
                                 <span {...stylex.props(sx.ml2, sx.textRed)}>−{compactDiff(row.deletions)}</span>

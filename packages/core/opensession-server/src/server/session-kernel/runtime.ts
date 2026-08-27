@@ -127,10 +127,8 @@ const runtime: RuntimeState = (globalRuntime.__opensessionSessionKernelRuntime ?
 });
 runtime.startedAt ??= Date.now();
 
-// Maintenance is actor work, not a readiness prerequisite. Starting it in the
-// first runtime poll made a recovering gateway compete with global SQLite
-// barriers while it was restoring runs. Continue a large sweep in small,
-// spaced slices after startup has settled instead.
+// Maintenance is catalog-only and is not a readiness prerequisite. Keep it
+// delayed and spaced so recovery traffic retains priority after startup.
 const BOOT_MAINTENANCE_DELAY_MS = 5 * 60_000;
 const MAINTENANCE_SWEEP_INTERVAL_MS = 60 * 60_000;
 const MAINTENANCE_CONTINUATION_DELAY_MS = 15_000;

@@ -14,15 +14,11 @@ const GLOBAL_METHODS = new Set([
   "deliveryEntries",
   "clearDeliverySlot",
   "settlePendingSteers",
-  "runStates",
   "quarantinedSessions",
-  "dueTimers",
-  "pendingOutbox",
   "stats",
   "compact",
   "maintain",
   "deadLetters",
-  "retryCompatibleCreationBranchDeadLetters",
 ]);
 
 const SESSION_FIRST_METHODS = new Set([
@@ -118,10 +114,7 @@ export const READ_METHODS = new Set([
   "turnSnapshot",
   "deliverySnapshot",
   "deliveryEntries",
-  "runStates",
   "quarantinedSessions",
-  "dueTimers",
-  "pendingOutbox",
   "stats",
   "deadLetters",
   "timer",

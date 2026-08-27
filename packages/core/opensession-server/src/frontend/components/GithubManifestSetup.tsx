@@ -59,6 +59,16 @@ const sx = stylex.create({
 			width: "calc(4px * 12)",
 			height: "calc(4px * 12)"
 	},
+	size1: {
+			width: "4px",
+			height: "4px"
+	},
+	bgLineStrong: {
+			backgroundColor: "var(--border-strong)"
+	},
+	gap5: {
+			gap: "calc(4px * 5)"
+	},
 	shrink0: {
 			flexShrink: "0"
 	},
@@ -281,10 +291,12 @@ export function GithubManifestSetup({
 				<>
 					<div {...stylex.props(sx.flex, sx.itemsCenter, sx.justifyCenter, sx.gap2, sx.pb5)}>
 						<IconTile name="github" size={48} />
-						<span
-							aria-hidden="true"
-							{...stylex.props(sx.w8, sx.borderTDashed)}
-						/>
+						<span aria-hidden="true" {...stylex.props(sx.flex, sx.gap1)}>
+							<span {...stylex.props(sx.size1, sx.bgLineStrong)} />
+							<span {...stylex.props(sx.size1, sx.bgLineStrong)} />
+							<span {...stylex.props(sx.size1, sx.bgLineStrong)} />
+							<span {...stylex.props(sx.size1, sx.bgLineStrong)} />
+						</span>
 						<img
 							src={`${BASE_PATH}/mac-app-icon.png`}
 							alt=""
@@ -303,7 +315,7 @@ export function GithubManifestSetup({
 					Install Open Session for GitHub
 				</div>
 			)}
-			<div {...stylex.props(sx.flex, sx.flexCol, sx.gap2)}>
+			<div {...stylex.props(sx.flex, sx.flexCol, formOwner === "organization" ? sx.gap5 : sx.gap2)}>
 				<Segmented
 					label="GitHub App owner"
 					value={owner}

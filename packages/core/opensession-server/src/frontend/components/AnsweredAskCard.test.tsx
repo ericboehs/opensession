@@ -3,6 +3,28 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { AnsweredAskCard } from "./AnsweredAskCard";
 import { MessageBubble } from "./MessageBubble";
 
+Object.assign(
+	((globalThis as unknown as { localStorage?: Record<string, unknown> })
+		.localStorage ??= {}),
+	{
+		getItem: () => null,
+		setItem: () => {},
+		removeItem: () => {},
+	},
+);
+Object.assign(
+	((globalThis as unknown as { window?: Record<string, unknown> }).window ??= {}),
+	{
+		addEventListener: () => {},
+		removeEventListener: () => {},
+		matchMedia: () => ({
+			matches: false,
+			addEventListener: () => {},
+			removeEventListener: () => {},
+		}),
+	},
+);
+
 const record = {
 	version: 1 as const,
 	questions: [
@@ -46,6 +68,24 @@ test("keeps every option and clearly marks the selected one", () => {
 	expect(html).not.toContain('aria-label="Detailed, selected"');
 	expect(html).not.toContain("<button");
 	expect(html).not.toContain("<input");
+});
+
+test("MessageBubble slightly mutes a sent message until the engine reads it", () => {
+	const html = renderToStaticMarkup(
+		<MessageBubble
+			entry={{
+				id: "pending-steer",
+				type: "user",
+				content: "Please also check the tests",
+				timestamp: "",
+			}}
+			pendingDelivery
+			owner="Kent"
+		/>,
+	);
+	// StyleX compiles the mute into declarations: opacity-70 is opacity 0.7.
+	expect(html).toContain("opacity:0.7");
+	expect(html).toContain('data-delivery-pending="true"');
 });
 
 test("MessageBubble routes ask notices to the sent receipt", () => {

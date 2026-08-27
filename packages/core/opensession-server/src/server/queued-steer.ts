@@ -5,11 +5,16 @@ import {
 } from "./agent-runner";
 import {
   acceptQueuedSteer,
+  broadcastQueue,
   prepareQueuedSteer,
   rejectQueuedSteer,
   type QueueItem,
 } from "./queue-state";
 import type { ImageInput } from "./run-events";
+import {
+  storeAppendUserLineEarly,
+  transcriptLineUser,
+} from "./transcript-persistence";
 import { sessionKernel } from "./session-kernel";
 
 type QueuedSteerFence = {
@@ -42,6 +47,13 @@ export type QueuedSteerDeps = {
     itemId: string,
     target: QueuedSteerFence,
   ): Promise<boolean>;
+  prepared?(
+    sessionId: string,
+    itemId: string,
+    item: QueueItem,
+    text: string,
+    images: ImageInput[] | undefined,
+  ): Promise<void>;
 };
 
 const queuedSteerDeps: QueuedSteerDeps = {
@@ -55,6 +67,20 @@ const queuedSteerDeps: QueuedSteerDeps = {
   steer: steerAgentRunToken,
   accept: acceptQueuedSteer,
   reject: rejectQueuedSteer,
+  async prepared(sessionId, itemId, item, text, images) {
+    const promptEntryId = item.promptEntryId || itemId;
+    if (text.trim() || images?.length) {
+      await storeAppendUserLineEarly(
+        sessionId,
+        transcriptLineUser(text, promptEntryId, undefined, images),
+        { required: true },
+      );
+    }
+    // The transcript row is now the user-facing receipt. Publish the delivery
+    // projection before touching the runner so every client removes the old
+    // queue row and can render this entry as pending delivery.
+    await broadcastQueue(sessionId);
+  },
 };
 
 function sameFence(
@@ -80,13 +106,34 @@ export async function prepareAndSteerQueuedPrompt(
 ): Promise<"steered" | "rejected" | "not_prepared"> {
   const before = deps.target(input.sessionId);
   if (!before) return "not_prepared";
+  const directItem = input.item
+    ? {
+        ...input.item,
+        promptEntryId: input.item.promptEntryId || input.itemId,
+      }
+    : undefined;
   const prepared = await deps.prepare(
     input.sessionId,
     input.itemId,
     before,
-    input.item,
+    directItem,
   );
   if (!prepared) return "not_prepared";
+  try {
+    await deps.prepared?.(
+      input.sessionId,
+      input.itemId,
+      prepared,
+      input.text,
+      input.images,
+    );
+  } catch (error) {
+    if (!await deps.reject(input.sessionId, input.itemId, before))
+      throw new Error("Pending steer changed while transcript admission failed", {
+        cause: error,
+      });
+    throw error;
+  }
   if (!sameFence(before, deps.target(input.sessionId))) {
     if (!await deps.reject(input.sessionId, input.itemId, before))
       throw new Error("Pending steer changed before fenced rejection");
@@ -107,6 +154,7 @@ export async function prepareAndInterruptQueuedPrompt(
   input: {
     sessionId: string;
     itemId: string;
+    item?: QueueItem;
     text: string;
     images?: ImageInput[];
   },
@@ -118,8 +166,34 @@ export async function prepareAndInterruptQueuedPrompt(
 ): Promise<"interrupted" | "target_changed" | "unsupported" | "not_prepared"> {
   const before = deps.target(input.sessionId);
   if (!before) return "not_prepared";
-  const prepared = await deps.prepare(input.sessionId, input.itemId, before);
+  const directItem = input.item
+    ? {
+        ...input.item,
+        promptEntryId: input.item.promptEntryId || input.itemId,
+      }
+    : undefined;
+  const prepared = await deps.prepare(
+    input.sessionId,
+    input.itemId,
+    before,
+    directItem,
+  );
   if (!prepared) return "not_prepared";
+  try {
+    await deps.prepared?.(
+      input.sessionId,
+      input.itemId,
+      prepared,
+      input.text,
+      input.images,
+    );
+  } catch (error) {
+    if (!await deps.reject(input.sessionId, input.itemId, before))
+      throw new Error("Pending interrupt steer changed while transcript admission failed", {
+        cause: error,
+      });
+    throw error;
+  }
   if (!sameFence(before, deps.target(input.sessionId))) {
     if (!await deps.reject(input.sessionId, input.itemId, before))
       throw new Error("Pending interrupt steer changed before fenced rejection");

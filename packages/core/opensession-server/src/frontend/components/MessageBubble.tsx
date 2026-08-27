@@ -230,6 +230,15 @@ const sx = stylex.create({
 	justifyEnd: { justifyContent: "flex-end" },
 	hoverBorderAccent: { ":hover": { "@media (hover: hover)": { borderColor: "var(--accent)" } } },
 	mb875: { marginBottom: "35px" },
+	/** A turn still on its way out is dimmed, and settles rather than snaps. */
+	deliveryPending: {
+		opacity: 0.7,
+		transitionProperty: "opacity",
+		transitionDuration: "200ms",
+		"@media (prefers-reduced-motion: reduce)": {
+			transitionProperty: "none",
+		},
+	},
 	hoverMb875: { "@media (hover: hover)": { marginBottom: "35px" } },
 	textFg: { color: "var(--text)" },
 
@@ -655,6 +664,8 @@ function BubbleMeta({ ts, onEdit }: { ts?: string; onEdit?: () => void }) {
 
 interface Props {
 	entry: TranscriptEntry;
+	/** Sent to the conversation, but the running engine has not read it yet. */
+	pendingDelivery?: boolean;
 	/**
 	 * Who owns/drives this session (session.startedBy). An un-attributed user
 	 * turn is this person's own words, so it's credited to them — "You" only
@@ -803,6 +814,7 @@ function EntryFiles({
 // markdown/highlighting.
 export const MessageBubble = function MessageBubble({
 	entry,
+	pendingDelivery = false,
 	owner,
 	sessionId,
 	onEdit,
@@ -838,7 +850,16 @@ export const MessageBubble = function MessageBubble({
 	// their words, so their own bubble — the "who" lives in the label.
 	if (e.type === "user" && e.sender && e.senderVia) {
 		return (
-			<div className={cn(msgRow, msgOwnTurn)} data-eid={e.id}>
+			<div
+				className={cn(
+					msgRow,
+					msgOwnTurn,
+					stylex.props(pendingDelivery && sx.deliveryPending).className,
+				)}
+				style={stylex.props(pendingDelivery && sx.deliveryPending).style}
+				data-delivery-pending={pendingDelivery || undefined}
+				data-eid={e.id}
+			>
 				<div className={cn(msgLabel, msgLabelHuman)}>
 					<TeammateAvatar name={e.sender} />
 					{e.sender} · via Slack
@@ -881,15 +902,24 @@ export const MessageBubble = function MessageBubble({
 		// Your own settled messages skip the label entirely — the right-aligned
 		// bubble already says "you". Turns sent by someone else keep the
 		// attribution label.
+		const ownTurnProps = stylex.props(
+			!fromOther && (onEdit ? sx.mb875 : sx.hoverMb875),
+			pendingDelivery && sx.deliveryPending,
+		);
 		return (
 			<div
+				// Your own turns hang their quiet actions below the bubble. The edit
+				// button is always visible to touch pointers, while a row with only a
+				// timestamp needs the clearance on hover devices. That clearance and
+				// the in-flight mute compose in one props call so neither is lost.
 				className={cn(
-					stylex.props(!fromOther && (onEdit ? sx.mb875 : sx.hoverMb875)).className,
+					ownTurnProps.className,
 					msgRow,
 					"msg-user",
 					msgOwnTurn,
 				)}
-				style={stylex.props(!fromOther && (onEdit ? sx.mb875 : sx.hoverMb875)).style}
+				style={ownTurnProps.style}
+				data-delivery-pending={pendingDelivery || undefined}
 				data-eid={e.id}
 			>
 				{fromOther && (

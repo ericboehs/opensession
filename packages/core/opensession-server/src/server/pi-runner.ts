@@ -2491,7 +2491,10 @@ async function* runPiAttempt(
                       );
                   persistRunEntries([
                     {
-                      id: crypto.randomUUID(),
+                      // Steering admission already wrote the visible user row.
+                      // Reuse its id so engine delivery upserts that bubble
+                      // instead of appending a duplicate.
+                      id: steer.steerId || crypto.randomUUID(),
                       type: "user",
                       content: text,
                       timestamp: ts,

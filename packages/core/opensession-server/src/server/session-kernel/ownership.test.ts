@@ -50,6 +50,35 @@ describe("single session ownership", () => {
 		expect(health).not.toContain(".stats()");
 	});
 
+	test("online kernel code cannot fan out across every actor database", () => {
+		const host = read("session-kernel/store-host.ts");
+		const routing = read("session-kernel/store-routing.ts");
+		for (const helper of [
+			"mapIsolatedReadStores",
+			"mapReadStores",
+			"mapIsolatedStores",
+			"mapStores",
+		]) expect(host).not.toContain(helper);
+		expect(host).not.toContain("isolatedSessionPlacements(");
+		expect(host).not.toContain("repairSparseProjections");
+		const maintenance = host.slice(
+			host.indexOf("  maintain(): boolean"),
+			host.indexOf("  private openTranscript"),
+		);
+		expect(maintenance).not.toContain("openIsolated");
+		expect(maintenance).not.toContain("storeForSession");
+		expect(maintenance).not.toContain("isolatedOutboxRoutes");
+		expect(read("session-kernel/store.ts")).not.toContain(
+			"isolatedSessionPlacements(",
+		);
+		for (const legacyGlobal of [
+			'"runStates"',
+			'"dueTimers"',
+			'"pendingOutbox"',
+			'"retryCompatibleCreationBranchDeadLetters"',
+		]) expect(routing).not.toContain(legacyGlobal);
+	});
+
 	test("run, queue, ask and session-file state delegate to SessionKernel", () => {
 		expect(read("run-state.ts")).toContain("sessionKernel(sessionId)");
 		expect(read("queue-state.ts")).toContain("new DeliveryOwnedMap");
@@ -766,7 +795,7 @@ describe("single session ownership", () => {
       "await recordRunOutcome(session.id, runFailure",
     );
     expect(terminalOutcome).toBeGreaterThan(0);
-    expect(run.indexOf("await clearSteerReceipts", terminalOutcome))
+    expect(run.indexOf("await requeueSteerReceipts", terminalOutcome))
       .toBeGreaterThan(terminalOutcome);
     expect(run.indexOf('type: "stream_done"', terminalOutcome))
       .toBeGreaterThan(terminalOutcome);

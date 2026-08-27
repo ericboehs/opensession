@@ -598,6 +598,10 @@ export type ProtocolServerMessage =
       sessionId: string;
       queued: QueuedPrompt[];
       steered?: QueuedPrompt[];
+      /** Transcript entry ids accepted by the conversation but not yet read by
+       *  the engine. Clients may render these sent bubbles with a quiet pending
+       *  treatment without putting them back in the composer queue. */
+      pendingDeliveryIds?: string[];
     }
   | {
       type: "queued_prompt_taken";

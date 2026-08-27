@@ -272,6 +272,13 @@ export async function sessionDelivery<T extends DeliveryActorRequest>(
     );
   else if (request.op === "enqueue")
     result = store.enqueueDelivery(request.sessionId, request.item, request.front);
+  else if (request.op === "promote_queued")
+    result = store.promoteQueuedDelivery(
+      request.sessionId,
+      request.itemId,
+      request.promptEntryId,
+      request.item,
+    );
   else if (request.op === "delete")
     result = store.deleteDeliverySlot(request.sessionId, request.slot);
   else if (request.op === "clear_slot")
@@ -728,19 +735,6 @@ export function retrySessionDeadOutbox(id: number): Promise<boolean> {
   return sessionStoreAsync("retryDeadOutbox", [id]);
 }
 
-export function reconcileCreationBranchDeadLetters(
-  destinations: ReadonlyArray<{ project: string; worktreePath: string }>,
-  now?: number,
-) {
-  return sessionStoreAsync<
-    Array<{
-      id: number;
-      sessionId: string;
-      reason: "shared_checkout_destination_adoptable" | "legacy_empty_base_branch";
-    }>
-  >("retryCompatibleCreationBranchDeadLetters", [destinations, now]);
-}
-
 export async function acknowledgeSessionCommand(
 	sessionId: string,
 	requestId: string,
@@ -769,12 +763,8 @@ export async function sessionKernelRuntimeWork(
 	};
 }
 
-/** Health and readiness must never enqueue the all-session stats fanout. The
- * production actor store is sharded into one SQLite database per session, so
- * `stats()` opens and scans every shard. Running that work on the catalog lane
- * can exceed its response deadline, restart the lane, and prevent boot recovery
- * from completing. Detailed accounting belongs in bounded background
- * projections; request-path health reports the gateway-local actor snapshot. */
+/** Health and readiness use the gateway-local snapshot. Aggregate accounting
+ * belongs in catalog projections; request paths never inspect actor shards. */
 export function sessionKernelReadinessSnapshot(): Record<string, unknown> {
   return {
     active: state.kernels?.size ?? 0,

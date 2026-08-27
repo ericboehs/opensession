@@ -4,7 +4,6 @@ import {
   sessionKernelDbPath,
   sessionKernelSessionDbPath,
   type DurableOutboxItem,
-  type DurableRunState,
   type DurableSessionQuarantine,
   type DurableTimer,
   type SessionKernelStoreApi,
@@ -17,20 +16,12 @@ import {
   type TranscriptActorResult,
 } from "./transcript-protocol";
 
-function minDefined(values: Array<number | undefined>): number | undefined {
-  const present = values.filter((value): value is number => value !== undefined);
-  return present.length === 0 ? undefined : Math.min(...present);
-}
-
 const CENTRAL_STORE_FAILURE = "SESSION_KERNEL_CENTRAL_STORE_FAILURE";
 // Global runtime turns share the actor service with latency-sensitive session
 // commands. Keep every turn small: the cursor makes progress across calls,
 // while a bounded slice prevents startup recovery from opening hundreds of
 // SQLite databases behind one global barrier.
 const RUNTIME_WAKE_CANDIDATE_BATCH = 16;
-const SPARSE_PROJECTION_BACKFILL_BATCH = 128;
-const OUTBOX_ROUTE_MAINTENANCE_BATCH = 8;
-const SESSION_STORE_MAINTENANCE_BATCH = 1;
 
 export type SessionKernelStoreHostMetrics = {
   kernelStoreCacheMisses: number;
@@ -39,10 +30,6 @@ export type SessionKernelStoreHostMetrics = {
   transcriptStoreCacheEvictions: number;
   sqliteBusy: number;
 };
-
-class SparseProjectionBackfillPendingError extends Error {
-  readonly retryable = true;
-}
 
 const SPARSE_PROJECTION_MUTATIONS = new Set([
   "setAskRecord",
@@ -104,8 +91,6 @@ export class SessionKernelStoreHost {
   private readonly transcripts = new Map<string, TranscriptStore>();
   private runtimeCursor = "";
   private runtimeDueCursor = "";
-  private maintenanceSessionCursor = "";
-  private outboxRouteMaintenanceCursor = 0;
   private readonly laneMetrics: SessionKernelStoreHostMetrics = {
     kernelStoreCacheMisses: 0,
     kernelStoreCacheEvictions: 0,
@@ -482,82 +467,6 @@ export class SessionKernelStoreHost {
     ));
   }
 
-  private repairSparseProjections(
-    limit = SPARSE_PROJECTION_BACKFILL_BATCH,
-  ): boolean {
-    const candidates = this.centralOperation(
-      () => this.central.isolatedProjectionPendingSessionIds(limit),
-    );
-    for (const sessionId of candidates) {
-      const repaired = this.containIsolated(
-        sessionId,
-        "maintenance:sparse-projection",
-        () => {
-          const centralQuarantine = this.central.quarantinedSession(sessionId);
-          if (centralQuarantine) {
-            this.central.settleIsolatedSessionProjection(
-              sessionId,
-              undefined,
-              undefined,
-              centralQuarantine,
-            );
-            return;
-          }
-          const store = this.centralPath === ":memory:"
-            ? this.openIsolated(sessionId)
-            : new SessionKernelStore(
-                sessionKernelSessionDbPath(sessionId, this.isolatedRoot),
-                {
-                  readonly: true,
-                  hydrateRunStateCache: false,
-                  // Schemas 29–30 only add central projection fields. Session
-                  // ask/delivery/quarantine tables are unchanged from 28.
-                  compatibleReadSchemaFloor: 28,
-                },
-              );
-          try {
-            const quarantined = store.quarantinedSession(sessionId);
-            const ask = quarantined ? undefined : store.askSnapshot(sessionId);
-            const delivery = quarantined ? undefined : store.deliverySnapshot(sessionId);
-            const sparseDelivery = delivery && (
-              delivery.queued.length > 0 ||
-              delivery.steered.length > 0 ||
-              delivery.pendingSteers.length > 0 ||
-              delivery.dispatch !== undefined ||
-              delivery.interrupt !== undefined
-            ) ? delivery : undefined;
-            this.central.settleIsolatedSessionProjection(
-              sessionId,
-              ask,
-              sparseDelivery,
-              quarantined,
-            );
-          } finally {
-            if (store !== this.isolated.get(sessionId)) store.close();
-          }
-        },
-      );
-      if (!repaired.ok)
-        this.centralOperation(() => this.central.settleIsolatedSessionProjection(
-          sessionId,
-          undefined,
-          undefined,
-        ));
-    }
-    const pending = this.centralOperation(
-      () => this.central.isolatedProjectionPendingSessionIds(1).length > 0,
-    );
-    if (!pending && !this.central.sparseProjectionMigrationComplete())
-      this.centralOperation(
-        () => this.central.markSparseProjectionMigrationComplete(),
-      );
-    return pending;
-  }
-
-  allRunStates(): Array<DurableRunState & { sessionId: string }> {
-    return this.mapReadStores("global:run-states", (store) => store.runStates()).flat();
-  }
-
   allAskEntries(): Array<[string, unknown]> {
     const entries = [
       ...this.central.askEntries(),
@@ -596,7 +505,6 @@ export class SessionKernelStoreHost {
     effectKinds: string[],
     limit: number,
   ): { timers: DurableTimer[]; outbox: DurableOutboxItem[] } {
-    this.repairSparseProjections();
     const candidateLimit = Math.max(
       1,
       Math.min(RUNTIME_WAKE_CANDIDATE_BATCH, limit),
@@ -680,33 +588,11 @@ export class SessionKernelStoreHost {
   }
 
   stats(): ReturnType<SessionKernelStoreApi["stats"]> {
-    const isolated = this.mapIsolatedReadStores(
-      "global:stats",
-      (store) => store.stats(),
-    );
-    // Include quarantines created during this scan in the same response.
-    const parts = [this.central.stats(), ...isolated];
-    const sum = (key: keyof ReturnType<SessionKernelStoreApi["stats"]>) =>
-      parts.reduce((total, part) => total + Number(part[key] ?? 0), 0);
-    return {
-      sessions: sum("sessions"),
-      quarantinedSessions: sum("quarantinedSessions"),
-      pendingCommands: sum("pendingCommands"),
-      indeterminateCommands: sum("indeterminateCommands"),
-      pendingTimers: sum("pendingTimers"),
-      pendingOutbox: sum("pendingOutbox"),
-      deadLetteredOutbox: sum("deadLetteredOutbox"),
-      deadLetteredTimers: sum("deadLetteredTimers"),
-      oldestPendingCommandAt: minDefined(parts.map((part) => part.oldestPendingCommandAt)),
-      oldestIndeterminateCommandAt: minDefined(parts.map((part) => part.oldestIndeterminateCommandAt)),
-      oldestPendingTimerAt: minDefined(parts.map((part) => part.oldestPendingTimerAt)),
-      oldestPendingOutboxAt: minDefined(parts.map((part) => part.oldestPendingOutboxAt)),
-      dbBytes: sum("dbBytes"),
-      walBytes: sum("walBytes"),
-      pageCount: sum("pageCount"),
-      freePages: sum("freePages"),
-      schemaVersion: parts[0].schemaVersion,
-    };
+    // Global stats are deliberately catalog-only. Opening every per-session
+    // SQLite actor here used to monopolize the catalog lane and made health
+    // requests time out. Aggregate actor metrics require a catalog projection;
+    // they must never be reconstructed through online shard fanout.
+    return this.central.stats();
   }
 
   migrateLegacySessions(limit = 1): number {
@@ -720,54 +606,10 @@ export class SessionKernelStoreHost {
   }
 
   maintain(): boolean {
-    let pending = this.repairSparseProjections(SESSION_STORE_MAINTENANCE_BATCH);
-    let routes = this.central.isolatedOutboxRoutes(
-      OUTBOX_ROUTE_MAINTENANCE_BATCH,
-      this.outboxRouteMaintenanceCursor,
-    );
-    if (routes.length === 0 && this.outboxRouteMaintenanceCursor !== 0) {
-      this.outboxRouteMaintenanceCursor = 0;
-      routes = this.central.isolatedOutboxRoutes(
-        OUTBOX_ROUTE_MAINTENANCE_BATCH,
-        0,
-      );
-    }
-    for (const route of routes) {
-      this.outboxRouteMaintenanceCursor = route.id;
-      if (this.central.quarantinedSession(route.sessionId)) continue;
-      const routedSession = this.containIsolated(
-        route.sessionId,
-        "maintenance:outbox-route",
-        () => this.openIsolated(route.sessionId).outboxSessionId(route.id),
-      );
-      if (routedSession.ok && routedSession.value !== route.sessionId)
-        this.central.forgetIsolatedOutboxRoute(route.id);
-    }
-    pending =
-      routes.length === OUTBOX_ROUTE_MAINTENANCE_BATCH ||
-      this.central.maintain() ||
-      pending;
-    const placements = this.central.isolatedSessionPlacements(
-      SESSION_STORE_MAINTENANCE_BATCH,
-      this.maintenanceSessionCursor,
-    );
-    if (placements.length === 0 && this.maintenanceSessionCursor) {
-      this.maintenanceSessionCursor = "";
-    } else {
-      for (const { sessionId } of placements) {
-        this.maintenanceSessionCursor = sessionId;
-        if (this.central.quarantinedSession(sessionId)) continue;
-        const result = this.containIsolated(
-          sessionId,
-          "maintenance:store",
-          () => this.openIsolated(sessionId).maintain(),
-        );
-        if (result.ok) pending = result.value || pending;
-      }
-      pending =
-        placements.length === SESSION_STORE_MAINTENANCE_BATCH || pending;
-    }
-    return pending;
+    // Fleet-wide maintenance belongs in catalog projections. Walking actor
+    // placements or outbox routes here eventually opens the entire fleet even
+    // when each individual turn is bounded.
+    return this.central.maintain();
   }
 
   private openTranscript(sessionId: string): TranscriptStore {
@@ -856,79 +698,6 @@ export class SessionKernelStoreHost {
     }
   }
 
-  private mapIsolatedReadStores<T>(
-    commandKind: string,
-    operation: (store: SessionKernelStore, sessionId: string) => T,
-  ): T[] {
-    const results: T[] = [];
-    for (const { sessionId } of this.central.isolatedSessionPlacements()) {
-      if (this.central.quarantinedSession(sessionId)) continue;
-      const result = this.containIsolated(sessionId, commandKind, () => {
-        const cached = this.isolated.get(sessionId);
-        if (cached) return operation(cached, sessionId);
-        if (this.centralPath === ":memory:")
-          return operation(this.openIsolated(sessionId), sessionId);
-        let store: SessionKernelStore;
-        try {
-          store = new SessionKernelStore(
-            sessionKernelSessionDbPath(sessionId, this.isolatedRoot),
-            { readonly: true, hydrateRunStateCache: false },
-          );
-        } catch (error) {
-          // The first schema-23 read may encounter an additive schema-22 target
-          // created before this deploy. Upgrade it once behind the global gate.
-          if (!/read mirror schema \d+ does not match supported \d+/.test(
-            error instanceof Error ? error.message : String(error),
-          )) throw error;
-          return operation(this.openIsolated(sessionId), sessionId);
-        }
-        try {
-          return operation(store, sessionId);
-        } finally {
-          store.close();
-        }
-      });
-      if (result.ok) results.push(result.value);
-    }
-    return results;
-  }
-
-  private mapReadStores<T>(
-    commandKind: string,
-    operation: (store: SessionKernelStore, sessionId?: string) => T,
-  ): T[] {
-    return [
-      operation(this.central),
-      ...this.mapIsolatedReadStores(commandKind, operation),
-    ];
-  }
-
-  private mapIsolatedStores<T>(
-    commandKind: string,
-    operation: (store: SessionKernelStore, sessionId: string) => T,
-  ): T[] {
-    const results: T[] = [];
-    for (const { sessionId } of this.central.isolatedSessionPlacements()) {
-      if (this.central.quarantinedSession(sessionId)) continue;
-      // Operate before opening the next actor. Building an array of store
-      // handles first let the bounded LRU close early entries before use.
-      const result = this.containIsolated(
-        sessionId,
-        commandKind,
-        () => operation(this.openIsolated(sessionId), sessionId),
-      );
-      if (result.ok) results.push(result.value);
-    }
-    return results;
-  }
-
-  private mapStores<T>(
-    commandKind: string,
-    operation: (store: SessionKernelStore, sessionId?: string) => T,
-  ): T[] {
-    return [operation(this.central), ...this.mapIsolatedStores(commandKind, operation)];
-  }
-
   private invoke(store: SessionKernelStore, method: string, args: unknown[]): unknown {
     const fn = (store as unknown as Record<string, (...values: unknown[]) => unknown>)[method];
     if (typeof fn !== "function") throw new Error(`Unknown store method ${method}`);
@@ -948,36 +717,21 @@ export class SessionKernelStoreHost {
     if (method === "askEntries") return this.allAskEntries();
     if (method === "deliveryEntries")
       return this.allDeliveryEntries(args[0] as Parameters<SessionKernelStoreApi["deliveryEntries"]>[0]);
-    if (method === "runStates") return this.allRunStates();
     if (method === "quarantinedSessions")
       return this.allQuarantinedSessions(Number(args[0] ?? 100), Number(args[1] ?? 0));
-    if (method === "dueTimers")
-      return this.mapReadStores("global:due-timers", (store) => store.dueTimers(
-        args[0] as number | undefined,
-        args[1] as number | undefined,
-        args[2] as readonly string[] | undefined,
-      )).flat().slice(0, Number(args[1] ?? 100));
-    if (method === "pendingOutbox")
-      return this.mapReadStores("global:pending-outbox", (store) => store.pendingOutbox(
-        args[0] as number | undefined,
-        args[1] as number | undefined,
-        args[2] as readonly string[] | undefined,
-      )).flat().slice(0, Number(args[1] ?? 100));
     if (method === "stats") return this.stats();
     if (method === "maintain") return this.maintain();
     if (method === "compact") {
-      this.mapStores("global:compact", (store) => store.compact(
+      // Isolated stores are compacted incrementally by maintain(). A global
+      // compact is intentionally limited to the catalog database.
+      this.central.compact(
         args[0] as number | undefined,
         args[1] as number | undefined,
         args[2] as number | undefined,
-      ));
+      );
       return;
     }
     if (method === "clearAskRecords") {
-      if (this.repairSparseProjections())
-        throw new SparseProjectionBackfillPendingError(
-          "Sparse session projection backfill is still in progress",
-        );
       const sessionIds = this.central.isolatedAskProjectionEntries()
         .map(([sessionId]) => sessionId);
       this.central.clearAskRecords();
@@ -991,10 +745,6 @@ export class SessionKernelStoreHost {
       return;
     }
     if (method === "clearDeliverySlot") {
-      if (this.repairSparseProjections())
-        throw new SparseProjectionBackfillPendingError(
-          "Sparse session projection backfill is still in progress",
-        );
       const slot = args[0] as Parameters<SessionKernelStoreApi["clearDeliverySlot"]>[0];
       const sessionIds = this.central.isolatedDeliveryProjectionEntries(slot)
         .map(([sessionId]) => sessionId);
@@ -1009,11 +759,6 @@ export class SessionKernelStoreHost {
       return;
     }
     if (method === "settlePendingSteers") {
-      const projectionPending = this.repairSparseProjections();
-      if (projectionPending)
-        throw new SparseProjectionBackfillPendingError(
-          "Sparse session projection backfill is still in progress",
-        );
       let settled = this.central.settlePendingSteers();
       const candidates = this.central.isolatedPendingSteerProjectionSessionIds();
       for (const sessionId of candidates) {
@@ -1032,56 +777,35 @@ export class SessionKernelStoreHost {
       }
       return settled;
     }
-    if (method === "retryCompatibleCreationBranchDeadLetters") {
-      const destinations = args[0] as Parameters<
-        SessionKernelStoreApi["retryCompatibleCreationBranchDeadLetters"]
-      >[0];
-      const now = args[1] as number | undefined;
-      const retried = this.central.retryCompatibleCreationBranchDeadLetters(
-        destinations,
-        now,
-      );
-      const candidates = this.mapIsolatedReadStores(
-        "global:find-creation-branch-dead-letters",
-        (store, sessionId) =>
-          store.hasCreationBranchDeadLetters() ? sessionId : undefined,
-      ).filter((sessionId): sessionId is string => sessionId !== undefined);
-      for (const sessionId of candidates) {
-        const result = this.containIsolated(
-          sessionId,
-          "global:retry-creation-branches",
-          () => this.storeForSession(sessionId, true)
-            .retryCompatibleCreationBranchDeadLetters(destinations, now),
-        );
-        if (result.ok) retried.push(...result.value);
-      }
-      return retried;
-    }
     if (method === "deadLetters") {
       const limit = Number(args[0] ?? 100);
       const offset = Number(args[1] ?? 0);
-      const isolated = this.mapIsolatedReadStores(
-        "global:dead-letters",
-        (store) => store.deadLetters(Number.MAX_SAFE_INTEGER, 0),
+      const central = this.central.deadLetters(limit, offset);
+      const allQuarantines = this.allQuarantinedSessions(
+        Number.MAX_SAFE_INTEGER,
+        0,
       );
-      const parts = [this.central.deadLetters(Number.MAX_SAFE_INTEGER, 0), ...isolated];
-      const byDeadLetter = (a: { deadLetteredAt: number }, b: { deadLetteredAt: number }) =>
-        b.deadLetteredAt - a.deadLetteredAt;
-      const quarantines = parts.flatMap((part) => part.quarantines)
-        .sort((a, b) => b.quarantinedAt - a.quarantinedAt);
-      const timers = parts.flatMap((part) => part.timers).sort(byDeadLetter);
-      const outbox = parts.flatMap((part) => part.outbox).sort(byDeadLetter);
       return {
-        quarantines: quarantines.slice(offset, offset + limit),
-        timers: timers.slice(offset, offset + limit),
-        outbox: outbox.slice(offset, offset + limit),
+        ...central,
+        quarantines: allQuarantines.slice(offset, offset + limit),
         totals: {
-          quarantines: quarantines.length,
-          timers: timers.length,
-          outbox: outbox.length,
+          ...central.totals,
+          quarantines: allQuarantines.length,
+        },
+        // Quarantines have an eager catalog projection. Isolated timer/outbox
+        // dead letters do not yet, so this endpoint reports catalog-owned
+        // effects instead of opening every actor database to synthesize them.
+        coverage: {
+          quarantines: "catalog_projection",
+          timers: "catalog_only",
+          outbox: "catalog_only",
         },
         nextOffset:
-          Math.max(quarantines.length, timers.length, outbox.length) > offset + limit
+          Math.max(
+            allQuarantines.length,
+            central.totals.timers,
+            central.totals.outbox,
+          ) > offset + limit
             ? offset + limit
             : undefined,
       };

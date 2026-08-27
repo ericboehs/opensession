@@ -243,6 +243,21 @@ const sx = stylex.create({
 	outlineNone: {
 			outlineStyle: "none"
 	},
+	px9: {
+			paddingInline: "36px"
+	},
+	phonePx5: {
+		"@media (max-width: 720px)": {
+			"paddingInline": "20px"
+		}
+	},
+	/** Overlapping faces: every avatar after the first slides onto the one
+	 *  before it. StyleX has no `space-x` shorthand, so name the selector. */
+	spaceXNeg2: {
+		":not(#\\#) > * + *": {
+			"marginLeft": "-8px"
+		}
+	},
 	px4: {
 			paddingInline: "calc(4px * 4)"
 	},
@@ -317,7 +332,7 @@ const STEPS: FirstMileStep[] = [
 	{
 		id: "github-account",
 		label: "Personal GitHub",
-		title: "Personal GitHub account",
+		title: "Sign in to GitHub",
 		description: "Sign in so interactive sessions can open pull requests as you.",
 	},
 	{
@@ -383,9 +398,13 @@ function PreviewOverflow({
 function FirstMileSummary({
 	status,
 	onSelect,
+	inviteCopied,
+	onCopyInviteLink,
 }: {
 	status: SetupStatus;
 	onSelect: (step: FirstMileStep["id"]) => void;
+	inviteCopied: boolean;
+	onCopyInviteLink: () => void;
 }) {
 	const github = githubAuthState(status.github);
 	let serverHost = status.publicBaseUrl;
@@ -493,6 +512,29 @@ function FirstMileSummary({
 				</div>
 			),
 		},
+		{
+			title: "Members",
+			step: null,
+			ready: status.team.count > 0,
+			copyInvite: true,
+			label:
+				status.team.count === 1
+					? "1 member"
+					: `${status.team.count} members`,
+			preview: (
+				<div {...stylex.props(sx.flex, sx.spaceXNeg2)}>
+					{status.team.names.slice(0, 4).map((name) => (
+						<UserAvatar
+							key={name}
+							name={name}
+							size={28}
+							className={utilityClassName("border border-bg")}
+						/>
+					))}
+					<PreviewOverflow count={status.team.count - 4} transparent />
+				</div>
+			),
+		},
 	];
 
 	return (
@@ -523,6 +565,17 @@ function FirstMileSummary({
 						<div {...stylex.props(sx.minW0)}>
 							<div {...stylex.props(sx.fontSemibold, sx.textFg, typography.itemTitle)}>{tile.title}</div>
 							<div {...stylex.props(sx.mt1, sx.leadingSnug, sx.textDim, typography.supporting)}>{tile.label}</div>
+							{"copyInvite" in tile && (
+								<Button
+									variant="soft"
+									size="sm"
+									onClick={onCopyInviteLink}
+									icon={inviteCopied ? <IconCheck size={15} /> : <IconLink size={15} />}
+									className={utilityClassName("mt-3 min-h-10 w-full px-2.5 phone:min-h-11")}
+								>
+									{inviteCopied ? "Invite link copied" : "Copy invite link"}
+								</Button>
+							)}
 						</div>
 					</>
 				);
@@ -709,8 +762,7 @@ export function FirstMile({ onDone }: { onDone: () => Promise<void> }) {
 			!footer ||
 			window.matchMedia(PHONE_QUERY).matches ||
 			crossfade ||
-			panelSize?.phase === "measuring" ||
-			panelSize?.phase === "animating"
+			panelSize?.phase === "measuring"
 		)
 			return;
 
@@ -1050,17 +1102,20 @@ export function FirstMile({ onDone }: { onDone: () => Promise<void> }) {
 										/>
 									)}
 									{step.id === "github-account" && (
-										<div className={utilityClassName("mx-auto w-full max-w-[34rem] px-4 phone:px-0")}>
+										<div {...stylex.props(sx.wFull, sx.px9, sx.phonePx5)}>
 											<GithubAccounts
 												personal
 												showHeading={false}
 												showHint={false}
+												cancelOutside
+												cardClassName="border-line! bg-button! smooth-shadow-xs"
+												onContentSizeChange={resizePanelForContentChange}
 												loadingFallback={
 													<SettingCardSkeleton
 														rows={1}
 														icon={30}
 														label="Loading GitHub account"
-														className="[&_.bg-settings-plate]:min-h-[72px]"
+														className="[&_.bg-settings-plate]:min-h-[72px] [&_.bg-settings-plate]:border-line! [&_.bg-settings-plate]:bg-button!"
 													/>
 												}
 											/>
@@ -1089,6 +1144,8 @@ export function FirstMile({ onDone }: { onDone: () => Promise<void> }) {
 											onSelect={(stepId) =>
 												goTo(steps.findIndex((item) => item.id === stepId))
 											}
+											inviteCopied={inviteCopied}
+											onCopyInviteLink={copyInviteLink}
 										/>
 									)}
 								</div>
@@ -1128,17 +1185,6 @@ export function FirstMile({ onDone }: { onDone: () => Promise<void> }) {
 								</Button>
 							)}
 
-							{step.id === "ready" && (
-								<Button
-									variant="soft"
-									size="lg"
-									onClick={copyInviteLink}
-									className={utilityClassName("gap-2 px-4 phone:min-h-11")}
-								>
-									{inviteCopied ? <IconCheck size={16} /> : <IconLink size={16} />}
-									{inviteCopied ? "Invite link copied" : "Copy invite link"}
-								</Button>
-							)}
 
 							<Button
 								variant="primary"

@@ -68,7 +68,7 @@ export function optimisticOutboxFallbacks(
 			return (
 				item.state !== "failed" &&
 				item.attempts === 0 &&
-				!item.busyMode &&
+				item.busyMode !== "queue" &&
 				!pendingIds.has(id) &&
 				!landedIds.has(id)
 			);
@@ -78,6 +78,7 @@ export function optimisticOutboxFallbacks(
 			content: item.content,
 			user: item.user,
 			sentAt: item.createdAt,
+			...(item.busyMode === "steer" ? { busyMode: "steer" as const } : {}),
 			...(item.images?.length ? { images: item.images } : {}),
 		}));
 }

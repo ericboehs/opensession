@@ -326,6 +326,46 @@ function hello(spec: RunHostSpec, selectedModel: string) {
 }
 
 describe("HostHandle model recovery", () => {
+	test("reuses a steer id for transcript rows forwarded by an older host", () => {
+		const root = mkdtempSync(join(tmpdir(), "host-client-steer-id-test-"));
+		roots.push(root);
+		const dir = join(root, "rh-steer-id");
+		mkdirSync(dir);
+		const handle = new HostHandle(dir, {
+			hostId: "rh-steer-id",
+			osSessionId: "os-steer-id",
+			prompt: "keep working",
+			cwd: "/tmp",
+			model: "pi/anthropic/claude-sonnet-5",
+		}, {});
+		(handle as any).pendingSteerTranscripts.push({
+			id: "delivery-one",
+			text: "[Kent] check the tests",
+		});
+		const [promptLine, line] = (handle as any).alignSteerTranscriptIds([
+			{
+				type: "user",
+				uuid: "opening-prompt",
+				message: {
+					role: "user",
+					content: [{ type: "text", text: "keep working" }],
+				},
+			},
+			{
+				type: "user",
+				uuid: "old-host-random-id",
+				message: {
+					role: "user",
+					content: [{ type: "text", text: "[Kent] check the tests" }],
+				},
+			},
+		]);
+		expect(promptLine.uuid).toBe("opening-prompt");
+		expect(line.uuid).toBe("delivery-one");
+		expect((handle as any).pendingSteerTranscripts).toEqual([]);
+		(handle as any).finish();
+	});
+
 	test("waits for the host to confirm an exact steer retraction", async () => {
 		const root = mkdtempSync(join(tmpdir(), "host-client-retract-test-"));
 		roots.push(root);

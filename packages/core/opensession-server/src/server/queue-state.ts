@@ -94,8 +94,10 @@ export function deliveryQueueState(
 	sessionId: string,
 	deliveryId: string,
 ): "queued" | "steered" | "dispatching" | undefined {
-	if (promptQueues.get(sessionId)?.some((item) => item.id === deliveryId))
-		return "queued";
+	const queued = promptQueues
+		.get(sessionId)
+		?.find((item) => item.id === deliveryId);
+	if (queued) return queued.promptEntryId ? "steered" : "queued";
 	if (steeredReceipts.get(sessionId)?.some((item) => item.id === deliveryId))
 		return "steered";
 	if (
@@ -815,6 +817,10 @@ export async function failPromptDispatch(
  * counts or chips. */
 function isClientVisibleQueueItem(item: QueueItem): boolean {
 	return (
+		// A stable prompt entry means this message has already been accepted into
+		// the conversation. It may remain queue-owned as next-turn delivery
+		// plumbing, but it must never move back above the composer.
+		!item.promptEntryId &&
 		!item.reviewHandoff &&
 		!isWorkflowQueueItem(item) &&
 		item.user !== AUTO_CONTINUE_USER &&
@@ -848,6 +854,12 @@ export async function queueDisplayState(sessionId: string) {
 	const snapshot = await sessionDelivery({ op: "snapshot", sessionId });
 	const queued = queueWithIds(snapshot.queued as QueueItem[]);
 	const steered = queueWithIds(snapshot.steered as QueueItem[]);
+	const pendingSteers = snapshot.pendingSteers
+		.map((pending) => pending.item as QueueItem)
+		.filter(Boolean);
+	const dispatching = (
+		(snapshot.dispatch as PromptDispatch | undefined)?.items ?? []
+	);
 	// Display copy only: automated turns remain in the internal queue until
 	// dispatch but never enter a client's message surface. Strip fenced
 	// <opensession:context> blocks from the remaining human-authored rows. The
@@ -861,7 +873,22 @@ export async function queueDisplayState(sessionId: string) {
 				editable: isEditableQueueItem(i),
 			};
 		});
-	return { queued: forDisplay(queued), steered: forDisplay(steered) };
+	const pendingDeliveryIds = [
+		...queued,
+		...steered,
+		...pendingSteers,
+		...dispatching,
+	]
+		.filter((item) => !!item.promptEntryId)
+		.map((item) => item.promptEntryId || item.id)
+		.filter((id): id is string => typeof id === "string" && id.length > 0);
+	return {
+		queued: forDisplay(queued),
+		steered: forDisplay(steered),
+		...(pendingDeliveryIds.length
+			? { pendingDeliveryIds: [...new Set(pendingDeliveryIds)] }
+			: {}),
+	};
 }
 
 export async function broadcastQueue(sessionId: string): Promise<void> {
@@ -872,9 +899,29 @@ export async function broadcastQueue(sessionId: string): Promise<void> {
 	});
 }
 
-/** Move one queued item into an actor-owned pending steer before touching the
- * runner. A crash after this point recovers it as an ambiguous steer receipt
- * instead of delivering the same message again. */
+/** Mark one item as already sent and put it at the front of actor-owned
+ * delivery. It remains queue-shaped recovery state, but promptEntryId keeps it
+ * out of the composer while the current run finishes or reconnects. */
+export async function promoteQueuedPrompt(
+	sessionId: string,
+	itemId: string,
+	promptEntryId: string,
+	item?: QueueItem,
+): Promise<QueueItem | undefined> {
+	const promoted = await sessionDelivery({
+		op: "promote_queued",
+		sessionId,
+		itemId,
+		promptEntryId,
+		...(item ? { item } : {}),
+	});
+	if (promoted) {
+		persistQueues();
+		await broadcastQueue(sessionId);
+	}
+	return promoted as QueueItem | undefined;
+}
+
 export async function prepareQueuedSteer(
 	sessionId: string,
 	itemId: string,
@@ -1011,6 +1058,10 @@ export async function takeSteerReceiptForText(
  *  user texts (same matching as the frontend reconcile: exact attributed
  *  form, or containment for turns joined at one boundary). */
 export function steerDelivered(item: QueueItem, userTexts: string[]): boolean {
+	// Early-persisted steers appear in the conversation before the engine reads
+	// them. Their exact steer_delivered acknowledgement, not transcript text,
+	// retires the receipt.
+	if (item.promptEntryId) return false;
 	const attributed = (
 		item.user ? `[${item.user}] ${item.content}` : item.content
 	).trim();
@@ -1042,6 +1093,7 @@ export function undeliveredSteers(
 	if (!userTexts.length) return items;
 	const remainingTexts = [...userTexts];
 	return items.filter((item) => {
+		if (item.promptEntryId) return true;
 		const attributed = (
 			item.user ? `[${item.user}] ${item.content}` : item.content
 		).trim();
@@ -1085,15 +1137,11 @@ setTranscriptAppendListener(reconcileSteerReceiptsOnAppend);
 setAppendHook(reconcileSteerReceiptsOnAppend);
 
 /**
- * Put unconfirmed steers back into the normal queue when their run is
- * cancelled. A steer is a noReply engine-history append — once it's in the
- * store the next turn on that session already sees it, so requeueing it
- * delivers a duplicate turn (live 2026-07-16: a worker's two report-back
- * steers came back as queued prompts after the user interrupted the run,
- * despite both sitting in the engine history the interrupting turn ran with).
- * Callers pass the transcript's user texts (engineUserTexts) so receipts
- * that already landed are dropped instead of requeued; only steers the
- * engine never got (a failed fire-and-forget POST) go back into the queue.
+ * Put unread steers back into actor-owned next-turn delivery when their run
+ * ends or is cancelled. New sent-in-chat receipts carry promptEntryId and are
+ * retired only by the engine's exact steer_delivered event; their early visible
+ * transcript row is not evidence that the model read them. Legacy receipts
+ * without that id still reconcile against engine user text during rollout.
  */
 export async function requeueSteerReceipts(
 	sessionId: string,

@@ -111,6 +111,7 @@ export function isPrioritySessionActorRequest(
     ].includes(command.request.op);
   if (command.kind === "delivery")
     return [
+      "promote_queued",
       "prepare_steer",
       "accept_steer",
       "reject_steer",

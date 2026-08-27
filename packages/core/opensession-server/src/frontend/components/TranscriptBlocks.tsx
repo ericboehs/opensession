@@ -58,6 +58,8 @@ interface Props {
 	/** Just-sent user turns that have not landed durably yet. They participate in
 	 *  transcript ordering so live tools can never render above their prompt. */
 	optimisticEntries?: TranscriptEntry[];
+	/** Transcript ids accepted as sent but not yet read by the engine. */
+	pendingDeliveryIds?: string[];
 	/** Whether the conversation is live (last work block shows a spinner / stays open). */
 	live?: boolean;
 	/** Assistant messages show a "Fork from here" action when provided. */
@@ -285,6 +287,7 @@ const LoadedTranscriptBlocks = function LoadedTranscriptBlocks({
 	reviewLoopsOpen,
 	onReviewLoopOpenChange,
 	optimisticEntries,
+	pendingDeliveryIds,
 	virtualize = true,
 	onVisibleRangesSettled,
 }: Props) {
@@ -300,6 +303,7 @@ const LoadedTranscriptBlocks = function LoadedTranscriptBlocks({
 	const optimisticEntryIds = new Set(
 		(optimisticEntries ?? []).map((entry) => entry.id),
 	);
+	const pendingDeliveryEntryIds = new Set(pendingDeliveryIds ?? []);
 	const renderedEntries = normalizeLegacyVoiceToolEntries(entries)
 		.map(classifyEntry)
 		.filter((entry) => !isRenderlessUserEntry(entry));
@@ -469,6 +473,7 @@ const LoadedTranscriptBlocks = function LoadedTranscriptBlocks({
 										reviewBlockRole(inner).kind !== "handoff" ? (
 										<MessageBubble
 											entry={inner.entry}
+											pendingDelivery={pendingDeliveryEntryIds.has(inner.entry.id)}
 											owner={owner}
 											sessionId={sessionId}
 											onEdit={
@@ -516,6 +521,7 @@ const LoadedTranscriptBlocks = function LoadedTranscriptBlocks({
 			) : (
 				<MessageBubble
 					entry={block.entry}
+					pendingDelivery={pendingDeliveryEntryIds.has(block.entry.id)}
 					owner={owner}
 					sessionId={sessionId}
 					onEdit={

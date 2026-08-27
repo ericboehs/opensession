@@ -101,8 +101,7 @@ import { beginShutdown } from "./src/server/shutdown-state";
 import { setServiceReadiness } from "./src/server/service-readiness";
 import {
 	reconcileSessionKernelOwnership,
-	reconcileCompatibleCreationBranchEffects,
-  sessionKernel,
+	sessionKernel,
 	startSessionKernelActor,
 	startSessionKernelRuntime,
 	stopSessionKernelRuntime,
@@ -932,23 +931,6 @@ if (!g.__opensessionBooted) {
 		} catch (error) {
 			throw error;
 		}
-		// Re-admit only historical branch effects rejected before execution by
-		// retired compatibility checks. Do this behind the recovery gate so the
-		// runtime cannot race the dead-letter transition.
-		// This compatibility repair scans every isolated session database. It is
-		// maintenance work, not a boot invariant: running it after the server has
-		// accepted traffic monopolizes the actor lane long enough to make ordinary
-		// per-session reads time out and can restart the gateway in a loop. Keep it
-		// available as an explicit one-off while old deployments are being repaired,
-		// but never put it on the production recovery critical path by default.
-		const reconciledBranchEffects =
-			process.env.OPENSESSION_RECONCILE_CREATION_BRANCH_DEAD_LETTERS === "1"
-				? await reconcileCompatibleCreationBranchEffects()
-				: [];
-		if (reconciledBranchEffects.length)
-			console.warn(
-				`[session-kernel] Reconciled ${reconciledBranchEffects.length} compatible branch effect(s)`,
-			);
 		// Transcript mutations commit their durable wake before gateway bus
 		// delivery. Drain crash-window wakes before readiness so a replacement or
 		// deletion does not wait for another mutation to become visible.

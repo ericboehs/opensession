@@ -98,6 +98,21 @@ sequence and rollback behavior.
 Put HTTP handlers in `src/server/routes/`, WebSocket handling in
 `src/server/ws-handlers.ts`, and run orchestration in `src/server/run-session.ts`.
 
+Never scan or open every per-session actor SQLite database from the running
+service. This includes request handlers, health/readiness, boot recovery,
+admin/reliability views, aggregate stats, and periodic maintenance. Cross-session
+reads must come from catalog-maintained projections or counters. Work on one
+known session may open that session's actor database. Online background work may
+open only a hard-bounded set of actors selected by a catalog work index (for
+example, actors with due timers); it must never walk the placement catalog,
+even in cursored batches. A one-off migration that truly must visit every actor
+is an offline operator job, never boot or live maintenance. Never add a
+placement-enumeration API to the online store host or a helper that maps an
+operation over every placement. The ownership architecture tests enforce this
+invariant. Full-fleet SQLite fanout is prohibited because its cumulative open
+and query work monopolizes actor lanes and turns live health/session requests
+into timeouts.
+
 Server modules must not bind sockets, start timers, or spawn processes at import
 time. Put live effects behind idempotent `start*` or `ensure*` functions called
 from boot. Run `bun scripts/check-module-side-effects.ts` when changing server

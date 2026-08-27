@@ -113,6 +113,12 @@ const sx = stylex.create({
 	borderLine: {
 			borderColor: "var(--border)"
 	},
+	gap5: {
+			gap: "calc(4px * 5)"
+	},
+	textFaint: {
+			color: "var(--text-faint)"
+	},
 	bgButton: {
 			backgroundColor: "var(--button-surface)"
 	},
@@ -302,7 +308,7 @@ export function GithubAuthCard({
 					onboarding ? utilityClassName("w-full") : utilityClassName("mx-auto mt-3 w-full max-w-[34rem]")
 				}
 			>
-				<SettingsSection className={mergeStylexOverrideClassName("", sx.flex, sx.flexCol, sx.gap4)}>
+				<SettingsSection className={mergeStylexOverrideClassName("", sx.flex, sx.flexCol, sx.gap5)}>
 					<GithubManifestSetup
 						github={github}
 						returnTo="welcome"
@@ -340,7 +346,7 @@ export function GithubAuthCard({
 								sx.bgButton,
 							)}
 						/>
-						<p className="m-0 mt-2 text-supporting text-faint">
+						<p {...mergeStylexProps("m-0", sx.mt2, sx.textFaint, typography.supporting)}>
 							You can also sign in to GitHub later.
 						</p>
 					</div>

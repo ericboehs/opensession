@@ -892,6 +892,10 @@ export class HostHandle {
     string,
     { resolve: (retracted: boolean) => void; timer: ReturnType<typeof setTimeout> }
   >();
+  /** Sent steer ids awaiting their host-forwarded user transcript row. Active
+   * hosts from an older release still mint a random uuid for that row; this
+   * lets the new gateway rewrite it to the already-visible prompt entry id. */
+  private pendingSteerTranscripts: Array<{ id: string; text: string }> = [];
   private respawns = 0;
   private stopRequested = false;
   private projectionTail: Promise<void> | undefined;
@@ -921,8 +925,15 @@ export class HostHandle {
       connected: () => this.up,
       reconcileTerminal: () => this.reconcileTerminalEvidence(),
 
-      steer: (text, images, steerId) =>
-        this.send({ t: "steer", text, images, steerId }),
+      steer: (text, images, steerId) => {
+        const sent = this.send({ t: "steer", text, images, steerId });
+        if (
+          sent &&
+          steerId &&
+          !this.pendingSteerTranscripts.some((pending) => pending.id === steerId)
+        ) this.pendingSteerTranscripts.push({ id: steerId, text });
+        return sent;
+      },
       retractSteer: (steerId) => this.retractSteer(steerId),
 
       interruptSteer: (text, images) =>
@@ -1194,6 +1205,41 @@ export class HostHandle {
     if (this.projectionFailure) throw this.projectionFailure;
   }
 
+  private alignSteerTranscriptIds(
+    lines: Record<string, unknown>[],
+  ): Record<string, unknown>[] {
+    if (this.pendingSteerTranscripts.length === 0) return lines;
+    return lines.map((line) => {
+      if (line.type !== "user") return line;
+      const content = (line.message as { content?: unknown } | undefined)?.content;
+      const text = Array.isArray(content)
+        ? content
+            .filter(
+              (block): block is { type: "text"; text: string } =>
+                !!block &&
+                typeof block === "object" &&
+                (block as { type?: unknown }).type === "text" &&
+                typeof (block as { text?: unknown }).text === "string",
+            )
+            .map((block) => block.text)
+            .join("\n")
+        : "";
+      if (
+        line.uuid === this.spec.promptEntryId ||
+        text === this.spec.prompt
+      ) return line;
+      let index = this.pendingSteerTranscripts.findIndex(
+        (pending) => pending.text === text,
+      );
+      // Skill expansion can rewrite the engine text. Pi itself pairs that
+      // delivery with the oldest pending steer, so mirror that exact fallback.
+      if (index < 0 && text) index = 0;
+      if (index < 0) return line;
+      const [pending] = this.pendingSteerTranscripts.splice(index, 1);
+      return line.uuid === pending.id ? line : { ...line, uuid: pending.id };
+    });
+  }
+
   private handleMsg(msg: HostToClientMsg): void {
     if (
       msg.t !== "transcript" &&
@@ -1281,19 +1327,30 @@ export class HostHandle {
           applyForwardedTranscriptStrict(
             this.spec.osSessionId,
             msg.engineSessionId,
-            msg.lines,
+            this.alignSteerTranscriptIds(msg.lines),
           )
         );
         break;
       case "steer_failed":
-        if (this.acceptsSideEffectFrame("steer_failed"))
+        if (this.acceptsSideEffectFrame("steer_failed")) {
+          const failed = this.pendingSteerTranscripts.findIndex(
+            (pending) => pending.text === msg.text,
+          );
+          if (failed >= 0) this.pendingSteerTranscripts.splice(failed, 1);
           this.cb.onSteerFailed?.(msg.text);
+        }
         break;
       case "steer_retracted": {
         const pending = this.steerRetractions.get(msg.requestId);
         if (!pending) break;
         clearTimeout(pending.timer);
         this.steerRetractions.delete(msg.requestId);
+        if (msg.retracted) {
+          const index = this.pendingSteerTranscripts.findIndex(
+            (pendingSteer) => pendingSteer.id === msg.steerId,
+          );
+          if (index >= 0) this.pendingSteerTranscripts.splice(index, 1);
+        }
         pending.resolve(msg.retracted);
         break;
       }

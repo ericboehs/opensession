@@ -449,14 +449,18 @@ describe("session kernel actor service", () => {
       }));
       expect(replayedSettlement.ok).toBe(true);
 
-      const pending = result(await send({
-        t: "store",
+      const pending = await send({
+        t: "runtime_work",
         rpcId: "async-settlement-pending",
-        method: "pendingOutbox",
-        args: [Date.now(), 100, ["human_ask_deliver"]],
-      }));
-      expect(pending.ok).toBe(true);
-      expect((pending.result as Array<{ id: number }>).some((item) => item.id === id))
+        now: Date.now(),
+        timerKinds: [],
+        effectKinds: ["human_ask_deliver"],
+        limit: 100,
+      });
+      expect(pending.t).toBe("runtime_work_result");
+      expect((pending as { outbox: Array<{ id: number }> }).outbox.some(
+        (item) => item.id === id,
+      ))
         .toBe(false);
     } finally {
       worker.terminate();

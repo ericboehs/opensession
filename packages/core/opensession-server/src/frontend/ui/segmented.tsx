@@ -133,6 +133,12 @@ const sx = stylex.create({
 		}
 	},
 
+	justifyCenter: {
+			justifyContent: "center"
+	},
+	textCenter: {
+			textAlign: "center"
+	},
 	px2: {
 		"paddingInline": "8px"
 	},
@@ -262,7 +268,7 @@ export function SegmentedOption({
 	const selected = current === value;
 	return (
 		<Toggle
-			value={value} {...mergeStylexProps(cn(optionSizes[size], mergeStylexClassName("", sx.phonePx3, sx.phonePy2, sx.phoneTextItemTitle), selected ? "" : mergeStylexClassName("", sx.hoverTextFg), mergeStylexClassName("", sx.disabledCursorDefault, sx.disabledTextFaint, sx.disabledHoverTextFaint), className), sx.relative, sx.cursorPointer, sx.roundedControl, sx.border0, sx.bgTransparent, typography.controlLabel, sx.fontMedium, sx.whitespaceNowrap, sx.transitionColors, sx.durationVarDurMicro, sx.easeVarEase, selected && sx.textFg, !(selected) && sx.textDim)}
+			value={value} {...mergeStylexProps(cn(optionSizes[size], mergeStylexClassName("", sx.phonePx3, sx.phonePy2, sx.phoneTextItemTitle), selected ? "" : mergeStylexClassName("", sx.hoverTextFg), mergeStylexClassName("", sx.disabledCursorDefault, sx.disabledTextFaint, sx.disabledHoverTextFaint), className), sx.relative, sx.inlineFlex, sx.itemsCenter, sx.justifyCenter, sx.textCenter, sx.cursorPointer, sx.roundedControl, sx.border0, sx.bgTransparent, typography.controlLabel, sx.fontMedium, sx.whitespaceNowrap, sx.transitionColors, sx.durationVarDurMicro, sx.easeVarEase, selected && sx.textFg, !(selected) && sx.textDim)}
 			{...props}
 		>
 			{selected && <SegmentedKnob knobId={knobId} />}

@@ -36,10 +36,9 @@ import { requireWorkspaceAdmin } from "../workspace-auth";
 import { audit } from "../audit";
 import { serviceReadiness } from "../service-readiness";
 
-// Each dead-letter listing fans out across every isolated session database on
-// the actor's catalog lane. Polling this endpoint therefore amplifies actor
-// load exactly when the actor is already degraded. Serve a short-TTL snapshot with
-// single-flight refresh instead; mutations invalidate it immediately.
+// The listing is served from catalog state only. Keep a short-TTL snapshot with
+// single-flight refresh so repeated reliability-panel polling is cheap even
+// when the catalog is degraded; mutations invalidate it immediately.
 const DEAD_LETTERS_CACHE_TTL_MS = 5_000;
 type DeadLettersEntry = {
 	at: number;

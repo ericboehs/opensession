@@ -865,7 +865,7 @@ export function IngressPanel({
 						onClose={() => setSurface(null)}
 						phone={isPhone}
 						label={surface === "domain" ? "Configure domain" : "Configure public callback"}
-						modalClassName="h-[min(840px,calc(100dvh-32px))] max-h-[calc(100dvh-32px)] w-[min(880px,calc(100vw-32px))] max-w-[880px]"
+						modalClassName="h-[min(840px,calc(100dvh-32px))] max-h-[calc(100dvh-32px)] w-[min(800px,calc(100vw-32px))] max-w-[800px]"
 						sheetClassName="h-[94dvh]"
 					>
 						{(dismiss) => (
@@ -929,7 +929,7 @@ export function IngressPanel({
 							</Segmented>
 						</SettingsForm>
 
-						<SettingsForm className={utilityClassName("m-0 min-w-0 gap-4 p-6 phone:p-4")}>
+						<SettingsForm className={utilityClassName("m-0 min-w-0 gap-4 bg-raised p-6 phone:p-4")}>
 							<div {...stylex.props(sx.flex, sx.itemsCenter, sx.justifyBetween, sx.gap4)}>
 								<div {...mergeStylexProps("text-item-title", sx.minW0, sx.fontSemibold, sx.textFg)}>Set up {selectedMethod.label}</div>
 								<div {...stylex.props(sx.shrink0)}>

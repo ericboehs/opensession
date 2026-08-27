@@ -13,17 +13,52 @@ import {
 	isWorkflowQueueItem,
 	promptDispatches,
 	promptQueues,
+	promoteQueuedPrompt,
 	queueDisplayState,
 	steeredReceipts,
 	settlePromptInterrupt,
 	takeQueuedPrompt,
 	takeSteeredPrompt,
+	undeliveredSteers,
 } from "./queue-state";
 import { AUTO_CONTINUE_USER } from "./auto-continue";
 import { agentActor, workerActor } from "./session-actors";
 
 const SESSION = "os-queue-state-update-test";
 const PNG = "data:image/png;base64,iVBORw0KGgo=";
+
+test("sent queue fallbacks stay in chat and pending until exact engine acknowledgement", async () => {
+	const item = {
+		id: "sent-steer",
+		promptEntryId: "sent-steer",
+		content: "read this next",
+		user: "Kent",
+	};
+	await promptQueues.set(SESSION, [
+		{ id: "ordinary", content: "later" },
+		{ id: item.id, content: item.content, user: item.user },
+	]);
+	await promoteQueuedPrompt(
+		SESSION,
+		item.id,
+		item.promptEntryId,
+		item,
+	);
+
+	expect(promptQueues.get(SESSION)?.map((entry) => entry.id)).toEqual([
+		"sent-steer",
+		"ordinary",
+	]);
+	expect(clientVisibleQueuedCount(SESSION)).toBe(1);
+	expect(await queueDisplayState(SESSION)).toEqual({
+		queued: [{ id: "ordinary", content: "later", editable: false }],
+		steered: [],
+		pendingDeliveryIds: ["sent-steer"],
+	});
+	// The early transcript row is a sent receipt, not evidence that the engine
+	// crossed its delivery boundary.
+	expect(undeliveredSteers([item], ["[Kent] read this next"])).toEqual([item]);
+});
 describe("takeQueuedPrompt", () => {
 	beforeEach(async () => {
 		await promptDispatches.clear();

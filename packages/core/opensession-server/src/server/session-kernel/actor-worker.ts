@@ -130,6 +130,13 @@ export function startSessionKernelActorWorker(): void {
               delivery.item,
               delivery.front,
             );
+          else if (delivery.op === "promote_queued")
+            result = store.promoteQueuedDelivery(
+              delivery.sessionId,
+              delivery.itemId,
+              delivery.promptEntryId,
+              delivery.item,
+            );
           else if (delivery.op === "delete")
             result = store.deleteDeliverySlot(delivery.sessionId, delivery.slot);
           else if (delivery.op === "clear_slot")

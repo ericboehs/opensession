@@ -139,11 +139,11 @@ import {
 	acknowledgePromptDispatch,
 	acknowledgeSteerDelivery,
 	failPromptDispatch,
-	clearSteerReceipts,
 	isGitHubQueueItem,
 	persistQueues,
 	promptDispatches,
 	promptQueues,
+	promoteQueuedPrompt,
 	queuedPromptIndex,
 	queueItem,
 	requeueSteerReceipts,
@@ -593,9 +593,11 @@ export async function steerQueuedPrompt(
 	if (!session || !queue) return false;
 	const index = queuedPromptIndex(queue, queueId, queueIndex);
 	if (index < 0) return false;
-	const [rawItem] = queue.splice(index, 1);
+	const rawItem = queue[index];
 	if (!rawItem) return false;
 	const item = queueItem(rawItem);
+	const promptEntryId = item.promptEntryId || item.id;
+	const sentItem = { ...item, promptEntryId };
 	if (
 		!isAgentSessionBusy(
 			session.claudeSessionId,
@@ -603,11 +605,29 @@ export async function steerQueuedPrompt(
 			session.id,
 		)
 	) {
-		// Idle-but-queued (typically held behind running child workers): "steer"
-		// means "get this in front of the agent now" — deliver it as its own
-		// turn immediately. The rest of the queue keeps its hold.
-		if (queue.length > 0) await promptQueues.set(sessionId, queue);
-		else await promptQueues.delete(sessionId);
+		// Idle-but-queued (typically held behind running child workers): sending
+		// now promotes the row into the conversation and dispatches it as its own
+		// immediate turn. The exact prompt id lets the runner upsert that visible
+		// line instead of appending a second copy.
+		await beginPromptDispatch(
+			sessionId,
+			[sentItem],
+			promptEntryId,
+			false,
+			undefined,
+			true,
+		);
+		const images = parseImageDataUrls(item.images || []);
+		try {
+			await storeAppendUserLineEarly(
+				sessionId,
+				transcriptLineUser(item.content, promptEntryId, undefined, images),
+				{ required: true },
+			);
+		} catch (error) {
+			await failPromptDispatch(sessionId, promptEntryId);
+			throw error;
+		}
 		stoppedSessions.delete(sessionId);
 		persistQueues();
 		await broadcastQueue(sessionId);
@@ -619,11 +639,14 @@ export async function steerQueuedPrompt(
 			sessionId,
 			item.content,
 			item.user,
-			parseImageDataUrls(item.images || []),
+			images,
 			files,
+			undefined,
+			undefined,
+			promptEntryId,
 		).catch(async (e) => {
-			console.error(`[queue] Steer-deliver failed for ${sessionId}:`, e);
-			await enqueuePrompt(sessionId, item);
+			console.error(`[queue] Send-now delivery failed for ${sessionId}:`, e);
+			await failPromptDispatch(sessionId, promptEntryId);
 		});
 		return true;
 	}
@@ -631,22 +654,50 @@ export async function steerQueuedPrompt(
 	// items CAN steer — folding in is non-interrupting, so it's the right
 	// delivery for them too (they only land in the queue when a steer at
 	// delivery time found nothing steerable).
-	if (Array.isArray(item.files) && item.files.length > 0) {
-		queue.splice(index, 0, item);
-		return false;
-	}
+	if (Array.isArray(item.files) && item.files.length > 0) return false;
 	const attributed =
 		item.user && !isContextOnly(item.content)
 			? `[${item.user}] ${item.content}`
 			: item.content;
 	const images = parseImageDataUrls(item.images || []);
 	if (!item.id) return false;
-	return (await prepareAndSteerQueuedPrompt({
+	const outcome = await prepareAndSteerQueuedPrompt({
 		sessionId,
 		itemId: item.id,
+		item: sentItem,
 		text: attributed,
 		images,
-	})) === "steered";
+	});
+	if (outcome === "steered") return true;
+	if (outcome === "rejected") {
+		// The message is already a durable transcript row. Its actor-owned queue
+		// fallback is delivery plumbing only and drains as the immediate next turn.
+		watchExternalRunAndDrain(sessionId);
+		return true;
+	}
+	// The run may have finished between the busy check and actor preparation.
+	// Re-enter once through the idle path rather than asking the user to retry.
+	if (!isAgentSessionBusy(session.claudeSessionId, session.codexThreadId, session.id))
+		return steerQueuedPrompt(sessionId, queueId, queueIndex);
+
+	// The run is still authoritative but its physical control is temporarily
+	// unavailable (for example during host reattachment). Accept the user's
+	// command anyway: keep an urgent, hidden queue owner and let the watcher
+	// dispatch it as the immediate next turn.
+	const promoted = await promoteQueuedPrompt(
+		sessionId,
+		item.id,
+		promptEntryId,
+		sentItem,
+	);
+	if (!promoted) return false;
+	await storeAppendUserLineEarly(
+		sessionId,
+		transcriptLineUser(attributed, promptEntryId, undefined, images),
+		{ required: true },
+	);
+	watchExternalRunAndDrain(sessionId);
+	return true;
 }
 
 /**
@@ -717,11 +768,20 @@ export async function interruptQueuedPrompt(
 	const interrupt = await prepareAndInterruptQueuedPrompt({
 		sessionId,
 		itemId: item.id!,
+		item: {
+			...item,
+			promptEntryId: item.promptEntryId || item.id,
+		},
 		text: attributed,
 		images,
 	});
 	if (interrupt === "interrupted") return true;
-	if (interrupt !== "unsupported") return false;
+	if (interrupt === "target_changed") {
+		watchExternalRunAndDrain(sessionId);
+		return true;
+	}
+	if (interrupt === "not_prepared")
+		return steerQueuedPrompt(sessionId, queueId, queueIndex);
 	// No in-band interrupt-and-steer (pi): the fenced rejection restored the
 	// durable queue item. Abort the exact current turn so the drain delivers
 	// only this item immediately; every other prompt stays queued.
@@ -1066,15 +1126,14 @@ export async function recordRecoveredRunEvent(osSessionId: string, event: Stream
 
 	if (event.type === "done" || event.type === "error") {
 		recoveredFeedStarted.delete(osSessionId);
-		if (event.type === "done") {
-			await clearSteerReceipts(osSessionId);
-		} else {
-			const requeued = await requeueSteerReceipts(
-				osSessionId,
-				await engineUserTexts(session),
-			);
-			if (requeued > 0) watchExternalRunAndDrain(osSessionId);
-		}
+		// Exact steer-delivered events already retired anything the engine read.
+		// Every remaining receipt becomes the immediate next turn, even after a
+		// clean finish: the run may have ended between buffering and its next step.
+		const requeued = await requeueSteerReceipts(
+			osSessionId,
+			await engineUserTexts(session),
+		);
+		if (requeued > 0) watchExternalRunAndDrain(osSessionId);
 		if (await settleRestoredAskAfterRecovery(osSessionId)) {
 			watchExternalRunAndDrain(osSessionId);
 		}
@@ -1317,6 +1376,7 @@ export async function runSessionPromptAndDrain(
 	rawFiles?: unknown,
 	contextSessions?: string[],
 	slackReplyTo?: { channel: string; threadTs: string },
+	promptEntryId?: string,
 ): Promise<void> {
   try {
     await runSessionPrompt(
@@ -1327,6 +1387,7 @@ export async function runSessionPromptAndDrain(
       rawFiles,
       contextSessions,
       slackReplyTo,
+      promptEntryId,
     );
   } catch (error) {
     if (error instanceof RunPreparationDeferredError) return;
@@ -3073,12 +3134,14 @@ async function runSessionPromptInner(
 			: {}),
 	});
 
-	// On a clean finish any steered messages already landed in the transcript, so
-	// drop their display-only receipts. But if the run ended in error/abort (e.g.
-	// a restart killed the SDK stream mid-turn), a steered message may NOT have
-	// been delivered yet — keep the receipt so persistQueues/restorePromptQueues
-	// can re-deliver it on the next boot instead of silently dropping it.
-	if (!endedWithError) await clearSteerReceipts(sessionId);
+	// A socket-level steer acceptance is not engine delivery. Exact boundary
+	// acknowledgements already retired consumed receipts; anything left must
+	// become the immediate next turn, including after a clean run-end race.
+	const unreadSteers = await requeueSteerReceipts(
+		sessionId,
+		await engineUserTexts(session),
+	);
+	if (unreadSteers > 0) watchExternalRunAndDrain(sessionId);
 
 	broadcastToSession(sessionId, { type: "stream_done", sessionId });
 	broadcastToSession(sessionId, {

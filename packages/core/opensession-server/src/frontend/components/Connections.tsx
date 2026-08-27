@@ -217,6 +217,12 @@ const sx = stylex.create({
 	mb18px: {
 			marginBottom: "18px"
 	},
+	h9: {
+			height: "36px"
+	},
+	mt3: {
+			marginTop: "12px"
+	},
 	gap35: {
 			gap: "calc(4px * 3.5)"
 	},
@@ -1179,7 +1185,9 @@ export function GithubAccounts({
   showHint = true,
   loadingFallback = null,
   onConnectRequest,
+  onContentSizeChange,
   cardClassName,
+  cancelOutside = false,
 }: {
   personal?: boolean;
   showHeading?: boolean;
@@ -1188,7 +1196,11 @@ export function GithubAccounts({
   /** Replace the first sign-in action while a parent flow moves the user to a
    * dedicated authorization step. Reconnect actions stay local. */
   onConnectRequest?: () => void;
+  /** Notify an embedding modal after async account or device-flow content changes. */
+  onContentSizeChange?: () => void;
   cardClassName?: string;
+  /** Put device-flow cancellation below the card on focused onboarding steps. */
+  cancelOutside?: boolean;
 } = {}) {
   const [data, setData] = useState<GithubAuthData | null>(null);
   const [flow, setFlow] = useState<DeviceFlow | null>(null);
@@ -1206,6 +1218,11 @@ export function GithubAccounts({
   // wizard, launched from the App option below.
   const [wizardOpen, setWizardOpen] = useState(false);
   const queuedConnectStarted = useRef(false);
+  const notifyContentSizeChange = useEffectEvent(() => onContentSizeChange?.());
+
+  useEffect(() => {
+    notifyContentSizeChange();
+  }, [data, flow, flowState, error]);
 
   // Stable identity: only setters are captured.
   const load = useCallback(async () => {
@@ -1282,6 +1299,11 @@ const res = await fetch(`${BASE_PATH}/api/connections/github/device`, { method: 
 setError(e.message);
       setFlowState("idle");
 });
+  }
+
+  function cancelConnect() {
+    setFlow(null);
+    setFlowState("idle");
   }
 
   const startQueuedConnect = useEffectEvent(() => {
@@ -1418,10 +1440,11 @@ setError(e.message);
         </span>
       </div>
       <div {...stylex.props(sx.flex, sx.flexWrap, sx.itemsCenter, sx.gap25)}>
-        <DeviceCode code={flow.userCode} />
+        <DeviceCode code={flow.userCode} className={mergeStylexOverrideClassName("", sx.h9)} />
         <Button
-          size="sm"
+          size="md"
           variant="primary"
+          className={cn(utilityClassName("bg-fg text-bg hover:bg-fg/85"), mergeStylexOverrideClassName("", sx.h9))}
           icon={<IconArrowUpRight size={20} />}
           render={<a href={flow.verificationUri} target="_blank" rel="noreferrer" />}
         >
@@ -1438,18 +1461,24 @@ setError(e.message);
             Waiting for GitHub. Authorize there, then close that tab and return here.
           </span>
         </span>
-        <Button
-          size="sm"
-          variant="ghost"
-          className={mergeStylexOverrideClassName("", sx.mlAuto)}
-          onClick={() => {
-            setFlow(null);
-            setFlowState("idle");
-          }}
-        >
-          Cancel
-        </Button>
+        {!cancelOutside && (
+          <Button
+            size="sm"
+            variant="ghost"
+            className={mergeStylexOverrideClassName("", sx.mlAuto)}
+            onClick={cancelConnect}
+          >
+            Cancel
+          </Button>
+        )}
       </div>
+    </div>
+  ) : null;
+  const outsideCancel = cancelOutside && flow ? (
+    <div {...stylex.props(sx.mt3, sx.flex, sx.justifyCenter)}>
+      <Button size="sm" variant="ghost" onClick={cancelConnect}>
+        Cancel
+      </Button>
     </div>
   ) : null;
 
@@ -1634,6 +1663,7 @@ setError(e.message);
             </div>
           )}
         </SettingCard>
+        {outsideCancel}
         {/* Rendered outside the card so it survives the card re-rendering from
             "no app" to "app configured" the moment the client id is saved. */}
         <GithubAppWizard
@@ -1883,6 +1913,7 @@ setError(e.message);
             );
           })}
       </SettingCard>
+      {outsideCancel}
       {personal && showHint && (
         <SettingsHint>
           {active

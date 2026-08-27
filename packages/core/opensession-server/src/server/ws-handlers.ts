@@ -18,8 +18,8 @@ import { startWatching, stopAllWatchesForClient, transcriptRev, } from "./file-w
 import { INIT_WIRE_CLAMP_BYTES, entriesForWire, parseTranscriptAsync, parseTranscriptTail, parseTranscriptWindow, prepareEntriesForWire, } from "./jsonl-parser";
 import { providerFor } from "./models";
 
-import { appendTranscriptEntries, clearTranscriptStoreDegraded, transcriptLineRunnerNotice } from "./transcript-persistence";
-import { deleteQueuedPrompt, editableSteerReceipt, liftUserStop, persistQueues, promptQueues, queueDisplayState, durableQueueItem, queueItem, reorderQueuedPrompt, steeredReceipts, stoppedSessions, takeQueuedPrompt, takeSteeredPrompt, updateQueuedPrompt } from "./queue-state";
+import { appendTranscriptEntries, clearTranscriptStoreDegraded, storeAppendUserLineEarly, transcriptLineRunnerNotice, transcriptLineUser } from "./transcript-persistence";
+import { deleteQueuedPrompt, editableSteerReceipt, liftUserStop, persistQueues, promoteQueuedPrompt, promptQueues, queueDisplayState, durableQueueItem, queueItem, reorderQueuedPrompt, steeredReceipts, stoppedSessions, takeQueuedPrompt, takeSteeredPrompt, updateQueuedPrompt } from "./queue-state";
 import { prepareAndSteerQueuedPrompt } from "./queued-steer";
 
 import { abortTurnAndDrain, drainQueue, enqueuePrompt, interruptQueuedPrompt, requestTurnCancel, runSessionPrompt, runSessionPromptAndDrain, steerQueuedPrompt, watchExternalRunAndDrain, } from "./run-session";
@@ -125,7 +125,11 @@ async function sendWatchExtras(
 	// sending so edit/delete/steer actions can address the same row.
 	const queueState = await queueDisplayState(sessionId);
 	if (queueState) {
-		const { queued: queuedPrompts, steered: steeredPrompts } = queueState;
+		const {
+			queued: queuedPrompts,
+			steered: steeredPrompts,
+			pendingDeliveryIds,
+		} = queueState;
 		if (queuedPrompts.length > 0 || steeredPrompts.length > 0) persistQueues();
 		ws.send(
 			JSON.stringify({
@@ -133,6 +137,7 @@ async function sendWatchExtras(
 				sessionId,
 				queued: queuedPrompts,
 				steered: steeredPrompts,
+				pendingDeliveryIds,
 			}),
 		);
 	}
@@ -1340,6 +1345,20 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 							if (steerResult === "rejected") watchExternalRunAndDrain(sessionId);
 							break;
 						}
+						const promptEntryId = steerItem.promptEntryId || steerItem.id;
+						await promoteQueuedPrompt(
+							sessionId,
+							steerItem.id,
+							promptEntryId,
+							{ ...steerItem, promptEntryId },
+						);
+						await storeAppendUserLineEarly(
+							sessionId,
+							transcriptLineUser(attributed, promptEntryId, undefined, images),
+							{ required: true },
+						);
+						watchExternalRunAndDrain(sessionId);
+						break;
 					}
 					await enqueuePrompt(sessionId, {
 						id: msg.requestId,

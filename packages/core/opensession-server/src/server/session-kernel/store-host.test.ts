@@ -297,7 +297,7 @@ describe("per-session session kernel storage", () => {
     expect(host.central.sessionPlacement(sessionId)).toMatchObject({
       placement: "isolated",
       transcriptAuthority: "shared",
-      needsScan: true,
+      needsScan: false,
     });
     expect(() => host.transcript({
       op: "append",
@@ -363,7 +363,7 @@ describe("per-session session kernel storage", () => {
     host.close();
   });
 
-  test("quarantines one unreadable session database without blocking global stats", () => {
+  test("global diagnostics never open an unreadable session database", () => {
     const path = paths();
     const first = new SessionKernelStoreHost(path.central, path.isolated);
     first.call("setRunState", [{
@@ -383,13 +383,20 @@ describe("per-session session kernel storage", () => {
     );
 
     const recovered = new SessionKernelStoreHost(path.central, path.isolated);
+    const cacheMisses = recovered.metrics().kernelStoreCacheMisses;
     expect(recovered.stats()).toMatchObject({
-      sessions: 1,
-      quarantinedSessions: 1,
+      sessions: 0,
+      quarantinedSessions: 0,
     });
-    expect(recovered.quarantinedSession("broken-session")).toMatchObject({
-      commandKind: "global:stats",
+    expect(recovered.call("deadLetters", [100, 0])).toMatchObject({
+      coverage: {
+        quarantines: "catalog_projection",
+        timers: "catalog_only",
+        outbox: "catalog_only",
+      },
     });
+    expect(recovered.metrics().kernelStoreCacheMisses).toBe(cacheMisses);
+    expect(recovered.central.quarantinedSession("broken-session")).toBeUndefined();
     expect(recovered.storeForSession("healthy-session").runState("healthy-session").state)
       .toBe("running");
     recovered.close();
@@ -517,37 +524,16 @@ describe("per-session session kernel storage", () => {
     const host = new SessionKernelStoreHost(path.central, path.isolated);
     for (const sessionId of [
       "runtime-broken",
-      "stats-broken",
-      "maintenance-broken",
-      "fanout-broken",
       "healthy-session",
     ]) {
       host.call("setRunState", [{ sessionId, state: "running", event: "prompt" }]);
     }
 
     failWithSqliteIo(host.storeForSession("runtime-broken"), "dueTimers");
-    failWithSqliteIo(host.storeForSession("stats-broken"), "stats");
-    failWithSqliteIo(host.storeForSession("maintenance-broken"), "maintain");
-    failWithSqliteIo(host.storeForSession("fanout-broken"), "runStates");
 
     expect(() => host.runtimeWork(Date.now(), [], [], 100)).not.toThrow();
     expect(host.quarantinedSession("runtime-broken")).toMatchObject({
       commandKind: "runtime:scan",
-    });
-    expect(host.stats()).toMatchObject({ sessions: 3, quarantinedSessions: 2 });
-    expect(host.quarantinedSession("stats-broken")).toMatchObject({
-      commandKind: "global:stats",
-    });
-    for (let pass = 0; pass < 8 && !host.quarantinedSession("maintenance-broken"); pass += 1)
-      expect(() => host.maintain()).not.toThrow();
-    expect(host.quarantinedSession("maintenance-broken")).toMatchObject({
-      commandKind: "maintenance:store",
-    });
-    expect(host.allRunStates()).toEqual([
-      expect.objectContaining({ sessionId: "healthy-session", state: "running" }),
-    ]);
-    expect(host.quarantinedSession("fanout-broken")).toMatchObject({
-      commandKind: "global:run-states",
     });
     expect(host.storeForSession("healthy-session").runState("healthy-session").state)
       .toBe("running");
@@ -586,7 +572,9 @@ describe("per-session session kernel storage", () => {
 
     expect(host.storeForSession("first-session").runState("first-session"))
       .toMatchObject({ state: "running", currentRunId: "first-run" });
-    expect(host.stats()).toMatchObject({ sessions: 2, quarantinedSessions: 0 });
+    const cacheMisses = host.metrics().kernelStoreCacheMisses;
+    expect(host.stats()).toMatchObject({ sessions: 0, quarantinedSessions: 0 });
+    expect(host.metrics().kernelStoreCacheMisses).toBe(cacheMisses);
     host.close();
   });
 
@@ -788,22 +776,20 @@ describe("per-session session kernel storage", () => {
     recovered.close();
   });
 
-  test("backfills old sparse projections in bounded retryable batches", () => {
+  test("publishes projections for new actors without an online backfill sweep", () => {
     const path = paths();
     const host = new SessionKernelStoreHost(path.central, path.isolated);
-    for (let index = 0; index < 5; index += 1)
-      host.call("setRunState", [{
-        sessionId: `projection-backfill-${String(index).padStart(2, "0")}`,
-        state: "idle",
-        event: "seed",
-      }]);
+    host.call("setRunState", [{
+      sessionId: "projected-at-claim",
+      state: "idle",
+      event: "seed",
+    }]);
 
-    expect((host as any).repairSparseProjections(4)).toBe(true);
-    while ((host as any).repairSparseProjections(4)) {}
+    expect(host.central.isolatedProjectionPendingSessionIds(1)).toEqual([]);
     expect(host.allAskEntries()).toEqual([]);
     expect(host.central.sparseProjectionMigrationComplete()).toBe(true);
     host.close();
-  }, 10_000);
+  });
 
   test("settles only isolated stores that contain pending steers", () => {
     const path = paths();
@@ -842,7 +828,7 @@ describe("per-session session kernel storage", () => {
     host.close();
   });
 
-  test("skips empty stores when retrying compatible creation dead letters", () => {
+  test("rejects the retired global creation dead-letter sweep", () => {
     const path = paths();
     const host = new SessionKernelStoreHost(path.central, path.isolated);
     host.call("setRunState", [{
@@ -850,19 +836,10 @@ describe("per-session session kernel storage", () => {
       state: "idle",
       event: "seed",
     }]);
-    Object.defineProperty(
-      host.storeForSession("empty-creation-session"),
+    expect(() => host.call(
       "retryCompatibleCreationBranchDeadLetters",
-      {
-        configurable: true,
-        value: () => {
-          throw new Error("empty stores must not enter the mutation sweep");
-        },
-      },
-    );
-
-    expect(host.call("retryCompatibleCreationBranchDeadLetters", [[], Date.now()]))
-      .toEqual([]);
+      [[], Date.now()],
+    )).toThrow("Unrouted session kernel store method");
     host.close();
   });
 

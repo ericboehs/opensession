@@ -1969,6 +1969,16 @@
     min-height: 72px;
   }
 }
+.\[\&_\.bg-settings-plate\]\:border-line\!:not(#\#):not(#\#):not(#\#):not(#\#):not(#\#):not(#\#):not(#\#):not(#\#):not(#\#):not(#\#){
+  & .bg-settings-plate {
+    border-color: var(--border) !important;
+  }
+}
+.\[\&_\.bg-settings-plate\]\:bg-button\!:not(#\#):not(#\#):not(#\#):not(#\#):not(#\#):not(#\#):not(#\#):not(#\#):not(#\#):not(#\#){
+  & .bg-settings-plate {
+    background-color: var(--button-surface) !important;
+  }
+}
 .\[\&_\.bg-settings-plate\:not\(\.personal-github-card\)\]\:border-0:not(#\#):not(#\#):not(#\#):not(#\#):not(#\#):not(#\#):not(#\#):not(#\#):not(#\#):not(#\#){
   & .bg-settings-plate:not(.personal-github-card) {
     border-style: var(--tw-border-style);

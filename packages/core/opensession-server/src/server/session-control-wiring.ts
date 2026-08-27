@@ -22,8 +22,17 @@ import { pendingAskAwaitingAnswer, pendingAsks, type PendingAsk } from "./asks";
 import { relinkAskThreads } from "./human-asks";
 import { SESSION_EFFORTS, type SessionEffort, providerFor, resolveModel } from "./models";
 import { configuredInteractiveDefaultModel } from "./model-catalog";
-import { deliveryQueueState, durableQueueItem, liftUserStop } from "./queue-state";
+import {
+	deliveryQueueState,
+	durableQueueItem,
+	liftUserStop,
+	promoteQueuedPrompt,
+} from "./queue-state";
 import { prepareAndSteerQueuedPrompt } from "./queued-steer";
+import {
+	storeAppendUserLineEarly,
+	transcriptLineUser,
+} from "./transcript-persistence";
 import { drainQueue, enqueuePrompt, parkQueueForShutdown, requestTurnCancel, runSessionPrompt, sessionMentionsNote, watchExternalRunAndDrain } from "./run-session";
 import { creationAttachmentPath, parseImageDataUrls, prepareCreationAttachmentSources, withUploadsNote } from "./uploads";
 import { type Sandbox } from "./sandbox";
@@ -385,8 +394,31 @@ registerSessionControl({
 					if (steerResult === "rejected") {
 						watchExternalRunAndDrain(id);
 						return {
-							status: "queued" as const,
-							message: "Queued behind the current run.",
+							// Physical steering lost the run-end race, but admission did
+							// not: the visible transcript row is sent and the actor-owned
+							// fallback is the immediate next turn.
+							status: "steered" as const,
+							message: "Sent to the session.",
+							deliveryId,
+						};
+					}
+					if (steerResult === "not_prepared") {
+						const promptEntryId = steerItem.promptEntryId || deliveryId;
+						await promoteQueuedPrompt(
+							id,
+							deliveryId,
+							promptEntryId,
+							{ ...steerItem, promptEntryId },
+						);
+						await storeAppendUserLineEarly(
+							id,
+							transcriptLineUser(attributed, promptEntryId, undefined, opts?.images),
+							{ required: true },
+						);
+						watchExternalRunAndDrain(id);
+						return {
+							status: "steered" as const,
+							message: "Sent to the session.",
 							deliveryId,
 						};
 					}

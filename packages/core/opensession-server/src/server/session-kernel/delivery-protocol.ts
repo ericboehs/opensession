@@ -58,6 +58,13 @@ export type DeliveryActorRequest =
   | { op: "entries"; slot: DeliverySlot }
   | { op: "set"; sessionId: string; slot: DeliverySlot; value: unknown }
   | { op: "enqueue"; sessionId: string; item: unknown; front?: boolean }
+  | {
+      op: "promote_queued";
+      sessionId: string;
+      itemId: string;
+      promptEntryId: string;
+      item?: unknown;
+    }
   | { op: "delete"; sessionId: string; slot: DeliverySlot }
   | { op: "clear_slot"; slot: DeliverySlot }
   | {
@@ -153,7 +160,7 @@ export type DeliveryActorResult<T extends DeliveryActorRequest> =
                         interrupted: boolean;
                         revision: number;
                       }
-                : T extends { op: "prepare_steer" }
+                : T extends { op: "prepare_steer" | "promote_queued" }
                   ? unknown | undefined
                   : T extends {
                         op:

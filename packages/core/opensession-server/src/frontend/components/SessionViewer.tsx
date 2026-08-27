@@ -236,7 +236,6 @@ import { useLivePlan } from "./session-viewer/use-live-plan";
 import {
 	BusyInline,
 	ConversationLoading,
-	SteerWaiting,
 	WorkspaceSetup,
 	WorkspaceWaiting,
 } from "./session-viewer/busy-indicators";
@@ -281,8 +280,6 @@ import {
 	IconArrowRight,
 	IconArrowUp,
 	IconArrowUpToLine,
-	IconCrosshair,
-	IconClock,
 	IconDesk,
 	IconDotsHorizontal,
 	IconEye,
@@ -340,7 +337,6 @@ import {
 	composerQueueItemDraggable,
 	composerQueueItemSeparated,
 	composerQueueList,
-	composerQueuePill,
 	composerQueueSendingShimmer,
 	composerQueueSendingStatus,
 	composerQueueTitle,
@@ -1747,9 +1743,11 @@ export function SessionViewer({
 	// same way, so an unrelated broadcast can't yank the list while dragging.
 	const draggingQueueRef = useRef(false);
 	const pendingReorderRef = useRef<QueueReceipt[] | null>(null);
-	// Steered messages routed into the live run — shown as a steering receipt
-	// until their turn writes to the transcript (then reconciled away below).
+	// Delivery ownership stays server-side, but sent steering messages live in
+	// the conversation. These ids only give their bubbles a quiet pending
+	// treatment until the engine confirms it has read them.
 	const [steered, setSteered] = useState<QueueReceipt[]>([]);
+	const [pendingDeliveryIds, setPendingDeliveryIds] = useState<string[]>([]);
 	// One-shot draft injection into the Composer (bump seq to apply) — how
 	// "edit queued message" puts the text back into the input.
 	const [composerPrefill, setComposerPrefill] = useState<{
@@ -1830,9 +1828,8 @@ export function SessionViewer({
 				return;
 			}
 			if (result.status === "queued" || result.status === "steered") {
-				// The queue's admission echo may arrive before this response. Only now
-				// is it authoritative placement rather than the transient dispatch record
-				// every idle prompt passes through.
+				// Queued messages stay above the composer. A steer is already sent, so
+				// it stays in the conversation while the engine catches up.
 				setPending((current) =>
 					markPendingBusy(
 						current,
@@ -3631,6 +3628,7 @@ export function SessionViewer({
 						// server's echo reconciles it right after.
 						if (!draggingQueueRef.current) setQueued(msg.queued);
 						setSteered(msg.steered || []);
+						setPendingDeliveryIds(msg.pendingDeliveryIds || []);
 					}
 					break;
 				case "queued_prompt_taken": {
@@ -3891,35 +3889,6 @@ export function SessionViewer({
 			});
 	}, [entries, queued, steered, setEntries]);
 
-	// A steer receipt is reconciled away once its message lands in the transcript
-	// (the run actually read it). So this list is exactly the PENDING window: the
-	// run has accepted the message and has not folded it in yet. Anything shown
-	// from here must read as waiting, never as delivered.
-	const visibleSteered = useMemo(() => {
-		if (steered.length === 0) return steered;
-		const userPool = entries
-			.filter((e) => e.type === "user")
-			.map((e) => e.content.trim());
-		return steered.filter((s) => {
-			// Model-routing messages do not belong in the person's steering surface.
-			// Keep this client-side guard for rolling deploys with an older server.
-			if (!isClientVisibleQueuedContent(s.content, s.user)) return false;
-			const raw = s.content.trim();
-			// Same attribution prefix as the transcript entry — match either form.
-			const attributed = s.user ? `[${s.user}] ${raw}` : raw;
-			const i = userPool.findIndex((u) => u === raw || u === attributed);
-			if (i >= 0) {
-				userPool.splice(i, 1);
-				return false;
-			}
-			// Same composite case as the pending reconcile: co-released steers land
-			// joined in one user turn — claim by containment (no splice; one joined
-			// entry can cover several receipts).
-			if (s.user && userPool.some((u) => u.includes(attributed))) return false;
-			return true;
-		});
-	}, [steered, entries]);
-
 	// Forget optimistic bubbles and live state when switching sessions. This
 	// component is retained between tabs, so carrying a busy flag from the prior
 	// session makes an idle prompt render as queued until the new watch handshake
@@ -3932,6 +3901,7 @@ export function SessionViewer({
 				: [],
 		);
 		setIsRunningLive(session.isRunning);
+		setPendingDeliveryIds([]);
 		liveTurnStore.clear();
 		setIsStreaming(false);
 	});
@@ -4127,7 +4097,7 @@ export function SessionViewer({
 	}, [
 		entries,
 		queued,
-		visibleSteered,
+		steered,
 		pending,
 		relayout,
 		scrollToLatest,
@@ -4805,14 +4775,15 @@ export function SessionViewer({
 		// Prompting in a session you'd hidden from your sidebar brings its row back
 		// — you're working in it again (see lib/hides.ts).
 		unhideForSession(session);
-		if (!isBusy) {
-			setIsRunningLive(true);
-			onRunningChange?.(session.id, true);
-			// The event-handler scroll below can only target the pre-send DOM. Arm a
-			// second, pre-paint pass for the commit that contains this optimistic row.
+		if (!isBusy || steerNow) {
+			if (!isBusy) {
+				setIsRunningLive(true);
+				onRunningChange?.(session.id, true);
+			}
+			// Sent messages always enter the conversation immediately. A busy steer
+			// keeps its delivery mode only so the bubble can remain slightly muted
+			// until the engine reads it.
 			sentPromptNeedsLayoutScrollRef.current = true;
-			// Show it immediately; it reconciles away when the real transcript entry
-			// arrives (or the queue echo, if the server turns out to be busy).
 			setPending((p) => [
 				...p,
 				{
@@ -4821,15 +4792,14 @@ export function SessionViewer({
 					user,
 					sentAt: Date.now(),
 					images: imgs.length ? imgs : undefined,
+					...(steerNow ? { busyMode: "steer" as const } : {}),
 				},
 			]);
 			requestAnimationFrame(() =>
 				measureSessionPerf("send_to_optimistic_paint_ms", sendStartedAt),
 			);
 		} else {
-			// Busy send: show it in the queue flap right away (no transcript
-			// bubble — a steer folds into the RUNNING turn) — the
-			// server's queue_update / steer-receipt echo replaces it.
+			// Only deliberately queued messages live above the composer.
 			setPending((p) => [
 				...p,
 				{
@@ -4838,7 +4808,7 @@ export function SessionViewer({
 					user,
 					sentAt: Date.now(),
 					images: imgs.length ? imgs : undefined,
-					busyMode: steerNow ? ("steer" as const) : ("queue" as const),
+					busyMode: "queue" as const,
 				},
 			]);
 		}
@@ -5018,10 +4988,9 @@ export function SessionViewer({
 		}
 	}
 
-	// Busy sends live in the flap from the moment of the send; idle sends are
-	// optimistic transcript bubbles. Both reconcile through the same effect.
-	// While the worktree is still being prepared, everything holds in the flap —
-	// including the create's own first message — until the workspace is ready.
+	// Only deliberately queued sends live above the composer. Idle sends and
+	// steers are conversation messages immediately; both reconcile through the
+	// same transcript path. Workspace setup still holds everything in the flap.
 	const failedOutboxIds = new Set(
 		outboxItems
 			.filter((item) => item.state === "failed")
@@ -5062,11 +5031,15 @@ export function SessionViewer({
 			!fallbackReconciliation.expired.has(item.id),
 	);
 	const pendingQueue = [
-		...visiblePending.filter((p) => p.busyMode || settingUpWorkspace),
+		...visiblePending.filter(
+			(p) => p.busyMode === "queue" || settingUpWorkspace,
+		),
 		...(settingUpWorkspace ? fallbackPending : []),
 	];
 	const pendingBubbles = [
-		...visiblePending.filter((p) => !p.busyMode && !settingUpWorkspace),
+		...visiblePending.filter(
+			(p) => p.busyMode !== "queue" && !settingUpWorkspace,
+		),
 		...(settingUpWorkspace ? [] : fallbackPending),
 	];
 	const optimisticTranscriptEntries: TranscriptEntry[] =
@@ -5079,6 +5052,12 @@ export function SessionViewer({
 					timestamp: new Date(pending.sentAt).toISOString(),
 					...(pending.images?.length ? { images: pending.images } : {}),
 				}));
+	const pendingTranscriptDeliveryIds = [
+		...pendingDeliveryIds,
+		...pendingBubbles
+			.filter((pending) => pending.busyMode === "steer")
+			.map((pending) => pending.id),
+	];
 	// Retried, failed and authoritatively busy prompts keep the explicit outbox
 	// surface. A pristine idle item is already represented by the fallback above.
 	const fallbackIds = new Set(fallbackCandidates.map((item) => item.id));
@@ -5124,26 +5103,14 @@ export function SessionViewer({
 	const queuedClassified = shownQueued.map((item) =>
 		classifyQueuedContent(item.content, item.user),
 	);
-	const steeredClassified = visibleSteered.map((item) =>
-		classifyQueuedContent(item.content, item.user),
-	);
 	const queuedSummary = summarizeInFlightContent(queuedClassified);
-	const steeredSummary = summarizeInFlightContent(steeredClassified);
-	// Transport ownership must not rename agent-to-agent traffic as a human
-	// steer. Reports and session notices keep their own waiting counts even once
-	// the running engine has accepted them for its next step.
-	const reviewCount = queuedSummary.reviews + steeredSummary.reviews;
-	const workerCount =
-		queuedSummary.workerReports + steeredSummary.workerReports;
-	const sessionMessageCount =
-		queuedSummary.sessionMessages + steeredSummary.sessionMessages;
+	const reviewCount = queuedSummary.reviews;
+	const workerCount = queuedSummary.workerReports;
+	const sessionMessageCount = queuedSummary.sessionMessages;
 	const queueCount =
-		shownQueued.length + visibleSteered.length + pendingQueue.length + durableOutbox.length;
-	// Ordinary steered receipts have been accepted by the running turn and wait
-	// for its next step. Agent traffic uses its own waiting labels above instead.
+		shownQueued.length + pendingQueue.length + durableOutbox.length;
 	const queuedMessageCount =
 		queuedSummary.messages + pendingQueue.length + durableOutbox.length;
-	const steeringMessageCount = steeredSummary.messages;
 	const queueTitle = settingUpWorkspace
 		? `Setting up workspace · ${queueCount} queued`
 		: [
@@ -5159,9 +5126,6 @@ export function SessionViewer({
 				sessionMessageCount
 					? `${sessionMessageCount} session ${sessionMessageCount === 1 ? "message" : "messages"} waiting`
 					: null,
-				steeringMessageCount
-					? `${steeringMessageCount} steering into the current turn`
-					: null,
 			]
 				.filter(Boolean)
 				.join(" · ");
@@ -5172,118 +5136,9 @@ export function SessionViewer({
 				// same box, so it drops its own rounded top — only the topmost
 				// flap keeps one.
 				className={cn(composerQueue, "[&:not(:first-child)]:rounded-t-none")}
-				aria-label="Queued and steered messages"
+				aria-label="Queued messages"
 			>
 				<div className={composerQueueTitle}>{queueTitle}</div>
-				{visibleSteered.map((s, i) => {
-					const c = steeredClassified[i];
-					const isReview = c.notice?.kind === "review-handoff";
-					const isWorker = c.notice?.kind === "worker-report";
-					const isSessionMessage = c.notice?.kind === "session-notice";
-					const isAgentTraffic = isReview || isWorker || isSessionMessage;
-					const canEdit =
-						!isAgentTraffic &&
-						s.editable === true &&
-						personKey(s.user || "") === personKey(currentUser);
-					return (
-						<div
-							key={s.id || `steered-${i}`}
-							// The hairline between rows was a `+` sibling selector, which a
-							// utility cannot spell against its own class — each group draws
-							// it from its own index instead, which is what that selector
-							// matched (the three groups are separated by non-row elements).
-							className={cn(
-								composerQueueItem,
-								i > 0 && composerQueueItemSeparated,
-							)}
-						>
-							<div className={composerQueueActions}>
-								<Tooltip
-									label={
-										isAgentTraffic
-											? "The run has this update and reads it when the current step finishes. A long tool call, like a test run, can hold it for a few minutes."
-											: "The run has this message and folds it in when the current step finishes. A long tool call, like a test run, can hold it for a few minutes."
-									}
-								>
-									<span className={composerQueuePill}>
-										{isAgentTraffic ? (
-											<IconClock size={20} />
-										) : (
-											<IconCrosshair size={20} />
-										)}
-										{isAgentTraffic ? "Waiting" : "Steering"}
-										<SteerWaiting since={s.steeredAt} />
-									</span>
-								</Tooltip>
-								{s.id && canEdit && (
-									<Tooltip label="Edit in composer">
-										<button
-											type="button"
-											aria-label="Edit in composer"
-											className={composerQueueAction}
-											disabled={s.editing}
-											onClick={() => editQueuedInComposer(s, true)}
-										>
-											<IconPencil size={20} />
-										</button>
-									</Tooltip>
-								)}
-								{s.id && (
-									<Tooltip label="Deliver now: end the current step so this message lands immediately. The agent resumes its work with your message in hand.">
-										<button
-											type="button"
-											aria-label="Deliver now"
-											className={cn(
-												composerQueueAction,
-												composerQueueActionSteer,
-											)}
-											disabled={s.editing}
-											onClick={() =>
-												send({
-													type: "interrupt_queued_prompt",
-													sessionId: session.id,
-													queueId: s.id,
-												})
-											}
-										>
-											<IconArrowUpToLine size={20} />
-										</button>
-									</Tooltip>
-								)}
-								{s.id && (
-									<Tooltip label="Dismiss. The run keeps going and this message won't be re-sent.">
-										<button
-											type="button"
-											aria-label={
-												isAgentTraffic
-													? queueDeleteLabel(isReview, isWorker, isSessionMessage)
-													: "Dismiss steering message"
-											}
-											className={cn(
-												composerQueueAction,
-												composerQueueActionDanger,
-											)}
-											disabled={s.editing}
-											onClick={() =>
-												send({
-													type: "delete_queued_prompt",
-													sessionId: session.id,
-													queueId: s.id,
-												})
-											}
-										>
-											<IconTrash size={20} />
-										</button>
-									</Tooltip>
-								)}
-							</div>
-							{renderQueueContent(s, c, {
-								tone: c.senderVia ? "human" : "default",
-							})}
-						</div>
-					);
-				})}
-
 				<Reorder.Group
 					as="div"
 					axis="y"
@@ -5371,8 +5226,8 @@ export function SessionViewer({
 									<Tooltip
 										label={
 											canSteer
-												? "Steer: fold into the running turn now, without stopping it"
-												: "Messages with files cannot be steered"
+												? "Send now: add to the conversation and deliver after the current step"
+												: "Messages with files must remain queued"
 										}
 									>
 										<button
@@ -5381,7 +5236,7 @@ export function SessionViewer({
 												composerQueueAction,
 												composerQueueActionSteer,
 											)}
-											aria-label="Steer into the running turn"
+											aria-label="Send now"
 											disabled={!canSteer}
 											onClick={() =>
 												send({
@@ -5408,8 +5263,7 @@ export function SessionViewer({
 				})}
 				</Reorder.Group>
 
-				{/* Just-sent while busy: already visually in the queue, awaiting the
-				    server's echo (which swaps in the real item with actions). */}
+				{/* Deliberately queued sends stay here while their server echo settles. */}
 				{pendingQueue.map((p, i) => (
 					<div
 						key={p.id}
@@ -5939,9 +5793,8 @@ export function SessionViewer({
 		return [
 			...fromImages(pending),
 			...fromImages(queued),
-			...fromImages(visibleSteered),
 		];
-	}, [pending, queued, visibleSteered, session.id, session.title]);
+	}, [pending, queued, session.id, session.title]);
 
 	async function handleDelete(cleanWorktree: boolean) {
 		setDeleteLabel(
@@ -8013,6 +7866,7 @@ export function SessionViewer({
 												<SessionTranscript
 													entries={entries}
 													optimisticEntries={optimisticTranscriptEntries}
+													pendingDeliveryIds={pendingTranscriptDeliveryIds}
 													transcriptIndex={transcriptIndex ?? undefined}
 													transcriptRangeRetryGeneration={
 														transcriptRangeRetryGeneration
