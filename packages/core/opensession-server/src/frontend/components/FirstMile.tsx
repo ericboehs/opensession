@@ -271,6 +271,7 @@ interface PanelSize {
 	height: number;
 	targetWidth: number;
 	maxHeight: number;
+	footerHeight: number;
 }
 
 const PANEL_MAX_WIDTH: Record<FirstMileStepId, number> = {
@@ -551,6 +552,11 @@ export function FirstMile({ onDone }: { onDone: () => Promise<void> }) {
 	const [index, setIndex] = useState(initialFirstMileIndex);
 	const [contentVisible, setContentVisible] = useState(true);
 	const [navigationVisible, setNavigationVisible] = useState(true);
+	const [panelVisible, setPanelVisible] = useState(true);
+	const [crossfade, setCrossfade] = useState<{
+		target: number;
+		phase: "out" | "in";
+	} | null>(null);
 	const [panelSize, setPanelSize] = useState<PanelSize | null>(null);
 	const [finishing, setFinishing] = useState(false);
 	const [personalGithubVisited, setPersonalGithubVisited] = useState(false);
@@ -560,6 +566,7 @@ export function FirstMile({ onDone }: { onDone: () => Promise<void> }) {
 	const progressRef = useRef<HTMLElement>(null);
 	const panelRef = useRef<HTMLElement>(null);
 	const panelBodyRef = useRef<HTMLDivElement>(null);
+	const panelFooterRef = useRef<HTMLElement>(null);
 	const headingRef = useRef<HTMLHeadingElement>(null);
 	const reducedMotion = useReducedMotion();
 	const steps = STEPS;
@@ -621,9 +628,10 @@ export function FirstMile({ onDone }: { onDone: () => Promise<void> }) {
 			if (done) return;
 			done = true;
 			window.clearTimeout(quietTimer);
+			const footerHeight = panelFooterRef.current?.getBoundingClientRect().height ?? 0;
 			const targetHeight = Math.min(
 				panelSize.maxHeight,
-				Math.ceil(body.getBoundingClientRect().height),
+				Math.ceil(body.getBoundingClientRect().height + footerHeight),
 			);
 			setPanelSize((current) =>
 				current?.phase === "measuring"
@@ -679,10 +687,22 @@ export function FirstMile({ onDone }: { onDone: () => Promise<void> }) {
 		const nextIndex = Math.min(Math.max(next, 0), steps.length - 1);
 		if (
 			nextIndex === index ||
+			crossfade ||
 			panelSize?.phase === "measuring" ||
 			panelSize?.phase === "animating"
 		)
 			return;
+		const nextStep = steps[nextIndex]!;
+		const readyCrossfade =
+			(step.id === "repos" && nextStep.id === "ready") ||
+			(step.id === "ready" && nextStep.id === "repos");
+		if (readyCrossfade) {
+			setCrossfade({ target: nextIndex, phase: "out" });
+			setPanelVisible(false);
+			void refetch();
+			return;
+		}
+
 		const panel = panelRef.current;
 		const root = rootRef.current;
 		const progress = progressRef.current;
@@ -701,7 +721,6 @@ export function FirstMile({ onDone }: { onDone: () => Promise<void> }) {
 		const verticalPadding =
 			parseFloat(rootStyle.paddingTop) + parseFloat(rootStyle.paddingBottom);
 		const rowGap = parseFloat(rootStyle.rowGap) || 0;
-		const nextStep = steps[nextIndex]!;
 		setPanelSize({
 			phase: "measuring",
 			fromStep: step.id,
@@ -716,11 +735,23 @@ export function FirstMile({ onDone }: { onDone: () => Promise<void> }) {
 				verticalPadding -
 				progress.getBoundingClientRect().height -
 				rowGap,
+			footerHeight: panelFooterRef.current?.getBoundingClientRect().height ?? 0,
 		});
 		setContentVisible(false);
-		setNavigationVisible(false);
 		setIndex(nextIndex);
 		void refetch();
+	}
+
+	function finishPanelCrossfade() {
+		if (!crossfade) return;
+		if (crossfade.phase === "out") {
+			setIndex(crossfade.target);
+			setPanelSize(null);
+			setCrossfade({ ...crossfade, phase: "in" });
+			setPanelVisible(true);
+			return;
+		}
+		setCrossfade(null);
 	}
 
 	function openPersonalGithub() {
@@ -786,7 +817,9 @@ export function FirstMile({ onDone }: { onDone: () => Promise<void> }) {
 					: "Next";
 
 	const panelTransitioning =
-		panelSize?.phase === "measuring" || panelSize?.phase === "animating";
+		!!crossfade ||
+		panelSize?.phase === "measuring" ||
+		panelSize?.phase === "animating";
 	const surfaceStep =
 		panelSize?.phase === "measuring" ? panelSize.fromStep : step.id;
 	const edgeSurface = surfaceStep === "welcome" || surfaceStep === "ready";
@@ -841,8 +874,12 @@ export function FirstMile({ onDone }: { onDone: () => Promise<void> }) {
 					</LoadingState>
 				</div>
 			) : (
-				<section
+				<motion.section
 					ref={panelRef}
+					initial={false}
+					animate={{ opacity: panelVisible ? 1 : 0 }}
+					transition={{ type: "tween", duration: duration.micro, ease }}
+					onAnimationComplete={finishPanelCrossfade}
 					className={cn(
 					utilityClassName("relative z-10 flex max-h-full w-full self-center justify-self-center flex-col overflow-hidden rounded-3xl phone:h-full phone:max-h-none phone:max-w-none phone:self-stretch phone:rounded-none phone:[box-shadow:none]"),
 					panelSize
@@ -869,17 +906,13 @@ export function FirstMile({ onDone }: { onDone: () => Promise<void> }) {
 							utilityClassName("flex min-h-0 max-h-full flex-col"),
 							stagedPanel
 								? utilityClassName("absolute top-0 left-1/2 -translate-x-1/2")
-								: utilityClassName("h-full w-full"),
+								: utilityClassName("w-full flex-1"),
 						)}
 						style={
 							stagedPanel
 								? {
 										width: panelSize.targetWidth,
-										maxHeight: panelSize.maxHeight,
-										height:
-											panelSize.phase === "animating"
-												? panelSize.height
-												: undefined,
+										maxHeight: panelSize.maxHeight - panelSize.footerHeight,
 									}
 								: undefined
 						}
@@ -889,7 +922,7 @@ export function FirstMile({ onDone }: { onDone: () => Promise<void> }) {
 							aria-hidden={!contentVisible}
 							inert={!contentVisible}
 							className={cn(
-								utilityClassName("flex min-h-0 flex-col transition-opacity duration-[var(--dur-micro)] ease-[var(--ease)] motion-reduce:transition-none"),
+								utilityClassName("flex min-h-0 flex-1 flex-col transition-opacity duration-[var(--dur-micro)] ease-[var(--ease)] motion-reduce:transition-none"),
 								!contentVisible && utilityClassName("opacity-0"),
 							)}
 						>
@@ -915,7 +948,7 @@ export function FirstMile({ onDone }: { onDone: () => Promise<void> }) {
 								utilityClassName("min-h-0"),
 								step.id === "welcome"
 									? utilityClassName("h-4 shrink-0")
-									: utilityClassName("overflow-y-auto overscroll-contain px-10 pb-12 pt-5 [-webkit-mask-image:linear-gradient(to_bottom,#000_0,#000_calc(100%_-_36px),transparent_100%)] [mask-image:linear-gradient(to_bottom,#000_0,#000_calc(100%_-_36px),transparent_100%)] [scrollbar-width:thin] phone:px-4 phone:pb-12 phone:pt-4"),
+									: utilityClassName("flex-1 overflow-y-auto overscroll-contain px-10 pb-12 pt-5 [-webkit-mask-image:linear-gradient(to_bottom,#000_0,#000_calc(100%_-_36px),transparent_100%)] [mask-image:linear-gradient(to_bottom,#000_0,#000_calc(100%_-_36px),transparent_100%)] [scrollbar-width:thin] phone:px-4 phone:pb-12 phone:pt-4"),
 							)}
 						>
 							{step.id !== "welcome" && (
@@ -980,19 +1013,21 @@ export function FirstMile({ onDone }: { onDone: () => Promise<void> }) {
 									)}
 								</div>
 							)}
+							</div>
 						</div>
-						</div>
+					</div>
 
-						<motion.footer
-							initial={false}
+					<motion.footer
+						ref={panelFooterRef}
+						initial={false}
 						animate={{ opacity: navigationVisible ? 1 : 0 }}
 						transition={{ type: "tween", duration: duration.micro, ease }}
 						aria-hidden={!navigationVisible}
 						inert={!navigationVisible}
-							className={cn(
-								utilityClassName("relative z-20 shrink-0 px-6 pb-5 pt-4 phone:px-3 phone:pb-[max(12px,env(safe-area-inset-bottom))] phone:pt-3"),
-								!navigationVisible && utilityClassName("pointer-events-none"),
-							)}
+						className={cn(
+							utilityClassName("relative z-20 mt-auto shrink-0 px-6 pb-5 pt-4 phone:px-3 phone:pb-[max(12px,env(safe-area-inset-bottom))] phone:pt-3"),
+							!navigationVisible && utilityClassName("pointer-events-none"),
+						)}
 						>
 						<div
 							className={cn(
@@ -1040,9 +1075,8 @@ export function FirstMile({ onDone }: { onDone: () => Promise<void> }) {
 								)}
 							</Button>
 							</div>
-						</motion.footer>
-					</div>
-				</section>
+					</motion.footer>
+				</motion.section>
 			)}
 
 			<SetupRestart setup={setup} />
