@@ -75,11 +75,16 @@ HEALTH_SLEEP=2
 # several consecutive failures (transient blips must not trigger a rollback).
 WATCHDOG_WINDOW_SECS=900   # 15 min after the last self-deploy restart
 WATCHDOG_FAIL_THRESHOLD=3
+DEPLOY_LOCK_WAIT_SECS="${OPENSESSION_DEPLOY_LOCK_WAIT_SECS:-900}"
+DEPLOY_COALESCE_SECS="${OPENSESSION_DEPLOY_COALESCE_SECS:-3}"
+case "$DEPLOY_LOCK_WAIT_SECS" in (''|*[!0-9]*) DEPLOY_LOCK_WAIT_SECS=900 ;; esac
+case "$DEPLOY_COALESCE_SECS" in (''|*[!0-9]*) DEPLOY_COALESCE_SECS=3 ;; esac
 
 PIN_FILE="$STATE_DIR/last-known-good"
 MARKER_FILE="$STATE_DIR/last-deploy-marker"
 RESULT_FILE="$STATE_DIR/last-result.json"
 RESULTS_DIR="$STATE_DIR/results"
+REQUESTS_DIR="$STATE_DIR/requests"
 FAIL_COUNT_FILE="$STATE_DIR/watchdog-fail-count"
 LOG_FILE="$STATE_DIR/self-deploy.log"
 WATCHDOG_LOG="$STATE_DIR/watchdog.log"
@@ -114,22 +119,42 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-mkdir -p "$STATE_DIR" "$RESULTS_DIR"
+mkdir -p "$STATE_DIR" "$RESULTS_DIR" "$REQUESTS_DIR"
 
-# One self-deploy at a time: concurrent deploys race the pin (the second call
-# would pin the first call's UNVERIFIED target as last-known-good). Probes skip
-# instead of queueing — while a deploy holds the lock, its own health gate owns
-# the window and a queued probe would just double-count.
-exec 9>"$STATE_DIR/.lock"
-if ! flock -n 9; then
-  case "$MODE" in
-    probe) exit 0 ;;
-    *)
-      echo "[self-deploy] another self-deploy/rollback is in flight (lock at $STATE_DIR/.lock) — refusing" >&2
-      exit 1
-      ;;
-  esac
+# Publish an exact-SHA deploy intent before waiting on the lifecycle lock. The
+# lock holder can then collapse a burst of real requests without guessing that
+# every new commit on origin/main was intended for this instance. Manual refs
+# such as origin/main still work; the server-side helper always supplies a SHA.
+if [ "$MODE" = "deploy" ] && printf '%s\n' "$TARGET" | grep -Eq '^[0-9a-f]{40,64}$'; then
+  request_tmp="$REQUESTS_DIR/.${TARGET}.$$"
+  printf '%s\n' "$STARTED_EPOCH" > "$request_tmp"
+  mv "$request_tmp" "$REQUESTS_DIR/$TARGET"
 fi
+
+# One lifecycle change at a time: concurrent deploys race the pin (the second
+# call would pin the first call's UNVERIFIED target as last-known-good). Deploy
+# requests queue because callers commonly land a burst of commits together;
+# once admitted, a queued request becomes a no-op when the active deploy already
+# covered it. Probes and explicit rollbacks stay non-blocking: the active
+# deploy's health gate owns that window and a delayed rollback would be unsafe.
+exec 9>"$STATE_DIR/.lock"
+case "$MODE" in
+  deploy)
+    if ! flock -w "$DEPLOY_LOCK_WAIT_SECS" 9; then
+      echo "[self-deploy] timed out after ${DEPLOY_LOCK_WAIT_SECS}s waiting for the active deploy" >&2
+      exit 1
+    fi
+    ;;
+  probe)
+    flock -n 9 || exit 0
+    ;;
+  *)
+    if ! flock -n 9; then
+      echo "[self-deploy] another deploy/rollback is in flight (lock at $STATE_DIR/.lock) — refusing delayed rollback" >&2
+      exit 1
+    fi
+    ;;
+esac
 
 log() { echo "[self-deploy] $(date -u +%H:%M:%S) $*"; }
 
@@ -420,22 +445,73 @@ do_deploy() {
   log "fetching origin"
   git_repo fetch --prune origin
 
-  local target_sha current pin_sha
+  local target_sha requested_sha current pin_sha failed_target request candidate
   if ! target_sha="$(git_repo rev-parse "${TARGET}^{commit}" 2>/dev/null)"; then
     log "ERROR: cannot resolve target '$TARGET'"
     exit 1
   fi
+  requested_sha="$target_sha"
   if ! current="$(release_cmd current-sha 2>/dev/null)"; then
     log "ERROR: no pinned runtime at $CURRENT_LINK — run the root deploy once to bootstrap releases"
     exit 1
   fi
-  if [ "$target_sha" != "$current" ] \
-    && ! git_repo merge-base --is-ancestor "$current" "$target_sha"; then
+
+  # A queued request may have been fully covered by the deploy ahead of it.
+  # Treat that as success without moving the pin, marker, or last real result.
+  if [ "$target_sha" = "$current" ] \
+    || git_repo merge-base --is-ancestor "$target_sha" "$current"; then
+    log "request ${target_sha:0:10} already deployed or superseded by ${current:0:10} — coalesced"
+    rm -f "$REQUESTS_DIR/$target_sha"
+    exit 0
+  fi
+  if ! git_repo merge-base --is-ancestor "$current" "$target_sha"; then
     log "ERROR: refusing stale/parallel release ${target_sha:0:10}; current ${current:0:10} is not its ancestor"
     write_result false deploy "$current" "$current" \
       "target $target_sha does not advance current release $current; use rollback-only for rollback or the root deploy for an operator-selected line"
     exit 1
   fi
+
+  # Give a commit burst a tiny quiet period, then select the newest compatible
+  # target that another caller actually requested. This turns A/B/C calls into
+  # one deploy of C without making an exact-SHA request absorb unrelated commits
+  # merely because they also landed on origin/main. Never automatically retry a
+  # target that just failed its health gate.
+  if [ "$DEPLOY_COALESCE_SECS" -gt 0 ]; then sleep "$DEPLOY_COALESCE_SECS"; fi
+  git_repo fetch --prune origin
+  failed_target="$(sed -n 's/.*"ok":false.*"target":"\([^"]*\)".*/\1/p' "$RESULT_FILE" 2>/dev/null | tail -n 1)"
+  for request in "$REQUESTS_DIR"/*; do
+    [ -f "$request" ] || continue
+    candidate="${request##*/}"
+    if ! printf '%s\n' "$candidate" | grep -Eq '^[0-9a-f]{40,64}$' \
+      || [ "$candidate" = "$failed_target" ] \
+      || [ "$(git_repo rev-parse "${candidate}^{commit}" 2>/dev/null || true)" != "$candidate" ] \
+      || ! git_repo merge-base --is-ancestor "$current" "$candidate"; then
+      continue
+    fi
+    if git_repo merge-base --is-ancestor "$target_sha" "$candidate"; then
+      target_sha="$candidate"
+    fi
+  done
+  if [ "$target_sha" != "$requested_sha" ]; then
+    log "coalescing ${requested_sha:0:10} into newest requested target ${target_sha:0:10}"
+    TARGET="$target_sha"
+  fi
+  if [ "$target_sha" = "$failed_target" ] \
+    && [ "${OPENSESSION_DEPLOY_RETRY_FAILED:-0}" != "1" ]; then
+    log "ERROR: target ${target_sha:0:10} just failed deployment; refusing an automatic queued retry"
+    rm -f "$REQUESTS_DIR/$target_sha"
+    exit 1
+  fi
+  # This controller now owns every compatible request up to target_sha. Waiting
+  # units retain their original argv and will exit as covered after this deploy.
+  for request in "$REQUESTS_DIR"/*; do
+    [ -f "$request" ] || continue
+    candidate="${request##*/}"
+    if printf '%s\n' "$candidate" | grep -Eq '^[0-9a-f]{40,64}$' \
+      && git_repo merge-base --is-ancestor "$candidate" "$target_sha" 2>/dev/null; then
+      rm -f "$request"
+    fi
+  done
 
   # Pin the pre-deploy runtime as last-known-good BEFORE moving anything: this is
   # what --rollback-only and the watchdog restore. --pin overrides it for

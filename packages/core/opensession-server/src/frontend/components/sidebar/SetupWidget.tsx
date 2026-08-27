@@ -115,9 +115,7 @@ export function SetupWidget({
 
 	const items = setupWidgetItems(setup.status, hasCreatedSession);
 	const completed = items.filter((item) => item.complete);
-	const pending = items.filter((item) => !item.complete);
 	const visibleItems = visibleSetupWidgetItems(items);
-	if (pending.length === 0) return null;
 
 	const progress = (completed.length / items.length) * 100;
 	const completedLabel = `${completed.length} ${completed.length === 1 ? "step" : "steps"} checked`;

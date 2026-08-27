@@ -2,9 +2,11 @@ import { useEffect } from "react";
 import { createRoot } from "react-dom/client";
 import type { TranscriptEntry, UnifiedSession } from "../../core/opensession-server/src/frontend/lib/types";
 import openSessionMarkAsset from "../mac/build/icon-512.png";
+import tellaMarkAsset from "../../core/opensession-server/src/frontend/tella-icon.png";
 import { assetUrl } from "./asset-url";
 
 const openSessionMark = assetUrl(openSessionMarkAsset);
+const tellaMark = assetUrl(tellaMarkAsset);
 
 /**
  * Fixture clocks are relative to page load, not fixed dates: a hard-coded
@@ -19,25 +21,41 @@ const deskSessionId = "bks-demo-desk";
 /** Optional capture-only state used by scripts/capture-announcement-features.ts.
  *  The ordinary landing demo has no query string and keeps its current state. */
 const featureShot = new URLSearchParams(location.search).get("feature");
+const sessionsShot = featureShot === "sessions";
+const demoRepo = sessionsShot ? "tella-fusion" : "opensession";
+const organizationMark = sessionsShot ? tellaMark : openSessionMark;
 
 const sessions: UnifiedSession[] = [
 	{
 		id: activeSessionId,
 		claudeSessionId: "demo-presence",
 		source: "opensession",
-		branch: "kent/workspace-presence",
-		worktreeDir: "/workspace/opensession",
+		branch: sessionsShot ? "kent/system-audio-waveform" : "kent/workspace-presence",
+		worktreeDir: sessionsShot ? "/workspace/tella-fusion" : "/workspace/opensession",
 		startedBy: "Grant",
-		title: "Add multiplayer workspace presence",
+		title: sessionsShot
+			? "Strengthen system audio waveform visibility"
+			: "Add multiplayer workspace presence",
 		lastActivity: minutesAgo(4),
 		createdAt: minutesAgo(38),
 		isRunning: false,
 		transcriptPath: "/demo/transcript.jsonl",
 		mode: "code",
-		repo: "opensession",
+		repo: demoRepo,
 		workspaceId: "project-presence",
 		model: "anthropic/claude-fable-5",
 		effort: "medium",
+		...(sessionsShot
+			? {
+					prUrl: "https://github.com/tellahq/tella-fusion/pull/5750",
+					prState: "OPEN" as const,
+					prNumber: 5750,
+					prTitle: "Strengthen system audio waveform visibility",
+					prMergeable: "MERGEABLE",
+					prChecks: { total: 49, passed: 49, failed: 0, pending: 0 },
+					prReviewDecision: "APPROVED",
+				}
+			: {}),
 		...(featureShot === "walkthroughs"
 			? {
 					walkthrough: {
@@ -82,7 +100,7 @@ const sessions: UnifiedSession[] = [
 		runStartedAt: minutesAgo(2),
 		transcriptPath: "/demo/checkout.jsonl",
 		mode: "code",
-		repo: "opensession",
+		repo: demoRepo,
 		workspaceId: "project-checkout",
 		model: "anthropic/claude-opus-5",
 	},
@@ -99,7 +117,7 @@ const sessions: UnifiedSession[] = [
 		isRunning: false,
 		transcriptPath: "/demo/mobile.jsonl",
 		mode: "code",
-		repo: "opensession",
+		repo: demoRepo,
 		workspaceId: "project-mobile",
 		model: "anthropic/claude-sonnet-5",
 		waitingForInput: true,
@@ -117,7 +135,7 @@ const sessions: UnifiedSession[] = [
 		isRunning: false,
 		transcriptPath: "/demo/shortcuts.jsonl",
 		mode: "code",
-		repo: "opensession",
+		repo: demoRepo,
 		workspaceId: "project-shortcuts",
 		model: "anthropic/claude-fable-5",
 		prUrl: "https://github.com/tellahq/opensession/pull/1842",
@@ -141,7 +159,7 @@ const sessions: UnifiedSession[] = [
 		runStartedAt: minutesAgo(5),
 		transcriptPath: "/demo/search.jsonl",
 		mode: "code",
-		repo: "opensession",
+		repo: demoRepo,
 		workspaceId: "project-search",
 		model: "anthropic/claude-opus-5",
 	},
@@ -158,7 +176,7 @@ const sessions: UnifiedSession[] = [
 		isRunning: false,
 		transcriptPath: "/demo/release.jsonl",
 		mode: "ask",
-		repo: "opensession",
+		repo: demoRepo,
 		workspaceId: "project-release",
 		model: "anthropic/claude-fable-5",
 	},
@@ -192,7 +210,7 @@ const sessions: UnifiedSession[] = [
 		isRunning: false,
 		transcriptPath: `/demo/${slug}.jsonl`,
 		mode: "code" as const,
-		repo: "opensession",
+		repo: demoRepo,
 		workspaceId: `project-${slug}`,
 		model,
 	})),
@@ -226,7 +244,7 @@ const shippedCommits = (
 		["michiel", "Michiel Westerbeek", "Tighten the empty state on the reviews page", 52, 18, 3295],
 	] as const
 ).map(([person, author, title, additions, deletions, minutes], index) => ({
-	repo: "opensession",
+	repo: demoRepo,
 	// Only the first seven characters are ever shown, but the row is keyed on
 	// the whole thing, so they have to differ past that.
 	sha: `${(0xc0ffee + index * 0x9e3779b).toString(16).padStart(7, "0")}${"a3f7b21c9d40e85f6a1b2c3d4e5f6071".slice(index)}`,
@@ -531,6 +549,41 @@ const transcripts: Record<string, TranscriptEntry[]> = {
 	],
 };
 
+if (sessionsShot) {
+	transcripts[activeSessionId] = [
+		{
+			id: "session-shot-1",
+			type: "user",
+			content:
+				"Explore a few treatments for muted system audio. Keep removed audio quiet, but make the selected waveform easy to spot in light and dark mode.",
+			timestamp: minutesAgo(24),
+			seq: 1,
+			changeSeq: 1,
+		},
+		{
+			id: "session-shot-2",
+			type: "assistant",
+			content:
+				"I compared four treatments against the existing cut-audio state. Darker teal keeps the selection distinct without making removed audio look active.",
+			images: ["/demo/audio-waveform-options.svg"],
+			timestamp: minutesAgo(12),
+			model: "anthropic/claude-fable-5",
+			seq: 2,
+			changeSeq: 2,
+		},
+		{
+			id: "session-shot-3",
+			type: "assistant",
+			content:
+				"Shipped the darker teal treatment. All 49 checks pass, the automated review found no issues, and pull request #5750 is ready to merge.",
+			timestamp: minutesAgo(4),
+			model: "anthropic/claude-fable-5",
+			seq: 3,
+			changeSeq: 3,
+		},
+	];
+}
+
 for (const session of sessions.slice(1)) {
 	transcripts[session.id] = [
 		{
@@ -557,7 +610,7 @@ for (const session of sessions.slice(1)) {
 const projects = sessions.map((session, index) => ({
 	id: session.workspaceId!,
 	name: session.title.replace(/^(Add|Review|Improve|Ship) /, ""),
-	repo: "opensession",
+	repo: demoRepo,
 	createdBy: session.startedBy || "Grant",
 	createdAt: session.createdAt,
 	order: index,
@@ -580,7 +633,13 @@ const responseFor = (url: URL, method: string): Response => {
 			session: { model: "anthropic/claude-fable-5", effort: "low" },
 		});
 	if (path === "/api/auth/status")
-		return json({ required: false, authenticated: true, local: true, name: "Grant Shaddick" });
+		return json({
+			required: false,
+			authenticated: true,
+			local: true,
+			name: "Grant Shaddick",
+			organizationName: sessionsShot ? "Tella" : "Open Session",
+		});
 	if (path === "/api/people")
 		return json({
 			people: [
@@ -596,11 +655,11 @@ const responseFor = (url: URL, method: string): Response => {
 		return json({
 			repos: [
 				{
-					id: "opensession",
-					label: "Open Session",
-					ghRepo: "tellahq/opensession",
+					id: demoRepo,
+					label: sessionsShot ? "tella-fusion" : "Open Session",
+					ghRepo: sessionsShot ? "tellahq/tella-fusion" : "tellahq/opensession",
 					defaultBranch: "main",
-					sharedCheckout: true,
+					sharedCheckout: !sessionsShot,
 					default: true,
 				},
 			],
@@ -642,14 +701,95 @@ const responseFor = (url: URL, method: string): Response => {
 			hasOwnSessions: true,
 			admin: false,
 			preparedRepo: {
-				id: "opensession",
-				label: "Open Session",
+				id: demoRepo,
+				label: sessionsShot ? "tella-fusion" : "Open Session",
 				defaultBranch: "main",
 			},
 			capabilities: {
 				task: { ready: true, blocker: null },
 				changes: { ready: true, blocker: null },
 			},
+		});
+	if (sessionsShot && /^\/api\/sessions\/[^/]+\/pr$/.test(path))
+		return json({
+			number: 5750,
+			title: "Strengthen system audio waveform visibility",
+			url: "https://github.com/tellahq/tella-fusion/pull/5750",
+			state: "OPEN",
+			isDraft: false,
+			baseRefName: "main",
+			headRefName: "kent/system-audio-waveform",
+			headRefOid: "b94d41d3f2a",
+			additions: 132,
+			deletions: 63,
+			changedFiles: 3,
+			reviewDecision: "APPROVED",
+			author: "kentdebruin",
+			body: "Makes muted system audio easier to distinguish across themes.",
+			checks: Array.from({ length: 49 }, (_, index) => ({
+				name: `Check ${index + 1}`,
+				status: "COMPLETED",
+				conclusion: "SUCCESS",
+			})),
+			comments: [],
+			commits: [
+				{
+					oid: "b94d41d3f2a",
+					messageHeadline: "Strengthen system audio waveform visibility",
+					author: "Kent de Bruin",
+					authoredDate: minutesAgo(8),
+				},
+			],
+			files: [
+				{ path: "src/editor/audio/Waveform.tsx", additions: 68, deletions: 31 },
+				{ path: "src/editor/audio/colors.ts", additions: 42, deletions: 22 },
+				{ path: "src/editor/audio/Waveform.test.tsx", additions: 22, deletions: 10 },
+			],
+			reviewers: [],
+			mergeable: "MERGEABLE",
+			mergeStateStatus: "CLEAN",
+			osReview: {
+				verdict: "approve",
+				confidence: 5,
+				findings: 0,
+				blocking: 0,
+				stale: false,
+				at: minutesAgo(5),
+			},
+		});
+	if (sessionsShot && /^\/api\/sessions\/[^/]+\/git-status$/.test(path))
+		return json({
+			branch: "kent/system-audio-waveform",
+			hasUpstream: true,
+			ahead: 0,
+			behind: 0,
+			behindBase: 0,
+			baseBranch: "main",
+			uncommittedFiles: 0,
+			sharedCheckout: false,
+		});
+	if (sessionsShot && /^\/api\/workspaces\/[^/]+\/overview$/.test(path))
+		return json({
+			prompt: {
+				content: transcripts[activeSessionId][0]?.content || "",
+				sessionId: activeSessionId,
+				at: transcripts[activeSessionId][0]?.timestamp,
+			},
+			lastMessage: {
+				content: transcripts[activeSessionId][2]?.content || "",
+				sessionId: activeSessionId,
+				at: transcripts[activeSessionId][2]?.timestamp,
+			},
+			media: [],
+			commits: [
+				{
+					sha: "b94d41d3f2a",
+					title: "Strengthen system audio waveform visibility",
+					filesChanged: 3,
+					additions: 132,
+					deletions: 63,
+				},
+			],
 		});
 	if (path === "/api/ui-prefs") return json({ prefs: {} });
 	if (path === "/api/lanes") return json({ lanes: {} });
@@ -813,13 +953,13 @@ Object.defineProperty(window, "EventSource", {
 Object.assign(window, {
 	__OPENSESSION_DEMO__: true,
 	__OPENSESSION_INSTANCE__: {
-		productName: "Open Session",
-		productMark: "OS",
+		productName: sessionsShot ? "Tella" : "Open Session",
+		productMark: sessionsShot ? "T" : "OS",
 		// The composer's placeholder reads "Ask <persona>", so the demo's agent is
 		// named for what a visitor should type rather than for a character nobody
 		// on the page has been introduced to.
 		personaName: "your agent",
-		defaultRepoId: "opensession",
+		defaultRepoId: demoRepo,
 	},
 });
 // Render the Mac desktop shell: `wco` is the window-controls-overlay state the
@@ -837,7 +977,7 @@ localStorage.setItem("opensession-panel-open", "false");
 // The workspace summary card is open by default in the product, and it paints
 // over the transcript for the frames before the header is measured. That flash
 // is what a screenshot catches, so the demo starts with the card put away.
-localStorage.setItem("opensession-workspace-summary-open", "false");
+localStorage.setItem("opensession-workspace-summary-open", sessionsShot ? "true" : "false");
 localStorage.setItem("opensession-panel-tab", "workflows");
 localStorage.setItem("opensession-sidebar-collapsed", "0");
 localStorage.setItem("opensession-sidebar-w", "300");
@@ -884,11 +1024,16 @@ localStorage.setItem(
 // cannot see past a query string, so the tile silently came back broken the
 // day the `?v=` was added. Anything ending in the file name still matches.
 const repoMarkObserver = new MutationObserver(() => {
+	if (sessionsShot) {
+		for (const label of document.querySelectorAll("span")) {
+			if (label.textContent?.trim() === "Open Session") label.textContent = "Tella";
+		}
+	}
 	for (const image of document.querySelectorAll<HTMLImageElement>(
-		'img[src*="/repo-icon/opensession.png"], img[src*="/mac-app-icon.png"]',
+		`img[src*="/repo-icon/${demoRepo}.png"], img[src*="/mac-app-icon.png"]`,
 	)) {
-		if (image.src !== new URL(openSessionMark, location.href).href) {
-			image.src = openSessionMark;
+		if (image.src !== new URL(organizationMark, location.href).href) {
+			image.src = organizationMark;
 		}
 	}
 });

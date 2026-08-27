@@ -190,10 +190,15 @@ function isRenderlessUserEntry(entry: TranscriptEntry): boolean {
 // trailing window came out as 1 block instead of 24.
 const TRAILING_MOUNTED_BLOCKS = 24;
 
-// How many outline ranges one top approach asks for. Each batch prepends real
-// content and grows the scrollable area upward; the next approach (after the
-// reader climbs through it) asks for more.
-const TOP_APPROACH_BATCH = 10;
+// How much one top approach asks for, as a budget of MISSING ENTRIES rather
+// than a count of ranges. Ranges are whole conversation turns and average ~100
+// entries each on tool-heavy sessions, so the old 10-ranges-per-tick batch
+// fetched on the order of a thousand full payloads every 900ms while the
+// reader sat pinned at the top - each batch paying a full merge, regroup and
+// prepend for content far beyond the viewport. One server page per tick keeps
+// upward travel continuous while each prepend stays cheap; the next approach
+// (after the reader climbs through it) asks for more.
+const TOP_APPROACH_ENTRY_BUDGET = 200;
 
 function renderBlockEntries(block: RenderBlock): TranscriptEntry[] {
 	if (block.kind === "turn") return block.items;
@@ -743,24 +748,25 @@ function IndexedTranscriptBlocks(props: Props) {
 			: timeline.length - 1;
 		if (head === -1) head = timeline.length - 1;
 		const wanted: TranscriptIndexedRange[] = [];
-		for (let i = head; i >= 0 && wanted.length < TOP_APPROACH_BATCH; i--) {
+		let missingTotal = 0;
+		for (let i = head; i >= 0 && missingTotal < TOP_APPROACH_ENTRY_BUDGET; i--) {
 			const item = timeline[i];
 			if (!item) break;
 			for (const range of indexedItemRanges(item)) {
-				if (range.entryIds.some((id) => !payloadById.has(id))) wanted.push(range);
+				let missing = 0;
+				for (const id of range.entryIds) if (!payloadById.has(id)) missing++;
+				if (missing > 0) {
+					wanted.push(range);
+					missingTotal += missing;
+				}
 			}
 		}
 		if (wanted.length) onLoad(wanted.reverse());
 	};
-	// SessionViewer enables range demand one frame after positioning the complete
-	// index. The first top check can happen before that gate opens, so replay it
-	// when the generation advances instead of waiting for a scroll event that a
-	// short opening page may not be able to produce.
-	const retryTopApproach = useEffectEvent(() => handleTopApproach());
-	useEffect(() => {
-		if (props.transcriptRangeRetryGeneration === undefined) return;
-		retryTopApproach();
-	}, [props.transcriptRangeRetryGeneration]);
+	// VirtualTranscriptList re-evaluates generation changes through its own
+	// viewport-proximity gate. Calling handleTopApproach directly here chained
+	// every completed response into another request even after the reader left
+	// the top, eventually hydrating most of a large transcript in the background.
 	const hydrationOutline = timeline.map((item, index) => ({
 		key: indexedItemKey(item, index),
 		ranges: indexedItemRanges(item),

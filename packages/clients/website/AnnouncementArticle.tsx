@@ -1,4 +1,5 @@
 import collaborationAsset from "./announcement-collaboration.webp";
+import sessionsAsset from "./announcement-sessions.webp";
 import automationsAsset from "./announcement-automations.webp";
 import deskAsset from "./announcement-desk.webp";
 import walkthroughsAsset from "./announcement-walkthroughs.webp";
@@ -7,6 +8,7 @@ import { ProductDemo } from "./ProductDemo";
 
 const featureShots = {
 	collaboration: assetUrl(collaborationAsset),
+	sessions: assetUrl(sessionsAsset),
 	automations: assetUrl(automationsAsset),
 	desk: assetUrl(deskAsset),
 	walkthroughs: assetUrl(walkthroughsAsset),
@@ -125,6 +127,11 @@ export function AnnouncementArticle({
 				tests, and open a PR. Ask sessions are read-only and work great for
 				research, planning, or codebase Q&amp;A.
 			</p>
+
+			<AnnouncementFeatureShot
+				feature="sessions"
+				alt="A Tella code session comparing waveform treatments, with project work in the sidebar and a pull request ready to merge."
+			/>
 
 			<p>
 				Sessions feature throughout Open Session. You can trigger new sessions

@@ -21,7 +21,9 @@ SERVICE_UID="${OPENSESSION_SERVICE_UID:-$(id -u "$SERVICE_USER")}"
 SERVICE_GROUP="${OPENSESSION_SERVICE_GROUP:-$(id -gn "$SERVICE_USER")}"
 SERVICE_HOME_DIR="${OPENSESSION_SERVICE_HOME_DIR:-$(getent passwd "$SERVICE_USER" | cut -d: -f6)}"
 TARGET_SHA="${1:-origin/main}"
-MAX_DRAIN_WAIT="${MAX_DRAIN_WAIT:-480}"   # wait up to 8 min for idle before forcing the restart
+MAX_DRAIN_WAIT="${MAX_DRAIN_WAIT:-0}"     # optional pre-drain; graceful service shutdown owns the default 10s drain
+DEPLOY_LOCK_WAIT_SECS="${OPENSESSION_DEPLOY_LOCK_WAIT_SECS:-900}"
+case "$DEPLOY_LOCK_WAIT_SECS" in (''|*[!0-9]*) DEPLOY_LOCK_WAIT_SECS=900 ;; esac
 
 case "$SERVICE_HOME_DIR" in
   ""|"/")
@@ -85,8 +87,8 @@ executor_ready() {
 run_as_service_user mkdir -p "$DEPLOY_STATE"
 run_as_service_user touch "$DEPLOY_STATE/.lock"
 exec 9<>"$DEPLOY_STATE/.lock"
-if ! flock -n 9; then
-  echo "[deploy] ERROR: another deploy or rollback is in flight" >&2
+if ! flock -w "$DEPLOY_LOCK_WAIT_SECS" 9; then
+  echo "[deploy] ERROR: timed out after ${DEPLOY_LOCK_WAIT_SECS}s waiting for another deploy or rollback" >&2
   exit 1
 fi
 
@@ -279,7 +281,7 @@ if ! cmp -s "$SESSION_KERNEL_CAPACITY_SOURCE" "$SESSION_KERNEL_CAPACITY_PATH"; t
   RESTART_GATEWAY=1
 fi
 
-if [ "$RESTART_GATEWAY" = "1" ]; then
+if [ "$RESTART_GATEWAY" = "1" ] && [ "$MAX_DRAIN_WAIT" -gt 0 ]; then
   # Drain before replacing the executor. The old gateway must not spend the
   # drain window talking to a newer, potentially incompatible launcher.
   echo "[deploy] waiting for idle (max ${MAX_DRAIN_WAIT}s)"

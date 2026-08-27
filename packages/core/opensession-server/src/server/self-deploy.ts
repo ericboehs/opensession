@@ -79,6 +79,8 @@ export function markerAgeMs(markerContent: string, nowMs: number = Date.now()): 
 	return nowMs - Number(trimmed) * 1000;
 }
 
+export const WATCHDOG_WINDOW_MS = 15 * 60_000;
+
 export interface DeployState {
 	pin: string | null;
 	markerAgeMs: number | null;
@@ -153,9 +155,16 @@ export function formatDeployStatus(state: DeployState, stateDir: string = deploy
 				(state.frontendResult.message ? ` — ${state.frontendResult.message}` : ""),
 		);
 	}
-	if (state.markerAgeMs !== null && state.markerAgeMs >= 0) {
+	if (
+		state.markerAgeMs !== null &&
+		state.markerAgeMs >= 0 &&
+		state.markerAgeMs <= WATCHDOG_WINDOW_MS
+	) {
 		const mins = Math.round(state.markerAgeMs / 60000);
 		lines.push(`Watchdog window: OPEN (last deploy restart ~${mins} min ago; auto-rollback armed for 15 min)`);
+	} else if (state.markerAgeMs !== null && state.markerAgeMs > WATCHDOG_WINDOW_MS) {
+		const mins = Math.round(state.markerAgeMs / 60000);
+		lines.push(`Watchdog window: closed (last deploy restart ~${mins} min ago; 15 min rollback window expired)`);
 	} else {
 		lines.push("Watchdog window: closed (no recent self-deploy restart)");
 	}
@@ -352,6 +361,13 @@ async function launchDeployUnit(unit: string, targetSha: string): Promise<void> 
 	}
 }
 
+function nextDeployUnitName(now: number = Date.now()): string {
+	const previous = Number(g.__opensessionLastDeployUnitId || 0);
+	const id = Math.max(now, previous + 1);
+	g.__opensessionLastDeployUnitId = id;
+	return `opensession-self-deploy-${id}`;
+}
+
 export interface SelfDeployToolContext {
 	/** Who asked — recorded in the launch acknowledgement only. */
 	user?: string;
@@ -361,7 +377,7 @@ export function createSelfDeployMcpServer(ctx: SelfDeployToolContext) {
 	const tools = [
 		tool(
 			"deploy_self",
-			"Deploy THIS Open Session instance to an immutable git release. Deployment may be autonomous, but it is shared across sessions: check deploy_status, batch a burst of commits, and deploy the newest fast-forward target once. A strictly frontend-only diff is bundled in the prepared target release, atomically promoted, and announced to clients without restarting any service. Any server, protocol, dependency, or other runtime change automatically uses the standard health-gated gateway/kernel/executor restart path. /api/rebuild-frontend only rebuilds the already pinned source and is not a promotion path. This tool DOES NOT install changed root-owned artifacts. If the target changes the live deploy controllers, opensession*.service, credential installers, the fixed run-host helper/installer, or root-deploy-managed systemd units/drop-ins, use the documented full root deploy instead. Stale or parallel targets are refused; the shared WIP checkout is only a git object source and is never changed.",
+			"Deploy THIS Open Session instance to an immutable git release. Deployment may be autonomous and is shared across sessions. Concurrent standard deploy requests queue and coalesce to the newest fast-forward target; requests already covered by that release become successful no-ops. A strictly frontend-only diff is bundled in the prepared target release, atomically promoted, and announced to clients without restarting any service. Any server, protocol, dependency, or other runtime change automatically uses the standard health-gated gateway/kernel/executor restart path. /api/rebuild-frontend only rebuilds the already pinned source and is not a promotion path. This tool DOES NOT install changed root-owned artifacts. If the target changes the live deploy controllers, opensession*.service, credential installers, the fixed run-host helper/installer, or root-deploy-managed systemd units/drop-ins, use the documented full root deploy instead. Diverged targets are refused; the shared WIP checkout is only a git object source and is never changed.",
 			{
 				sha: z
 					.string()
@@ -411,6 +427,9 @@ export function createSelfDeployMcpServer(ctx: SelfDeployToolContext) {
 					if (existsSync(runtime)) {
 						const current = await git(runtime, ["rev-parse", "HEAD"]);
 						if (current.code === 0) currentSha = current.out;
+						if (currentSha === targetSha) {
+							return text(`Already deployed: backend is at ${targetSha.slice(0, 10)}. No service restart was needed.`);
+						}
 						if (currentSha && currentSha !== targetSha) {
 							const advance = await git(checkout, [
 								"merge-base",
@@ -419,8 +438,19 @@ export function createSelfDeployMcpServer(ctx: SelfDeployToolContext) {
 								targetSha,
 							]);
 							if (advance.code !== 0) {
+								const alreadyCovered = await git(checkout, [
+									"merge-base",
+									"--is-ancestor",
+									targetSha,
+									currentSha,
+								]);
+								if (alreadyCovered.code === 0) {
+									return text(
+										`Deploy request ${targetSha.slice(0, 10)} was already covered by newer backend ${currentSha.slice(0, 10)}. No service restart was needed.`,
+									);
+								}
 								return text(
-									`Refusing stale or parallel release ${targetSha.slice(0, 10)}: it does not advance current ${currentSha.slice(0, 10)}. Use the explicit rollback path for rollback, or the root deploy for an operator-selected history line.`,
+									`Refusing diverged release ${targetSha.slice(0, 10)}: it neither advances nor is covered by current ${currentSha.slice(0, 10)}. Use the explicit rollback path for rollback, or the root deploy for an operator-selected history line.`,
 								);
 							}
 						}
@@ -439,7 +469,7 @@ export function createSelfDeployMcpServer(ctx: SelfDeployToolContext) {
 							);
 						}
 					}
-					const unit = `opensession-self-deploy-${Date.now()}`;
+					const unit = nextDeployUnitName();
 					await launchDeployUnit(unit, targetSha);
 					return text(
 						`Deploy launched${ctx.user ? ` by ${ctx.user}` : ""}: unit ${unit} → immutable release ${targetSha.slice(0, 10)}.\n` +
@@ -453,7 +483,7 @@ export function createSelfDeployMcpServer(ctx: SelfDeployToolContext) {
 		),
 		tool(
 			"deploy_status",
-			"Read the backend and frontend release pins, the most recent standard deploy/frontend-promotion results, and whether the watchdog auto-rollback window is open. Read-only.",
+			"Read the backend and frontend release pins, the most recent standard deploy/frontend-promotion results, and whether the 15-minute watchdog auto-rollback window is still active. The window does not delay or block later deploys. Read-only.",
 			{},
 			async () => {
 				try {

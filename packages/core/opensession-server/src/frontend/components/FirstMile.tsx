@@ -566,7 +566,11 @@ export function FirstMile({ onDone }: { onDone: () => Promise<void> }) {
 	const progressRef = useRef<HTMLElement>(null);
 	const panelRef = useRef<HTMLElement>(null);
 	const panelBodyRef = useRef<HTMLDivElement>(null);
+	const panelHeaderRef = useRef<HTMLElement>(null);
+	const panelScrollRef = useRef<HTMLDivElement>(null);
+	const panelScrollContentRef = useRef<HTMLDivElement>(null);
 	const panelFooterRef = useRef<HTMLElement>(null);
+	const panelResizeFrameRef = useRef(0);
 	const headingRef = useRef<HTMLHeadingElement>(null);
 	const reducedMotion = useReducedMotion();
 	const steps = STEPS;
@@ -588,12 +592,16 @@ export function FirstMile({ onDone }: { onDone: () => Promise<void> }) {
 
 	useEffect(() => {
 		const releaseSize = () => {
+			window.cancelAnimationFrame(panelResizeFrameRef.current);
 			setPanelSize(null);
 			setContentVisible(true);
 			setNavigationVisible(true);
 		};
 		window.addEventListener("resize", releaseSize);
-		return () => window.removeEventListener("resize", releaseSize);
+		return () => {
+			window.cancelAnimationFrame(panelResizeFrameRef.current);
+			window.removeEventListener("resize", releaseSize);
+		};
 	}, []);
 
 	useEffect(() => {
@@ -682,6 +690,72 @@ export function FirstMile({ onDone }: { onDone: () => Promise<void> }) {
 		}, duration.large * 1000);
 		return () => window.clearTimeout(timer);
 	}, [panelSize?.phase]);
+
+	function resizePanelForContentChange() {
+		const panel = panelRef.current;
+		const root = rootRef.current;
+		const progress = progressRef.current;
+		const header = panelHeaderRef.current;
+		const scroll = panelScrollRef.current;
+		const scrollContent = panelScrollContentRef.current;
+		const footer = panelFooterRef.current;
+		if (
+			!panel ||
+			!root ||
+			!progress ||
+			!header ||
+			!scroll ||
+			!scrollContent ||
+			!footer ||
+			window.matchMedia(PHONE_QUERY).matches ||
+			crossfade ||
+			panelSize?.phase === "measuring" ||
+			panelSize?.phase === "animating"
+		)
+			return;
+
+		const panelRect = panel.getBoundingClientRect();
+		const rootStyle = window.getComputedStyle(root);
+		const maxHeight =
+			root.clientHeight -
+			parseFloat(rootStyle.paddingTop) -
+			parseFloat(rootStyle.paddingBottom) -
+			progress.getBoundingClientRect().height -
+			(parseFloat(rootStyle.rowGap) || 0);
+		const footerHeight = footer.getBoundingClientRect().height;
+		setPanelSize({
+			phase: "settled",
+			fromStep: step.id,
+			width: panelRect.width,
+			height: panelRect.height,
+			targetWidth: panelRect.width,
+			maxHeight,
+			footerHeight,
+		});
+		window.cancelAnimationFrame(panelResizeFrameRef.current);
+		panelResizeFrameRef.current = window.requestAnimationFrame(() => {
+			const scrollStyle = window.getComputedStyle(scroll);
+			const contentHeight =
+				parseFloat(scrollStyle.paddingTop) +
+				scrollContent.getBoundingClientRect().height +
+				parseFloat(scrollStyle.paddingBottom);
+			const targetHeight = Math.min(
+				maxHeight,
+				Math.ceil(
+					header.getBoundingClientRect().height + contentHeight + footerHeight,
+				),
+			);
+			setPanelSize((current) =>
+				current?.phase === "settled" && current.fromStep === step.id
+					? {
+							...current,
+							phase: reducedMotion ? "settled" : "animating",
+							height: targetHeight,
+						}
+					: current,
+			);
+		});
+	}
 
 	function goTo(next: number) {
 		const nextIndex = Math.min(Math.max(next, 0), steps.length - 1);
@@ -926,7 +1000,10 @@ export function FirstMile({ onDone }: { onDone: () => Promise<void> }) {
 								!contentVisible && utilityClassName("opacity-0"),
 							)}
 						>
-						<header {...mergeStylexProps("phone:px-5 phone:pt-6", sx.shrink0, sx.px10, sx.pb2, sx.pt9, sx.textCenter)}>
+						<header
+							ref={panelHeaderRef}
+							{...mergeStylexProps("phone:px-5 phone:pt-6", sx.shrink0, sx.px10, sx.pb2, sx.pt9, sx.textCenter)}
+						>
 							{step.id === "welcome" && (
 								<img
 									src={`${BASE_PATH}/mac-app-icon.png`}
@@ -944,6 +1021,7 @@ export function FirstMile({ onDone }: { onDone: () => Promise<void> }) {
 						</header>
 
 						<div
+							ref={panelScrollRef}
 							className={cn(
 								utilityClassName("min-h-0"),
 								step.id === "welcome"
@@ -953,6 +1031,7 @@ export function FirstMile({ onDone }: { onDone: () => Promise<void> }) {
 						>
 							{step.id !== "welcome" && (
 								<div
+									ref={panelScrollContentRef}
 									className={cn(
 									utilityClassName("mx-auto w-full [&_[data-setting-title]]:text-dialog-title [&_[data-setting-title]]:phone:text-body [&_[data-settings-group-label]]:text-body [&_[data-settings-group-label]]:text-fg [&_[data-settings-hint]]:leading-[1.5] [&_[data-settings-hint]]:text-faint [&_[data-onboarding-caption]]:leading-[1.5]"),
 									step.id === "ready" ? utilityClassName("max-w-[1160px]") : utilityClassName("max-w-[780px]"),
@@ -967,6 +1046,7 @@ export function FirstMile({ onDone }: { onDone: () => Promise<void> }) {
 											onSaved={setup.applyGithub}
 											onboarding
 											onPersonalSignIn={openPersonalGithub}
+											onContentSizeChange={resizePanelForContentChange}
 										/>
 									)}
 									{step.id === "github-account" && (

@@ -87,6 +87,40 @@ describe("transcript client state", () => {
 		]);
 	});
 
+	test("decorations interleave by timestamp around the seq spine", () => {
+		const at = (h: number) => `2026-07-23T${String(h).padStart(2, "0")}:00:00.000Z`;
+		const spine = [
+			entry("s1", 1, 1, "s1", at(10)),
+			entry("s2", 2, 2, "s2", at(12)),
+			entry("s3", 3, 3, "s3", at(14)),
+		];
+		const decoration = (id: string, timestamp: string): TranscriptEntry => ({
+			id,
+			type: "system",
+			content: id,
+			timestamp,
+		});
+		const ordered = orderTranscriptEntries([
+			decoration("d-tail", at(15)),
+			spine[2]!,
+			decoration("d-mid-b", at(12)),
+			spine[0]!,
+			decoration("d-head", at(9)),
+			spine[1]!,
+			// Same timestamp as d-mid-b but later in the input: stays after it.
+			decoration("d-mid-c", at(12)),
+		]);
+		expect(ordered.map((e) => e.id)).toEqual([
+			"d-head",
+			"s1",
+			"s2",
+			"d-mid-b",
+			"d-mid-c",
+			"s3",
+			"d-tail",
+		]);
+	});
+
 	test("normalizes legacy Desk voice actions into linked tool entries", () => {
 		const timestamp = "2026-08-07T12:00:00.000Z";
 		const legacy: TranscriptEntry[] = [

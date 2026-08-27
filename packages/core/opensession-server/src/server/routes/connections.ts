@@ -63,7 +63,7 @@ export async function bootstrapUserAuthOnConnect(
 	login: string,
 	name: string | undefined,
 ): Promise<{ token: string; cookie: string; name: string } | { error: string }> {
-	const { rawTeam } = await import("./setup-team");
+	const { isDisposableLocalMember, rawTeam } = await import("./setup-team");
 	const { rawConfig, persistRawConfig, withConfigMutationLock } = await import(
 		"../config-mutation"
 	);
@@ -96,6 +96,12 @@ export async function bootstrapUserAuthOnConnect(
 						"A different GitHub account connected before setup finished; reconnect to enable sign-in",
 				};
 			const team = rawTeam(config);
+			// The first-run local identity is only a placeholder until a verified
+			// GitHub account can replace it. Remove only the untouched one; a renamed
+			// or enriched local member is real roster data and survives the flip.
+			for (let index = team.length - 1; index >= 0; index--) {
+				if (isDisposableLocalMember(team[index]!)) team.splice(index, 1);
+			}
 			// (b) roster-upsert the login as admin, matched by github login.
 			const existing = team.find(
 				(m) => typeof m.github === "string" && m.github.toLowerCase() === key,

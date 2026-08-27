@@ -107,11 +107,8 @@ class TranscriptVirtualizer extends React.Component<Omit<Props, "enabled">, Adap
 	private navigationContainer: HTMLDivElement | null = null;
 	private navigationItems: VirtualTranscriptItem[] | null = null;
 	private visibleTimer: number | undefined;
-	private prependAnchor: {
-		growthKey: string;
-		growthVersion?: number;
-		height: number;
-	} | null = null;
+	private containerFor: HTMLDivElement | null = null;
+	private container: HTMLDivElement | null = null;
 	private topApproachContainer: HTMLDivElement | null = null;
 	private topApproachCallback: (() => void) | undefined;
 	private topApproachGeneration: number | undefined;
@@ -139,15 +136,47 @@ class TranscriptVirtualizer extends React.Component<Omit<Props, "enabled">, Adap
 		this.mounted = true;
 		this.mountCleanup = this.virtualizer._didMount();
 		this.virtualizer._willUpdate();
-		this.syncPrependGrowth();
 		this.syncTopApproach();
 		this.syncNavigation();
 		this.scheduleVisibleItems();
 	}
 
-	componentDidUpdate() {
+	/** Pre-mutation scroller height, captured only for commits that prepend
+	 * history above the reader (growth key handoff or a partial head range
+	 * completing). Detecting those from props alone keeps ordinary commits free
+	 * of forced layout: the unconditional scrollHeight read that used to live in
+	 * every componentDidUpdate was the largest non-idle self-time entry in
+	 * history-scroll profiles. */
+	getSnapshotBeforeUpdate(prevProps: Omit<Props, "enabled">): number | null {
+		const growthKey = this.props.topGrowthKey ?? this.props.items[0]?.key ?? "";
+		if (!growthKey) return null;
+		const previousKey = prevProps.topGrowthKey ?? prevProps.items[0]?.key ?? "";
+		const prependedRange =
+			growthKey !== previousKey &&
+			this.props.items.some((item) => item.key === previousKey);
+		const completedPartialRange =
+			growthKey === previousKey &&
+			prevProps.topGrowthVersion !== undefined &&
+			this.props.topGrowthVersion !== prevProps.topGrowthVersion;
+		if (!prependedRange && !completedPartialRange) return null;
+		return this.scrollContainer()?.scrollHeight ?? null;
+	}
+
+	componentDidUpdate(
+		_prevProps: Omit<Props, "enabled">,
+		_prevState: AdapterState,
+		snapshot: number | null,
+	) {
 		this.virtualizer._willUpdate();
-		this.syncPrependGrowth();
+		if (snapshot !== null) {
+			// Height gained by this commit's own mutation goes back on scrollTop
+			// before paint, holding the reader's place while history grows above.
+			const container = this.scrollContainer();
+			if (container) {
+				const delta = container.scrollHeight - snapshot;
+				if (delta > 0) container.scrollTop += delta;
+			}
+		}
 		this.syncTopApproach();
 		this.syncNavigation();
 		this.scheduleVisibleItems();
@@ -192,8 +221,7 @@ class TranscriptVirtualizer extends React.Component<Omit<Props, "enabled">, Adap
 	): VirtualizerOptions<HTMLDivElement, HTMLDivElement> {
 		return {
 			count: props.items.length,
-			getScrollElement: () =>
-				this.root?.closest<HTMLDivElement>(".viewer-messages") ?? null,
+			getScrollElement: () => this.scrollContainer(),
 			estimateSize: (index) => {
 				const item = props.items[index];
 				if (!item) return 96;
@@ -218,6 +246,17 @@ class TranscriptVirtualizer extends React.Component<Omit<Props, "enabled">, Adap
 	private setRoot = (node: HTMLDivElement | null) => {
 		this.root = node;
 	};
+
+	/** The nearest message scroller, cached per root node: `closest` walks the
+	 * whole ancestor chain and used to run several times on every commit. */
+	private scrollContainer(): HTMLDivElement | null {
+		if (this.root !== this.containerFor) {
+			this.containerFor = this.root;
+			this.container =
+				this.root?.closest<HTMLDivElement>(".viewer-messages") ?? null;
+		}
+		return this.container;
+	}
 
 	private observeRowNode(key: string, node: HTMLElement) {
 		node.dataset.transcriptKey = key;
@@ -257,7 +296,7 @@ class TranscriptVirtualizer extends React.Component<Omit<Props, "enabled">, Adap
 	}
 
 	private syncNavigation() {
-		const container = this.root?.closest<HTMLDivElement>(".viewer-messages") ?? null;
+		const container = this.scrollContainer();
 		if (
 			container === this.navigationContainer &&
 			this.props.items === this.navigationItems &&
@@ -283,29 +322,6 @@ class TranscriptVirtualizer extends React.Component<Omit<Props, "enabled">, Adap
 			},
 		};
 		this.navigationCleanup = registerTranscriptVirtualNavigation(container, navigation);
-	}
-
-	private syncPrependGrowth() {
-		const container = this.root?.closest<HTMLDivElement>(".viewer-messages") ?? null;
-		if (!container) return;
-		const previous = this.prependAnchor;
-		const growthKey = this.props.topGrowthKey ?? this.props.items[0]?.key ?? "";
-		this.prependAnchor = {
-			growthKey,
-			growthVersion: this.props.topGrowthVersion,
-			height: container.scrollHeight,
-		};
-		if (!previous || !growthKey) return;
-		const prependedRange =
-			growthKey !== previous.growthKey &&
-			this.props.items.some((item) => item.key === previous.growthKey);
-		const completedPartialRange =
-			growthKey === previous.growthKey &&
-			previous.growthVersion !== undefined &&
-			this.props.topGrowthVersion !== previous.growthVersion;
-		if (!prependedRange && !completedPartialRange) return;
-		const delta = container.scrollHeight - previous.height;
-		if (delta > 0) container.scrollTop += delta;
 	}
 
 	private evaluateTopApproach = () => {
@@ -336,7 +352,7 @@ class TranscriptVirtualizer extends React.Component<Omit<Props, "enabled">, Adap
 	}
 
 	private syncTopApproach() {
-		const container = this.root?.closest<HTMLDivElement>(".viewer-messages") ?? null;
+		const container = this.scrollContainer();
 		const callback = this.props.onTopApproach;
 		const firstKey = this.props.items[0]?.key;
 		if (
@@ -359,23 +375,29 @@ class TranscriptVirtualizer extends React.Component<Omit<Props, "enabled">, Adap
 		this.evaluateTopApproach();
 	}
 
+	// Geometry reads and the near-visible filter run inside the debounce, not
+	// at schedule time: scheduling happens on every commit, and reading
+	// scrollTop/clientHeight there forced a layout per commit for a result the
+	// timeout usually threw away. Firing late also reports the freshest window.
 	private scheduleVisibleItems() {
 		if (this.visibleTimer !== undefined) window.clearTimeout(this.visibleTimer);
-		const { onVisibleItems, items } = this.props;
-		const virtualItems = this.virtualizer.getVirtualItems();
-		if (!onVisibleItems || virtualItems.length === 0) return;
-		const container = this.root?.closest<HTMLDivElement>(".viewer-messages") ?? null;
-		const top = container?.scrollTop ?? 0;
-		const viewport = container?.clientHeight ?? 0;
-		const bottom = top + viewport;
-		const demand = virtualItems.filter(
-			(item) =>
-				!container ||
-				(item.end >= top - viewport && item.start <= bottom + viewport),
-		);
+		if (!this.props.onVisibleItems) return;
 		this.visibleTimer = window.setTimeout(() => {
+			this.visibleTimer = undefined;
+			const { onVisibleItems, items } = this.props;
+			const virtualItems = this.virtualizer.getVirtualItems();
+			if (!onVisibleItems || virtualItems.length === 0) return;
+			const container = this.scrollContainer();
+			const top = container?.scrollTop ?? 0;
+			const viewport = container?.clientHeight ?? 0;
+			const bottom = top + viewport;
 			onVisibleItems(
-				demand
+				virtualItems
+					.filter(
+						(item) =>
+							!container ||
+							(item.end >= top - viewport && item.start <= bottom + viewport),
+					)
 					.map((virtualItem) => items[virtualItem.index])
 					.filter((item): item is VirtualTranscriptItem => Boolean(item)),
 			);

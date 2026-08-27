@@ -30,7 +30,7 @@ import { Button } from "../../ui/button";
 import { cn } from "../../ui/cn";
 import { CopyCheck, useCopy } from "../../ui/copy";
 import { Input } from "../../ui/input";
-import { Radio, RadioGroup } from "../../ui/radio";
+import { Segmented, SegmentedOption } from "../../ui/segmented";
 import {
 	SettingCard,
 	SettingCardSkeleton,
@@ -50,8 +50,8 @@ import {
 import { ResponsiveDialog } from "../../ui/sheet";
 import { InlineAlert, LoadingState } from "../../ui/state";
 import { toast } from "../../ui/toast";
-import { markTileClass, markTileGradient, markTileInk, markTileShadow, type MarkTone } from "../../lib/mark-tile";
-import { IconCopy, IconGlobe, IconServer, IconX } from "../icons";
+import { BrandMark } from "../BrandTile";
+import { IconCopy, IconX } from "../icons";
 import { SetupRestart } from "../SetupRestart";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../../styles/typography.stylex";
@@ -291,6 +291,38 @@ const sx = stylex.create({
 			paddingTop: "calc(4px * 3.5)"
 	},
 	/** A step with its own controls splits into prose + controls on desktop. */
+	firstPt0: {
+		":first-child": {
+			"paddingTop": "0"
+		}
+	},
+	lastPb0: {
+		":last-child": {
+			"paddingBottom": "0"
+		}
+	},
+	py4: {
+			paddingBlock: "16px"
+	},
+	/** The connection-method header lays its prose beside the control on a
+	 *  desktop width, and stacks them on a phone. */
+	desktopRow: {
+		"@media (min-width: 721px)": {
+			"flexDirection": "row",
+			"alignItems": "center",
+			"justifyContent": "space-between"
+		}
+	},
+	phoneFlex1: {
+		"@media (max-width: 720px)": {
+			"flex": "1"
+		}
+	},
+	phoneJustifyCenter: {
+		"@media (max-width: 720px)": {
+			"justifyContent": "center"
+		}
+	},
 	desktopStepColumns: {
 		"@media (min-width: 721px)": {
 			"display": "grid",
@@ -310,32 +342,6 @@ const EMPTY_DRAFTS: Record<IngressExposure, string> = {
 	cloudflare: "",
 	custom: "",
 };
-
-/** Each method's plate, so a choice reads the same in the list and in the
- *  panel it opens — the leading mark is what ties the two halves together in
- *  the server setup this mirrors. */
-const METHOD_MARKS: Record<IngressExposure, { tone: MarkTone; icon: typeof IconGlobe }> = {
-	cloudflare: { tone: "sky", icon: IconGlobe },
-	custom: { tone: "orange", icon: IconServer },
-};
-
-function MethodMark({ method, size = 44 }: { method: IngressExposure; size?: number }) {
-	const { tone, icon: Icon } = METHOD_MARKS[method];
-	return (
-		<span
-			className={`${markTileClass(size)} plate-sheen`}
-			style={{
-				width: size,
-				height: size,
-				backgroundImage: markTileGradient(tone),
-				color: "#fff",
-				boxShadow: markTileShadow(markTileInk(tone)),
-			}}
-		>
-			<Icon size={Math.round(size * 0.5)} />
-		</span>
-	);
-}
 
 function CodeBlock({ children }: { children: string }) {
 	const { copied, copy } = useCopy();
@@ -376,7 +382,7 @@ function ConfigCodeBlock({ code }: { code: string }) {
 }
 
 function SetupSteps({ children }: { children: React.ReactNode }) {
-	return <ol {...mergeStylexProps("m-0", sx.grid, sx.listNone, sx.gap3, sx.p0, sx.textDim, typography.supporting)} >{children}</ol>;
+	return <ol {...mergeStylexProps(utilityClassName("m-0 list-none divide-y divide-line"), sx.grid, sx.p0, sx.textDim, typography.supporting)}>{children}</ol>;
 }
 
 function SetupStep({
@@ -391,7 +397,7 @@ function SetupStep({
 	controls?: React.ReactNode;
 }) {
 	return (
-		<li {...mergeStylexProps("grid-cols-[24px_minmax(0,1fr)]", sx.grid, sx.gap25)} >
+		<li {...mergeStylexProps("grid-cols-[24px_minmax(0,1fr)]", sx.grid, sx.gap25, sx.py4, sx.firstPt0, sx.lastPb0)}>
 			<span {...stylex.props(sx.flex, sx.size6, sx.itemsCenter, sx.justifyCenter, sx.roundedFull, sx.bgSurface, sx.fontSemibold, sx.textDim, typography.meta)}>
 				{number}
 			</span>
@@ -510,18 +516,21 @@ function PrivateAppSetup({
 						title="Authorize the DNS provider"
 						controls={
 							<>
-								<SettingCard>
-									<RadioGroup aria-label="Private domain DNS provider" value={provider} disabled={busy} onValueChange={(value) => onProviderChange(value as "cloudflare" | "vercel")}>
-										<label {...stylex.props(sx.flex, sx.minH11, sx.cursorPointer, sx.itemsCenter, sx.gap3, sx.px4, sx.py3)}>
-											<Radio value="cloudflare" />
-											<span {...stylex.props(sx.fontMedium, sx.textFg)}>Cloudflare DNS</span>
-										</label>
-										<label {...stylex.props(sx.flex, sx.minH11, sx.cursorPointer, sx.itemsCenter, sx.gap3, sx.borderT, sx.borderLine, sx.px4, sx.py3)}>
-											<Radio value="vercel" />
-											<span {...stylex.props(sx.fontMedium, sx.textFg)}>Vercel DNS</span>
-										</label>
-									</RadioGroup>
-								</SettingCard>
+								<Segmented
+									label="Private domain DNS provider"
+									value={provider}
+									onValueChange={(value) => onProviderChange(value as "cloudflare" | "vercel")}
+									className={utilityClassName("w-full")}
+								>
+									<SegmentedOption value="cloudflare" disabled={busy} className={utilityClassName("flex-1 justify-center phone:min-h-11")}>
+										<BrandMark name="cloudflare" size={16} className={utilityClassName("shrink-0")} />
+										Cloudflare
+									</SegmentedOption>
+									<SegmentedOption value="vercel" disabled={busy} className={utilityClassName("flex-1 justify-center phone:min-h-11")}>
+										<BrandMark name="vercel" size={15} className={utilityClassName("shrink-0")} />
+										Vercel
+									</SegmentedOption>
+								</Segmented>
 								<SettingsField className={mergeStylexOverrideClassName("", sx.mb0)}>
 									Certificate email
 									<Input type="email" value={email} placeholder={managedCredential && settings.app.domain.certificateEmailConfigured ? "Leave blank to keep the saved email" : "you@example.com"} disabled={busy} autoCapitalize="none" spellCheck={false} onChange={(event) => onEmailChange(event.target.value)} />
@@ -617,12 +626,14 @@ function PrivateAppSetup({
 export function IngressPanel({
 	onboarding = false,
 	embedded = false,
+	initialUrls,
 	onChanged,
 	onStatusChange,
 	setup: parentSetup,
 }: {
 	onboarding?: boolean;
 	embedded?: boolean;
+	initialUrls?: { app: string; callback: string };
 	onChanged?: () => void | Promise<void>;
 	onStatusChange?: (settings: PublicIngressSettings) => void;
 	setup?: SetupController;
@@ -790,6 +801,23 @@ export function IngressPanel({
 	const selectedMethod = INGRESS_METHODS.find((option) => option.value === method)!;
 	const selectedHealth = settings?.exposure === method ? settings.health : "not_configured";
 	const privateDomain = settings ? configuredAppDomain(settings) : "";
+	const domainUrl = settings?.app.publicBaseUrl || initialUrls?.app || "";
+	const callbackUrl = settings?.publicBaseUrl || initialUrls?.callback || "";
+	const pendingStatus = error
+		? { label: "Unavailable", dot: "var(--red)" }
+		: { label: "Checking", dot: "var(--text-faint)" };
+	const domainStatus = settings
+		? {
+				label: ingressHealthLabel(settings.app.domain.health),
+				dot: ingressHealthDot(settings.app.domain.health),
+			}
+		: pendingStatus;
+	const callbackStatus = settings
+		? {
+				label: ingressHealthLabel(settings.health),
+				dot: ingressHealthDot(settings.health),
+			}
+		: pendingStatus;
 
 	return (
 		<SettingsPanel className={onboarding ? utilityClassName("mx-auto max-w-[1120px]") : utilityClassName("relative")}>
@@ -801,38 +829,38 @@ export function IngressPanel({
 			)}
 
 			{error && !surface && <InlineAlert onDismiss={() => setError(null)}>{error}</InlineAlert>}
-			{!settings ? (
+			{!settings && !initialUrls ? (
 				<SettingCardSkeleton rows={3} label="Loading public ingress" />
 			) : (
 				<>
-					<SettingCard>
+					<SettingCard aria-busy={!settings}>
 						<SettingRow>
 							<SettingRowText>
 								<SettingRowTitle>Domain</SettingRowTitle>
-								<SettingRowDescription className={utilityClassName("selectable break-all font-mono")}>
-									{settings.app.publicBaseUrl || "No domain configured"}
+								<SettingRowDescription className={mergeStylexOverrideClassName("selectable", sx.breakAll, sx.fontMono)}>
+									{domainUrl || "No domain configured"}
 								</SettingRowDescription>
 							</SettingRowText>
-							<SettingRowControl className={utilityClassName("flex items-center gap-2")}>
-								<StatusChip label={ingressHealthLabel(settings.app.domain.health)} dot={ingressHealthDot(settings.app.domain.health)} />
-								<Button size="sm" className={utilityClassName("phone:min-h-11")} onClick={() => setSurface("domain")}>Configure</Button>
+							<SettingRowControl className={mergeStylexOverrideClassName("", sx.flex, sx.itemsCenter, sx.gap2)}>
+								<StatusChip {...domainStatus} />
+								<Button size="sm" className={utilityClassName("phone:min-h-11")} disabled={!settings} onClick={() => setSurface("domain")}>Configure</Button>
 							</SettingRowControl>
 						</SettingRow>
 						<SettingRow>
 							<SettingRowText>
 								<SettingRowTitle>Public callback</SettingRowTitle>
-								<SettingRowDescription className={utilityClassName("selectable break-all font-mono")}>
-									{settings.publicBaseUrl || "No public callback configured"}
+								<SettingRowDescription className={mergeStylexOverrideClassName("selectable", sx.breakAll, sx.fontMono)}>
+									{callbackUrl || "No public callback configured"}
 								</SettingRowDescription>
 							</SettingRowText>
-							<SettingRowControl className={utilityClassName("flex items-center gap-2")}>
-								<StatusChip label={ingressHealthLabel(settings.health)} dot={ingressHealthDot(settings.health)} />
-								<Button size="sm" className={utilityClassName("phone:min-h-11")} onClick={() => setSurface("callbacks")}>Configure</Button>
+							<SettingRowControl className={mergeStylexOverrideClassName("", sx.flex, sx.itemsCenter, sx.gap2)}>
+								<StatusChip {...callbackStatus} />
+								<Button size="sm" className={utilityClassName("phone:min-h-11")} disabled={!settings} onClick={() => setSurface("callbacks")}>Configure</Button>
 							</SettingRowControl>
 						</SettingRow>
 					</SettingCard>
 
-					<ResponsiveDialog
+					{settings && <ResponsiveDialog
 						open={surface !== null}
 						onClose={() => setSurface(null)}
 						phone={isPhone}
@@ -884,51 +912,27 @@ export function IngressPanel({
 								onSaveManual={() => void runPrivateApp("save", () => savePrivateAppDomain(appDomain), "Private app domain saved")}
 							/>
 					) : (
-					<div className={utilityClassName("grid items-start gap-4")}>
-						<SettingsForm className={utilityClassName("m-0 min-w-0 gap-4 p-6 phone:p-4")}>
-							<div className={utilityClassName("px-1")}>
-								<div className={utilityClassName("text-item-title font-semibold text-fg")}>Connection method</div>
-								<p className={utilityClassName("mt-1 mb-0 text-supporting leading-relaxed text-dim")}>Choose how external services reach Open Session.</p>
+					<div {...stylex.props(sx.grid, sx.contentStart, sx.gap4)}>
+						<SettingsForm className={cn(utilityClassName("m-0 min-w-0 gap-4 bg-raised p-6 phone:p-4"), mergeStylexOverrideClassName("", sx.desktopRow))}>
+							<div {...stylex.props(sx.px1)}>
+								<div {...mergeStylexProps("text-item-title", sx.fontSemibold, sx.textFg)}>Connection method</div>
+								<p {...mergeStylexProps("", sx.mt1, sx.mb0, sx.leadingRelaxed, sx.textDim, typography.supporting)}>Choose how external services reach Open Session.</p>
 							</div>
-							<RadioGroup
-								aria-label="Public callback method"
+							<Segmented
+								label="Public callback method"
 								value={method}
-								disabled={!!busy || !settings.canManage}
 								onValueChange={(next) => setMethod(next as IngressExposure)}
-								className={utilityClassName("grid grid-cols-2 gap-2.5 phone:grid-cols-1")}
+								className={utilityClassName("shrink-0 phone:flex phone:w-full")}
 							>
-								{INGRESS_METHODS.map((option) => (
-									<label
-										key={option.value}
-										className={cn(
-											utilityClassName("flex min-h-24 cursor-pointer items-center gap-3 rounded-xl bg-surface px-4 py-3 transition-[background-color] hover:bg-hover [&:has([data-checked])]:bg-pressed"),
-											onboarding && utilityClassName("hover:bg-hover"),
-										)}
-									>
-										<MethodMark method={option.value} />
-										<span className={utilityClassName("min-w-0 flex-1")}>
-											<span className={utilityClassName("block text-item-title font-medium text-fg")}>{option.label}</span>
-											<span className={utilityClassName("mt-1 block text-meta leading-snug text-dim")}>{option.description}</span>
-										</span>
-										<Radio
-											value={option.value}
-											className={cn(
-												utilityClassName("shrink-0"),
-												onboarding && utilityClassName("size-5 border-0 bg-fg/15 data-[checked]:bg-fg data-[checked]:hover:border-fg [&>span]:hidden"),
-											)}
-										/>
-									</label>
-								))}
-							</RadioGroup>
+								<SegmentedOption value="custom" disabled={!!busy || !settings.canManage} className={mergeStylexOverrideClassName("", sx.phoneFlex1, sx.phoneJustifyCenter)}>Caddy</SegmentedOption>
+								<SegmentedOption value="cloudflare" disabled={!!busy || !settings.canManage} className={mergeStylexOverrideClassName("", sx.phoneFlex1, sx.phoneJustifyCenter)}>Cloudflare</SegmentedOption>
+							</Segmented>
 						</SettingsForm>
 
 						<SettingsForm className={utilityClassName("m-0 min-w-0 gap-4 p-6 phone:p-4")}>
-							<div className={utilityClassName("flex items-center justify-between gap-4")}>
-								<div className={utilityClassName("flex min-w-0 items-center gap-3")}>
-									<MethodMark method={method} size={40} />
-									<div className={utilityClassName("text-item-title font-semibold text-fg")}>Set up {selectedMethod.label}</div>
-								</div>
-								<div className={utilityClassName("shrink-0")}>
+							<div {...stylex.props(sx.flex, sx.itemsCenter, sx.justifyBetween, sx.gap4)}>
+								<div {...mergeStylexProps("text-item-title", sx.minW0, sx.fontSemibold, sx.textFg)}>Set up {selectedMethod.label}</div>
+								<div {...stylex.props(sx.shrink0)}>
 									<StatusChip label={busy === "apply" ? "Setting up" : ingressHealthLabel(selectedHealth)} dot={busy === "apply" ? "var(--yellow)" : ingressHealthDot(selectedHealth)} />
 								</div>
 							</div>
@@ -983,25 +987,37 @@ export function IngressPanel({
 							{method === "custom" && (
 								<>
 									<SetupSteps>
-										<SetupStep number={1} title="Choose a separate public domain">
-											<SettingsField className={mergeStylexOverrideClassName("", sx.mb0)}>
-												Domain
-												<Input key={method} value={url} placeholder="ingress.example.com" disabled={!!busy} autoCapitalize="none" spellCheck={false} onChange={(event) => { customDraftTouched.current = true; setDrafts((current) => ({ ...current, custom: event.target.value })); }} />
-											</SettingsField>
+										<SetupStep
+											number={1}
+											title="Choose a separate public domain"
+											controls={
+												<SettingsField className={mergeStylexOverrideClassName("", sx.mb0)}>
+													Domain
+													<Input key={method} value={url} placeholder="ingress.example.com" disabled={!!busy} autoCapitalize="none" spellCheck={false} onChange={(event) => { customDraftTouched.current = true; setDrafts((current) => ({ ...current, custom: event.target.value })); }} />
+												</SettingsField>
+											}
+										>
 											<p className={utilityClassName("m-0")}>Do not use the private app hostname. HTTPS is added automatically.</p>
 										</SetupStep>
 										<SetupStep number={2} title="Open ports 80 and 443">
 											<p className={utilityClassName("m-0")}>Allow inbound TCP traffic from the public internet to ports 80 and 443 in the server firewall and your cloud security group. Caddy uses port 80 for certificate validation and serves HTTPS on port 443.</p>
 										</SetupStep>
-										<SetupStep number={3} title="Add DNS records at your provider">
+										<SetupStep
+											number={3}
+											title="Add DNS records at your provider"
+											controls={
+												<>
+													<SettingsField className={mergeStylexOverrideClassName("", sx.mb0)}>
+														Public IPv4 or IPv6 address
+														<Input value={publicAddress} placeholder="203.0.113.10" disabled={!!busy} autoCapitalize="none" spellCheck={false} onChange={(event) => { setPublicAddress(event.target.value); setError(null); }} />
+													</SettingsField>
+													{records.length ? records.map((record) => <CodeBlock key={record}>{record}</CodeBlock>) : (
+														<InlineAlert>Enter this server’s public address to generate the DNS record.</InlineAlert>
+													)}
+												</>
+											}
+										>
 											<p className={utilityClassName("m-0")}>Point the domain to this server’s public IP address, not its private or Tailscale address.</p>
-											<SettingsField className={mergeStylexOverrideClassName("", sx.mb0)}>
-												Public IPv4 or IPv6 address
-												<Input value={publicAddress} placeholder="203.0.113.10" disabled={!!busy} autoCapitalize="none" spellCheck={false} onChange={(event) => { setPublicAddress(event.target.value); setError(null); }} />
-											</SettingsField>
-											{records.length ? records.map((record) => <CodeBlock key={record}>{record}</CodeBlock>) : (
-												<InlineAlert>Enter this server’s public address to generate the DNS record.</InlineAlert>
-											)}
 										</SetupStep>
 										<SetupStep number={4} title="Configure Caddy">
 											<p className={utilityClassName("m-0")}>Open Session adds this dedicated site to /etc/caddy/Caddyfile, binds it to the public-facing network interface, and reloads Caddy. If DNS is still propagating, the status stays at Waiting for DNS and checks again automatically.</p>
@@ -1048,7 +1064,7 @@ export function IngressPanel({
 								</div>
 							</>
 						)}
-					</ResponsiveDialog>
+					</ResponsiveDialog>}
 					{!onboarding && !embedded && <SetupRestart setup={setup} />}
 				</>
 			)}

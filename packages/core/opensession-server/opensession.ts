@@ -1028,13 +1028,13 @@ if (!g.__opensessionBooted) {
 	// stopping point (bounded), then exit — instead of killing every run mid-turn.
 	// Anything still running after the drain window is picked up by the run
 	// journal on the next boot (resumeInterruptedRuns), so nothing is lost.
-	// 60s default: long enough for most in-flight turns to reach a natural
-	// stopping point, short enough for a snappy restart. Anything still running
+	// 10s default: enough for short preparation/finalization work to settle
+	// without making every busy deploy wait a full minute. Anything still running
 	// is resumed from the run journal on the next boot (and self-heals transient
-	// failures via the fallback graph), so a shorter drain costs a little redo
-	// work, not lost work. Must stay below the unit's TimeoutStopSec (80s), or
+	// failures via the fallback graph), so this bound costs a little redo work,
+	// not lost work. Must stay below the unit's TimeoutStopSec (80s), or
 	// systemd SIGKILLs the process mid-drain.
-	const DRAIN_TIMEOUT_MS = parseInt(process.env.SHUTDOWN_DRAIN_MS || "60000");
+	const DRAIN_TIMEOUT_MS = parseInt(process.env.SHUTDOWN_DRAIN_MS || "10000");
 	let shuttingDown = false;
 	const gracefulShutdown = async (signal: string) => {
 		if (shuttingDown) return;

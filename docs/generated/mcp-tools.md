@@ -383,13 +383,13 @@ Promote frontend-only releases without restart, or standard-deploy other source 
 
 `mcp__opensession-self-deploy__deploy_self` · input: `sha` (string), `confirm` (boolean, required)
 
-Deploy THIS Open Session instance to an immutable git release. Deployment may be autonomous, but it is shared across sessions: check deploy_status, batch a burst of commits, and deploy the newest fast-forward target once. A strictly frontend-only diff is bundled in the prepared target release, atomically promoted, and announced to clients without restarting any service. Any server, protocol, dependency, or other runtime change automatically uses the standard health-gated gateway/kernel/executor restart path. /api/rebuild-frontend only rebuilds the already pinned source and is not a promotion path. This tool DOES NOT install changed root-owned artifacts. If the target changes the live deploy controllers, opensession*.service, credential installers, the fixed run-host helper/installer, or root-deploy-managed systemd units/drop-ins, use the documented full root deploy instead. Stale or parallel targets are refused; the shared WIP checkout is only a git object source and is never changed.
+Deploy THIS Open Session instance to an immutable git release. Deployment may be autonomous and is shared across sessions. Concurrent standard deploy requests queue and coalesce to the newest fast-forward target; requests already covered by that release become successful no-ops. A strictly frontend-only diff is bundled in the prepared target release, atomically promoted, and announced to clients without restarting any service. Any server, protocol, dependency, or other runtime change automatically uses the standard health-gated gateway/kernel/executor restart path. /api/rebuild-frontend only rebuilds the already pinned source and is not a promotion path. This tool DOES NOT install changed root-owned artifacts. If the target changes the live deploy controllers, opensession*.service, credential installers, the fixed run-host helper/installer, or root-deploy-managed systemd units/drop-ins, use the documented full root deploy instead. Diverged targets are refused; the shared WIP checkout is only a git object source and is never changed.
 
 ### `deploy_status`
 
 `mcp__opensession-self-deploy__deploy_status` · input: none
 
-Read the backend and frontend release pins, the most recent standard deploy/frontend-promotion results, and whether the watchdog auto-rollback window is open. Read-only.
+Read the backend and frontend release pins, the most recent standard deploy/frontend-promotion results, and whether the 15-minute watchdog auto-rollback window is still active. The window does not delay or block later deploys. Read-only.
 
 ## opensession-humans
 

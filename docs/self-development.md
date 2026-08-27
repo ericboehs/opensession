@@ -113,15 +113,15 @@ old frontend pointer and serves the new backend release's own UI. This prevents
 a newer UI from accidentally surviving across an incompatible backend move.
 
 Deployment may be autonomous when the task calls for making a change live, but
-it is a shared operation across every coding session. Before deploying, call
-`deploy_status`. If a deploy is active or just completed, or multiple sessions
-are landing a burst of related commits, do not launch or repeatedly retry
-another deploy. Wait for the burst to settle and deploy the newest
-fast-forward commit once. The lock protects the release pointer but does not
-batch callers; independent retries otherwise become a serial restart train.
-This coordination still applies to UI work: promotion is non-disruptive, but
-preparing and bundling the same succession of targets wastes shared resources
-and creates needless refresh churn.
+it is shared across every coding session. Concurrent main-line requests wait on
+one lifecycle lock, pause briefly for the commit burst, and select the newest
+compatible target that was actually requested. Requests already covered by
+that release exit successfully without another restart. A target that just
+failed its health gate is not retried automatically. `deploy_status` remains
+useful for observing the result, but callers no longer need to implement their
+own wait/retry loop.
+Exact-SHA deploy intent is preserved: unrelated commits are never absorbed just
+because they appeared on `origin/main`.
 
 Do not substitute `systemctl restart opensession`. That restarts the currently
 pinned release, does not pick up the new commit, and bypasses the coordinated
@@ -171,18 +171,21 @@ On readiness or health failure, the controller switches the `current` pointer
 back to last-known-good and brings all three services back. Rollback is refused
 when the old release cannot read the durable session-kernel schema floor.
 `deploy_status({})` reports the pin, latest result, and deploy-marker age. The
-optional watchdog can act once during the first 15 minutes after a deploy; the
-current `deploy_status` `OPEN` label itself does not expire at that cutoff.
+optional watchdog can act once during the first 15 minutes after a deploy. This
+window only bounds automatic rollback; it neither delays nor blocks a later
+deploy, and status reports it closed once the 15 minutes expire.
 
 ### Full (root) deploy
 
 `sudo deploy/deploy.sh <sha>` uses the same immutable release preparation and
 pointer switch, then also installs or synchronizes the privileged credentials,
 fixed run-host helper and sudo policy, three systemd units, gateway resource
-drop-in, user slice, and Caddy boot drop-in. It waits up to
-`MAX_DRAIN_WAIT` (480 seconds by default) for gateway activity to drain before
-the cut-over, restarts and health-checks the executor and kernel before the
-gateway, and switches back to the previous release if the rollout fails.
+drop-in, user slice, and Caddy boot drop-in. It relies on the gateway's bounded
+graceful drain by default rather than adding a second pre-drain delay;
+operators can opt into an extra wait with `MAX_DRAIN_WAIT`. It restarts and
+health-checks the executor and kernel before the gateway, and switches back to
+the previous release if the rollout fails. Overlapping full deploys wait on the
+same lifecycle lock rather than failing immediately.
 
 The root path also requires the current release to be an ancestor of the
 target. `OPENSESSION_DEPLOY_ALLOW_DIVERGED=1` is an explicit operator override

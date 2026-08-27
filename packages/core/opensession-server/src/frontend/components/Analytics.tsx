@@ -8,7 +8,6 @@ import { Card } from "../ui/card";
 import { Button } from "../ui/button";
 import { Segmented, SegmentedOption } from "../ui/segmented";
 import { DateRangeField } from "../ui/date-picker";
-import { PageTitle } from "../ui/page-header";
 import { TopBar, TopBarActions, TopBarTitle } from "../ui/top-bar";
 import { cn, mergeStylexProps, mergeStylexClassName, mergeStylexOverrideClassName } from "../ui/cn";
 import {
@@ -16,7 +15,6 @@ import {
 	SCROLL_EDGE_DIVIDER,
 } from "../lib/app-shell-classes";
 import { useScrollEdge } from "../hooks/useScrollEdge";
-import { useLargeTitleHandoff } from "../hooks/useLargeTitle";
 import * as stylex from "@stylexjs/stylex";
 import { type as typography } from "../styles/typography.stylex";
 
@@ -1109,10 +1107,6 @@ export function Analytics() {
 	// the same question the same way.
 	const [barEl, setBarEl] = useState<HTMLElement | null>(null);
 	useScrollEdge(barEl, ".analytics-scroll");
-	// The bar carries the page's name only once the heading below has gone
-	// under it. The same handoff the app's own top bar makes on every other
-	// page. See hooks/useLargeTitle.ts.
-	const titleHandedOver = useLargeTitleHandoff(barEl, "Analytics");
 
 	useEffect(() => {
 		document.title = docTitle("Analytics");
@@ -1324,20 +1318,18 @@ export function Analytics() {
 				)}
 			>
 				{/* The bar's fill and hairline run the full pane; its contents keep to
-				    the column the cards below are centred in. Same box as the content
-				    container down there, padding included, so the name sits on the
-				    cards' left edge and the range control on their right.
-				    The name is only here once the page's own heading, directly under
-				    this row in this same column, has scrolled away. Held at rest it
-				    was a small copy of the word stacked 60px above the real one, which
-				    read as a mistake rather than as chrome. */}
+				    the exact column the cards below are centred in, padding included.
+				    The name therefore sits on the cards' left edge and the range
+				    control on their right. Analytics is a compact dashboard rather
+				    than a reading page, so its name lives here from the first frame
+				    instead of taking a second large-title row in the content. */}
 				<div {...mergeStylexProps("", sx.mdPx6, sx.mxAuto, sx.flex, sx.wFull, sx.maxW1080px, sx.flexWrap, sx.itemsCenter, sx.justifyBetween, sx.gap3, sx.px4)}>
 					<TopBarTitle
 						className={cn(
 							mergeStylexClassName("", typography.itemTitle, sx.fontSemibold, sx.textFg),
 							DETAIL_TOPBAR_TITLE_TEXT,
 						)}
-						data-shown={titleHandedOver || undefined}
+						data-shown=""
 					>
 						Analytics
 					</TopBarTitle>
@@ -1364,10 +1356,6 @@ export function Analytics() {
 				{/* No top padding: every block in here opens with its own `mt-4`,
 				    which is the gap under the bar. */}
 				<div {...mergeStylexProps("", sx.mdPx6, sx.mxAuto, sx.wFull, sx.maxW1080px, sx.px4, sx.pb10)}>
-					{/* The page's own heading, at the step every other page opens on.
-					    It scrolls away under the range bar, which is why that bar is
-					    fixed and this is not. */}
-					<PageTitle className={mergeStylexOverrideClassName("", sx.mt7)}>Analytics</PageTitle>
 					{error && <p {...stylex.props(sx.mt4, sx.textRed, typography.body)}>{error}</p>}
 					{!data && !error && (
 						<div {...stylex.props(sx.flex, sx.h60, sx.itemsCenter, sx.justifyCenter, sx.textDim, typography.body)}>Loading analytics…</div>

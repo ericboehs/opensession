@@ -35,13 +35,11 @@ Restart=always
 # crash), and Caddy's lb_try_duration parks requests meanwhile — a crash loop
 # is still rate-limited by the unit's start-rate limiting.
 RestartSec=1
-# Give graceful shutdown time to drain in-flight runs (SHUTDOWN_DRAIN_MS, 60s)
-# before systemd escalates to SIGKILL. Must stay above SHUTDOWN_DRAIN_MS (60s) +
-# a buffer for the rest of shutdown, or systemd kills the process mid-drain.
-# Drain was cut 120s→60s (2026-07-11) for snappier restarts: the run journal
-# resumes anything still mid-turn on the next boot, and a resumed run now self-
-# heals transient failures via the fallback graph — so a shorter drain trades a
-# little redo work for a much faster restart, not lost work.
+# Give graceful shutdown time to stop agent intake and drain in-flight runs
+# (SHUTDOWN_DRAIN_MS defaults to 10s) before systemd escalates to SIGKILL.
+# TimeoutStopSec also covers bounded agent shutdown hooks, so it intentionally
+# stays well above the run-drain bound. The journal resumes anything still
+# mid-turn; a shorter drain trades a little redo for a faster restart, not loss.
 TimeoutStopSec=80
 # SIGTERM the bun parent ONLY — not the whole cgroup. The default
 # (KillMode=control-group) SIGTERMs every child too, so on restart the Claude

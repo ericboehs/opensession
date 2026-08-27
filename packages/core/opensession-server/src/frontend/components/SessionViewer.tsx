@@ -3454,7 +3454,7 @@ export function SessionViewer({
 						([, request]) => request.requestId === msg.requestId,
 					);
 					if (!found) break;
-					transcriptViewStore.merge(msg.entries, true);
+					transcriptViewStore.mergeRange(msg.entries);
 					const [key, request] = found;
 					clearTimeout(request.timer);
 					if (msg.complete) {

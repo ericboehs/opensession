@@ -30,6 +30,13 @@ const shots = [
 		clip: { x: 0, y: 0, width: 650, height: 720 },
 	},
 	{
+		name: "announcement-sessions",
+		feature: "sessions",
+		ready: `document.body.innerText.includes('49 checks') && !!document.querySelector('img[src$="audio-waveform-options.svg"]')?.complete`,
+		viewport: { width: 1600, height: 1000 },
+		clip: { x: 0, y: 0, width: 1600, height: 1000 },
+	},
+	{
 		name: "announcement-desk",
 		feature: "desk",
 		actionReady: `!!document.querySelector('[aria-label="Open the Desk"]')`,
@@ -152,9 +159,13 @@ try {
 			await target.send("Emulation.setEmulatedMedia", {
 				features: [{ name: "prefers-color-scheme", value: "light" }],
 			});
+			const viewport =
+				"viewport" in shot
+					? shot.viewport
+					: { width: APP_WIDTH, height: APP_HEIGHT };
 			await target.send("Emulation.setDeviceMetricsOverride", {
-				width: APP_WIDTH,
-				height: APP_HEIGHT,
+				width: viewport.width,
+				height: viewport.height,
 				deviceScaleFactor: DPR,
 				mobile: false,
 			});

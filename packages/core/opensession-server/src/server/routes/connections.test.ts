@@ -374,9 +374,18 @@ describe("GitHub App config (simple mode)", () => {
 
 const POLL = "/api/connections/github/device/poll";
 
-function writeGithubConfig(github: Record<string, unknown>): string {
+function writeGithubConfig(
+  github: Record<string, unknown>,
+  team?: Record<string, unknown>[],
+): string {
   const path = join(dir, `boot-${Math.random().toString(36).slice(2)}.json`);
-  writeFileSync(path, JSON.stringify({ integrations: { github } }));
+  writeFileSync(
+    path,
+    JSON.stringify({
+      integrations: { github },
+      ...(team ? { identity: { team } } : {}),
+    }),
+  );
   process.env.OPENSESSION_CONFIG = path;
   return path;
 }
@@ -404,11 +413,14 @@ function stubGithubDeviceFetch(login: string, name?: string): () => void {
 }
 
 describe("connect-time auth bootstrap", () => {
-  test("personal authOnConnect: rosters admin, flips userPrAuth, sets a session cookie, clears the intent", async () => {
-    const cfg = writeGithubConfig({
-      oauthClientId: "cid",
-      authOnConnect: true,
-    });
+  test("personal authOnConnect: replaces the local user, flips userPrAuth, and sets a session cookie", async () => {
+    const cfg = writeGithubConfig(
+      {
+        oauthClientId: "cid",
+        authOnConnect: true,
+      },
+      [{ name: "Local User" }],
+    );
     const restore = stubGithubDeviceFetch("octocat", "Octo Cat");
     try {
       const res = await handleConnectionsRoutes(
@@ -432,6 +444,9 @@ describe("connect-time auth bootstrap", () => {
       );
       expect(admin.admin).toBe(true);
       expect(admin.name).toBe("Octo Cat");
+      expect(written.identity.team).toEqual([
+        { name: "Octo Cat", github: "octocat", admin: true },
+      ]);
       expect(written.integrations.github.userPrAuth).toBe(true);
       // Intent consumed; the personal App learns its verified installation owner.
       expect(written.integrations.github.authOnConnect).toBeUndefined();

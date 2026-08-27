@@ -339,6 +339,8 @@ export interface SetupStatus {
 	/** Kept at the top level for tolerant native clients on the shared snapshot. */
 	publicBaseUrl: string;
 	access: SetupAccess;
+	/** Fast configured value; live ingress health loads independently. */
+	ingress?: { publicBaseUrl: string };
 	repos: SetupRepo[];
 	engine: SetupEngine;
 	team: { count: number; names: string[] };

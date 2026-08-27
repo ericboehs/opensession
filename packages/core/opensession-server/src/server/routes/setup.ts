@@ -316,6 +316,7 @@ export async function handleSetupRoutes(
     const { readEnvFileValues } = await import("../env-file-edit");
     const { repoLifecycle } = await import("../preview");
     const { engineStatus } = await import("../engine-status");
+    const { configuredPublicIngress } = await import("../ingress-settings");
     const { sharedCheckoutForNewSessions } = await import("../worktree");
     const envValues = readEnvFileValues({ includeUnset: true });
 
@@ -325,6 +326,9 @@ export async function handleSetupRoutes(
       // Compatibility field for the native app's tolerant setup snapshot.
       publicBaseUrl: access.publicBaseUrl,
       access,
+      // Configuration is immediate. DNS and reachability checks stay on the
+      // ingress request so they cannot hold up the rest of Setup.
+      ingress: { publicBaseUrl: configuredPublicIngress().publicBaseUrl },
       repos: Object.values(configuredRepos()).map((r) => ({
         id: r.id,
         label: r.label,

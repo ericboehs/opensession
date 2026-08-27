@@ -356,7 +356,7 @@ credentials its setup page marks as required. Common operator-facing variables:
 | `OPENSESSION_UI_BASE` | `http://127.0.0.1:<port>` | private app base used in session links |
 | `OPENSESSION_INGRESS_BASE` | unset | public origin for webhooks, remote Sandbox callbacks and workload identity |
 | `OPENSESSION_CONFIG` | `~/.opensession/config.json` | config-file path override |
-| `SHUTDOWN_DRAIN_MS` | `60000` | graceful-shutdown drain window for in-flight runs |
+| `SHUTDOWN_DRAIN_MS` | `10000` | graceful-shutdown drain window for in-flight runs; unfinished work resumes from the journal |
 | `OPENSESSION_STATE_DIR` | unset | isolated root for instance state; required with `OPENSESSION_DEV=1` unless `OPENSESSION_SESSIONS_DIR` is set |
 | `OPENSESSION_SESSIONS_DIR` | `~/.opensession/sessions` | session store override |
 | `OPENSESSION_WORKTREES_DIR` | `~/.opensession/worktrees` | where session worktrees are created |
@@ -574,8 +574,8 @@ Unit choices worth knowing (comments in the file itself):
 - System scope loads separate executor and session-kernel credentials. User
   scope keeps its session-kernel token under `~/.opensession/` and disables the
   executor and detached runs.
-- `TimeoutStopSec=80` must stay above `SHUTDOWN_DRAIN_MS` (60s) plus
-  buffer, or systemd SIGKILLs mid-drain.
+- `TimeoutStopSec=80` covers the 10-second run drain plus bounded agent shutdown
+  hooks; reducing it to the drain value can make systemd SIGKILL mid-shutdown.
 - `KillMode=mixed`: SIGTERM hits only the gateway process so it can drain
   in-flight runs; the default control-group mode would kill model children
   instantly and defeat the run journal.

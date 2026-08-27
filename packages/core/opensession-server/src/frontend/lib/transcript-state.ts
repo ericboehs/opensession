@@ -2,9 +2,18 @@ import type { TranscriptEntry } from "./types";
 import { classifyEntry } from "@tellahq/opensession-protocol/notices";
 import { personKey } from "./review-queue";
 
+// Entry objects are replaced (never mutated) on change, so the parsed
+// timestamp can be memoized per object. Date.parse in a sort comparator was
+// the hottest transcript path on big sessions: every live frame without a seq
+// re-sorted the whole transcript, re-parsing each timestamp per comparison.
+const parsedTimes = new WeakMap<TranscriptEntry, number>();
 function time(entry: TranscriptEntry): number {
+	const cached = parsedTimes.get(entry);
+	if (cached !== undefined) return cached;
 	const parsed = Date.parse(entry.timestamp);
-	return Number.isFinite(parsed) ? parsed : 0;
+	const value = Number.isFinite(parsed) ? parsed : 0;
+	parsedTimes.set(entry, value);
+	return value;
 }
 
 /** Authoritative transcript ordering: v2 rows use immutable seq; legacy and
@@ -12,26 +21,34 @@ function time(entry: TranscriptEntry): number {
 export function orderTranscriptEntries(
 	entries: TranscriptEntry[],
 ): TranscriptEntry[] {
-	const sequenced = entries
-		.filter((entry) => entry.seq !== undefined)
-		.sort((a, b) => a.seq! - b.seq!);
+	const sequenced: TranscriptEntry[] = [];
+	const decorations: { entry: TranscriptEntry; index: number }[] = [];
+	for (let index = 0; index < entries.length; index++) {
+		const entry = entries[index]!;
+		if (entry.seq !== undefined) sequenced.push(entry);
+		else decorations.push({ entry, index });
+	}
 	if (!sequenced.length) {
-		return entries
-			.map((entry, index) => ({ entry, index }))
+		return decorations
 			.sort((a, b) => time(a.entry) - time(b.entry) || a.index - b.index)
 			.map(({ entry }) => entry);
 	}
+	sequenced.sort((a, b) => a.seq! - b.seq!);
+	if (!decorations.length) return sequenced;
 	// Synthetic decorations have no seq. Insert them by timestamp around the
-	// immutable seq spine without ever allowing timestamps to reorder v2 rows.
-	const result = [...sequenced];
-	const decorations = entries
-		.map((entry, index) => ({ entry, index }))
-		.filter(({ entry }) => entry.seq === undefined)
-		.sort((a, b) => time(a.entry) - time(b.entry) || a.index - b.index);
+	// immutable seq spine without ever allowing timestamps to reorder v2 rows:
+	// each decoration lands after every sequenced row whose time is <= its own
+	// (and after earlier decorations at the same time), in one merge pass.
+	decorations.sort((a, b) => time(a.entry) - time(b.entry) || a.index - b.index);
+	const result: TranscriptEntry[] = [];
+	let next = 0;
 	for (const { entry } of decorations) {
-		const index = result.findIndex((candidate) => time(candidate) > time(entry));
-		result.splice(index === -1 ? result.length : index, 0, entry);
+		const at = time(entry);
+		while (next < sequenced.length && time(sequenced[next]!) <= at)
+			result.push(sequenced[next++]!);
+		result.push(entry);
 	}
+	while (next < sequenced.length) result.push(sequenced[next++]!);
 	return result;
 }
 

@@ -431,7 +431,7 @@ setSaving(false);
 					title={title}
 					description={
 						inviteUrl
-							? "Add their GitHub account or copy a link for them to sign in."
+							? "Add their GitHub account or share the invite link."
 							: "They can sign in with this GitHub account."
 					}
 				/>
@@ -449,44 +449,37 @@ setSaving(false);
 						/>
 					</Field>
 					{error && <InlineAlert>{error}</InlineAlert>}
+					<Button
+						variant="primary"
+						type="submit"
+						className={utilityClassName("w-full phone:min-h-11")}
+						disabled={!github.trim() || saving}
+					>
+						{saving ? "Adding…" : actionLabel}
+					</Button>
 					{inviteUrl && (
-						<Button
-							variant="soft"
-							type="button"
-							className={utilityClassName("w-full phone:min-h-11")}
-							icon={
-								<CopyCheck
-									copied={inviteCopy.copied}
-									idle={<IconLink size={16} />}
-									size={16}
-								/>
-							}
-							onClick={() =>
-								inviteCopy.copy(inviteUrl, { toast: "Invite link copied" })
-							}
-						>
-							{inviteCopy.copied ? "Link copied" : "Copy invite link"}
-						</Button>
+						<>
+							<div className={utilityClassName("text-center text-supporting text-faint")}>Or</div>
+							<Button
+								variant="primary"
+								type="button"
+								className={utilityClassName("w-full phone:min-h-11")}
+								icon={
+									<CopyCheck
+										copied={inviteCopy.copied}
+										idle={<IconLink size={16} />}
+										size={16}
+										checkClassName="text-on-accent"
+									/>
+								}
+								onClick={() =>
+									inviteCopy.copy(inviteUrl, { toast: "Invite link copied" })
+								}
+							>
+								{inviteCopy.copied ? "Invite link copied" : "Copy invite link"}
+							</Button>
+						</>
 					)}
-					<Modal.Footer>
-						<Button
-							variant="ghost"
-							type="button"
-							className={utilityClassName("phone:min-h-11")}
-							disabled={saving}
-							onClick={() => onOpenChange(false)}
-						>
-							Cancel
-						</Button>
-						<Button
-							variant="primary"
-							type="submit"
-							className={utilityClassName("phone:min-h-11")}
-							disabled={!github.trim() || saving}
-						>
-							{saving ? "Adding…" : actionLabel}
-						</Button>
-					</Modal.Footer>
 				</form>
 			</Modal.Content>
 		</Modal.Root>

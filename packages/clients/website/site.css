@@ -1168,6 +1168,12 @@ summary:focus-visible {
 	width: 94%;
 }
 
+.announcement-feature-sessions img {
+	top: 4%;
+	left: 4%;
+	width: 92%;
+}
+
 .announcement-feature-automations {
 	aspect-ratio: 2 / 1;
 }
@@ -1398,6 +1404,10 @@ summary:focus-visible {
 		top: 2%;
 		left: -12%;
 		width: 124%;
+	}
+
+	.announcement-feature-sessions {
+		aspect-ratio: 16 / 10;
 	}
 
 	.announcement-feature-automations {

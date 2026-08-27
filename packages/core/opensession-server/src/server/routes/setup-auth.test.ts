@@ -86,6 +86,21 @@ function singleUserConfig(): void {
 	delete process.env.OPENSESSION_GITHUB_CLIENT_ID;
 }
 
+function ingressConfig(): void {
+	const dir = mkdtempSync(join(tmpdir(), "opensession-setup-ingress-"));
+	dirs.push(dir);
+	const path = join(dir, "config.json");
+	writeFileSync(path, JSON.stringify({
+		integrations: {},
+		ingress: {
+			publicBaseUrl: "https://callbacks.example.test",
+			exposure: "custom",
+		},
+	}));
+	process.env.OPENSESSION_CONFIG = path;
+	delete process.env.OPENSESSION_GITHUB_CLIENT_ID;
+}
+
 describe("GitHub App onboarding link", () => {
 	test("prefills the new-App form while keeping personal fields editable", () => {
 		const url = new URL(
@@ -131,6 +146,18 @@ describe("GitHub App onboarding link", () => {
 		);
 		expect(url.searchParams.has("webhook_url")).toBe(false);
 		expect(url.searchParams.has("webhook_active")).toBe(false);
+	});
+});
+
+describe("setup status ingress snapshot", () => {
+	test("exposes configured URLs without waiting for health probes", async () => {
+		ingressConfig();
+		const response = await handleSetupRoutes(context("anyone"));
+		expect(response?.status).toBe(200);
+		const body = await response?.json();
+		expect(body.ingress).toEqual({
+			publicBaseUrl: "https://callbacks.example.test",
+		});
 	});
 });
 

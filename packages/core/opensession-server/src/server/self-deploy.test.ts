@@ -10,6 +10,7 @@ import {
 	markerAgeMs,
 	parseDeployResult,
 	readDeployState,
+	WATCHDOG_WINDOW_MS,
 } from "./self-deploy";
 
 const savedState = process.env.OPENSESSION_DEPLOY_STATE;
@@ -131,6 +132,19 @@ describe("formatDeployStatus", () => {
 		expect(out).toContain("Watchdog window: OPEN");
 	});
 
+	test("an old marker is reported as an expired window", () => {
+		const out = formatDeployStatus(
+			{
+				pin: "abc123def456",
+				markerAgeMs: WATCHDOG_WINDOW_MS + 60_000,
+				result: null,
+			},
+			dir,
+		);
+		expect(out).toContain("Watchdog window: closed");
+		expect(out).toContain("rollback window expired");
+	});
+
 	test("rollback-needed surfaces the manual action", () => {
 		const out = formatDeployStatus(
 			{
@@ -198,17 +212,22 @@ describe("deploy/self-deploy.sh", () => {
 		expect(script).toContain("migrate-session-kernel-storage.ts");
 		expect(script).toContain('merge-base --is-ancestor "$current" "$target_sha"');
 		expect(script).toContain("refusing stale/parallel release");
+		expect(script).toContain('flock -w "$DEPLOY_LOCK_WAIT_SECS"');
+		expect(script).toContain("already deployed or superseded");
+		expect(script).toContain("into newest requested target");
+		expect(script).toContain("refusing an automatic queued retry");
 	});
 
 	test("the server launches through the fixed privileged helper", async () => {
 		const source = await Bun.file(resolve(import.meta.dir, "self-deploy.ts")).text();
 		expect(source).toContain('RUN_HOST_HELPER, "self-deploy"');
 		expect(source).toContain("Deployment may be autonomous");
-		expect(source).toContain("deploy the newest fast-forward target once");
+		expect(source).toContain("queue and coalesce to the newest fast-forward target");
 		expect(source).toContain("strictly frontend-only diff");
 		expect(source).toContain("without restarting any service");
 		expect(source).toContain("only rebuilds the already pinned source");
 		expect(source).toContain("No separate human approval is required");
+		expect(source).toContain("nextDeployUnitName()");
 		expect(source).toContain("Migration path for instances upgrading");
 		expect(source).toContain("Environment=OPENSESSION_BUN_BIN=${process.execPath}");
 		expect(source).toContain("Environment=OPENSESSION_STATE_DIR=");

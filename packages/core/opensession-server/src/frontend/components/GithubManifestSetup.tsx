@@ -180,10 +180,12 @@ export function GithubManifestSetup({
 	github,
 	returnTo,
 	connectionStatus,
+	onContentSizeChange,
 }: {
 	github: SetupGithub;
 	returnTo: "welcome" | "settings";
 	connectionStatus?: { tone: ChipTone; label: string };
+	onContentSizeChange?: () => void;
 }) {
 	const initialOwner = githubAppCreateOwner(github.appCreateUrl);
 	const [owner, setOwner] = useState<GithubAppOwnerType>(
@@ -211,12 +213,12 @@ export function GithubManifestSetup({
 
 	useEffect(() => {
 		if (!ownerSwitching) return;
-		const reveal = window.setTimeout(
-			() => setFormOwner(owner),
-			(reducedMotion ? 0 : duration.base) * 1000,
-		);
+		const reveal = window.setTimeout(() => {
+			onContentSizeChange?.();
+			setFormOwner(owner);
+		}, (reducedMotion ? 0 : duration.base) * 1000);
 		return () => window.clearTimeout(reveal);
-	}, [owner, ownerSwitching, reducedMotion]);
+	}, [owner, ownerSwitching, reducedMotion, onContentSizeChange]);
 	const settingsUrl = githubAppSettingsUrlForSlug(
 		github.appSlug,
 		github.appOrg,
