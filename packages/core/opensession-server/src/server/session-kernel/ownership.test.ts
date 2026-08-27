@@ -39,6 +39,17 @@ describe("single session ownership", () => {
     expect(read("session-kernel/actor-worker.ts")).not.toContain("waiters");
 	});
 
+	test("request-path health never scans every session actor database", () => {
+		const kernel = read("session-kernel/kernel.ts");
+		const health = kernel.slice(
+			kernel.indexOf("export async function sessionKernelHealth"),
+			kernel.indexOf("export async function maintainSessionKernel"),
+		);
+		expect(health).toContain("sessionKernelReadinessSnapshot()");
+		expect(health).not.toContain("statsAsync");
+		expect(health).not.toContain(".stats()");
+	});
+
 	test("run, queue, ask and session-file state delegate to SessionKernel", () => {
 		expect(read("run-state.ts")).toContain("sessionKernel(sessionId)");
 		expect(read("queue-state.ts")).toContain("new DeliveryOwnedMap");

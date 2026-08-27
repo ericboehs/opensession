@@ -7,7 +7,10 @@ import { Switch } from "../ui/switch";
 import { toast } from "../ui/toast";
 import { GithubManifestSetup } from "./GithubManifestSetup";
 export { GithubManifestSetup } from "./GithubManifestSetup";
-import { GithubAccounts } from "./Connections";
+import {
+	GithubAccounts,
+	queuePersonalGithubConnect,
+} from "./Connections";
 import { IntegrationSetupDialog } from "./IntegrationSetupDialog";
 import { IconTile } from "./BrandTile";
 import {
@@ -103,6 +106,15 @@ const sx = stylex.create({
 	},
 	mt0: {
 			marginTop: "0"
+	},
+	mb3: {
+			marginBottom: "calc(4px * 3)"
+	},
+	borderLine: {
+			borderColor: "var(--border)"
+	},
+	bgButton: {
+			backgroundColor: "var(--button-surface)"
 	},
 });
 
@@ -303,22 +315,31 @@ export function GithubAuthCard({
 					/>
 				</SettingsSection>
 				{onboarding && github.clientIdConfigured && (
-					<div className={utilityClassName("mt-6 px-5")}>
-						<div className={utilityClassName("mb-3")}>
-							<div className={utilityClassName("text-dialog-title font-semibold text-fg")}>
-								Sign in to GitHub
-							</div>
-							<p className={utilityClassName("m-0 mt-1 text-supporting text-faint")}>
-								You can also sign in to GitHub later.
-							</p>
+					<div {...stylex.props(sx.mt6, sx.px5)}>
+						<div {...stylex.props(sx.mb3, sx.fontSemibold, sx.textFg, typography.dialogTitle)}>
+							Sign in to GitHub
 						</div>
 						<GithubAccounts
 							personal
 							showHeading={false}
 							showHint={false}
-							onConnectRequest={onPersonalSignIn}
-							cardClassName={utilityClassName("personal-github-card border-0 bg-panel!")}
+							onConnectRequest={
+								onPersonalSignIn
+									? () => {
+											queuePersonalGithubConnect();
+											onPersonalSignIn();
+										}
+									: undefined
+							}
+							cardClassName={mergeStylexOverrideClassName(
+								"personal-github-card smooth-shadow-xs",
+								sx.borderLine,
+								sx.bgButton,
+							)}
 						/>
+						<p className="m-0 mt-2 text-supporting text-faint">
+							You can also sign in to GitHub later.
+						</p>
 					</div>
 				)}
 			</div>

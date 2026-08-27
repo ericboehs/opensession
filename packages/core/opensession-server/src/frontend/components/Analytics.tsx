@@ -87,6 +87,9 @@ const sx = stylex.create({
 	minW0: {
 			minWidth: "0"
 	},
+	bgRaised: {
+			backgroundColor: "var(--bg-raised)"
+	},
 	p5: {
 			padding: "20px"
 	},
@@ -782,7 +785,7 @@ function ChartCard({
 }) {
 	const heading = <h3 {...stylex.props(sx.m0, sx.fontSemibold, sx.tracking001em, sx.textFg, typography.itemTitle)}>{title}</h3>;
 	return (
-		<Card as="section" className={mergeStylexOverrideClassName("", sx.minW0, sx.p5)}>
+		<Card as="section" className={mergeStylexOverrideClassName("", sx.minW0, sx.bgRaised, sx.p5)}>
 			{actions ? (
 				<div {...stylex.props(sx.flex, sx.flexWrap, sx.itemsStart, sx.justifyBetween, sx.gapX3, sx.gapY2)}>
 					{heading}
@@ -819,7 +822,7 @@ function StatTile({
 	sub?: string;
 }) {
 	return (
-		<Card className={mergeStylexOverrideClassName("", sx.minW0, sx.px5, sx.py4)}>
+		<Card className={mergeStylexOverrideClassName("", sx.minW0, sx.bgRaised, sx.px5, sx.py4)}>
 			<div {...stylex.props(sx.fontMedium, sx.textDim, typography.label)}>{label}</div>
 			<div {...stylex.props(sx.mt1, sx.fontSemibold, sx.textFg, typography.stat)}>
 				{value}

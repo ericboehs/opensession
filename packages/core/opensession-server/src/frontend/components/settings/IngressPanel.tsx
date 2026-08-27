@@ -290,6 +290,20 @@ const sx = stylex.create({
 	pt35: {
 			paddingTop: "calc(4px * 3.5)"
 	},
+	/** A step with its own controls splits into prose + controls on desktop. */
+	desktopStepColumns: {
+		"@media (min-width: 721px)": {
+			"display": "grid",
+			"gridTemplateColumns": "minmax(0,0.8fr) minmax(20rem,1.2fr)",
+			"alignItems": "flex-start",
+			"gap": "24px"
+		}
+	},
+	desktopMt0: {
+		"@media (min-width: 721px)": {
+			"marginTop": "0"
+		}
+	},
 });
 
 const EMPTY_DRAFTS: Record<IngressExposure, string> = {
@@ -365,15 +379,28 @@ function SetupSteps({ children }: { children: React.ReactNode }) {
 	return <ol {...mergeStylexProps("m-0", sx.grid, sx.listNone, sx.gap3, sx.p0, sx.textDim, typography.supporting)} >{children}</ol>;
 }
 
-function SetupStep({ number, title, children }: { number: number; title: string; children: React.ReactNode }) {
+function SetupStep({
+	number,
+	title,
+	children,
+	controls,
+}: {
+	number: number;
+	title: string;
+	children?: React.ReactNode;
+	controls?: React.ReactNode;
+}) {
 	return (
 		<li {...mergeStylexProps("grid-cols-[24px_minmax(0,1fr)]", sx.grid, sx.gap25)} >
 			<span {...stylex.props(sx.flex, sx.size6, sx.itemsCenter, sx.justifyCenter, sx.roundedFull, sx.bgSurface, sx.fontSemibold, sx.textDim, typography.meta)}>
 				{number}
 			</span>
-			<div {...stylex.props(sx.minW0, sx.pt05)}>
-				<div {...stylex.props(sx.fontMedium, sx.textFg)}>{title}</div>
-				<div {...stylex.props(sx.mt1, sx.grid, sx.gap2, sx.leadingRelaxed)}>{children}</div>
+			<div {...stylex.props(sx.minW0, sx.pt05, Boolean(controls) && sx.desktopStepColumns)}>
+				<div {...stylex.props(sx.minW0)}>
+					<div {...stylex.props(sx.fontMedium, sx.textFg)}>{title}</div>
+					{children && <div {...stylex.props(sx.mt1, sx.grid, sx.gap2, sx.leadingRelaxed)}>{children}</div>}
+				</div>
+				{controls && <div {...stylex.props(sx.mt3, sx.grid, sx.minW0, sx.gap3, sx.desktopMt0)}>{controls}</div>}
 			</div>
 		</li>
 	);
@@ -466,14 +493,23 @@ function PrivateAppSetup({
 					<SettingsHint className={utilityClassName("m-0")}>This address is already working. Its certificate is managed outside Open Session.</SettingsHint>
 				)}
 				<SetupSteps>
-							<SetupStep number={1} title="Choose the app domain">
-								<SettingsField className={utilityClassName("mb-0 desktop:grid desktop:grid-cols-[10rem_minmax(0,1fr)] desktop:items-center desktop:gap-4")}>
-									<span>Domain</span>
-									<Input value={domain} placeholder="os.example.com" disabled={busy} autoCapitalize="none" spellCheck={false} onChange={(event) => onDomainChange(event.target.value)} />
-								</SettingsField>
-								<p className={utilityClassName("m-0")}>Keep it different from the public callback domain.</p>
-							</SetupStep>
-							<SetupStep number={2} title="Authorize the DNS provider">
+					<SetupStep
+						number={1}
+						title="Choose the app domain"
+						controls={
+							<SettingsField className={mergeStylexOverrideClassName("", sx.mb0)}>
+								Domain
+								<Input value={domain} placeholder="os.example.com" disabled={busy} autoCapitalize="none" spellCheck={false} onChange={(event) => onDomainChange(event.target.value)} />
+							</SettingsField>
+						}
+					>
+						<p className={utilityClassName("m-0")}>Keep it different from the public callback domain.</p>
+					</SetupStep>
+					<SetupStep
+						number={2}
+						title="Authorize the DNS provider"
+						controls={
+							<>
 								<SettingCard>
 									<RadioGroup aria-label="Private domain DNS provider" value={provider} disabled={busy} onValueChange={(value) => onProviderChange(value as "cloudflare" | "vercel")}>
 										<label {...stylex.props(sx.flex, sx.minH11, sx.cursorPointer, sx.itemsCenter, sx.gap3, sx.px4, sx.py3)}>
@@ -486,38 +522,41 @@ function PrivateAppSetup({
 										</label>
 									</RadioGroup>
 								</SettingCard>
-								<p className={utilityClassName("m-0")}>
-									{provider === "cloudflare"
-										? <>Create a token with <strong {...stylex.props(sx.fontMedium, sx.textFg)}>Zone:DNS Edit</strong> and <strong {...stylex.props(sx.fontMedium, sx.textFg)}>Zone:Zone Read</strong> for this zone.</>
-										: <>Create a Vercel token with access to the team that owns this domain.</>}
-									{" "}Open Session protects it with server file permissions and never returns it to the browser.
-								</p>
-								<a className={utilityClassName("w-fit text-link hover:underline")} href={provider === "cloudflare" ? "https://dash.cloudflare.com/profile/api-tokens" : "https://vercel.com/account/settings/tokens"} target="_blank" rel="noreferrer">Create {provider === "cloudflare" ? "Cloudflare" : "Vercel"} token</a>
-								<SettingsField className={utilityClassName("mb-0 desktop:grid desktop:grid-cols-[10rem_minmax(0,1fr)] desktop:items-center desktop:gap-4")}>
-									<span>Certificate email</span>
+								<SettingsField className={mergeStylexOverrideClassName("", sx.mb0)}>
+									Certificate email
 									<Input type="email" value={email} placeholder={managedCredential && settings.app.domain.certificateEmailConfigured ? "Leave blank to keep the saved email" : "you@example.com"} disabled={busy} autoCapitalize="none" spellCheck={false} onChange={(event) => onEmailChange(event.target.value)} />
 								</SettingsField>
-								<SettingsField className={utilityClassName("mb-0 desktop:grid desktop:grid-cols-[10rem_minmax(0,1fr)] desktop:items-center desktop:gap-4")}>
-									<span>{provider === "cloudflare" ? "Cloudflare" : "Vercel"} API token</span>
+								<SettingsField className={mergeStylexOverrideClassName("", sx.mb0)}>
+									{provider === "cloudflare" ? "Cloudflare" : "Vercel"} API token
 									<Input type="password" value={apiToken} placeholder={managedCredential ? "Leave blank to keep the saved token" : "Paste the scoped token"} disabled={busy} autoComplete="off" onChange={(event) => onTokenChange(event.target.value)} />
 								</SettingsField>
 								{provider === "vercel" && (
-									<SettingsField className={utilityClassName("mb-0 desktop:grid desktop:grid-cols-[10rem_minmax(0,1fr)] desktop:items-center desktop:gap-4")}>
-										<span>Team ID <span className={utilityClassName("font-normal text-faint")}>Optional</span></span>
+									<SettingsField className={mergeStylexOverrideClassName("", sx.mb0)}>
+										Team ID <span {...stylex.props(sx.fontNormal, sx.textFaint)}>Optional</span>
 										<Input value={teamId} placeholder="team_…" disabled={busy} autoCapitalize="none" spellCheck={false} onChange={(event) => onTeamIdChange(event.target.value)} />
 									</SettingsField>
 								)}
-							</SetupStep>
-							<SetupStep number={3} title="Set up and verify">
-								<p className={utilityClassName("m-0")}>Open Session creates the DNS-only A record, requests a Let’s Encrypt certificate with DNS-01, configures Caddy, and checks the private address. It checks renewal daily.</p>
-								{(!settings.custom.caddyInstalled || !settings.app.domain.legoInstalled) && (
-									<>
-										<InlineAlert>Install Caddy and the certificate helper first, then reload this page.</InlineAlert>
-										<CodeBlock>{"curl -fsSL https://raw.githubusercontent.com/tellahq/opensession/main/install.sh | bash -s -- --caddy --no-onboard"}</CodeBlock>
-									</>
-								)}
-							</SetupStep>
-						</SetupSteps>
+							</>
+						}
+					>
+						<p className={utilityClassName("m-0")}>
+							{provider === "cloudflare"
+								? <>Create a token with <strong {...stylex.props(sx.fontMedium, sx.textFg)}>Zone:DNS Edit</strong> and <strong {...stylex.props(sx.fontMedium, sx.textFg)}>Zone:Zone Read</strong> for this zone.</>
+								: <>Create a Vercel token with access to the team that owns this domain.</>}
+							{" "}Open Session protects it with server file permissions and never returns it to the browser.
+						</p>
+						<a className={utilityClassName("w-fit text-link hover:underline")} href={provider === "cloudflare" ? "https://dash.cloudflare.com/profile/api-tokens" : "https://vercel.com/account/settings/tokens"} target="_blank" rel="noreferrer">Create {provider === "cloudflare" ? "Cloudflare" : "Vercel"} token</a>
+					</SetupStep>
+					<SetupStep number={3} title="Set up and verify">
+						<p className={utilityClassName("m-0")}>Open Session creates the DNS-only A record, requests a Let’s Encrypt certificate with DNS-01, configures Caddy, and checks the private address. It checks renewal daily.</p>
+						{(!settings.custom.caddyInstalled || !settings.app.domain.legoInstalled) && (
+							<>
+								<InlineAlert>Install Caddy and the certificate helper first, then reload this page.</InlineAlert>
+								<CodeBlock>{"curl -fsSL https://raw.githubusercontent.com/tellahq/opensession/main/install.sh | bash -s -- --caddy --no-onboard"}</CodeBlock>
+							</>
+						)}
+					</SetupStep>
+				</SetupSteps>
 						{status === "waiting_dns" && <InlineAlert>DNS has not reached this server yet. Wait a moment, then verify again.</InlineAlert>}
 						{status === "unreachable" && ingressHostname(domain) === ingressHostname(savedDomain) && (
 							<InlineAlert>DNS points to this server, but the HTTPS app is not reachable. Verify Caddy and the certificate, then try again.</InlineAlert>

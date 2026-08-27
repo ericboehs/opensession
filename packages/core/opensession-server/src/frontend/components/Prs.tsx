@@ -65,6 +65,9 @@ const sx = stylex.create({
 	bgPanel: {
 			backgroundColor: "var(--bg-panel)"
 	},
+	bgRaised: {
+			backgroundColor: "var(--bg-raised)"
+	},
 	px5: {
 			paddingInline: "calc(4px * 5)"
 	},
@@ -357,7 +360,7 @@ function OverviewTile({
   loading?: boolean;
 }) {
   return (
-    <span {...stylex.props(sx.minW0, sx.roundedXl, sx.bgPanel, sx.px5, sx.py4)}>
+    <span {...stylex.props(sx.minW0, sx.roundedXl, sx.bgRaised, sx.px5, sx.py4)}>
       <span {...stylex.props(sx.flex, sx.itemsCenter, sx.gap2, sx.fontMedium, sx.textDim, typography.label)}>
         {live !== undefined ? (
           <span

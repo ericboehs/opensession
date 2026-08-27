@@ -769,44 +769,21 @@ export async function sessionKernelRuntimeWork(
 	};
 }
 
-let healthCache: { at: number; value: Record<string, unknown> } | undefined;
-let healthRefresh: Promise<Record<string, unknown>> | undefined;
-
-/** Readiness must never enqueue the all-session stats fanout. The gateway is
- * coupled fail-closed to the actor service, so its local phase is the liveness
- * authority; include the last detailed sample only when one already exists. */
+/** Health and readiness must never enqueue the all-session stats fanout. The
+ * production actor store is sharded into one SQLite database per session, so
+ * `stats()` opens and scans every shard. Running that work on the catalog lane
+ * can exceed its response deadline, restart the lane, and prevent boot recovery
+ * from completing. Detailed accounting belongs in bounded background
+ * projections; request-path health reports the gateway-local actor snapshot. */
 export function sessionKernelReadinessSnapshot(): Record<string, unknown> {
-  return healthCache?.value ?? {
+  return {
     active: state.kernels?.size ?? 0,
-    statsPending: true,
+    detailedStatsDeferred: true,
   };
 }
 
 export async function sessionKernelHealth(): Promise<Record<string, unknown>> {
-  if (healthCache && Date.now() - healthCache.at < 5_000)
-    return healthCache.value;
-	if (healthRefresh) return healthRefresh;
-	healthRefresh = (async () => {
-		const stats = state.actor
-			? await state.actor.statsAsync()
-			: __sessionKernelStoreForTest().stats();
-		const value = {
-			active: state.kernels?.size ?? 0,
-			...stats,
-			degraded:
-				stats.quarantinedSessions > 0 ||
-				stats.deadLetteredOutbox > 0 ||
-				stats.deadLetteredTimers > 0 ||
-				(stats.pendingCommands > 0 &&
-					stats.oldestPendingCommandAt !== undefined &&
-					Date.now() - stats.oldestPendingCommandAt > 5 * 60_000),
-		};
-		healthCache = { at: Date.now(), value };
-		return value;
-  })().finally(() => {
-    healthRefresh = undefined;
-  });
-	return healthRefresh;
+	return sessionKernelReadinessSnapshot();
 }
 
 export async function maintainSessionKernel(): Promise<boolean> {

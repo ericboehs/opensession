@@ -658,6 +658,16 @@ interface DeviceFlow {
   interval: number;
 }
 
+const PERSONAL_GITHUB_CONNECT_INTENT = "opensession:personal-github-connect";
+
+/** Carry the main onboarding card's sign-in action across the step boundary.
+ * The dedicated account step consumes this once its connection data arrives. */
+export function queuePersonalGithubConnect() {
+  if (typeof window !== "undefined") {
+    window.sessionStorage.setItem(PERSONAL_GITHUB_CONNECT_INTENT, "1");
+  }
+}
+
 /**
  * GitHub user auth — opt-in per-user tokens so interactive sessions open PRs
  * as the actual session owner instead of the bot. Connect runs GitHub's
@@ -1195,6 +1205,7 @@ export function GithubAccounts({
   // The guided "create your app on GitHub, then paste + install + connect"
   // wizard, launched from the App option below.
   const [wizardOpen, setWizardOpen] = useState(false);
+  const queuedConnectStarted = useRef(false);
 
   // Stable identity: only setters are captured.
   const load = useCallback(async () => {
@@ -1272,6 +1283,35 @@ setError(e.message);
       setFlowState("idle");
 });
   }
+
+  const startQueuedConnect = useEffectEvent(() => {
+    queuedConnectStarted.current = true;
+    window.sessionStorage.removeItem(PERSONAL_GITHUB_CONNECT_INTENT);
+    void startConnect();
+  });
+  useEffect(() => {
+    // The main onboarding card supplies onConnectRequest and only queues this
+    // intent. The dedicated personal step has no override, so it consumes the
+    // intent and opens the device-code instructions without asking for a
+    // second click on an identical card.
+    if (
+      !personal ||
+      onConnectRequest ||
+      !data ||
+      queuedConnectStarted.current ||
+      window.sessionStorage.getItem(PERSONAL_GITHUB_CONNECT_INTENT) !== "1"
+    ) {
+      return;
+    }
+    const own = data.team.find((member) => member.canManage);
+    const canStart = data.webAuthRequired
+      ? data.enabled &&
+        data.clientIdConfigured &&
+        (!own?.connected || own.needsReconnect === true)
+      : data.connectAvailable && data.accounts.length === 0;
+    if (canStart) startQueuedConnect();
+    else window.sessionStorage.removeItem(PERSONAL_GITHUB_CONNECT_INTENT);
+  }, [data, onConnectRequest, personal]);
 
   async function saveApp(appOrg: string) {
     const clientId = appClientId.trim();

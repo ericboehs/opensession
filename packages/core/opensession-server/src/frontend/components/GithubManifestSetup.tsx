@@ -38,6 +38,30 @@ const sx = stylex.create({
 	itemsStart: {
 			alignItems: "flex-start"
 	},
+	itemsCenter: {
+			alignItems: "center"
+	},
+	justifyCenter: {
+			justifyContent: "center"
+	},
+	pb5: {
+			paddingBottom: "calc(4px * 5)"
+	},
+	w8: {
+			width: "calc(4px * 8)"
+	},
+	borderTDashed: {
+			borderTopWidth: "1px",
+			borderTopStyle: "dashed",
+			borderTopColor: "var(--border-strong)"
+	},
+	size12: {
+			width: "calc(4px * 12)",
+			height: "calc(4px * 12)"
+	},
+	shrink0: {
+			flexShrink: "0"
+	},
 	justifyBetween: {
 			justifyContent: "space-between"
 	},
@@ -253,16 +277,16 @@ export function GithubManifestSetup({
 		<>
 			{connectionStatus ? (
 				<>
-					<div className={utilityClassName("flex items-center gap-2")}>
-						<IconTile name="github" size={40} />
+					<div {...stylex.props(sx.flex, sx.itemsCenter, sx.justifyCenter, sx.gap2, sx.pb5)}>
+						<IconTile name="github" size={48} />
 						<span
 							aria-hidden="true"
-							className={utilityClassName("w-6 border-t-2 border-dotted border-line-strong")}
+							{...stylex.props(sx.w8, sx.borderTDashed)}
 						/>
 						<img
 							src={`${BASE_PATH}/mac-app-icon.png`}
 							alt=""
-							className={utilityClassName("size-10 shrink-0")}
+							{...stylex.props(sx.size12, sx.shrink0)}
 						/>
 					</div>
 					<div className={utilityClassName("flex items-center justify-between gap-4")}>
