@@ -1,3 +1,5 @@
+import { AGENT_PERSON_KEY } from "./automation-audience";
+import { AGENT_NAME } from "./brand";
 import type { Person } from "./people";
 import {
 	canonicalNames,
@@ -35,33 +37,47 @@ export function sessionIsRecentlyActive(
 }
 
 /**
- * Other teammates with active work, directory-gated so worker labels, goals,
- * integrations and arbitrary `startedBy` strings never become people.
- * Sessions retain the incoming order, which lets the sidebar's selected sort
- * apply to both the compact and expanded lists.
+ * Other people with active work, directory-gated so worker labels, goals,
+ * integrations and arbitrary `startedBy` strings never become people. The
+ * signed-in person's sessions already live in the workspace lanes above, so
+ * this list excludes them instead of rendering every active row twice.
+ * Unowned automations file under the Agent person; owned automations file under
+ * their configured teammate.
+ *
+ * Sessions retain the incoming order, which lets the caller choose one sort
+ * for both the compact and expanded lists.
  */
 export function sidebarPersonSessions(
 	sessions: UnifiedSession[],
 	roster: Person[],
 	currentUser: string,
 	nowMs: number,
+	automationOwners: ReadonlyMap<string, string | undefined> = new Map(),
 ): SidebarPersonSessions[] {
 	const canonical = canonicalNames(roster);
 	const currentUserKey = ownerKey(currentUser, canonical);
 	const groups = new Map<string, SidebarPersonSessions>();
 
 	for (const session of sessions) {
-		if (
-			session.archived ||
-			session.automation ||
-			session.desk ||
-			!session.startedBy
-		)
-			continue;
-		const label = rosterNameFor(session.startedBy, canonical);
-		if (!label) continue;
-		const key = ownerKeyOf(session, canonical);
-		if (key === currentUserKey) continue;
+		if (session.archived || session.desk) continue;
+
+		let key: string;
+		let label: string | null;
+		if (session.automation) {
+			const automationOwner = automationOwners.get(session.automation)?.trim();
+			if (automationOwner) {
+				label = rosterNameFor(automationOwner, canonical);
+				key = ownerKey(automationOwner, canonical);
+			} else {
+				label = AGENT_NAME;
+				key = AGENT_PERSON_KEY;
+			}
+		} else {
+			if (!session.startedBy) continue;
+			label = rosterNameFor(session.startedBy, canonical);
+			key = ownerKeyOf(session, canonical);
+		}
+		if (!label || key === currentUserKey) continue;
 
 		let group = groups.get(key);
 		if (!group) {

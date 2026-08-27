@@ -152,6 +152,28 @@ describe("sidebarLiveSessions", () => {
 				.every((session) => session.automationRunCount === 8),
 		).toBe(true);
 	});
+
+	test("keeps just-finished automation runs beyond the history cap", () => {
+		const now = Date.now();
+		const minutesAgo = [0, 1, 2, 3, 4, 10, 20, 30];
+		const runs = minutesAgo.map((minutes, index) =>
+			archivedSession({
+				id: `run-${index}`,
+				archived: false,
+				automation: "busy-automation",
+				lastActivity: new Date(now - minutes * 60_000).toISOString(),
+			}),
+		);
+
+		expect(sidebarLiveSessions(runs).map((session) => session.id)).toEqual([
+			"run-0",
+			"run-1",
+			"run-2",
+			"run-3",
+			"run-4",
+			"run-5",
+		]);
+	});
 });
 
 describe("archivedIndexRow", () => {

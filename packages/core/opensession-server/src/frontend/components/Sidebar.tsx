@@ -1438,14 +1438,24 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 		);
 	})();
 
-	// The bottom People list is the other half of the default "Me" lens: only
-	// directory teammates with a live or just-finished run earn a heading. The
-	// selected repo/search/sort still apply, and expanding a heading reveals the
-	// rest of that person's matching sessions. Borrowed lenses stay focused on
-	// the one person named at the top instead of appending everybody again.
-	const activePersonGroups = borrowedLens
-		? []
-		: sidebarPersonSessions(sorted, roster, currentUser, peopleActivityNow);
+	// Team activity is deliberately independent of the workspace lens above it:
+	// repo/person/search filters must not make a running teammate disappear from
+	// the complete live list at the bottom. The server's sidebar projection adds
+	// every live or just-finished run to `sessions`; the directory boundary here
+	// turns only real teammates into headings and files unowned automations under
+	// the Agent person.
+	const activePersonGroups = sidebarPersonSessions(
+		sessions,
+		roster,
+		currentUser,
+		peopleActivityNow,
+		new Map(
+			Array.from(automationOverview, ([name, overview]) => [
+				name,
+				overview.owner,
+			]),
+		),
+	);
 
 	// PRs with an automated Open Session review in flight, keyed `repo\nbranch`
 	// — the same signal the PR rows spell out as "Review running". The review
