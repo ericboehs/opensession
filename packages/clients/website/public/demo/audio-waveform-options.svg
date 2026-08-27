@@ -1,0 +1,69 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="840" viewBox="0 0 1600 840">
+  <defs>
+    <style>
+      .title{font:600 28px Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#202124;letter-spacing:-.3px}
+      .label{font:600 21px Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#303238}
+      .note{font:450 17px Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#858994}
+      .time{font:500 14px Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#a4a9b5}
+    </style>
+    <pattern id="grid" width="116" height="80" patternUnits="userSpaceOnUse">
+      <path d="M0 0V80" stroke="#e9ecf4" stroke-width="1"/>
+    </pattern>
+    <path id="wave" d="M0 39 C18 13 34 63 53 37 S88 19 106 42 S141 56 160 34 S195 25 214 43 S249 58 268 33 S303 15 322 41 S357 54 376 36 S411 18 430 43 S465 60 484 35 S519 20 538 41 S573 55 592 37 S627 18 646 42 S681 57 700 34 S735 22 754 40 S789 54 808 35 S843 16 862 42 S897 60 916 34 S951 22 970 40 S1005 55 1024 36 S1059 17 1078 42 S1113 58 1132 34 S1167 23 1186 40 S1221 56 1240 35"/>
+    <filter id="shadow" x="-10%" y="-20%" width="120%" height="150%">
+      <feDropShadow dx="0" dy="8" stdDeviation="12" flood-color="#19223b" flood-opacity=".08"/>
+    </filter>
+  </defs>
+  <rect width="1600" height="840" rx="30" fill="#fff"/>
+  <text x="58" y="62" class="title">System audio waveform treatments</text>
+  <text x="58" y="92" class="note">Selected audio stays visible without competing with removed sections.</text>
+
+  <g transform="translate(58 132)">
+    <g>
+      <text x="0" y="22" class="label">Before</text><text x="79" y="22" class="note">light teal</text>
+      <g transform="translate(0 42)" filter="url(#shadow)">
+        <rect width="1484" height="92" rx="14" fill="#f8f9fe" stroke="#dfe3f0"/>
+        <rect x="1" y="1" width="1482" height="90" rx="13" fill="url(#grid)"/>
+        <use href="#wave" x="24" y="6" fill="none" stroke="#c6cef9" stroke-width="28" stroke-linecap="round" opacity=".78"/>
+        <rect x="360" y="8" width="250" height="76" rx="8" fill="#c5ebe8" opacity=".88"/>
+        <rect x="1010" y="8" width="225" height="76" rx="8" fill="#c5ebe8" opacity=".88"/>
+        <use href="#wave" x="24" y="6" fill="none" stroke="#9ddbd6" stroke-width="28" stroke-linecap="round" opacity=".74" clip-path="url(#none)"/>
+      </g>
+    </g>
+
+    <g transform="translate(0 164)">
+      <text x="0" y="22" class="label">Selected</text><text x="112" y="22" class="note">darker teal, shipped</text>
+      <g transform="translate(0 42)" filter="url(#shadow)">
+        <rect width="1484" height="92" rx="14" fill="#f8f9fe" stroke="#dfe3f0"/>
+        <rect x="1" y="1" width="1482" height="90" rx="13" fill="url(#grid)"/>
+        <use href="#wave" x="24" y="6" fill="none" stroke="#c6cef9" stroke-width="28" stroke-linecap="round" opacity=".78"/>
+        <rect x="360" y="8" width="250" height="76" rx="8" fill="#4f918f" opacity=".88"/>
+        <rect x="1010" y="8" width="225" height="76" rx="8" fill="#4f918f" opacity=".88"/>
+        <path d="M384 45 C402 23 421 64 440 39 S478 18 496 43 S532 57 550 37 S572 24 586 42" fill="none" stroke="#2f6f6d" stroke-width="24" stroke-linecap="round"/>
+        <path d="M1034 45 C1052 23 1071 64 1090 39 S1128 18 1146 43 S1182 57 1200 37" fill="none" stroke="#2f6f6d" stroke-width="24" stroke-linecap="round"/>
+      </g>
+    </g>
+
+    <g transform="translate(0 328)">
+      <text x="0" y="22" class="label">High contrast</text><text x="164" y="22" class="note">black comparison</text>
+      <g transform="translate(0 42)" filter="url(#shadow)">
+        <rect width="1484" height="92" rx="14" fill="#f8f9fe" stroke="#dfe3f0"/>
+        <rect x="1" y="1" width="1482" height="90" rx="13" fill="url(#grid)"/>
+        <use href="#wave" x="24" y="6" fill="none" stroke="#c6cef9" stroke-width="28" stroke-linecap="round" opacity=".78"/>
+        <rect x="360" y="8" width="250" height="76" rx="8" fill="#393b42" opacity=".86"/>
+        <rect x="1010" y="8" width="225" height="76" rx="8" fill="#393b42" opacity=".86"/>
+      </g>
+    </g>
+
+    <g transform="translate(0 492)">
+      <text x="0" y="22" class="label">Muted reference</text><text x="190" y="22" class="note">removed audio</text>
+      <g transform="translate(0 42)" filter="url(#shadow)">
+        <rect width="1484" height="92" rx="14" fill="#f8f9fe" stroke="#dfe3f0"/>
+        <rect x="1" y="1" width="1482" height="90" rx="13" fill="url(#grid)"/>
+        <use href="#wave" x="24" y="6" fill="none" stroke="#c6cef9" stroke-width="28" stroke-linecap="round" opacity=".78"/>
+        <rect x="360" y="8" width="250" height="76" rx="8" fill="#d9dce3" opacity=".82"/>
+        <rect x="1010" y="8" width="225" height="76" rx="8" fill="#d9dce3" opacity=".82"/>
+      </g>
+    </g>
+  </g>
+</svg>
