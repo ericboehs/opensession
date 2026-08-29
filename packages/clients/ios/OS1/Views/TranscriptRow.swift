@@ -848,50 +848,79 @@ struct StreamingBubble: View {
     }
 }
 
-/// The live run, at the end of the transcript: an amber pulse and the
-/// ticking clock, sitting directly under the last message so it reads as
-/// something that message is still doing. It used to ride the composer, which
-/// put the state on the field you type in rather than on the work.
+/// The live run, at the end of the transcript. Copy acknowledges a quiet or
+/// unusually long request without claiming which model or tool phase is active.
 struct RunStatusFooter: View {
     let since: Date?
 
     var body: some View {
-        HStack(spacing: 6) {
-            // Amber is the in-progress colour everywhere else in the app —
-            // the sessions list's in-progress lane, the tab strip's running
-            // pill — so the transcript says "running" in the same voice.
-            PulsingDot(color: OS1VisualStyle.yellowInk, size: 6)
-            RunElapsedLabel(since: since)
-                .font(.caption2.weight(.medium))
-                .foregroundStyle(OS1VisualStyle.yellowInk)
+        TimelineView(.periodic(from: .now, by: 1)) { context in
+            let status = RunActivityStatus(elapsed: elapsed(at: context.date))
+            HStack(spacing: 6) {
+                // `PulsingDot` stops animating when Reduce Motion is enabled.
+                PulsingDot(color: OS1VisualStyle.yellowInk, size: 6)
+                Text(status.label)
+                    .font(.caption2.weight(.medium))
+                    .foregroundStyle(OS1VisualStyle.textDim)
+                if let elapsed = status.elapsed {
+                    Text("· \(elapsed)")
+                        .font(.caption2)
+                        .foregroundStyle(OS1VisualStyle.textFaint)
+                        .monospacedDigit()
+                        .accessibilityHidden(true)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            // The clock is visual context only. VoiceOver hears the status when
+            // it focuses the footer, never a new elapsed value every second.
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(status.label)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("Working")
+    }
+
+    private func elapsed(at date: Date) -> TimeInterval {
+        guard let since else { return 0 }
+        return date.timeIntervalSince(since)
     }
 }
 
-/// Ticking elapsed-run clock ("8.3s", "2m 14s", "1h 5m") — the web viewer's
-/// BusyElapsed format. Falls back to "Running" with no anchor.
+struct RunActivityStatus: Equatable {
+    let label: String
+    let elapsed: String?
+
+    init(elapsed: TimeInterval) {
+        let seconds = max(0, elapsed)
+        if seconds < 10 {
+            label = "Working"
+            self.elapsed = nil
+        } else {
+            label = seconds < 45 ? "Still working" : "Taking longer than usual"
+            self.elapsed = Self.format(seconds)
+        }
+    }
+
+    static func format(_ elapsed: TimeInterval) -> String {
+        let seconds = max(0, Int(elapsed.rounded()))
+        if seconds < 60 { return "\(seconds)s" }
+        let minutes = seconds / 60
+        if minutes < 60 { return "\(minutes)m" }
+        let hours = minutes / 60
+        return minutes % 60 == 0 ? "\(hours)h" : "\(hours)h \(minutes % 60)m"
+    }
+}
+
+/// Compact elapsed-run clock used outside the transcript footer.
 struct RunElapsedLabel: View {
     let since: Date?
 
     var body: some View {
         if let since {
-            TimelineView(.periodic(from: .now, by: 0.1)) { context in
-                Text(label(elapsed: context.date.timeIntervalSince(since)))
+            TimelineView(.periodic(from: .now, by: 1)) { context in
+                Text(RunActivityStatus.format(context.date.timeIntervalSince(since)))
                     .monospacedDigit()
             }
         } else {
             Text("Running")
         }
-    }
-
-    private func label(elapsed: TimeInterval) -> String {
-        let s = max(0, elapsed)
-        if s < 60 { return String(format: "%.1fs", s) }
-        let total = Int(s)
-        if total < 3600 { return "\(total / 60)m \(total % 60)s" }
-        return "\(total / 3600)h \((total % 3600) / 60)m"
     }
 }
