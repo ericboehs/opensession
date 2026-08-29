@@ -12,6 +12,7 @@ import Observation
 final class LaneStore {
     static let shared = LaneStore()
 
+    typealias Reader = @MainActor (_ user: String) async throws -> [String: String]
     typealias Writer = @MainActor (
         _ user: String,
         _ set: [String: String],
@@ -27,16 +28,22 @@ final class LaneStore {
     private var hydratedContext: NativePreferences.Context?
     private(set) var hasHydrated = false
     private var isSaving = false
+    private var mutationRevision = 0
+    @ObservationIgnored private let reader: Reader
     @ObservationIgnored private let writer: Writer
 
-    init(writer: @escaping Writer = { user, set, remove, connection in
-        try await SettingsAPI.saveLanes(
-            user: user,
-            set: set,
-            remove: remove,
-            connection: connection
-        )
-    }) {
+    init(
+        reader: @escaping Reader = { user in try await SettingsAPI.lanes(user: user) },
+        writer: @escaping Writer = { user, set, remove, connection in
+            try await SettingsAPI.saveLanes(
+                user: user,
+                set: set,
+                remove: remove,
+                connection: connection
+            )
+        }
+    ) {
+        self.reader = reader
         self.writer = writer
     }
 
@@ -45,8 +52,10 @@ final class LaneStore {
     func hydrate() async {
         let requestContext = NativePreferences.context()
         resetForNewContext(requestContext)
-        guard let loaded = try? await SettingsAPI.lanes(user: requestContext.user) else { return }
-        guard NativePreferences.context() == requestContext else { return }
+        let requestRevision = mutationRevision
+        guard let loaded = try? await reader(requestContext.user) else { return }
+        guard NativePreferences.context() == requestContext,
+              mutationRevision == requestRevision else { return }
         applyHydrated(loaded)
     }
 
@@ -68,6 +77,7 @@ final class LaneStore {
         claims = []
         hasHydrated = false
         isSaving = false
+        mutationRevision += 1
     }
 
     /// Kept internal so hydration and optimistic-write behavior can be covered
@@ -87,6 +97,7 @@ final class LaneStore {
         let additions = ids.subtracting(claims)
         guard !additions.isEmpty else { return }
         pendingClaims.formUnion(additions)
+        mutationRevision += 1
         rebuildClaims()
         save()
     }
@@ -139,10 +150,18 @@ final class LaneStore {
                   self.hydratedContext == requestContext,
                   NativePreferences.context() == requestContext else { return }
             self.isSaving = false
-            self.pendingClaims.subtract(captured)
-            if case .success(let saved) = result { self.serverLanes = saved }
-            self.rebuildClaims()
-            self.save()
+            switch result {
+            case .success(let saved):
+                self.pendingClaims.subtract(captured)
+                self.serverLanes = saved
+                self.mutationRevision += 1
+                self.rebuildClaims()
+                self.save()
+            case .failure:
+                // Keep optimistic intent. The next hydration retries it rather
+                // than making a transient network failure remove the row.
+                self.rebuildClaims()
+            }
         }
     }
 }

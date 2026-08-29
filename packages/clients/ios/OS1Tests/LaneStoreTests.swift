@@ -63,13 +63,13 @@ final class LaneStoreTests: XCTestCase {
         var writtenUser = ""
         var writtenSet: [String: String] = [:]
         var writtenRemove: [String] = []
-        let store = LaneStore { user, set, remove, _ in
+        let store = LaneStore(writer: { user, set, remove, _ in
             writtenUser = user
             writtenSet = set
             writtenRemove = remove
             wrote.fulfill()
             return set
-        }
+        })
         store.applyHydrated([:])
         let workspace = try sessions(
             #"[{"id":"os-1","workspaceId":"ws-1"},{"id":"os-2","workspaceId":"ws-1"}]"#
@@ -84,33 +84,71 @@ final class LaneStoreTests: XCTestCase {
         XCTAssertTrue(writtenRemove.isEmpty)
     }
 
-    func testFailedWriteRollsBackOnlyTheOptimisticClaim() async throws {
-        let attempted = expectation(description: "lane delta attempted")
-        let store = LaneStore { _, _, _, _ in
-            attempted.fulfill()
-            throw TestError.failed
-        }
+    func testFailedWriteKeepsTheClaimPendingAndHydrationRetriesIt() async throws {
+        let firstAttempt = expectation(description: "first lane delta attempted")
+        let retry = expectation(description: "pending lane delta retried")
+        var attempts = 0
+        let store = LaneStore(writer: { _, set, _, _ in
+            attempts += 1
+            if attempts == 1 {
+                firstAttempt.fulfill()
+                throw TestError.failed
+            }
+            retry.fulfill()
+            return ["os-existing": "review"].merging(set) { _, claimed in claimed }
+        })
         store.applyHydrated(["os-existing": "review"])
         let session = try sessions(#"[{"id":"os-new"}]"#)[0]
 
         store.claim([session])
+        await fulfillment(of: [firstAttempt])
+        for _ in 0..<5 { await Task.yield() }
         XCTAssertEqual(store.claims, ["os-existing", "os-new"])
-        await fulfillment(of: [attempted])
+
+        store.applyHydrated(["os-existing": "review"])
+        await fulfillment(of: [retry])
+        for _ in 0..<5 { await Task.yield() }
+        XCTAssertEqual(store.claims, ["os-existing", "os-new"])
+    }
+
+    func testHydrationStartedBeforeConfirmedClaimCannotOverwriteIt() async throws {
+        let readStarted = expectation(description: "lane hydration started")
+        let writeCompleted = expectation(description: "lane write completed")
+        var finishRead: CheckedContinuation<[String: String], Never>?
+        let store = LaneStore(
+            reader: { _ in
+                readStarted.fulfill()
+                return await withCheckedContinuation { finishRead = $0 }
+            },
+            writer: { _, set, _, _ in
+                writeCompleted.fulfill()
+                return set
+            }
+        )
+        store.applyHydrated([:])
+        let session = try sessions(#"[{"id":"os-new"}]"#)[0]
+
+        let hydration = Task { await store.hydrate() }
+        await fulfillment(of: [readStarted])
+        store.claim([session])
+        await fulfillment(of: [writeCompleted])
         for _ in 0..<5 { await Task.yield() }
 
-        XCTAssertEqual(store.claims, ["os-existing"])
+        finishRead?.resume(returning: [:])
+        await hydration.value
+        XCTAssertEqual(store.claims, ["os-new"])
     }
 
     func testCompletedWriteCannotRepopulateClaimsAfterAccountChange() async throws {
         let started = expectation(description: "write started")
         let completed = expectation(description: "write completed")
         var resume: CheckedContinuation<Void, Never>?
-        let store = LaneStore { _, set, _, _ in
+        let store = LaneStore(writer: { _, set, _, _ in
             started.fulfill()
             await withCheckedContinuation { resume = $0 }
             completed.fulfill()
             return set
-        }
+        })
         store.applyHydrated([:])
         let session = try sessions(#"[{"id":"os-new"}]"#)[0]
         let config = ServerConfig.shared
