@@ -948,7 +948,7 @@ struct RunActivityStatus: Equatable {
     }
 
     static func format(_ elapsed: TimeInterval) -> String {
-        let seconds = max(0, Int(elapsed.rounded()))
+        let seconds = Int(max(0, elapsed))
         if seconds < 60 { return "\(seconds)s" }
         let minutes = seconds / 60
         if minutes < 60 { return "\(minutes)m" }

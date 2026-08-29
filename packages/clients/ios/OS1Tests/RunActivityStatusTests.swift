@@ -8,7 +8,12 @@ final class RunActivityStatusTests: XCTestCase {
 
     func testAcknowledgesWorkAfterTenSeconds() {
         assertStatus(10, label: "Still working", elapsed: "10s")
-        assertStatus(44, label: "Still working", elapsed: "44s")
+        assertStatus(44.999, label: "Still working", elapsed: "44s")
+    }
+
+    func testElapsedTimeDoesNotCrossUnitBoundariesEarly() {
+        XCTAssertEqual(RunActivityStatus.format(59.999), "59s")
+        XCTAssertEqual(RunActivityStatus.format(60), "1m")
     }
 
     func testSetsExpectationsForAnExtendedRun() {
