@@ -762,6 +762,12 @@ struct SessionView: View {
                 }
             }
             ToolbarItem(placement: .principal) { macSessionTitle }
+            ToolbarItem(placement: .topTrailingCompat) {
+                AddToSidebarButton(
+                    session: viewModel.session,
+                    workspaceSessions: tabs
+                )
+            }
             if !workspaceHistoryRows.isEmpty, onRestoreArchivedSession != nil {
                 ToolbarItem(placement: .topTrailingCompat) {
                     SessionHistoryMenu(
@@ -1629,6 +1635,34 @@ private struct SlackComposeReceiptRow: View {
     }
 }
 
+/// Claims an eligible opened workspace into this person's sidebar. Its own
+/// observation boundary keeps lane writes from invalidating the transcript.
+private struct AddToSidebarButton: View {
+    let session: Session
+    let workspaceSessions: [Session]
+
+    var body: some View {
+        Group {
+            if LaneStore.canAddToSidebar(
+                session: session,
+                workspaceSessions: workspaceSessions,
+                lens: PeopleLens.current(),
+                claims: LaneStore.shared.claims
+            ) {
+                Button {
+                    LaneStore.shared.claim(workspaceSessions)
+                    HideStore.shared.unhide(for: session)
+                } label: {
+                    Label("Add to sidebar", systemImage: "sidebar.left")
+                }
+                .help("Add to sidebar")
+                .accessibilityLabel("Add to sidebar")
+            }
+        }
+        .onAppear { LaneStore.shared.syncContext() }
+    }
+}
+
 #if os(iOS)
 /// The session's overflow menu — the trailing nav-bar control, a native `Menu` so
 /// iOS renders (and animates) it as a real UIMenu.
@@ -1809,6 +1843,10 @@ private struct SessionActionsMenu: View {
             }
 
             Section {
+                AddToSidebarButton(
+                    session: viewModel.session,
+                    workspaceSessions: tabs
+                )
                 // The rename itself runs from SessionView's alert; the menu
                 // only raises it, so the callback's presence is the gate.
                 if onRenameWorkspace != nil {
