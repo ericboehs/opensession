@@ -13,6 +13,7 @@ import type {
   Sandbox as ModalSandbox,
 } from "modal";
 import { getRepo, worktreePathFor } from "../../worktree";
+import { hostRunBusy } from "../../host-registry";
 import { sandboxConfig } from "../config";
 import {
   getSandboxConnection,
@@ -29,6 +30,7 @@ import {
   assertDialbackReachable,
   bootstrapRemoteSandbox,
   findRemoteStateBySession,
+  listRemoteStates,
   makeRemoteSandbox,
   readRemoteState,
   remoteCloneUrl,
@@ -63,6 +65,7 @@ const DEFAULT_IMAGE = "daytonaio/sandbox:0.8.0";
 const DEFAULT_IDLE_STOP_MINUTES = 30;
 const MAX_LIFETIME_MS = 24 * 60 * 60 * 1000;
 const RECREATE_BEFORE_EXPIRY_MS = 60 * 60 * 1000;
+const IDLE_SWEEP_INTERVAL_MS = 5 * 60_000;
 const CHECKPOINT_WAIT_MS = 90_000;
 const MAX_TAG_SCAN = 8;
 
@@ -335,6 +338,7 @@ export class ModalProvider implements SandboxProvider {
   }
 
   private async ensureInner(spec: SandboxSessionSpec): Promise<Sandbox> {
+    ensureModalIdleSweep();
     if (spec.attachedDirs?.length) {
       throw new Error(
         "attached repos are not supported in remote sandboxes — detach them or use docker/local",
@@ -631,6 +635,7 @@ export class ModalProvider implements SandboxProvider {
   }
 
   async get(sandboxId: string): Promise<Sandbox | null> {
+    ensureModalIdleSweep();
     const state = readRemoteState(this.id, sandboxId);
     if (!state) return null;
     try {
@@ -705,6 +710,121 @@ export class ModalProvider implements SandboxProvider {
     }
     removeRemoteState(this.id, sandboxId);
   }
+}
+
+// ── Idle-stop sweep ──────────────────────────────────────────────────────────
+
+/** Flip the session's workspace lifecycle to "sleeping" so the UI stops
+ * reporting a terminated sandbox as awake (the checkpoint image is its
+ * wake-up point). Guarded on the sandbox id so a session that already moved
+ * to a new sandbox is left alone. Lazy import: session-cache sits above the
+ * sandbox graph. */
+async function markModalWorkspaceAsleep(
+  sessionId: string,
+  sandboxId: string,
+): Promise<void> {
+  try {
+    const { updateSessionFile } = await import("../../session-cache");
+    await updateSessionFile(sessionId, (data) =>
+      data.sandbox?.sandboxId === sandboxId
+        ? {
+            ...data,
+            sandbox: { ...data.sandbox, lifecycle: "sleeping" as const },
+          }
+        : data,
+    );
+  } catch (e) {
+    console.warn(`[sandbox:modal] could not mark ${sessionId} asleep:`, e);
+  }
+}
+
+/**
+ * Server-owned idle stop, mirroring docker's sweepIdleSandboxes. Modal's
+ * create-time idleTimeoutMs never fires for sessions with a live preview
+ * portal or attached run host (any process activity resets it), so a session
+ * that opened a dev server burned compute until the 24h hard lifetime. The
+ * sweep checkpoints the filesystem, terminates the compute, and marks the
+ * workspace asleep. The remote state file is KEPT — it carries the
+ * checkpointArtifactId the next ensure restores from in seconds.
+ *
+ * `onlySandboxId` scopes the sweep to one sandbox and skips the idle-window
+ * check (operator/verify use).
+ */
+export async function sweepIdleModalSandboxes(
+  onlySandboxId?: string,
+): Promise<void> {
+  if (!getSandboxConnection("modal")) return;
+  const cfg = modalConfig();
+  const idleMs = (cfg.idleStopMinutes || DEFAULT_IDLE_STOP_MINUTES) * 60_000;
+  const provider = new ModalProvider();
+  for (const state of listRemoteStates("modal")) {
+    if (onlySandboxId && state.sandboxId !== onlySandboxId) continue;
+    // The prewarm pool owns its own TTL and reaping.
+    if (state.sessionId.startsWith("__prewarm__:")) continue;
+    if (hostRunBusy(state.sessionId)) continue;
+    const last = Date.parse(state.lastActivityAt || state.createdAt) || 0;
+    if (!onlySandboxId && Date.now() - last < idleMs) continue;
+    try {
+      // Same per-session lock ensure holds, so a stop never races a turn
+      // start materializing the same sandbox.
+      await withRemoteEnsureLock("modal", state.sessionId, async () => {
+        const current = readRemoteState("modal", state.sandboxId);
+        if (!current || hostRunBusy(current.sessionId)) return;
+        const client = await modalClient();
+        let sandbox: ModalSandbox;
+        try {
+          sandbox = await client.sandboxes.fromId(state.sandboxId);
+        } catch {
+          return;
+        }
+        if ((await sandbox.poll()) !== null) {
+          // Already dead (hard lifetime / provider stop) but still recorded
+          // awake — reconcile the UI; keep state for the checkpoint restore.
+          await markModalWorkspaceAsleep(current.sessionId, state.sandboxId);
+          return;
+        }
+        // Snapshot BEFORE the stop (docker's warm-restore pattern). A failed
+        // checkpoint logs and still stops — the previous checkpoint (if any)
+        // remains the restore point.
+        await provider.checkpoint(state.sandboxId).catch((e) => {
+          console.warn(
+            `[sandbox:modal] idle checkpoint of ${state.sandboxId} failed (stopping anyway):`,
+            e,
+          );
+        });
+        // A turn may have started during the (multi-minute) checkpoint.
+        if (hostRunBusy(current.sessionId)) return;
+        await sandbox
+          .setTags({ "opensession.completed": current.sessionId })
+          .catch(() => {});
+        await sandbox.terminate();
+        console.log(
+          `[sandbox:modal] stopped idle sandbox ${state.sandboxId} ` +
+            `(${current.sessionId}, idle > ${Math.round(idleMs / 60_000)}m)`,
+        );
+        await markModalWorkspaceAsleep(current.sessionId, state.sandboxId);
+      });
+    } catch (e) {
+      console.warn(
+        `[sandbox:modal] idle sweep failed for ${state.sandboxId}:`,
+        e,
+      );
+    }
+  }
+}
+
+/** Arm the idle sweep once per process (globalThis-parked, unref'd). Called
+ * from ensure/get and from boot — never at module load. */
+export function ensureModalIdleSweep(): void {
+  const g = globalThis as typeof globalThis & {
+    __modalIdleSweepTimer?: ReturnType<typeof setInterval>;
+  };
+  if (g.__modalIdleSweepTimer) return;
+  const t = setInterval(() => {
+    void sweepIdleModalSandboxes();
+  }, IDLE_SWEEP_INTERVAL_MS);
+  (t as { unref?: () => void }).unref?.();
+  g.__modalIdleSweepTimer = t;
 }
 
 // ── Warm-on-typing + post-setup filesystem templates ────────────────────────

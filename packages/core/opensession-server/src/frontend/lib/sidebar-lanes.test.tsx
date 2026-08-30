@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { UnifiedSession } from "./types";
-import { mineStatus } from "./sidebar-lanes";
+import { mineStatus, ownedBy } from "./sidebar-lanes";
 
 function session(overrides: Partial<UnifiedSession>): UnifiedSession {
   return {
@@ -13,6 +13,21 @@ function session(overrides: Partial<UnifiedSession>): UnifiedSession {
     ...overrides,
   } as UnifiedSession;
 }
+
+describe("ownedBy", () => {
+  test("matches a full starter name to the current person's short name", () => {
+    expect(ownedBy(session({ startedBy: "Kent de Bruin" }), "Kent")).toBe(true);
+  });
+
+  test("does not claim automation runs for their matching reporter", () => {
+    expect(
+      ownedBy(
+        session({ startedBy: "Kent de Bruin", automation: "daily-recap" }),
+        "Kent",
+      ),
+    ).toBe(false);
+  });
+});
 
 describe("mineStatus", () => {
   test("files every working chat under In progress", () => {

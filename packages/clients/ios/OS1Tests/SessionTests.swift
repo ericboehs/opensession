@@ -25,6 +25,13 @@ final class SessionTests: XCTestCase {
         XCTAssertEqual(session.effectiveRepo, "backstage")
     }
 
+    func testLastRunErrorDecodesMessageAndTimestamp() throws {
+        let failed = try session(#"{"id":"os-failed","lastRunError":{"message":"Provider credits exhausted.","at":"2026-08-28T10:00:00Z"}}"#)
+
+        XCTAssertEqual(failed.lastRunError?.message, "Provider credits exhausted.")
+        XCTAssertEqual(failed.lastRunError?.at, "2026-08-28T10:00:00Z")
+    }
+
     func testSafetyProjectionDecodesTolerantlyAndOverridesRunningLane() throws {
         let paused = try session(#"{"id":"os-paused","isRunning":true,"safety":{"status":"paused_for_safety","explanation":"This session was paused safely.","automaticReconciliationRunning":false,"pausedAt":"2026-08-26T12:00:00Z","operation":"finishing the current turn","repairAvailable":false}}"#)
 

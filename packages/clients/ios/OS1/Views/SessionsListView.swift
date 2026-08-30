@@ -2253,6 +2253,7 @@ struct SessionsListView: View {
             repo: repo,
             autoCreated: AutoCreatedOrigin.wasAutoCreated(workspace),
             searchSnippet: workspaceSearchSnippet(workspace),
+            selected: workspace.sessions.contains { $0.id == selectedSessionID },
             isWorkspaceDraft: workspace.isDraftWorkspace,
             snoozeValue: snoozeValue,
             pinned: pinned,
@@ -4186,6 +4187,8 @@ struct SessionRow: View {
     /// keep their normal one-line row because the title already explains why
     /// they are present.
     var searchSnippet: String? = nil
+    /// Mac: whether the native sidebar selection surface is under this row.
+    var selected = false
     /// iOS: the session you last had open. A neutral plate rather than a hue —
     /// every colour on this list already means something (the status marks and
     /// repo tiles), and "where you were" is chrome, not status. `tertiary`
@@ -4247,6 +4250,14 @@ struct SessionRow: View {
             .onHover { hovering = $0 }
         #else
         content
+        #endif
+    }
+
+    private var isHovering: Bool {
+        #if os(macOS)
+        hovering
+        #else
+        false
         #endif
     }
 
@@ -4359,7 +4370,13 @@ struct SessionRow: View {
             // Teammates focused on any session represented by this row.
             if !rowViewers.isEmpty {
                 PresenceFacepile(
-                    viewers: rowViewers, size: faceSize, separation: .seam
+                    viewers: rowViewers,
+                    size: faceSize,
+                    separation: .ring,
+                    separatorColor: PresenceRowSurface.color(
+                        selected: selected || highlighted,
+                        hovered: isHovering
+                    )
                 )
             }
             if let snoozeValue {
@@ -4437,6 +4454,11 @@ struct SessionRow: View {
     /// `@Observable`: a global-presence frame invalidates only rows using it.
     private var rowViewers: [String] {
         if isWorkspaceDraft { return [] }
+        #if DEBUG
+        if ProcessInfo.processInfo.environment["OS1_PRESENCE_FIXTURE"] == "1" {
+            return ["Kent de Bruin", "Michael Robot", "Sarah Chen"]
+        }
+        #endif
         return PresenceStore.shared.viewers(of: sessions.isEmpty ? [session] : sessions)
     }
 

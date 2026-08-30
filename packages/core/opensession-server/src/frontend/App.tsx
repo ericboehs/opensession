@@ -167,6 +167,7 @@ import {
 import { DeskOverlay } from "./components/DeskOverlay";
 import { sidebarSessionsQuery, useSessions } from "./hooks/useSessions";
 import { useWorkspaces } from "./hooks/useWorkspaces";
+import { useWorkspaceMutations } from "./hooks/useWorkspaceMutations";
 import { useGithubConnectionState } from "./hooks/useGithubConnectionState";
 import { useHydratedSession } from "./hooks/useHydratedSession";
 import { hasDraft } from "./lib/drafts";
@@ -188,8 +189,6 @@ import {
   setSessionStatusApi,
   newSessionApi,
   fetchWorkspaceArchivedSessions,
-  updateWorkspaceApi,
-  deleteWorkspaceApi,
   fetchRepos,
   cachedRepos,
   REPOS_CHANGED_EVENT,
@@ -3012,6 +3011,24 @@ export function App({
     confirmRunningCloses,
     dialog: runningCloseDialog,
   } = useRunningCloseConfirmation();
+  const {
+    renameWorkspace,
+    renameWorkspaceFromSidebar,
+    archiveWorkspaceFromHeader,
+    archiveWorkspaceFromSidebar,
+    deleteWorkspaceFromHeader,
+    deleteWorkspaceFromSidebar,
+  } = useWorkspaceMutations({
+    route,
+    navigate,
+    goBack,
+    patch,
+    refreshSessions: refresh,
+    refreshWorkspaces,
+    confirmRunningCloses,
+    rememberArchived,
+    dropStalePins,
+  });
 
   // Close a tab = archive the session: it leaves the strip and the active list,
   // but stays recoverable from Archived. An empty session that never ran has
@@ -3098,39 +3115,6 @@ export function App({
       openNewSessionInWorkspace(s, "share");
     }
     refresh();
-  };
-  const archiveWorkspaceFromHeader = (members: UnifiedSession[]) => {
-    if (!members.length) return;
-    confirmRunningCloses(members, () => {
-      void (async () => {
-        goBack();
-        for (const member of members) {
-          patch(member.id, { archived: true, archivedReason: "manual" });
-        }
-        try {
-          await Promise.all(
-            members.map((member) => archiveSessionApi(member.id, true)),
-          );
-          rememberArchived(members.map((member) => member.id));
-          dropStalePins(members);
-          refresh();
-        } catch (error) {
-          console.error("Archive workspace failed:", error);
-          for (const member of members) {
-            patch(member.id, {
-              archived: false,
-              archivedReason: undefined,
-            });
-          }
-        }
-      })();
-    });
-  };
-  const deleteWorkspaceFromHeader = async (workspaceId: string) => {
-    await deleteWorkspaceApi(workspaceId);
-    refreshWorkspaces();
-    refresh();
-    if (route.view === "workspace" && route.id === workspaceId) goBack();
   };
   const closeSession = (s: UnifiedSession) =>
     confirmRunningClose(s, () => void closeSessionNow(s));
@@ -3983,14 +3967,7 @@ export function App({
           }
           onRenameWorkspace={
             activeWorkspaceId
-              ? async (name) => {
-                  await (async () => {
-                    await updateWorkspaceApi(activeWorkspaceId, { name });
-                  })().catch(async (error) => {
-                    console.error("Rename workspace failed:", error);
-                  });
-                  refreshWorkspaces();
-                }
+              ? (name) => renameWorkspace(activeWorkspaceId, name)
               : undefined
           }
           onArchiveWorkspace={
@@ -4403,27 +4380,8 @@ export function App({
                       productEmpty && githubConnectionState !== "loading"
                     }
                     draftRowActive={productEmpty && route.view === "prs"}
-                    onRenameWorkspace={async (id, name) => {
-                      await (async () => {
-                        await updateWorkspaceApi(id, { name });
-                        refreshWorkspaces();
-                      })().catch(async (e) => {
-                        console.error("Rename workspace failed:", e);
-                      });
-                    }}
-                    onDeleteWorkspace={async (id) => {
-                      const wasOpen =
-                        route.view === "workspace" && route.id === id;
-                      await (async () => {
-                        await deleteWorkspaceApi(id);
-                      })().catch(async (e) => {
-                        console.error("Delete workspace failed:", e);
-                        throw e;
-                      });
-                      refreshWorkspaces();
-                      refresh();
-                      if (wasOpen) navigate({ view: "prs" });
-                    }}
+                    onRenameWorkspace={renameWorkspaceFromSidebar}
+                    onDeleteWorkspace={deleteWorkspaceFromSidebar}
                     onToast={showToast}
                     // Only hand the sidebar the top-bar actions slot on the root
                     // page — on a pushed page (session, etc.) the sidebar is still
@@ -4459,47 +4417,7 @@ export function App({
                       };
                       confirmRunningClose(s, () => void archive());
                     }}
-                    onArchiveWorkspace={(sessions, openNext) => {
-                      const archive = async () => {
-                        const openSessionId =
-                          route.view === "session" &&
-                          sessions.some((c) => c.id === route.id)
-                            ? route.id
-                            : null;
-                        if (openSessionId && !openNext?.()) goBack();
-                        // Archive a whole workspace = archive every member session (the
-                        // archive registry is per-session; the workspace row disappears
-                        // once no live sessions remain).
-                        for (const session of sessions) {
-                          patch(session.id, {
-                            archived: true,
-                            archivedReason: "manual",
-                          });
-                        }
-                        try {
-                          await Promise.all(
-                            sessions.map((c) => archiveSessionApi(c.id, true)),
-                          );
-                          // One entry for the whole row, so ⌘Z brings the
-                          // workspace back in a single press.
-                          rememberArchived(sessions.map((c) => c.id));
-                        } catch (e) {
-                          console.error("Archive workspace failed:", e);
-                          for (const session of sessions) {
-                            patch(session.id, {
-                              archived: false,
-                              archivedReason: undefined,
-                            });
-                          }
-                          if (openSessionId)
-                            navigate({ view: "session", id: openSessionId });
-                          return;
-                        }
-                        dropStalePins(sessions);
-                        refresh();
-                      };
-                      confirmRunningCloses(sessions, () => void archive());
-                    }}
+                    onArchiveWorkspace={archiveWorkspaceFromSidebar}
                     onRename={async (s, title) => {
                       await (async () => {
                         await renameSessionApi(s.id, title);
@@ -4646,16 +4564,9 @@ export function App({
                         onOpenSession={openSession}
                         topbarEl={topbarEl}
                         headerActionsEl={headerActionsEl}
-                        onRenameWorkspace={async (name) => {
-                          await (async () => {
-                            await updateWorkspaceApi(routeWorkspace.id, {
-                              name,
-                            });
-                          })().catch(async (error) => {
-                            console.error("Rename workspace failed:", error);
-                          });
-                          refreshWorkspaces();
-                        }}
+                        onRenameWorkspace={(name) =>
+                          renameWorkspace(routeWorkspace.id, name)
+                        }
                         archivedSessions={archivedSessions}
                         onRestoreSession={restoreSession}
                         onArchiveWorkspace={() =>

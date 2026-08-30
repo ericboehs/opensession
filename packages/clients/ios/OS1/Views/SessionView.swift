@@ -1,6 +1,8 @@
 import SwiftUI
 #if os(macOS)
 import AppKit
+#else
+import UIKit
 #endif
 
 /// Owns session start/stop and foreground presence without putting lifecycle
@@ -235,6 +237,7 @@ struct SessionView: View {
         if let sent = viewModel.sentAskAnswer { return "ask-sent-\(sent.id)" }
         // While work is in flight the run clock IS the last row.
         if viewModel.isRunning { return "run-status" }
+        if viewModel.inlineRunFailureMessage != nil { return "run-failure" }
         if !viewModel.liveText.isEmpty { return "live-stream" }
         return viewModel.displayBlocks.last?.id
     }
@@ -255,6 +258,7 @@ struct SessionView: View {
         emptyContent != nil
             && viewModel.displayBlocks.isEmpty
             && viewModel.liveText.isEmpty
+            && viewModel.inlineRunFailureMessage == nil
     }
 
     init(
@@ -763,10 +767,7 @@ struct SessionView: View {
             }
             ToolbarItem(placement: .principal) { macSessionTitle }
             ToolbarItem(placement: .topTrailingCompat) {
-                AddToSidebarButton(
-                    session: viewModel.session,
-                    workspaceSessions: tabs
-                )
+                AddToSidebarButton(session: viewModel.session, siblings: tabs)
             }
             if !workspaceHistoryRows.isEmpty, onRestoreArchivedSession != nil {
                 ToolbarItem(placement: .topTrailingCompat) {
@@ -853,6 +854,35 @@ struct SessionView: View {
                 }
                 if ProcessInfo.processInfo.environment["OS1_SHOW_STEERED_MESSAGE"] == "1" {
                     viewModel.showSteeredMessageForScreenshot()
+                }
+                if ProcessInfo.processInfo.environment["OS1_SHOW_ATTACHMENT_ANNOTATION"] == "1",
+                   viewModel.attachedImages.isEmpty {
+                    let renderer = UIGraphicsImageRenderer(size: CGSize(width: 900, height: 600))
+                    let image = renderer.image { context in
+                        UIColor.systemGroupedBackground.setFill()
+                        context.cgContext.fill(CGRect(x: 0, y: 0, width: 900, height: 600))
+                        UIColor.secondarySystemGroupedBackground.setFill()
+                        context.cgContext.fill(CGRect(x: 70, y: 70, width: 760, height: 460))
+                        let title = "Review settings"
+                        title.draw(
+                            at: CGPoint(x: 120, y: 120),
+                            withAttributes: [.font: UIFont.boldSystemFont(ofSize: 42)]
+                        )
+                        UIColor.systemBlue.setFill()
+                        context.cgContext.fillEllipse(in: CGRect(x: 620, y: 365, width: 150, height: 68))
+                        "Save".draw(
+                            at: CGPoint(x: 650, y: 379),
+                            withAttributes: [
+                                .font: UIFont.boldSystemFont(ofSize: 28),
+                                .foregroundColor: UIColor.white,
+                            ]
+                        )
+                    }
+                    if let data = image.jpegData(compressionQuality: 0.9) {
+                        viewModel.attachedImages = [
+                            AttachedImage(id: "annotation-fixture", jpegData: data)
+                        ]
+                    }
                 }
                 #endif
                 catalog = try? await OS1API.models(workspaceId: viewModel.session.workspaceId)
@@ -1367,9 +1397,7 @@ struct SessionView: View {
         // Nothing on screen: the caller may own this space (the Desk puts its
         // board here). Keep it inside the transcript so composer and scrolling
         // behavior remain the session's own.
-        if let emptyContent,
-           viewModel.displayBlocks.isEmpty,
-           viewModel.liveText.isEmpty {
+        if showingEmptyContent, let emptyContent {
             emptyContent()
                 .id("empty-content")
         }
@@ -1380,6 +1408,11 @@ struct SessionView: View {
             StreamingBubble(text: viewModel.liveText)
                 .id("live-stream")
                 .transcriptTail(tailId == "live-stream")
+        }
+        if let message = viewModel.inlineRunFailureMessage {
+            runFailureAlert(message)
+                .id("run-failure")
+                .transcriptTail(tailId == "run-failure")
         }
         // The run clock closes the transcript while work is in flight, under
         // the durable answer, live stream, or working fold.
@@ -1415,6 +1448,25 @@ struct SessionView: View {
         Color.clear
             .frame(height: 1)
             .id("transcript-end")
+    }
+
+    private func runFailureAlert(_ message: String) -> some View {
+        VStack(spacing: 4) {
+            Label("Run failed", systemImage: "exclamationmark.triangle.fill")
+                .font(.callout.weight(.semibold))
+                .foregroundStyle(OS1VisualStyle.redInk)
+            Text(message)
+                .font(.footnote)
+                .foregroundStyle(OS1VisualStyle.textDim)
+                .multilineTextAlignment(.center)
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity)
+        .background(
+            OS1VisualStyle.red.opacity(0.08),
+            in: RoundedRectangle(cornerRadius: 12)
+        )
+        .accessibilityElement(children: .combine)
     }
 
     private var transcriptScrollBase: some View {
@@ -1468,6 +1520,8 @@ struct SessionView: View {
                 viewModel.expansionState(id: $0, defaultExpanded: $1)
             },
             activity: turnActivity,
+            isActiveReasoning: viewModel.isRunning
+                && block.id == viewModel.displayBlocks.last?.id,
             // An automation's turns are not a person's words, so they get no
             // author fallback. The web makes the same exception.
             owner: viewModel.session.transcriptOwner,
@@ -1635,31 +1689,21 @@ private struct SlackComposeReceiptRow: View {
     }
 }
 
-/// Claims an eligible opened workspace into this person's sidebar. Its own
-/// observation boundary keeps lane writes from invalidating the transcript.
+/// Isolated from `SessionView.body` so lane and hide updates do not invalidate
+/// the transcript. On Mac this is the open session's direct toolbar action.
 private struct AddToSidebarButton: View {
     let session: Session
-    let workspaceSessions: [Session]
+    let siblings: [Session]
 
     var body: some View {
-        Group {
-            if LaneStore.canAddToSidebar(
-                session: session,
-                workspaceSessions: workspaceSessions,
-                lens: PeopleLens.current(),
-                claims: LaneStore.shared.claims
-            ) {
-                Button {
-                    LaneStore.shared.claim(workspaceSessions)
-                    HideStore.shared.unhide(for: session)
-                } label: {
-                    Label("Add to sidebar", systemImage: "sidebar.left")
-                }
-                .help("Add to sidebar")
-                .accessibilityLabel("Add to sidebar")
+        if SidebarAddition.currentIntent(for: session, siblings: siblings) != nil {
+            Button {
+                SidebarAddition.add(session: session, siblings: siblings)
+            } label: {
+                Label("Add to sidebar", systemImage: "sidebar.left")
             }
+            .help("Add to sidebar")
         }
-        .onAppear { LaneStore.shared.syncContext() }
     }
 }
 
@@ -1707,6 +1751,13 @@ private struct SessionActionsMenu: View {
 
     var body: some View {
         Menu {
+            if addIntent != nil {
+                Button {
+                    SidebarAddition.add(session: viewModel.session, siblings: tabs)
+                } label: {
+                    Label("Add to sidebar", systemImage: "sidebar.left")
+                }
+            }
             if let onNewSession {
                 Button(action: onNewSession) {
                     // Two words, because the workspace it lands in is the one
@@ -1843,10 +1894,6 @@ private struct SessionActionsMenu: View {
             }
 
             Section {
-                AddToSidebarButton(
-                    session: viewModel.session,
-                    workspaceSessions: tabs
-                )
                 // The rename itself runs from SessionView's alert; the menu
                 // only raises it, so the callback's presence is the gate.
                 if onRenameWorkspace != nil {
@@ -1872,7 +1919,7 @@ private struct SessionActionsMenu: View {
                     // Hiding is the personal counterpart to archiving: the row
                     // leaves YOUR sidebar while the session keeps running for
                     // everyone else — so it isn't destructive-styled.
-                    if HideStore.shared.isHidden(workspace) {
+                    if HideStore.shared.isHidden(workspace), addIntent == nil {
                         Button {
                             // `unhide` rather than clearing this row's key:
                             // it drops every key the session could sit under,
@@ -1883,7 +1930,7 @@ private struct SessionActionsMenu: View {
                         } label: {
                             Label("Restore to sidebar", systemImage: "eye")
                         }
-                    } else {
+                    } else if !HideStore.shared.isHidden(workspace) {
                         Button {
                             HideStore.shared.hide(workspace)
                         } label: {
@@ -1935,6 +1982,10 @@ private struct SessionActionsMenu: View {
         } message: {
             Text(mergeError ?? "Please try again.")
         }
+    }
+
+    private var addIntent: SidebarAddition.Intent? {
+        SidebarAddition.currentIntent(for: viewModel.session, siblings: tabs)
     }
 
     private var mergeConfirmationTitle: String {
@@ -2937,9 +2988,25 @@ private struct SessionInputBar: View {
             }
 
             if !viewModel.attachedImages.isEmpty {
-                AttachedImagesRow(images: viewModel.attachedImages) { image in
-                    viewModel.attachedImages.removeAll { $0.id == image.id }
-                }
+                AttachedImagesRow(
+                    images: viewModel.attachedImages,
+                    onRemove: { image in
+                        guard let index = viewModel.attachedImages.firstIndex(of: image)
+                        else { return }
+                        viewModel.draft = ImageAttachmentComments.rebasing(
+                            viewModel.draft, removingImageAt: index
+                        )
+                        viewModel.attachedImages.remove(at: index)
+                    },
+                    onComment: { index, region, text in
+                        viewModel.draft = ImageAttachmentComments.appending(
+                            to: viewModel.draft,
+                            imageIndex: index,
+                            region: region,
+                            comment: text
+                        )
+                    }
+                )
             }
 
             if let typingLabel {

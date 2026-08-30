@@ -12,6 +12,18 @@ const appSource = await Bun.file(new URL("../App.tsx", import.meta.url)).text();
 const hookSource = await Bun.file(
   new URL("useWorkspaces.ts", import.meta.url),
 ).text();
+const mutationsSource = await Bun.file(
+  new URL("useWorkspaceMutations.ts", import.meta.url),
+).text();
+
+function expectInOrder(source: string, needles: string[]) {
+  let offset = 0;
+  for (const needle of needles) {
+    const index = source.indexOf(needle, offset);
+    expect(index).toBeGreaterThanOrEqual(offset);
+    offset = index + needle.length;
+  }
+}
 
 function workspace(id: string): Workspace {
   return { id, name: `Workspace ${id}` } as Workspace;
@@ -119,4 +131,74 @@ test("delegates list ownership while keeping refresh identity explicit", () => {
   expect(hookSource).toMatch(
     /const \[refresh\] = useState\(\s*\(\) => \(\) =>/,
   );
+});
+
+test("delegates workspace mutation ownership to one hook instance", () => {
+  expect(appSource.match(/useWorkspaceMutations\(\{/g)).toHaveLength(1);
+  expect(appSource).not.toContain("const archiveWorkspaceFromHeader");
+  expect(appSource).not.toContain("const deleteWorkspaceFromHeader");
+  expect(appSource).not.toContain("updateWorkspaceApi");
+  expect(appSource).not.toContain("deleteWorkspaceApi");
+
+  for (const name of [
+    "renameWorkspace",
+    "renameWorkspaceFromSidebar",
+    "archiveWorkspaceFromHeader",
+    "archiveWorkspaceFromSidebar",
+    "deleteWorkspaceFromHeader",
+    "deleteWorkspaceFromSidebar",
+  ]) {
+    expect(mutationsSource).toContain(`const ${name} =`);
+  }
+});
+
+test("preserves workspace mutation ordering and failure boundaries", () => {
+  expect(mutationsSource).toContain("if (!members.length) return;");
+  expectInOrder(mutationsSource, [
+    "const archiveWorkspaceFromHeader",
+    "goBack();",
+    "patch(member.id",
+    "await Promise.all(",
+    "rememberArchived(",
+    "dropStalePins(members);",
+    "refreshSessions();",
+    'console.error("Archive workspace failed:", error);',
+  ]);
+  expectInOrder(mutationsSource, [
+    "const renameWorkspace =",
+    "await updateWorkspaceApi",
+    'console.error("Rename workspace failed:", error);',
+    "refreshWorkspaces();",
+    "const renameWorkspaceFromSidebar =",
+    "await updateWorkspaceApi",
+    "refreshWorkspaces();",
+    'console.error("Rename workspace failed:", error);',
+  ]);
+  expectInOrder(mutationsSource, [
+    "const deleteWorkspaceFromHeader",
+    "await deleteWorkspaceApi(workspaceId);",
+    "refreshWorkspaces();",
+    "refreshSessions();",
+    'route.view === "workspace"',
+    "goBack();",
+    "const deleteWorkspaceFromSidebar",
+    "const wasOpen =",
+    "await deleteWorkspaceApi(workspaceId);",
+    'console.error("Delete workspace failed:", error);',
+    "refreshWorkspaces();",
+    "refreshSessions();",
+    'navigate({ view: "prs" });',
+  ]);
+  expectInOrder(mutationsSource, [
+    "const archiveWorkspaceFromSidebar",
+    "const openSessionId =",
+    "openNext?.()",
+    "patch(session.id",
+    "await Promise.all(",
+    "rememberArchived(",
+    'console.error("Archive workspace failed:", error);',
+    'navigate({ view: "session", id: openSessionId });',
+    "dropStalePins(sessions);",
+    "refreshSessions();",
+  ]);
 });

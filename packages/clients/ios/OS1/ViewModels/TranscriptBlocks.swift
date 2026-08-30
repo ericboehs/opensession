@@ -298,6 +298,13 @@ struct WorkTurn: Identifiable, Equatable {
     var hasFailure: Bool { failureCount > 0 }
     var hasNarration: Bool
 
+    /// At most one summary moves: the newest reasoning update in the trailing
+    /// live turn. Once the turn settles this becomes nil without changing the
+    /// durable summaries themselves.
+    var activeReasoningId: String? {
+        isLive ? reasoningSummaries.last?.id : nil
+    }
+
     /// How the fold should start out, before any manual toggle.
     func defaultExpanded(preference: TurnActivity) -> Bool {
         // A tool-only turn already has one complete summary in its header.
@@ -365,6 +372,14 @@ struct ReasoningSummaryDisplay: Equatable {
             trimmed[trimmed.index(trimmed.startIndex, offsetBy: 2)..<close.lowerBound]
         ).trimmingCharacters(in: .whitespacesAndNewlines)
         body = String(after).trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// The activity chrome for this summary. Providers that send prose rather
+    /// than a generated heading still get one stable live label; their prose
+    /// remains in `body` and readable below it. Durable prose gets no label.
+    func activityTitle(isActive: Bool) -> String? {
+        if !title.isEmpty { return title }
+        return isActive ? "Thinking" : nil
     }
 
     /// A tolerant compatibility check for the old bold-heading-only shape.

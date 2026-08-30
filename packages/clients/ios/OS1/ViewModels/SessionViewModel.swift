@@ -60,6 +60,21 @@ final class SessionViewModel {
     var queuedCount: Int {
         hasDetailedQueue ? queuedItems.count : session.queuedCount ?? 0
     }
+
+    /// The session-row fallback for a terminal failure that did not make it
+    /// into the transcript. A live retry and a safety pause each have their
+    /// own, more specific state, and a durable system entry wins over this
+    /// fallback so the same failure is never shown twice.
+    var inlineRunFailureMessage: String? {
+        guard !isRunning,
+              safety == nil,
+              let message = session.lastRunError?.message?.nilIfBlank,
+              !entries.contains(where: {
+                  $0.type == "system" && $0.text.contains(message)
+              })
+        else { return nil }
+        return message
+    }
     /// What this conversation has cost and how full its context window is.
     /// Seeded from the session row and then kept live by `usage_update`,
     /// which the server broadcasts mid-run as well as at the end of a turn.

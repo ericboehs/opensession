@@ -16,6 +16,9 @@ struct TranscriptRow: View {
     let expansionState: (String, Bool) -> TurnFoldState
     /// Where a turn's work rests, and whether that includes its tool calls.
     var activity = TurnActivity.standard
+    /// True only for a trailing standalone reasoning row in a live transcript.
+    /// Work turns derive the same state from `WorkTurn.isLive`.
+    var isActiveReasoning = false
     /// Who started this session, for crediting turns that carry no explicit
     /// sender (see `UserBubble`). Nil for automations and sub-agents.
     var owner: String?
@@ -58,7 +61,7 @@ struct TranscriptRow: View {
                     onDeleteUnsent: onDeleteUnsent
                 )
             } else if entry.isAssistant, entry.isReasoning == true {
-                ReasoningSummaryRow(entry: entry)
+                ReasoningSummaryRow(entry: entry, isActive: isActiveReasoning)
             } else if entry.isAssistant {
                 AssistantMessage(
                     entry: entry,
@@ -515,6 +518,7 @@ private struct OutboxMessageStatus: View {
 /// structure at the same dimmed hierarchy.
 struct ReasoningSummaryRow: View {
     let entry: TranscriptEntry
+    var isActive = false
 
     private var display: ReasoningSummaryDisplay {
         ReasoningSummaryDisplay(entry.text)
@@ -522,10 +526,14 @@ struct ReasoningSummaryRow: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            if !display.title.isEmpty {
-                Text(display.title)
-                    .font(.body)
-                    .foregroundStyle(OS1VisualStyle.textDim)
+            if let title = display.activityTitle(isActive: isActive) {
+                if isActive {
+                    ActiveReasoningTitle(title: title)
+                } else {
+                    Text(title)
+                        .font(.body)
+                        .foregroundStyle(OS1VisualStyle.textDim)
+                }
             }
             if !display.body.isEmpty {
                 MarkdownBody(display.body, dimmed: true)
@@ -542,8 +550,54 @@ struct ReasoningSummaryRow: View {
             }
             TimestampLabel(date: entry.timestampDate)
         }
-        .accessibilityLabel("Reasoning summary")
+        .accessibilityLabel(isActive ? "Active reasoning" : "Reasoning summary")
         .accessibilityValue(entry.text)
+    }
+}
+
+/// A small isolated animation subtree. Its timeline redraws only this title,
+/// never the transcript row or lazy stack around it. Reduce Motion does not
+/// instantiate a timeline and uses the brighter, static endpoint instead.
+private struct ActiveReasoningTitle: View {
+    let title: String
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        Group {
+            if reduceMotion {
+                label.foregroundStyle(OS1VisualStyle.text)
+            } else {
+                TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { context in
+                    let cycle = context.date.timeIntervalSinceReferenceDate
+                        .truncatingRemainder(dividingBy: 1.8) / 1.8
+                    label
+                        .foregroundStyle(OS1VisualStyle.textDim)
+                        .overlay {
+                            label
+                                .foregroundStyle(OS1VisualStyle.text)
+                                .mask {
+                                    GeometryReader { geometry in
+                                        let width = max(36, geometry.size.width * 0.42)
+                                        LinearGradient(
+                                            colors: [.clear, .black, .clear],
+                                            startPoint: .leading,
+                                            endPoint: .trailing
+                                        )
+                                        .frame(width: width)
+                                        .offset(x: (geometry.size.width + width) * cycle - width)
+                                    }
+                                }
+                        }
+                }
+            }
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(title)
+    }
+
+    private var label: some View {
+        Text(title).font(.body)
     }
 }
 
@@ -883,10 +937,9 @@ struct StreamingBubble: View {
     var body: some View {
         Group {
             if let heading = ReasoningSummaryDisplay.liveHeading(text) {
-                Text(heading)
-                    .font(.body)
-                    .foregroundStyle(OS1VisualStyle.textDim)
-                    .accessibilityLabel("Reasoning summary")
+                ActiveReasoningTitle(title: heading)
+                    .accessibilityLabel("Active reasoning")
+                    .accessibilityValue(heading)
             } else {
                 StreamingMarkdownBody(text)
             }

@@ -1,4 +1,5 @@
 import { getLane } from "./lanes";
+import { personKey } from "./review-queue";
 import { sessionPrApproved, sessionPrMerged } from "./session-prs";
 import type { MineStatus } from "./sidebar-types";
 import type { UnifiedSession } from "./types";
@@ -61,12 +62,11 @@ export function pinnedLane(s: UnifiedSession): MineStatus | undefined {
 }
 
 // A row you started yourself (automation runs are never "yours" — they arrive
-// in the Automations band and need claiming to join your lanes).
+// in the Automations band and need claiming to join your lanes). Session origins
+// can write a full display name while the picker stores its person key.
 export function ownedBy(s: UnifiedSession, user: string): boolean {
   return (
-    !s.automation &&
-    !!s.startedBy &&
-    s.startedBy.toLowerCase() === user.toLowerCase()
+    !s.automation && !!s.startedBy && personKey(s.startedBy) === personKey(user)
   );
 }
 

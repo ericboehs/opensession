@@ -30,7 +30,10 @@ Pure SwiftUI with SwiftStreamingMarkdown for CommonMark/GFM rendering. See
   one, sharing `/api/hides` — while the session keeps running for everyone else.
   A hidden row comes back while one of its sessions is blocked on a question,
   prompting in a session clears its hide, and search ignores hides, so a hidden
-  row stays findable and its menu offers "Restore to my sidebar". Unread rows
+  row stays findable and its menu offers "Restore to my sidebar". An open
+  teammate, automation, or spawned session can also be claimed from its native
+  action surface with "Add to sidebar", sharing `/api/lanes` with the web.
+  Unread rows
   read like the web sidebar's, off the same shared store (`/api/reads`): a row
   whose sessions carry activity past your last read goes semibold at full label
   strength instead of the usual dimmed medium, and reading a session here clears
@@ -129,8 +132,9 @@ Pure SwiftUI with SwiftStreamingMarkdown for CommonMark/GFM rendering. See
   instead. On iOS, the PWA-style Liquid Glass action bar floats above the
   composer with Archive, session actions, New session, and Next chat. It stays
   directly above the composer when the keyboard opens. The actions menu carries
-  worktree details, the pull request panel, rename, share, hide or restore, and
-  archive, matching the sidebar row's long-press menu. A bounded cache keeps
+  worktree details, the pull request panel, Add to sidebar when needed, rename,
+  share, hide or restore, and archive, matching the sidebar row's long-press
+  menu. A bounded cache keeps
   recently visited conversations loaded while their
   off-screen sockets remain disconnected, so returning to a page does not show
   a loading screen. Fenced Markdown, expanded tool inputs and code assets use

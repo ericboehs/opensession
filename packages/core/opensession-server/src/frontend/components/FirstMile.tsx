@@ -57,7 +57,7 @@ const PANEL_MAX_WIDTH: Record<FirstMileStepId, number> = {
   github: 750,
   "github-account": 750,
   repos: 750,
-  ready: 1144,
+  ready: 900,
 };
 
 // Organization and model setup come first. GitHub App creation no longer
@@ -798,7 +798,7 @@ export function FirstMile({ onDone }: { onDone: () => Promise<void> }) {
             panelSize
               ? "max-w-none"
               : step.id === "ready"
-                ? "max-w-[1144px]"
+                ? "max-w-[900px]"
                 : step.id === "welcome"
                   ? "max-w-[560px]"
                   : "max-w-[750px]",

@@ -165,20 +165,19 @@ enum SettingsAPI {
     }
 
     /// Per-user sidebar lanes, shared with the web sidebar (session id → the
-    /// lane it is claimed into).
+    /// lane it is claimed into). Writes are per-key deltas so this client
+    /// cannot erase claims another client made from an older snapshot.
     static func lanes(user: String) async throws -> [String: String] {
         struct Response: Decodable, Sendable { var lanes: [String: String]? }
         let response: Response = try await request("/api/lanes", query: ["user": user])
         return response.lanes ?? [:]
     }
 
-    /// Claim lane ids with a delta so this device cannot erase claims another
-    /// client wrote after its last hydration.
     @discardableResult
     static func saveLanes(
         user: String,
         set: [String: String],
-        remove: [String],
+        remove: [String] = [],
         connection: Connection? = nil
     ) async throws -> [String: String] {
         struct Response: Decodable, Sendable { var lanes: [String: String]? }

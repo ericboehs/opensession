@@ -30,8 +30,11 @@ struct TurnBlockView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             ForEach(turn.reasoningSummaries) { entry in
-                ReasoningSummaryRow(entry: entry)
-                    .padding(.bottom, 4)
+                ReasoningSummaryRow(
+                    entry: entry,
+                    isActive: entry.id == turn.activeReasoningId
+                )
+                .padding(.bottom, 4)
             }
 
             Button {

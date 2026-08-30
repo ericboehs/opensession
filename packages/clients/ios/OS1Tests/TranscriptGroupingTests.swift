@@ -190,6 +190,41 @@ final class TranscriptGroupingTests: XCTestCase {
         let display = ReasoningSummaryDisplay(turn.reasoningSummaries[0].text)
         XCTAssertEqual(display.title, "Checking deployment status")
         XCTAssertEqual(display.body, "The release is moving.")
+        XCTAssertEqual(display.activityTitle(isActive: true), "Checking deployment status")
+        XCTAssertEqual(display.activityTitle(isActive: false), "Checking deployment status")
+    }
+
+    func testLiveProseReasoningGetsThinkingLabelButDurableProseStaysUnlabelled() {
+        let display = ReasoningSummaryDisplay("I should inspect the current state first.")
+
+        XCTAssertEqual(display.activityTitle(isActive: true), "Thinking")
+        XCTAssertNil(display.activityTitle(isActive: false))
+        XCTAssertEqual(display.body, "I should inspect the current state first.")
+    }
+
+    func testOnlyNewestReasoningSummaryIsActiveInLiveTurn() {
+        let entries = [
+            TranscriptEntry(id: "u1", type: "user", content: "check it"),
+            TranscriptEntry(
+                id: "r1", type: "assistant", content: "**Reading logs**", isReasoning: true
+            ),
+            toolUse("t1", name: "Bash"),
+            TranscriptEntry(
+                id: "r2", type: "assistant", content: "Still comparing results.",
+                isReasoning: true
+            ),
+        ]
+        let items = TranscriptGrouping.displayItems(from: entries)
+        let live = TranscriptGrouping.blocks(from: items, live: true, worktreeDir: nil)
+        let durable = TranscriptGrouping.blocks(from: items, live: false, worktreeDir: nil)
+
+        guard case .work(let liveTurn) = live[1],
+              case .work(let durableTurn) = durable[1] else {
+            return XCTFail("expected matching work turns")
+        }
+        XCTAssertEqual(liveTurn.reasoningSummaries.map(\.id), ["r1", "r2"])
+        XCTAssertEqual(liveTurn.activeReasoningId, "r2")
+        XCTAssertNil(durableTurn.activeReasoningId)
     }
 
     func testLegacyBoldIntermediateSummaryIsNormalizedButBoldFinalIsNot() {

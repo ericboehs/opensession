@@ -70,6 +70,47 @@ final class SessionViewModelTests: XCTestCase {
         XCTAssertFalse(viewModel.isRunning)
     }
 
+    func testInlineRunFailureTracksIdleFallbackWithoutDuplicatingStrongerState() {
+        let error = Session.RunError(message: "Provider credits exhausted.")
+        let viewModel = SessionViewModel(
+            session: Session(id: "bks-1", isRunning: false, lastRunError: error)
+        )
+
+        XCTAssertEqual(viewModel.inlineRunFailureMessage, "Provider credits exhausted.")
+
+        viewModel.handle(.sessionStatus(sessionId: "bks-1", isRunning: true))
+        XCTAssertNil(viewModel.inlineRunFailureMessage, "a new run replaces the stale failure")
+
+        viewModel.handle(.sessionStatus(sessionId: "bks-1", isRunning: false))
+        viewModel.updateSessionSnapshot(Session(id: "bks-1", isRunning: false))
+        XCTAssertNil(viewModel.inlineRunFailureMessage, "the fallback clears with the field")
+
+        let safety = SessionSafetyState(status: "paused_for_safety")
+        viewModel.updateSessionSnapshot(Session(
+            id: "bks-1", isRunning: false, safety: safety, lastRunError: error
+        ))
+        XCTAssertNil(viewModel.inlineRunFailureMessage, "safety owns its own alert")
+    }
+
+    func testInlineRunFailureDoesNotDuplicateDurableTranscriptNotice() {
+        let message = "Provider credits exhausted."
+        let viewModel = SessionViewModel(
+            session: Session(
+                id: "bks-1",
+                isRunning: false,
+                lastRunError: Session.RunError(message: message)
+            )
+        )
+
+        viewModel.handle(.transcriptInit(
+            sessionId: "bks-1",
+            entries: [entry("failure", "system", text: "⚠ Run failed: \(message)")],
+            cursor: .empty
+        ))
+
+        XCTAssertNil(viewModel.inlineRunFailureMessage)
+    }
+
     func testPageCacheReusesLoadedConversationAndRefreshesSessionSnapshot() {
         let cache = SessionViewModelCache(capacity: 2)
         let first = cache.viewModel(for: Session(id: "bks-1", title: "Old"), scope: serverA)
