@@ -159,6 +159,13 @@ export class AgentLinkAgent implements AgentModule {
           { key: LANE_RUNNING, label: "Running", dot: "var(--blue)" },
           { key: LANE_IDLE, label: "Idle", dot: "var(--text-faint)" },
         ],
+        // Opening an item resolves a (session-less) workspace and foregrounds
+        // this tab. The iframe is served by routes/agentlink.ts and renders
+        // the peer's pi transcript as escaped text.
+        panel: {
+          label: "Transcript",
+          embedUrlTemplate: "/agentlink/peer/{id}",
+        },
         searchMeta: ["cwd", "status"],
       },
       listItems: async () => {
