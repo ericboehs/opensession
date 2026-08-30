@@ -32,6 +32,9 @@ export type MeshPeer = {
   cwd: string;
   status: string;
   kind?: string;
+  /** Which agent registered the entry — how a pi peer is told from a
+   *  Claude Code one, since both share this registry. */
+  entrypoint?: string;
   startedAt?: number;
   sock: string;
 };
@@ -97,6 +100,8 @@ export async function listMeshPeers(): Promise<MeshPeer[]> {
       cwd: typeof entry.cwd === "string" ? entry.cwd : "",
       status: typeof entry.status === "string" ? entry.status : "unknown",
       kind: typeof entry.kind === "string" ? entry.kind : undefined,
+      entrypoint:
+        typeof entry.entrypoint === "string" ? entry.entrypoint : undefined,
       startedAt:
         typeof entry.startedAt === "number" ? entry.startedAt : undefined,
       sock,

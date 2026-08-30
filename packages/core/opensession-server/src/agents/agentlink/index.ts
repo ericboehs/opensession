@@ -28,6 +28,11 @@ import {
   type ExternalSessionRow,
 } from "../../server/external-sessions";
 import { listMeshPeers, type MeshPeer } from "./mesh-registry";
+import { listWorkspaces } from "../../server/workspaces";
+
+/** External-ref kind for a mesh peer. Feed items are opened into a workspace
+ *  carrying this kind plus the peer's session id. */
+const FEED_REF_KIND = "agentlink";
 
 export const AGENT_LINK_SOURCE = "agent-link";
 
@@ -45,6 +50,31 @@ function rowId(peer: MeshPeer): string {
  *  other than idle means a turn is in flight. */
 function isRunning(status: string): boolean {
   return status !== "idle" && status !== "unknown";
+}
+
+/**
+ * The workspace a peer has been opened into, if any.
+ *
+ * Opening a feed item resolves a workspace carrying `externalRef
+ * {kind: "agentlink", id}`, but that workspace is session-less, and
+ * `/api/workspaces?active=1` — the list the UI actually renders — keeps only
+ * workspaces some session row points at. Linking the row back to the
+ * workspace is what makes it appear: it satisfies the active filter, and it
+ * gives sidebar-workspaces the `workspaceId` it requires to draw a row at all.
+ */
+function workspaceIdForPeer(peer: MeshPeer): string | undefined {
+  if (!peer.sessionId) return undefined;
+  try {
+    for (const ws of listWorkspaces()) {
+      for (const ref of ws.externalRefs || []) {
+        if (ref.kind === FEED_REF_KIND && ref.id === peer.sessionId)
+          return ws.id;
+      }
+    }
+  } catch {
+    // The workspace store is not essential to listing peers.
+  }
+  return undefined;
 }
 
 function toRow(peer: MeshPeer): ExternalSessionRow {
@@ -67,6 +97,7 @@ function toRow(peer: MeshPeer): ExternalSessionRow {
     isRunning: isRunning(peer.status),
     runState: peer.status,
     mode: peer.kind,
+    workspaceId: workspaceIdForPeer(peer),
     createdAt: started,
     lastActivity: started,
     archived: false,
@@ -100,8 +131,22 @@ function toFeedItem(peer: MeshPeer): FeedItem {
       status: peer.status,
       ...(peer.pid !== undefined ? { pid: peer.pid } : {}),
       ...(peer.kind ? { kind: peer.kind } : {}),
+      ...(peer.entrypoint ? { entrypoint: peer.entrypoint } : {}),
     },
   };
+}
+
+/** Registry entries are written by whichever agent owns the session. Claude
+ *  Code registers `cli`; pi-agent-link registers `pi`. Only pi sessions are
+ *  in scope: they are the ones whose transcript this server can read, so a
+ *  Claude peer could only ever render as a row that opens to nothing. */
+const PI_ENTRYPOINT = "pi";
+
+/** Live pi peers. Entries without an entrypoint are excluded rather than
+ *  assumed: a mislabelled Claude session would show a row with no transcript. */
+async function livePiPeers(): Promise<MeshPeer[]> {
+  const peers = await listMeshPeers();
+  return peers.filter((p) => p.entrypoint === PI_ENTRYPOINT);
 }
 
 export class AgentLinkAgent implements AgentModule {
@@ -154,7 +199,7 @@ export class AgentLinkAgent implements AgentModule {
       descriptor: {
         id: "agentlink",
         title: "Agent Link",
-        refKind: "agentlink",
+        refKind: FEED_REF_KIND,
         lanes: [
           { key: LANE_RUNNING, label: "Running", dot: "var(--blue)" },
           { key: LANE_IDLE, label: "Idle", dot: "var(--text-faint)" },
@@ -170,7 +215,7 @@ export class AgentLinkAgent implements AgentModule {
       },
       listItems: async () => {
         try {
-          return (await listMeshPeers()).map(toFeedItem);
+          return (await livePiPeers()).map(toFeedItem);
         } catch (err) {
           // A band that throws takes the sidebar's feed rail with it; an
           // empty band just reads as "nothing running".
@@ -185,7 +230,7 @@ export class AgentLinkAgent implements AgentModule {
     const now = Date.now();
     if (now < this.cache.expiresAt) return this.cache.rows;
     try {
-      const rows = (await listMeshPeers()).map(toRow);
+      const rows = (await livePiPeers()).map(toRow);
       this.cache = { rows, expiresAt: now + CACHE_TTL_MS };
       this.lastCount = rows.length;
       this.lastError = null;

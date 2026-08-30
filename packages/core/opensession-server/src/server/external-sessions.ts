@@ -39,6 +39,11 @@ export type ExternalSessionRow = {
   title?: string;
   repoLess?: boolean;
   worktreeDir?: string;
+  /** Set once the peer has been opened into a workspace. The sidebar derives
+   *  its rows per workspace, and `/api/workspaces?active=1` keeps only
+   *  workspaces a session points at, so this is what makes an opened peer
+   *  visible in either place. */
+  workspaceId?: string;
   isRunning?: boolean;
   runState?: string;
   mode?: string;

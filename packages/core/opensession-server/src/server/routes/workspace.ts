@@ -27,6 +27,7 @@ import {
   resolveRequestedSandbox,
 } from "../sandbox/config";
 import { resolveInteractiveSandbox } from "../sandbox/defaults";
+import { externalSessionRows } from "../external-sessions";
 import {
   SESSIONS_DIR,
   findSessionAsync,
@@ -503,6 +504,14 @@ export async function handleWorkspaceRoutes(
             .filter((id): id is string => typeof id === "string" && !!id),
       );
       const openPrs = getOpenPrs();
+      // The index is built from sessions on disk. External providers (mesh
+      // peers) are deliberately never persisted there, since those processes
+      // outlive and die independently of this server, so their workspaces
+      // have to be unioned in or an opened peer resolves to a workspace the
+      // UI then reports as missing.
+      for (const row of await externalSessionRows()) {
+        if (row.workspaceId) activeWorkspaceIds.add(row.workspaceId);
+      }
       workspaces = workspaces.filter(
         (workspace) =>
           activeWorkspaceIds.has(workspace.id) ||

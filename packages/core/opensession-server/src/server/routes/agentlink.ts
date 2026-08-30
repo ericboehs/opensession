@@ -38,6 +38,11 @@ function renderPage(body: string): Response {
     `<!doctype html><meta charset="utf-8">` +
       `<meta name="color-scheme" content="light dark">` +
       `<style>
+        /* The host styles this iframe for video (opaque black). Paint our
+           own surface or dark text renders on a dark background. Canvas /
+           CanvasText are the system pair, so this still follows the
+           light/dark preference declared above. */
+        html { background: Canvas; color: CanvasText; }
         body { font: 13px/1.5 ui-sans-serif, system-ui, sans-serif;
                margin: 0; padding: 12px; }
         .turn { margin: 0 0 14px; }
