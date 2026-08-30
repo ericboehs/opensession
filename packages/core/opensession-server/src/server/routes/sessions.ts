@@ -11,6 +11,7 @@ import {
   executeSessionProjection,
 } from "../session-projection-executor";
 import { transcriptSearchWorkerArgv } from "../../runner-host/exe";
+import { externalSessionRows } from "../external-sessions";
 import { requestUser, type RouteContext } from "./context";
 import {
   cancelAgentRunAndWait,
@@ -905,18 +906,27 @@ function refreshSessionsResponse(
     shareWorkspacePrRefs(sliced);
     const listed =
       variant === "exclude" && !indexed ? sidebarLiveSessions(sliced) : sliced;
-    const text = JSON.stringify(
+    const baseRows =
       variant === "only-slim"
         ? listed.map(archivedIndexRow)
-        : listed.map(sessionListRow),
-    );
+        : listed.map(sessionListRow);
+    const baseText = JSON.stringify(baseRows);
+    // Rows for sessions this server does not own (agent-link mesh peers) ride
+    // the same response but never enter the persisted live list: they belong
+    // to terminal processes that die independently of us, so a restart must
+    // rediscover them rather than replay a snapshot of the dead. The archived
+    // slice is a pure history view and gets none of them.
+    const external = variant === "only-slim" ? [] : await externalSessionRows();
+    const text = external.length
+      ? JSON.stringify([...baseRows, ...external])
+      : baseText;
     const snapshot: SessionsResponseSnapshot = {
       text,
       hash: Bun.hash(text).toString(16),
       expiresAt: Date.now() + SESSIONS_RESPONSE_TTL_MS,
     };
     sessionsResponseSnapshots.set(variant, snapshot);
-    if (variant === "exclude") persistDiskLiveList(text);
+    if (variant === "exclude") persistDiskLiveList(baseText);
     return snapshot;
   })().finally(() => {
     sessionsResponseRefreshes.delete(variant);

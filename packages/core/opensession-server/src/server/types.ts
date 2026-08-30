@@ -1,4 +1,11 @@
-export type SessionSource = "slack" | "linear" | "opensession" | "cli";
+export type SessionSource =
+  | "slack"
+  | "linear"
+  | "opensession"
+  | "cli"
+  // Projected rows for sessions this server does not own (agents running in a
+  // terminal on the same host). See server/external-sessions.ts.
+  | "agent-link";
 
 /**
  * Generic linkage from a session/workspace to an external object surfaced by

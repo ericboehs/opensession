@@ -269,6 +269,25 @@ export const INTEGRATIONS: IntegrationSpec[] = [
       return new CodeStorageIntegration();
     },
   },
+  {
+    id: "agentlink",
+    label: "Agent Link",
+    doc: "docs/agent-link-bridge.md",
+    enableFlag: "ENABLE_AGENTLINK_AGENT",
+    // No credentials: the mesh is a local registry directory plus unix
+    // sockets owned by the same user, so there is nothing to authenticate to.
+    env: [],
+    links: [
+      {
+        label: "pi-agent-link",
+        url: "https://github.com/ericboehs/pi-agent-link",
+      },
+    ],
+    load: async () => {
+      const { AgentLinkAgent } = await import("../../agents/agentlink/index");
+      return new AgentLinkAgent();
+    },
+  },
 ];
 
 export function findIntegration(id: string): IntegrationSpec | undefined {
