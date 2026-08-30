@@ -60,10 +60,18 @@ Two pieces of precedent make this much smaller than it looks.
 The bridge is a second implementation of an interface the product already has,
 not a new concept bolted on.
 
-**2. `/api/sessions` already returns rows it does not own.** The route
-synthesizes archived-index summaries with `source: "archive"` — rows that are
-not live session records. Injecting foreign rows is an established pattern
-here, not a violation of one.
+**2. `/api/sessions` already returns partial rows that are not whole sessions.**
+The GET handler merges archived-index summaries into the list via
+`indexedSessions(slice)` / `indexedSidebarSessions()`. The iOS model marks these
+with `slim: Bool?` and documents the contract:
+
+> This row is a summary from the archived index, not a whole session — it
+> carries what a list renders and nothing else. Anything that opens one fetches
+> the real thing first (`SessionsListViewModel.hydrated`).
+
+That is the pattern to copy: **a cheap projection in the list, hydrated on
+open.** External sessions should ride the same `slim` contract rather than
+pretending to be complete records.
 
 `SessionSource` is a four-value union in both
 `packages/core/opensession-server/src/server/types.ts` and the frontend copy:
