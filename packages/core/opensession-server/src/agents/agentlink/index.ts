@@ -2,8 +2,15 @@
  * Agent Link — surfaces pi and Claude Code sessions running on this host.
  *
  * Stage 1 (see docs/agent-link-bridge.md): read-only listing. Live mesh peers
- * appear in the session list with `source: "agent-link"`, marked slim,
- * external and read-only. No transcript, no steering.
+ * appear as a sidebar feed band, and in the session list with
+ * `source: "agent-link"`. No transcript, no steering.
+ *
+ * The feed is the surface that actually renders. `/api/sessions` rows are
+ * derived into sidebar entries by workspace (frontend/lib/sidebar-workspaces
+ * returns nothing for a row with no `workspaceId`, and its only fallback is a
+ * `/worktrees/` path), and a terminal session working in an ordinary checkout
+ * has neither. Feeds are the documented seam for external objects, so the
+ * band is where these belong; the session rows remain for API consumers.
  *
  * Security posture:
  *  - Nothing here can send a peer anything; the send path is not implemented.
@@ -14,6 +21,7 @@
  */
 
 import type { AgentModule } from "../types";
+import type { FeedItem, FeedProvider } from "../../server/feeds";
 import {
   registerExternalSessionProvider,
   unregisterExternalSessionProvider,
@@ -65,6 +73,37 @@ function toRow(peer: MeshPeer): ExternalSessionRow {
   };
 }
 
+/** Lane keys double as the descriptor's lane list — see getFeed(). */
+const LANE_RUNNING = "running";
+const LANE_IDLE = "idle";
+
+/** `/Users/me/Code/x` reads better as `~/Code/x` in a narrow sidebar. */
+function tildify(dir: string): string {
+  const home = process.env.HOME;
+  return home && dir.startsWith(home) ? `~${dir.slice(home.length)}` : dir;
+}
+
+function toFeedItem(peer: MeshPeer): FeedItem {
+  const running = isRunning(peer.status);
+  return {
+    // Becomes ExternalRef.id, so it has to outlive a poll. A mesh session id
+    // is unique; a pid is only unique while the process lives, but it is the
+    // only handle a peer without one gives us.
+    id: peer.sessionId ?? `pid:${peer.pid ?? peer.sock}`,
+    title: peer.name,
+    // Peer-supplied text. Rendered as a label, never interpreted.
+    preview: peer.cwd ? tildify(peer.cwd) : undefined,
+    lane: running ? LANE_RUNNING : LANE_IDLE,
+    ts: peer.startedAt,
+    meta: {
+      cwd: peer.cwd,
+      status: peer.status,
+      ...(peer.pid !== undefined ? { pid: peer.pid } : {}),
+      ...(peer.kind ? { kind: peer.kind } : {}),
+    },
+  };
+}
+
 export class AgentLinkAgent implements AgentModule {
   name = "agentlink";
 
@@ -95,6 +134,43 @@ export class AgentLinkAgent implements AgentModule {
     return {
       peers: this.lastCount,
       ...(this.lastError ? { error: this.lastError } : {}),
+    };
+  }
+
+  /**
+   * The sidebar band. Unlike the config feeds, items come from a local
+   * registry read rather than an MCP tool call, so there is no per-viewer
+   * grant to honor and every viewer sees the same peers — they are processes
+   * on this host, not objects in someone's external account.
+   *
+   * No `mcpServers`: a mesh peer is not an MCP source, and declaring one
+   * would widen what sessions opened from this band can reach.
+   *
+   * Note the feeds layer caches items for 60s, so a peer's status can lag by
+   * that much in the band even though the provider itself refreshes at 5s.
+   */
+  getFeed(): FeedProvider | null {
+    return {
+      descriptor: {
+        id: "agentlink",
+        title: "Agent Link",
+        refKind: "agentlink",
+        lanes: [
+          { key: LANE_RUNNING, label: "Running", dot: "var(--blue)" },
+          { key: LANE_IDLE, label: "Idle", dot: "var(--text-faint)" },
+        ],
+        searchMeta: ["cwd", "status"],
+      },
+      listItems: async () => {
+        try {
+          return (await listMeshPeers()).map(toFeedItem);
+        } catch (err) {
+          // A band that throws takes the sidebar's feed rail with it; an
+          // empty band just reads as "nothing running".
+          this.lastError = err instanceof Error ? err.message : String(err);
+          return [];
+        }
+      },
     };
   }
 
