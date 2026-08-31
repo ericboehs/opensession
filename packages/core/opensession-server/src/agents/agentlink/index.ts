@@ -144,7 +144,7 @@ const PI_ENTRYPOINT = "pi";
 
 /** Live pi peers. Entries without an entrypoint are excluded rather than
  *  assumed: a mislabelled Claude session would show a row with no transcript. */
-async function livePiPeers(): Promise<MeshPeer[]> {
+export async function livePiPeers(): Promise<MeshPeer[]> {
   const peers = await listMeshPeers();
   return peers.filter((p) => p.entrypoint === PI_ENTRYPOINT);
 }

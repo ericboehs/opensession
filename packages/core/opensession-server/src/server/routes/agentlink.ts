@@ -18,7 +18,10 @@ import {
   readPeerClientTranscript,
 } from "../../agents/agentlink/transcript";
 import { externalSessionRows } from "../external-sessions";
-import { AGENT_LINK_SOURCE } from "../../agents/agentlink";
+import { AGENT_LINK_SOURCE, livePiPeers } from "../../agents/agentlink";
+import { toClientEntries } from "../../agents/agentlink/transcript";
+import { broadcastToSession, sessionWatchers } from "../ws-hub";
+import { entriesForWire } from "../jsonl-parser";
 import { promptExternalSession } from "../../agents/agentlink/session-bridge";
 import { followPeerSend } from "../agentlink-follow";
 
@@ -32,6 +35,9 @@ const SESSION_TRANSCRIPT = /^\/api\/sessions\/([^/]+)\/transcript$/;
 /** The clients' composer posts here and waits for an ack; the websocket
  *  `prompt` frame is a different path that only some surfaces use. */
 const SESSION_PROMPT = /^\/api\/sessions\/([^/]+)\/prompt$/;
+/** Where the pi-side extension posts finalized messages. Optional: without it
+ *  the post-send poll still works, just slower and only after a send. */
+const EVENTS = "/api/agentlink/events";
 
 /** The peer session id inside a row id, or null when this is not one of ours. */
 function peerSessionId(rawRowId: string): string | null {
@@ -86,6 +92,45 @@ export async function handleAgentLinkRoutes(
   ctx: RouteContext,
 ): Promise<Response | undefined> {
   const { req, path } = ctx;
+
+  // A peer pushing its own turns as they finalize.
+  if (path === EVENTS && req.method === "POST") {
+    const body = (await req.json().catch(() => null)) as {
+      sessionId?: unknown;
+      message?: unknown;
+      id?: unknown;
+    } | null;
+    const sid = typeof body?.sessionId === "string" ? body.sessionId : "";
+    if (!sid || !body?.message)
+      return Response.json({ error: "Bad event." }, { status: 400 });
+    // Only a session currently in the mesh may push. Without this the
+    // endpoint would let anything that can reach the port write turns into
+    // any row it names.
+    const live = (await livePiPeers()).some((p) => p.sessionId === sid);
+    if (!live) return Response.json({ error: "Unknown session." }, { status: 404 });
+
+    const rowId = `${AGENT_LINK_SOURCE}:${sid}`;
+    // Nobody watching: the transcript on disk is the record, so drop it
+    // rather than doing work for an empty room.
+    if ((sessionWatchers.get(rowId)?.size ?? 0) === 0)
+      return Response.json({ ok: true, delivered: false });
+
+    const entries = toClientEntries(
+      {
+        message: body.message,
+        timestamp: Date.now(),
+        id: typeof body.id === "string" ? body.id : undefined,
+      },
+      0,
+    );
+    if (entries.length)
+      broadcastToSession(rowId, {
+        type: "transcript_append",
+        sessionId: rowId,
+        entries: entriesForWire(entries),
+      });
+    return Response.json({ ok: true, delivered: entries.length > 0 });
+  }
 
   // Steering a peer from the composer. Answered before the generic session
   // routes, which resolve the id against a store no peer is in.

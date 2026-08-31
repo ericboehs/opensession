@@ -155,7 +155,7 @@ function textOf(content: unknown): string {
  * with its arguments, not a line of prose claiming a tool ran. `toolUseId`
  * carries pi's call id, which is what pairs a result back to its call.
  */
-function toClientEntries(
+export function toClientEntries(
   entry: unknown,
   index: number,
 ): ClientTranscriptEntry[] {
