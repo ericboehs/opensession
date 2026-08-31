@@ -107,9 +107,10 @@ describe("promptExternalSession routing", () => {
     for (let i = 0; captured === null && i < 50; i++) {
       await new Promise((r) => setTimeout(r, 10));
     }
-    // Re-widened: TS carries the earlier `= null` through a loop whose body
-    // never assigns, but the socket callback does assign at runtime.
-    const received: string | null = captured;
+    // Re-widened with an assertion: TS's flow analysis sees only the outer
+    // `= null`, not the socket callback's assignment, and carries that
+    // narrowing through the loop — even into a freshly declared alias.
+    const received = captured as string | null;
     // No envelope, no attribution: the extension injects this as the user.
     expect(received).toBe(JSON.stringify({ content: "direct test" }) + "\n");
   });
