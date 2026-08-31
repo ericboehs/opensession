@@ -122,3 +122,6 @@ test/simple-mode/.work-run.log
 
 # Compiled single-executable build (scripts/build-compile.ts)
 /opensession
+
+# XcodeGen output (packages/clients/ios); project.yml is the source of truth
+packages/clients/ios/OS1.xcodeproj/

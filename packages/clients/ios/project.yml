@@ -157,22 +157,27 @@ targets:
         com.apple.security.files.user-selected.read-only: true
         # Desk voice mode: live mic capture for the Realtime voice call.
         com.apple.security.device.audio-input: true
-    settings:
-      base:
-        GENERATE_INFOPLIST_FILE: YES
-        INFOPLIST_KEY_ITSAppUsesNonExemptEncryption: NO
-        # The Finder and Dock label. The app MENU title is CFBundleName, which
-        # only PRODUCT_NAME below can set, so the Mac target is the one place
-        # the label reaches the bundle and executable names too.
-        INFOPLIST_KEY_CFBundleDisplayName: OS
-        INFOPLIST_KEY_OS1DefaultServerURL: http://127.0.0.1:3850
-        INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.developer-tools
+    info:
+      # A real plist, not INFOPLIST_KEY_*: Xcode only honors its known set of
+      # those, and arbitrary keys like OS1DefaultServerURL are silently
+      # dropped — a Mac build could then never point at a remote server.
+      path: OS1Mac-Info.plist
+      properties:
+        # The Finder and Dock label. CFBundleName follows PRODUCT_NAME, so
+        # the app MENU title, bundle and executable names all stay in sync.
+        CFBundleDisplayName: OS
+        CFBundleName: $(PRODUCT_NAME)
+        OS1DefaultServerURL: http://127.0.0.1:3850
+        ITSAppUsesNonExemptEncryption: false
+        LSApplicationCategoryType: public.app-category.developer-tools
         # Mic capture for two features: composer dictation and the Desk's
         # Realtime voice call.
-        INFOPLIST_KEY_NSMicrophoneUsageDescription: Dictate messages, and talk to your Desk on a live voice call.
+        NSMicrophoneUsageDescription: Dictate messages, and talk to your Desk on a live voice call.
         # Composer dictation. Transcription runs on device where the hardware
         # supports it, but the permission is required either way.
-        INFOPLIST_KEY_NSSpeechRecognitionUsageDescription: Turn what you say into text in the message box.
+        NSSpeechRecognitionUsageDescription: Turn what you say into text in the message box.
+    settings:
+      base:
         # Drives CFBundleName (the app menu title) as well as the .app and
         # executable names, so the whole Mac bundle reads OS. Renaming this is
         # free: everything this app stores is keyed on
