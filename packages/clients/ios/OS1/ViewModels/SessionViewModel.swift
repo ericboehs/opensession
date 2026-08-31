@@ -1754,6 +1754,12 @@ final class SessionViewModel {
             continueJump(added: added.count)
 
         case .transcriptAppend(let id, let appended, let cursor) where id == session.id:
+            // A peer re-posting an unchanged turn (a finalized message whose
+            // streamed partial already landed verbatim) is not worth a
+            // grouping pass, let alone a blank-screen risk.
+            let changed = appended.contains { incoming in
+                entries.first { $0.id == incoming.id } != incoming
+            }
             upsert(appended)
             applyTranscriptAppendCursor(cursor)
             retireSentAskAnswer(against: appended)
@@ -1797,7 +1803,9 @@ final class SessionViewModel {
                 liveText = ""
                 if streamEnded { isStreaming = false }
             }
-            rebuildDisplayItems()
+            if changed {
+                scheduleCoalescedRebuild()
+            }
 
         case .sessionNote(let id, let note) where id == session.id:
             upsertSessionNote(note)
@@ -2125,6 +2133,8 @@ final class SessionViewModel {
     /// scroll pin follows its count — grouping alone would hold that count
     /// steady while a live turn grows, and new output would stop following.
     private(set) var displayBlocks: [TranscriptBlock] = []
+    /// A grouped pass over the whole transcript is already scheduled.
+    private var rebuildPending = false
     /// The current person's visible prompts, prepared beside the transcript
     /// blocks so a pointer moving over the rail never scans the conversation.
     private(set) var sentMessageAnchors: [SentMessageAnchor] = []
@@ -2176,6 +2186,25 @@ final class SessionViewModel {
     /// The oldest entry currently held by the transcript.
     var topmostEntryId: String? {
         displayBlocks.first?.entryIds.first
+    }
+
+    /// One grouped pass per coalesce window, not per pushed frame.
+    ///
+    /// Streaming appends can land at 20Hz, and every `rebuildDisplayItems`
+    /// regroups the whole transcript, re-renders the growing block's markdown,
+    /// and churns the lazy stack's measured height. A burst of that blanks the
+    /// body outright until the session is left and re-entered. Merging the
+    /// entries immediately and deferring only the grouping costs one viewport
+    /// of staleness — imperceptible next to what it prevents.
+    private func scheduleCoalescedRebuild() {
+        guard !rebuildPending else { return }
+        rebuildPending = true
+        Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(120))
+            guard let self, self.rebuildPending else { return }
+            self.rebuildPending = false
+            self.rebuildDisplayItems()
+        }
     }
 
     private func rebuildDisplayItems() {

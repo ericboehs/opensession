@@ -437,6 +437,17 @@ struct SessionView: View {
                             }
                             .padding(.bottom, 10)
                             .transition(.opacity.combined(with: .move(edge: .bottom)))
+                            // The button's own entrance is all a pin flip
+                            // should animate. The old container-wide
+                            // .animation(value: pinnedToBottom) swept the
+                            // whole transcript on every flip — during a run
+                            // the pin flaps as rows land and the follow
+                            // re-asserts, and the run footer visibly slid
+                            // down a line each time instead of staying put.
+                            .animation(
+                                .snappy(duration: 0.22, extraBounce: 0),
+                                value: pinnedToBottom
+                            )
                         }
                     }
                     #if os(macOS)
@@ -469,10 +480,6 @@ struct SessionView: View {
                     }
                     #endif
                     let interactiveScroll = measuredScroll
-                        .animation(
-                            .snappy(duration: 0.22, extraBounce: 0),
-                            value: pinnedToBottom
-                        )
                     // A scroll gesture is the reader taking over: the
                     // opening hold ends the moment they touch the transcript.
                     .onScrollPhaseChange { old, phase, context in
