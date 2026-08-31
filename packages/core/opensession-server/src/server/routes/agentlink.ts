@@ -19,6 +19,7 @@ import {
 } from "../../agents/agentlink/transcript";
 import { externalSessionRows } from "../external-sessions";
 import { AGENT_LINK_SOURCE } from "../../agents/agentlink";
+import { promptExternalSession } from "../../agents/agentlink/session-bridge";
 
 const TRANSCRIPT_API = /^\/api\/agentlink\/peers\/([^/]+)\/transcript$/;
 const TRANSCRIPT_VIEW = /^\/agentlink\/peer\/([^/]+)$/;
@@ -27,6 +28,9 @@ const TRANSCRIPT_VIEW = /^\/agentlink\/peer\/([^/]+)$/;
  *  a real session can never be shadowed. */
 const SESSION_DETAIL = /^\/api\/sessions\/([^/]+)$/;
 const SESSION_TRANSCRIPT = /^\/api\/sessions\/([^/]+)\/transcript$/;
+/** The clients' composer posts here and waits for an ack; the websocket
+ *  `prompt` frame is a different path that only some surfaces use. */
+const SESSION_PROMPT = /^\/api\/sessions\/([^/]+)\/prompt$/;
 
 /** The peer session id inside a row id, or null when this is not one of ours. */
 function peerSessionId(rawRowId: string): string | null {
@@ -81,6 +85,41 @@ export async function handleAgentLinkRoutes(
   ctx: RouteContext,
 ): Promise<Response | undefined> {
   const { req, path } = ctx;
+
+  // Steering a peer from the composer. Answered before the generic session
+  // routes, which resolve the id against a store no peer is in.
+  const promptMatch = path.match(SESSION_PROMPT);
+  if (promptMatch && req.method === "POST") {
+    const sessionId = peerSessionId(promptMatch[1]);
+    if (sessionId) {
+      const body = (await req.json().catch(() => null)) as {
+        content?: unknown;
+        user?: unknown;
+      } | null;
+      const content = typeof body?.content === "string" ? body.content : "";
+      if (!content.trim())
+        return Response.json({ error: "Empty message." }, { status: 400 });
+      const rowId = decodeURIComponent(promptMatch[1]);
+      const user = typeof body?.user === "string" ? body.user : "";
+      const result = await promptExternalSession(
+        rowId,
+        content,
+        user || "Open Session",
+      );
+      // 404 tells the outbox the target is gone so it stops retrying: a peer
+      // that exited will never accept this message.
+      if (!result.ok)
+        return Response.json({ error: result.error }, { status: 404 });
+      // "queued", not "started": a `next`-priority mesh message waits for any
+      // turn already in flight, and claiming otherwise would show a reply
+      // that has not begun.
+      return Response.json({
+        status: "queued",
+        message: "Delivered to the session.",
+      });
+    }
+  }
+
   if (req.method !== "GET") return undefined;
 
   const api = path.match(TRANSCRIPT_API);
