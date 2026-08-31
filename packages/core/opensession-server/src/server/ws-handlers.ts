@@ -1386,7 +1386,7 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
                 startOffset: 0,
               }),
             );
-            followPeerSend(sessionId);
+            if (!result.direct) followPeerSend(sessionId);
             return;
           }
           const session = await findSessionAsync(sessionId);

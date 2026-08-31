@@ -116,7 +116,9 @@ function sendFrame(sock: string, frame: unknown): Promise<void> {
   });
 }
 
-export type PromptResult = { ok: true } | { ok: false; error: string };
+export type PromptResult =
+  | { ok: true; direct: boolean }
+  | { ok: false; error: string };
 
 /** Bounded polls after a send. A peer answering a real question can take a
  *  while, so the budget is generous; the idle check below usually ends it
@@ -227,7 +229,10 @@ export async function promptExternalSession(
   // which is right between agents and wrong for the person holding the phone.
   try {
     await sendFrame(inboxPath(peerId), { content });
-    return { ok: true };
+    // Direct: the extension in that session will push the turn back, so the
+    // caller must not also poll for it — two sources, two ids, one message
+    // drawn twice.
+    return { ok: true, direct: true };
   } catch {
     // No inbox: an older session, or one started before the extension was
     // installed. Fall through to the mesh.
@@ -248,7 +253,7 @@ export async function promptExternalSession(
         content: buildEnvelope(content, senderName(fromName)),
       },
     });
-    return { ok: true };
+    return { ok: true, direct: false };
   } catch (error) {
     return { ok: false, error: (error as Error)?.message || "Send failed." };
   }

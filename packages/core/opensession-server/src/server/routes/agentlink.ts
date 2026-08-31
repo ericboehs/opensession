@@ -24,6 +24,7 @@ import { broadcastToSession, sessionWatchers } from "../ws-hub";
 import { entriesForWire } from "../jsonl-parser";
 import { promptExternalSession } from "../../agents/agentlink/session-bridge";
 import { followPeerSend } from "../agentlink-follow";
+import { randomUUID } from "node:crypto";
 
 const TRANSCRIPT_API = /^\/api\/agentlink\/peers\/([^/]+)\/transcript$/;
 const TRANSCRIPT_VIEW = /^\/agentlink\/peer\/([^/]+)$/;
@@ -132,7 +133,10 @@ export async function handleAgentLinkRoutes(
       {
         message: body?.message,
         timestamp: Date.now(),
-        id: typeof body?.id === "string" ? body.id : undefined,
+        // A pushed message has no session-file id yet. Without one the mapper
+        // falls back to a positional id, identical for every event — so each
+        // new turn overwrote the last one in the client.
+        id: typeof body?.id === "string" ? body.id : randomUUID(),
       },
       0,
     );
@@ -173,9 +177,11 @@ export async function handleAgentLinkRoutes(
       // turn already in flight, and claiming otherwise would show a reply
       // that has not begun.
       // The peer writes the turn when it processes it, so follow the file for
-      // a while and push what appears 2014 otherwise the send looks like it
-      // vanished until the row is reopened.
-      followPeerSend(rowId);
+      // a while and push what appears — otherwise the send looks like it
+      // vanished until the row is reopened. Skipped for a direct delivery:
+      // that session pushes its own turns, and polling too would draw each
+      // message twice under two different ids.
+      if (!result.direct) followPeerSend(rowId);
       return Response.json({
         status: "queued",
         message: "Delivered to the session.",
