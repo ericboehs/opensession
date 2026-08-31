@@ -41,8 +41,12 @@ export type PeerTranscriptEntry = {
 export type ClientTranscriptEntry = {
   id: string;
   type: "user" | "assistant" | "tool_use" | "tool_result" | "system";
-  content?: string;
-  timestamp?: string;
+  /** Always present, empty for a row that is only a tool call: the clients'
+   *  wire type requires it. */
+  content: string;
+  /** Always present for the same reason as `content`. Falls back to the
+   *  session's own clock when a pi entry carries no timestamp. */
+  timestamp: string;
   toolName?: string;
   toolInput?: unknown;
   toolUseId?: string;
@@ -165,13 +169,14 @@ function toClientEntries(
   if (!role) return [];
 
   const baseId = e.id || `entry-${index}`;
-  const timestamp =
-    typeof e.timestamp === "number"
-      ? new Date(e.timestamp).toISOString()
-      : typeof e.timestamp === "string"
-        ? e.timestamp
-        : undefined;
-  const stamp = timestamp ? { timestamp } : {};
+  const stamp = {
+    timestamp:
+      (typeof e.timestamp === "number"
+        ? new Date(e.timestamp).toISOString()
+        : typeof e.timestamp === "string"
+          ? e.timestamp
+          : undefined) ?? new Date(0).toISOString(),
+  };
 
   if (role === "toolResult") {
     return [
@@ -221,6 +226,7 @@ function toClientEntries(
     rows.push({
       id: part.id || `${baseId}:tool`,
       type: "tool_use",
+      content: "",
       ...(part.name ? { toolName: part.name } : {}),
       ...(part.arguments !== undefined ? { toolInput: part.arguments } : {}),
       ...(part.id ? { toolUseId: part.id } : {}),

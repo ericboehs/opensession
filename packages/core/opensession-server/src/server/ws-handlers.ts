@@ -34,6 +34,11 @@ import {
   prepareEntriesForWire,
 } from "./jsonl-parser";
 import { providerFor } from "./models";
+import {
+  isAgentLinkSessionId,
+  externalTranscript,
+  promptExternalSession,
+} from "../agents/agentlink/session-bridge";
 
 import {
   appendTranscriptEntries,
@@ -948,6 +953,26 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
           const data = ws.data;
           const watchRequest = (data.watchRequest ?? 0) + 1;
           data.watchRequest = watchRequest;
+          // A mesh peer is not in the session store and never will be: it is
+          // another agent's process, watched read-only from its own pi
+          // transcript. Answered before the store lookup so a foreign id
+          // reports its conversation instead of "Session not found".
+          if (isAgentLinkSessionId(sessionId)) {
+            const entries = await externalTranscript(sessionId);
+            if (data.watchRequest !== watchRequest) return;
+            ws.send(
+              JSON.stringify({
+                type: "transcript_init",
+                sessionId,
+                entries: entriesForWire(entries ?? [], INIT_WIRE_CLAMP_BYTES),
+                truncated: false,
+                startOffset: 0,
+              }),
+            );
+            // No file watcher and no watch extras: there is no mirror file to
+            // tail, and the extras describe a workspace this row does not have.
+            break;
+          }
           const session = await findSessionAsync(sessionId);
           if (data.watchRequest !== watchRequest) return;
           if (!session) {
@@ -1328,6 +1353,32 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
               JSON.stringify({
                 type: "error",
                 message: "Empty prompt (no content/images/files)",
+              }),
+            );
+            return;
+          }
+          // Steering a mesh peer: hand the message to its socket, then send
+          // the conversation back so the sent turn appears. The peer's own
+          // reply lands in the same transcript, which the client picks up on
+          // its next watch.
+          if (isAgentLinkSessionId(sessionId)) {
+            const result = await promptExternalSession(
+              sessionId,
+              content,
+              typeof user === "string" && user ? user : "Open Session",
+            );
+            if (!result.ok) {
+              ws.send(JSON.stringify({ type: "error", message: result.error }));
+              return;
+            }
+            const entries = await externalTranscript(sessionId);
+            ws.send(
+              JSON.stringify({
+                type: "transcript_init",
+                sessionId,
+                entries: entriesForWire(entries ?? [], INIT_WIRE_CLAMP_BYTES),
+                truncated: false,
+                startOffset: 0,
               }),
             );
             return;
