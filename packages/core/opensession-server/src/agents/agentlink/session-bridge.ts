@@ -14,6 +14,8 @@
 
 import { connect } from "node:net";
 import { randomUUID } from "node:crypto";
+import { userInfo, homedir } from "node:os";
+import { join } from "node:path";
 import { AGENT_LINK_SOURCE } from "./index";
 import { listMeshPeers, type MeshPeer } from "./mesh-registry";
 import {
@@ -46,6 +48,31 @@ export function peerIdFromSessionId(rowId: string): string | null {
 async function findPeer(peerId: string): Promise<MeshPeer | null> {
   const peers = await listMeshPeers();
   return peers.find((p) => p.sessionId === peerId) ?? null;
+}
+
+/** Where a session running our pi extension listens for its own user. Derived
+ *  from the session id on both sides, so there is no registration to go stale. */
+const INBOX_DIR = join(homedir(), ".opensession", "peer-inbox");
+const inboxPath = (sessionId: string) => join(INBOX_DIR, `${sessionId}.sock`);
+
+/**
+ * Names the clients send as a stand-in rather than as an identity. iOS
+ * documents "ios" as exactly that — "a stand-in, not a name, so surfaces that
+ * present the name can fall back" — and this is such a surface: the value is
+ * about to be shown to another agent as who is asking.
+ */
+const PLACEHOLDER_SENDERS = new Set(["ios", "mac", "web", "anonymous", ""]);
+
+/** Who to tell the peer this came from. Falls back to the account running the
+ *  server, which on a self-hosted install is the person holding the phone. */
+function senderName(user: string): string {
+  const name = user.trim();
+  if (!PLACEHOLDER_SENDERS.has(name.toLowerCase())) return name;
+  try {
+    return userInfo().username || "Open Session";
+  } catch {
+    return "Open Session";
+  }
 }
 
 /** The conversation so far, or null when there is no readable session file. */
@@ -193,6 +220,19 @@ export async function promptExternalSession(
 ): Promise<PromptResult> {
   const peerId = peerIdFromSessionId(rowId);
   if (!peerId) return { ok: false, error: "That peer cannot be addressed." };
+
+  // Preferred path: the session's own inbox, where the message is delivered as
+  // the user speaking. agent-link cannot do this — it frames every inbound
+  // message as coming from another agent and explicitly not from your user,
+  // which is right between agents and wrong for the person holding the phone.
+  try {
+    await sendFrame(inboxPath(peerId), { content });
+    return { ok: true };
+  } catch {
+    // No inbox: an older session, or one started before the extension was
+    // installed. Fall through to the mesh.
+  }
+
   const peer = await findPeer(peerId);
   // A peer that has exited leaves its registry entry behind for a moment.
   if (!peer?.sock)
@@ -203,7 +243,10 @@ export async function promptExternalSession(
       msg_id: randomUUID(),
       type: "user",
       priority: DEFAULT_PRIORITY,
-      message: { role: "user", content: buildEnvelope(content, fromName) },
+      message: {
+        role: "user",
+        content: buildEnvelope(content, senderName(fromName)),
+      },
     });
     return { ok: true };
   } catch (error) {

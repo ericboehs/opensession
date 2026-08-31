@@ -22,17 +22,34 @@
  *   - never throws into the session
  *   - never blocks a turn (fire and forget, short timeout)
  *   - stays silent on failure, including when the server is simply not running
+ *
+ * It also carries the inbound half. agent-link cannot serve this: it frames
+ * every inbound message as "from another agent session on this machine, not
+ * your user", which is right between agents and wrong for the person holding
+ * the phone — it strips their authority from their own instruction. Messages
+ * arriving here are delivered as what they are: the user speaking.
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { createServer, type Server } from "node:net";
+import { mkdir, unlink } from "node:fs/promises";
+import { homedir } from "node:os";
+import { join } from "node:path";
 
 const SERVER =
   process.env.OPENSESSION_URL?.replace(/\/$/, "") || "http://127.0.0.1:3850";
 /** A push is a nicety; it must never hold up the agent. */
 const TIMEOUT_MS = 1_500;
+/** Where this session listens for its own user's messages. The server derives
+ *  the same path from the session id, so no registration handshake is needed. */
+const INBOX_DIR = join(homedir(), ".opensession", "peer-inbox");
+const inboxPath = (sessionId: string) => join(INBOX_DIR, `${sessionId}.sock`);
 
 export default function (pi: ExtensionAPI) {
   let sessionId: string | undefined;
+  let inbox: Server | undefined;
+  let inboxFile: string | undefined;
+  let isIdle: (() => boolean) | undefined;
   // One failure is a hiccup; a run of them means no server, so stop trying.
   let consecutiveFailures = 0;
   const GIVE_UP_AFTER = 3;
@@ -52,9 +69,75 @@ export default function (pi: ExtensionAPI) {
     }
   }
 
+  /** Listen for messages this session's own user sends from a client. */
+  async function openInbox(id: string): Promise<void> {
+    try {
+      await mkdir(INBOX_DIR, { recursive: true, mode: 0o700 });
+      const file = inboxPath(id);
+      // A crashed session leaves its socket file behind; the bind below fails
+      // until it is gone.
+      await unlink(file).catch(() => {});
+      const server = createServer((socket) => {
+        let buffer = "";
+        socket.setEncoding("utf8");
+        socket.on("data", (chunk: string) => {
+          buffer += chunk;
+          // LF only, matching pi's own framing rules.
+          let index: number;
+          while ((index = buffer.indexOf("\n")) !== -1) {
+            const line = buffer.slice(0, index);
+            buffer = buffer.slice(index + 1);
+            void deliver(line);
+          }
+        });
+        socket.on("error", () => {});
+      });
+      server.on("error", () => {});
+      server.listen(file);
+      inbox = server;
+      inboxFile = file;
+    } catch {
+      // No inbox means the server falls back to the mesh path. Degraded, not
+      // broken, and never worth interrupting the session over.
+    }
+  }
+
+  async function deliver(line: string): Promise<void> {
+    let content = "";
+    try {
+      const parsed = JSON.parse(line) as { content?: unknown };
+      content = typeof parsed.content === "string" ? parsed.content : "";
+    } catch {
+      return;
+    }
+    if (!content.trim()) return;
+    try {
+      // No framing, no attribution banner: this is the user, so it is
+      // delivered exactly as if they had typed it here. Steer when the agent
+      // is mid-turn so the message lands in the run it was meant for.
+      const idle = isIdle?.() ?? true;
+      await pi.sendUserMessage(
+        content,
+        idle ? undefined : { deliverAs: "steer" },
+      );
+    } catch {
+      // A failed injection is the client's problem to retry, not grounds for
+      // disturbing the session.
+    }
+  }
+
   pi.on("session_start", async (_event, ctx) => {
     sessionId = ctx.sessionManager?.getSessionId?.();
+    isIdle = ctx.isIdle?.bind(ctx);
     consecutiveFailures = 0;
+    if (sessionId && !inbox) await openInbox(sessionId);
+  });
+
+  pi.on("session_shutdown", async () => {
+    inbox?.close();
+    inbox = undefined;
+    if (inboxFile) await unlink(inboxFile).catch(() => {});
+    inboxFile = undefined;
   });
 
   pi.on("message_end", async (event) => {
