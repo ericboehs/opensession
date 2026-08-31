@@ -35,11 +35,15 @@ import { createServer, type Server } from "node:net";
 import { mkdir, unlink } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { randomUUID } from "node:crypto";
 
 const SERVER =
   process.env.OPENSESSION_URL?.replace(/\/$/, "") || "http://127.0.0.1:3850";
 /** A push is a nicety; it must never hold up the agent. */
 const TIMEOUT_MS = 1_500;
+/** Floor between streaming updates. A turn emits tokens far faster than a
+ *  phone can usefully redraw, and every update is a POST plus a broadcast. */
+const STREAM_INTERVAL_MS = 400;
 /** Where this session listens for its own user's messages. The server derives
  *  the same path from the session id, so no registration handshake is needed. */
 const INBOX_DIR = join(homedir(), ".opensession", "peer-inbox");
@@ -53,6 +57,13 @@ export default function (pi: ExtensionAPI) {
   // One failure is a hiccup; a run of them means no server, so stop trying.
   let consecutiveFailures = 0;
   const GIVE_UP_AFTER = 3;
+
+  // Streaming state. The id is minted when a message starts and reused by
+  // every update and the final version, so the clients grow one bubble
+  // instead of appending a new one per token.
+  let messageId: string | undefined;
+  let pending: unknown;
+  let streamTimer: ReturnType<typeof setTimeout> | undefined;
 
   async function post(payload: Record<string, unknown>): Promise<void> {
     if (!sessionId || consecutiveFailures >= GIVE_UP_AFTER) return;
@@ -140,10 +151,39 @@ export default function (pi: ExtensionAPI) {
     inboxFile = undefined;
   });
 
+  pi.on("message_start", async () => {
+    messageId = randomUUID();
+  });
+
+  pi.on("message_update", async (event) => {
+    const message = (event as { message?: unknown })?.message;
+    if (!message || !messageId) return;
+    // Keep only the newest version; an update superseded before it was sent
+    // is not worth a request.
+    pending = message;
+    if (streamTimer) return;
+    streamTimer = setTimeout(() => {
+      streamTimer = undefined;
+      const next = pending;
+      pending = undefined;
+      if (next && messageId) void post({ message: next, id: messageId });
+    }, STREAM_INTERVAL_MS);
+    // Never hold the process open for a partial render.
+    streamTimer.unref?.();
+  });
+
   pi.on("message_end", async (event) => {
     const message = (event as { message?: unknown })?.message;
+    // The final version supersedes anything still queued.
+    if (streamTimer) {
+      clearTimeout(streamTimer);
+      streamTimer = undefined;
+    }
+    pending = undefined;
+    const id = messageId;
+    messageId = undefined;
     if (!message) return;
-    await post({ message });
+    await post({ message, ...(id ? { id } : {}) });
     // No return value: message_end can replace the finalized message, and
     // this extension must never alter what the session recorded.
   });
