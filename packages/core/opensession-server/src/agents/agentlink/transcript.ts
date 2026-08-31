@@ -201,38 +201,68 @@ export function toClientEntries(
 
   const rows: ClientTranscriptEntry[] = [];
   const parts = Array.isArray(message?.content) ? message!.content : [];
-  const text = textOf(message?.content);
-  if (text) rows.push({ id: baseId, type: "assistant", content: text, ...stamp });
-  const thinking = (parts as { type?: string; thinking?: string }[])
-    .filter((p) => p?.type === "thinking" && p.thinking)
-    .map((p) => p.thinking as string)
-    .join("\n\n");
-  if (thinking) {
-    rows.push({
-      id: `${baseId}:thinking`,
-      type: "assistant",
-      content: thinking,
-      isReasoning: true,
-      ...stamp,
-    });
+
+  // Content with no parts to walk: one row, nothing to order.
+  if (!parts.length) {
+    const text = textOf(message?.content);
+    if (text) rows.push({ id: baseId, type: "assistant", content: text, ...stamp });
+    return rows;
   }
-  for (const part of parts as {
+
+  // Walk the parts in the order the model produced them. Emitting text before
+  // thinking — as this did — renders the reasoning after the answer it led to,
+  // which reads as though the model justified itself afterwards.
+  let buffer: string[] = [];
+  let textIndex = 0;
+  const flushText = () => {
+    const text = buffer.join("").trim();
+    buffer = [];
+    if (!text) return;
+    // The first text run keeps the plain id so it stays stable against the
+    // same message read back from disk.
+    const id = textIndex === 0 ? baseId : `${baseId}:text-${textIndex}`;
+    textIndex += 1;
+    rows.push({ id, type: "assistant", content: text, ...stamp });
+  };
+
+  let thinkingIndex = 0;
+  for (const raw of parts as {
     type?: string;
+    text?: string;
+    thinking?: string;
     id?: string;
     name?: string;
     arguments?: unknown;
   }[]) {
-    if (part?.type !== "toolCall") continue;
-    rows.push({
-      id: part.id || `${baseId}:tool`,
-      type: "tool_use",
-      content: "",
-      ...(part.name ? { toolName: part.name } : {}),
-      ...(part.arguments !== undefined ? { toolInput: part.arguments } : {}),
-      ...(part.id ? { toolUseId: part.id } : {}),
-      ...stamp,
-    });
+    if (raw?.type === "text" && typeof raw.text === "string") {
+      buffer.push(raw.text);
+      continue;
+    }
+    if (raw?.type === "thinking" && raw.thinking) {
+      flushText();
+      rows.push({
+        id: `${baseId}:thinking-${thinkingIndex++}`,
+        type: "assistant",
+        content: raw.thinking,
+        isReasoning: true,
+        ...stamp,
+      });
+      continue;
+    }
+    if (raw?.type === "toolCall") {
+      flushText();
+      rows.push({
+        id: raw.id || `${baseId}:tool`,
+        type: "tool_use",
+        content: "",
+        ...(raw.name ? { toolName: raw.name } : {}),
+        ...(raw.arguments !== undefined ? { toolInput: raw.arguments } : {}),
+        ...(raw.id ? { toolUseId: raw.id } : {}),
+        ...stamp,
+      });
+    }
   }
+  flushText();
   return rows;
 }
 
