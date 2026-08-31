@@ -98,10 +98,12 @@ export async function handleAgentLinkRoutes(
     const body = (await req.json().catch(() => null)) as {
       sessionId?: unknown;
       message?: unknown;
+      status?: unknown;
       id?: unknown;
     } | null;
     const sid = typeof body?.sessionId === "string" ? body.sessionId : "";
-    if (!sid || !body?.message)
+    const status = typeof body?.status === "string" ? body.status : "";
+    if (!sid || (!body?.message && !status))
       return Response.json({ error: "Bad event." }, { status: 400 });
     // Only a session currently in the mesh may push. Without this the
     // endpoint would let anything that can reach the port write turns into
@@ -115,11 +117,22 @@ export async function handleAgentLinkRoutes(
     if ((sessionWatchers.get(rowId)?.size ?? 0) === 0)
       return Response.json({ ok: true, delivered: false });
 
+    // A running/idle transition, which the clients render as the session's
+    // activity state rather than as transcript content.
+    if (status) {
+      broadcastToSession(rowId, {
+        type: "session_status",
+        sessionId: rowId,
+        isRunning: status === "running",
+      });
+      return Response.json({ ok: true, delivered: true });
+    }
+
     const entries = toClientEntries(
       {
-        message: body.message,
+        message: body?.message,
         timestamp: Date.now(),
-        id: typeof body.id === "string" ? body.id : undefined,
+        id: typeof body?.id === "string" ? body.id : undefined,
       },
       0,
     );
