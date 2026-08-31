@@ -19,6 +19,12 @@ struct TranscriptRow: View {
     /// True only for a trailing standalone reasoning row in a live transcript.
     /// Work turns derive the same state from `WorkTurn.isLive`.
     var isActiveReasoning = false
+    /// The block is the transcript's live tail while a run is in flight: its
+    /// text is still growing, so render through the streaming markdown
+    /// pipeline rather than re-parsing the whole message every update. A full
+    /// re-layout per update is what made the run footer lag the growing text
+    /// and visibly fall to the next line each time it caught up.
+    var isGrowingTail = false
     /// Who started this session, for crediting turns that carry no explicit
     /// sender (see `UserBubble`). Nil for automations and sub-agents.
     var owner: String?
@@ -66,7 +72,8 @@ struct TranscriptRow: View {
                 AssistantMessage(
                     entry: entry,
                     sessionId: sessionId,
-                    state: expansionState("body-\(entry.id)", false)
+                    state: expansionState("body-\(entry.id)", false),
+                    isGrowingTail: isGrowingTail
                 )
             } else {
                 // A system entry from a server too old to classify it.
@@ -607,6 +614,10 @@ struct AssistantMessage: View {
     let entry: TranscriptEntry
     let sessionId: String
     let state: TurnFoldState
+    /// The entry is the transcript's live tail while a run is in flight: its
+    /// text is still growing, so render through the streaming markdown
+    /// pipeline rather than re-parsing the whole message every update.
+    var isGrowingTail = false
 
     /// Markdown parsing is superlinear, so only this much is parsed up front;
     /// the rest waits behind an explicit tap. Phones are the constrained end
@@ -675,6 +686,11 @@ struct AssistantMessage: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
             .frame(maxHeight: 520)
+        } else if isGrowingTail {
+            // The streaming source owns its own incremental parse: feeding it
+            // the grown text re-renders in place instead of re-laying-out the
+            // whole block, so the height the footer waits on moves smoothly.
+            StreamingMarkdownBody(text)
         } else {
             MarkdownBody(text)
         }

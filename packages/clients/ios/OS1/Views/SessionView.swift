@@ -1530,6 +1530,12 @@ struct SessionView: View {
             activity: turnActivity,
             isActiveReasoning: viewModel.isRunning
                 && block.id == viewModel.displayBlocks.last?.id,
+            isGrowingTail: viewModel.isRunning
+                && block.id == viewModel.displayBlocks.last?.id
+                && {
+                    guard case .message(let entry) = block else { return false }
+                    return !entry.text.isEmpty
+                }(),
             // An automation's turns are not a person's words, so they get no
             // author fallback. The web makes the same exception.
             owner: viewModel.session.transcriptOwner,
