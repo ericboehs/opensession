@@ -53,7 +53,7 @@ async function findPeer(peerId: string): Promise<MeshPeer | null> {
 /** Where a session running our pi extension listens for its own user. Derived
  *  from the session id on both sides, so there is no registration to go stale. */
 const INBOX_DIR = join(homedir(), ".opensession", "peer-inbox");
-const inboxPath = (sessionId: string) => join(INBOX_DIR, `${sessionId}.sock`);
+export const inboxPath = (sessionId: string) => join(INBOX_DIR, `${sessionId}.sock`);
 
 /**
  * Names the clients send as a stand-in rather than as an identity. iOS
@@ -65,7 +65,7 @@ const PLACEHOLDER_SENDERS = new Set(["ios", "mac", "web", "anonymous", ""]);
 
 /** Who to tell the peer this came from. Falls back to the account running the
  *  server, which on a self-hosted install is the person holding the phone. */
-function senderName(user: string): string {
+export function senderName(user: string): string {
   const name = user.trim();
   if (!PLACEHOLDER_SENDERS.has(name.toLowerCase())) return name;
   try {
@@ -92,7 +92,7 @@ export async function externalTranscript(
  * speaking — which is the honest framing, since the person typing is on
  * another machine's account and never approved anything in that session.
  */
-function buildEnvelope(body: string, fromName: string): string {
+export function buildEnvelope(body: string, fromName: string): string {
   const escaped = body.replace(
     new RegExp(`</(?=${ENVELOPE_TAG}(?:[>\\s/]|$))`, "gi"),
     "<\\/",
