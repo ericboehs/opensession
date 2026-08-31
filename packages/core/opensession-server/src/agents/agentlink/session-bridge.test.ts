@@ -107,8 +107,11 @@ describe("promptExternalSession routing", () => {
     for (let i = 0; captured === null && i < 50; i++) {
       await new Promise((r) => setTimeout(r, 10));
     }
+    // Re-widened: TS carries the earlier `= null` through a loop whose body
+    // never assigns, but the socket callback does assign at runtime.
+    const received: string | null = captured;
     // No envelope, no attribution: the extension injects this as the user.
-    expect(captured).toBe(JSON.stringify({ content: "direct test" }) + "\n");
+    expect(received).toBe(JSON.stringify({ content: "direct test" }) + "\n");
   });
 
   test("falls back to the mesh and answers with an error when the peer is gone", async () => {
