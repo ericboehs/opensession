@@ -20,6 +20,7 @@ import {
 import { externalSessionRows } from "../external-sessions";
 import { AGENT_LINK_SOURCE } from "../../agents/agentlink";
 import { promptExternalSession } from "../../agents/agentlink/session-bridge";
+import { followPeerSend } from "../agentlink-follow";
 
 const TRANSCRIPT_API = /^\/api\/agentlink\/peers\/([^/]+)\/transcript$/;
 const TRANSCRIPT_VIEW = /^\/agentlink\/peer\/([^/]+)$/;
@@ -113,6 +114,10 @@ export async function handleAgentLinkRoutes(
       // "queued", not "started": a `next`-priority mesh message waits for any
       // turn already in flight, and claiming otherwise would show a reply
       // that has not begun.
+      // The peer writes the turn when it processes it, so follow the file for
+      // a while and push what appears 2014 otherwise the send looks like it
+      // vanished until the row is reopened.
+      followPeerSend(rowId);
       return Response.json({
         status: "queued",
         message: "Delivered to the session.",

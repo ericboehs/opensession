@@ -91,6 +91,94 @@ function sendFrame(sock: string, frame: unknown): Promise<void> {
 
 export type PromptResult = { ok: true } | { ok: false; error: string };
 
+/** Bounded polls after a send. A peer answering a real question can take a
+ *  while, so the budget is generous; the idle check below usually ends it
+ *  sooner. */
+const FOLLOW_INTERVAL_MS = 1_200;
+const FOLLOW_BUDGET_MS = 120_000;
+/** Row ids with a poll already running, so repeated sends extend the existing
+ *  follow instead of stacking timers on one row. */
+const following = new Map<string, number>();
+
+/**
+ * Push a peer's new turns to whoever is watching, for a while after a send.
+ *
+ * pi writes a turn to its session file when it processes it, so the message
+ * just delivered is not there yet and neither is the reply. Nothing pushes
+ * either — this server does not own the peer and gets no event from it — so
+ * without this a send looks like it vanished until the client re-opened the
+ * row.
+ *
+ * This is a stopgap for the missing event stream, not a substitute for one:
+ * it costs a file read per tick and resolves at interval granularity.
+ */
+export function followPeerAfterSend(
+  rowId: string,
+  emit: (entries: ClientTranscriptEntry[]) => void,
+  hasWatchers: () => boolean,
+): void {
+  const deadline = Date.now() + FOLLOW_BUDGET_MS;
+  // Already following: just extend the deadline.
+  if (following.has(rowId)) {
+    following.set(rowId, deadline);
+    return;
+  }
+  following.set(rowId, deadline);
+
+  const peerId = peerIdFromSessionId(rowId);
+  if (!peerId) {
+    following.delete(rowId);
+    return;
+  }
+
+  let lastId: string | undefined;
+  let sawChange = false;
+
+  const stop = () => {
+    following.delete(rowId);
+    clearInterval(timer);
+  };
+
+  const tick = async () => {
+    // Nobody is looking, or the budget ran out.
+    if (!hasWatchers() || Date.now() > (following.get(rowId) ?? 0)) return stop();
+    let entries: ClientTranscriptEntry[] | null = null;
+    try {
+      entries = await readPeerClientTranscript(peerId);
+    } catch {
+      return; // A transient read loses one tick, not the follow.
+    }
+    if (!entries?.length) return;
+
+    if (lastId === undefined) {
+      // First tick establishes the baseline: everything already on screen.
+      lastId = entries[entries.length - 1]!.id;
+      return;
+    }
+    const index = entries.findIndex((e) => e.id === lastId);
+    // Baseline fell out of the tail — the next full open will reconcile it.
+    const fresh = index === -1 ? [] : entries.slice(index + 1);
+    if (fresh.length) {
+      lastId = entries[entries.length - 1]!.id;
+      sawChange = true;
+      emit(fresh);
+    }
+
+    // The answer landed and the peer went quiet: stop rather than burn the
+    // remaining budget re-reading an unchanging file.
+    if (sawChange) {
+      const peer = await findPeer(peerId);
+      if (!peer || peer.status === "idle") return stop();
+    }
+  };
+
+  const timer = setInterval(() => {
+    void tick();
+  }, FOLLOW_INTERVAL_MS);
+  // Never hold the process open for a poll.
+  (timer as unknown as { unref?: () => void }).unref?.();
+}
+
 /**
  * Put a message in front of a peer.
  *

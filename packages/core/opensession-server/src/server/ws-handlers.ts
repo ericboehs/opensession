@@ -39,6 +39,7 @@ import {
   externalTranscript,
   promptExternalSession,
 } from "../agents/agentlink/session-bridge";
+import { followPeerSend } from "./agentlink-follow";
 
 import {
   appendTranscriptEntries,
@@ -960,6 +961,10 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
           if (isAgentLinkSessionId(sessionId)) {
             const entries = await externalTranscript(sessionId);
             if (data.watchRequest !== watchRequest) return;
+            // Join the room even though no runner will broadcast into it: the
+            // post-send follow pushes this peer's new turns the same way.
+            joinSession(ws, sessionId);
+            if (msg.user) data.user = msg.user;
             ws.send(
               JSON.stringify({
                 type: "transcript_init",
@@ -1381,6 +1386,7 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
                 startOffset: 0,
               }),
             );
+            followPeerSend(sessionId);
             return;
           }
           const session = await findSessionAsync(sessionId);
