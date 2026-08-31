@@ -29,6 +29,26 @@ export type PeerTranscriptEntry = {
   ts?: number;
 };
 
+/**
+ * One row of the transcript in the shape every Open Session client already
+ * renders (`TranscriptEntry`): `type` is one of user / assistant / tool_use /
+ * tool_result / system.
+ *
+ * A pi entry can produce several of these — an assistant turn that calls two
+ * tools is one message but three rows — which is why the mapper below is a
+ * flat-map rather than a field rename.
+ */
+export type ClientTranscriptEntry = {
+  id: string;
+  type: "user" | "assistant" | "tool_use" | "tool_result" | "system";
+  content?: string;
+  timestamp?: string;
+  toolName?: string;
+  toolInput?: unknown;
+  toolUseId?: string;
+  isReasoning?: boolean;
+};
+
 /** First jsonl line only — a session file can be megabytes and we are
  *  scanning a directory of them to match one id. */
 function readHeaderId(file: string): string | null {
@@ -108,6 +128,124 @@ function entryText(entry: unknown): string {
       parts.push(`[tool: ${p.name ?? "?"}]`);
   }
   return parts.join("\n\n");
+}
+
+/** Text out of a pi content array, ignoring images and other parts. */
+function textOf(content: unknown): string {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+  return content
+    .filter(
+      (p) => (p as { type?: string })?.type === "text" || typeof (p as { text?: string })?.text === "string",
+    )
+    .map((p) => (p as { text?: string }).text ?? "")
+    .filter(Boolean)
+    .join("\n\n");
+}
+
+/**
+ * A pi session entry as the clients' transcript rows.
+ *
+ * Tool calls are split out of the assistant message into their own `tool_use`
+ * rows so the client renders them the way it renders its own: a named call
+ * with its arguments, not a line of prose claiming a tool ran. `toolUseId`
+ * carries pi's call id, which is what pairs a result back to its call.
+ */
+function toClientEntries(
+  entry: unknown,
+  index: number,
+): ClientTranscriptEntry[] {
+  const e = entry as {
+    id?: string;
+    timestamp?: number | string;
+    message?: { role?: string; content?: unknown; toolCallId?: string; toolName?: string };
+  };
+  const message = e?.message;
+  const role = message?.role;
+  if (!role) return [];
+
+  const baseId = e.id || `entry-${index}`;
+  const timestamp =
+    typeof e.timestamp === "number"
+      ? new Date(e.timestamp).toISOString()
+      : typeof e.timestamp === "string"
+        ? e.timestamp
+        : undefined;
+  const stamp = timestamp ? { timestamp } : {};
+
+  if (role === "toolResult") {
+    return [
+      {
+        id: baseId,
+        type: "tool_result",
+        content: textOf(message?.content),
+        ...(message?.toolName ? { toolName: message.toolName } : {}),
+        ...(message?.toolCallId ? { toolUseId: message.toolCallId } : {}),
+        ...stamp,
+      },
+    ];
+  }
+
+  if (role === "user" || role === "system") {
+    const content = textOf(message?.content);
+    if (!content) return [];
+    return [{ id: baseId, type: role, content, ...stamp }];
+  }
+
+  if (role !== "assistant") return [];
+
+  const rows: ClientTranscriptEntry[] = [];
+  const parts = Array.isArray(message?.content) ? message!.content : [];
+  const text = textOf(message?.content);
+  if (text) rows.push({ id: baseId, type: "assistant", content: text, ...stamp });
+  const thinking = (parts as { type?: string; thinking?: string }[])
+    .filter((p) => p?.type === "thinking" && p.thinking)
+    .map((p) => p.thinking as string)
+    .join("\n\n");
+  if (thinking) {
+    rows.push({
+      id: `${baseId}:thinking`,
+      type: "assistant",
+      content: thinking,
+      isReasoning: true,
+      ...stamp,
+    });
+  }
+  for (const part of parts as {
+    type?: string;
+    id?: string;
+    name?: string;
+    arguments?: unknown;
+  }[]) {
+    if (part?.type !== "toolCall") continue;
+    rows.push({
+      id: part.id || `${baseId}:tool`,
+      type: "tool_use",
+      ...(part.name ? { toolName: part.name } : {}),
+      ...(part.arguments !== undefined ? { toolInput: part.arguments } : {}),
+      ...(part.id ? { toolUseId: part.id } : {}),
+      ...stamp,
+    });
+  }
+  return rows;
+}
+
+/**
+ * A peer's transcript in the clients' own row shape, oldest last-N first.
+ *
+ * Null means no session file, which is the normal answer for a Claude Code
+ * peer: it registers in the same mesh but writes its history elsewhere.
+ */
+export async function readPeerClientTranscript(
+  sessionId: string,
+  limit = 400,
+): Promise<ClientTranscriptEntry[] | null> {
+  const file = findPeerSessionFile(sessionId);
+  if (!file) return null;
+  const { SessionManager } = await import("@earendil-works/pi-coding-agent");
+  const entries = SessionManager.open(file).getBranch();
+  const rows = entries.flatMap((entry, i) => toClientEntries(entry, i));
+  return rows.length > limit ? rows.slice(-limit) : rows;
 }
 
 /**
