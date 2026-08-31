@@ -41,9 +41,11 @@ const SERVER =
   process.env.OPENSESSION_URL?.replace(/\/$/, "") || "http://127.0.0.1:3850";
 /** A push is a nicety; it must never hold up the agent. */
 const TIMEOUT_MS = 1_500;
-/** Floor between streaming updates. A turn emits tokens far faster than a
- *  phone can usefully redraw, and every update is a POST plus a broadcast. */
-const STREAM_INTERVAL_MS = 400;
+/** Floor between streaming updates. Measured against a real turn: pi feeds
+ *  faster than this, so the cadence is set here, not by the model. At 50ms a
+ *  turn arrives about 23 characters at a time, which reads as continuous;
+ *  120ms was visibly chunky and 400ms landed in lumps. */
+const STREAM_INTERVAL_MS = 50;
 /** Where this session listens for its own user's messages. The server derives
  *  the same path from the session id, so no registration handshake is needed. */
 const INBOX_DIR = join(homedir(), ".opensession", "peer-inbox");
@@ -64,6 +66,8 @@ export default function (pi: ExtensionAPI) {
   let messageId: string | undefined;
   let pending: unknown;
   let streamTimer: ReturnType<typeof setTimeout> | undefined;
+  let lastStreamAt = 0;
+  let lastLength = -1;
 
   async function post(payload: Record<string, unknown>): Promise<void> {
     if (!sessionId || consecutiveFailures >= GIVE_UP_AFTER) return;
@@ -151,23 +155,56 @@ export default function (pi: ExtensionAPI) {
     inboxFile = undefined;
   });
 
+  /** Rough size of a message's rendered text, to skip updates that changed
+   *  nothing a reader would see. */
+  function contentLength(message: unknown): number {
+    const content = (message as { content?: unknown })?.content;
+    if (typeof content === "string") return content.length;
+    if (!Array.isArray(content)) return 0;
+    let total = 0;
+    for (const part of content as { text?: string; thinking?: string }[]) {
+      total += (part?.text?.length ?? 0) + (part?.thinking?.length ?? 0);
+    }
+    return total;
+  }
+
+  function sendStream(message: unknown): void {
+    lastStreamAt = Date.now();
+    lastLength = contentLength(message);
+    if (messageId) void post({ message, id: messageId });
+  }
+
   pi.on("message_start", async () => {
     messageId = randomUUID();
+    lastStreamAt = 0;
+    lastLength = -1;
   });
 
   pi.on("message_update", async (event) => {
     const message = (event as { message?: unknown })?.message;
     if (!message || !messageId) return;
-    // Keep only the newest version; an update superseded before it was sent
-    // is not worth a request.
+    // Nothing a reader would notice changed.
+    if (contentLength(message) === lastLength) return;
+
+    const since = Date.now() - lastStreamAt;
+    // Leading edge: the first token of a turn, and anything after a quiet
+    // stretch, goes out immediately instead of waiting out the interval.
+    if (since >= STREAM_INTERVAL_MS && !streamTimer) {
+      sendStream(message);
+      return;
+    }
+    // Otherwise ride the trailing timer, keeping only the newest version.
     pending = message;
     if (streamTimer) return;
-    streamTimer = setTimeout(() => {
-      streamTimer = undefined;
-      const next = pending;
-      pending = undefined;
-      if (next && messageId) void post({ message: next, id: messageId });
-    }, STREAM_INTERVAL_MS);
+    streamTimer = setTimeout(
+      () => {
+        streamTimer = undefined;
+        const next = pending;
+        pending = undefined;
+        if (next) sendStream(next);
+      },
+      Math.max(0, STREAM_INTERVAL_MS - since),
+    );
     // Never hold the process open for a partial render.
     streamTimer.unref?.();
   });
